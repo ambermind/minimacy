@@ -1,0 +1,45 @@
+/* Copyright (c) 2022, Sylvain Huet, Ambermind
+   This program is free software: you can redistribute it and/or modify it
+   under the terms of the GNU General Public License, version 2.0, as
+   published by the Free Software Foundation.
+   This program is distributed in the hope that it will be useful, but WITHOUT
+   ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+   FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License,
+   version 2.0, for more details.
+   You should have received a copy of the GNU General Public License along
+   with this program. If not, see <https://www.gnu.org/licenses/>. */
+
+
+fun sha256 msg= sha256Output sha256Process sha256Create msg 0 nil;;
+fun sha384 msg= sha384Output sha384Process sha384Create msg 0 nil;;
+fun sha512 msg= sha512Output sha512Process sha512Create msg 0 nil;;
+fun sha1 msg= sha1Output sha1Process sha1Create msg 0 nil;;
+fun md5 msg= md5Output md5Process md5Create msg 0 nil;;
+
+fun sha512double msg1 msg2= sha512Output sha512Process (sha512Process sha512Create msg1 0 nil) msg2 0 nil;;
+fun sha256double msg1 msg2= sha256Output sha256Process (sha256Process sha256Create msg1 0 nil) msg2 0 nil;;
+fun sha384double msg1 msg2= sha384Output sha384Process (sha384Process sha384Create msg1 0 nil) msg2 0 nil;;
+fun sha1double msg1 msg2= sha1Output sha1Process (sha1Process sha1Create msg1 0 nil) msg2 0 nil;;
+fun md5double msg1 msg2= md5Output md5Process (md5Process md5Create msg1 0 nil) msg2 0 nil;;
+
+fun hmacCommon inLen key data hash hashdouble=
+	let if (strLength key)>inLen then (call hash key) else key -> key in
+	let bytesCreate inLen 0 -> k_ipad in
+	let bytesCreate inLen 0 -> k_opad in
+	let bytesCreate inLen 0x36 -> msk36 in
+	let bytesCreate inLen 0x5c -> msk5c in
+	(
+		bytesCopy k_ipad 0 key 0 nil;
+		bytesCopy k_opad 0 key 0 nil;
+		bytesXor k_ipad 0 bytesAsStr msk36 0 nil;
+		bytesXor k_opad 0 bytesAsStr msk5c 0 nil;
+		let call hashdouble bytesAsStr k_ipad data -> mac in
+		call hashdouble bytesAsStr k_opad mac
+	);;
+
+fun hmacSha512 key data= hmacCommon 128 key data #sha512 #sha512double;;	// see bouncycastle\crypto\macs\HMac.java
+fun hmacSha384 key data= hmacCommon 128 key data #sha384 #sha384double;;	// see bouncycastle\crypto\macs\HMac.java
+fun hmacSha256 key data= hmacCommon 64 key data #sha256 #sha256double;;
+fun hmacSha1 key data= hmacCommon 64 key data #sha1 #sha1double;;
+fun hmacMd5 key data= hmacCommon 64 key data #md5 #md5double;;
+

@@ -1,0 +1,488 @@
+/* Copyright (c) 2022, Sylvain Huet, Ambermind
+   This program is free software: you can redistribute it and/or modify it
+   under the terms of the GNU General Public License, version 2.0, as
+   published by the Free Software Foundation.
+   This program is distributed in the hope that it will be useful, but WITHOUT
+   ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+   FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License,
+   version 2.0, for more details.
+   You should have received a copy of the GNU General Public License along
+   with this program. If not, see <https://www.gnu.org/licenses/>. */
+
+
+import core.util.base64;;
+import core.crypto.hash;;
+import core.crypto.oid;;
+import core.crypto.pem;;
+import core.net.xtcp;;
+import core.net.http;;
+
+const HTTPSERVER_TIMEOUT=4000;;
+const HTTPSERVER_WS_TIMEOUT=5*60000;;
+
+struct HttpSrv=[
+	ttH sendH iH closeAfterH
+	tlsH serverH portH
+	requestH requestHeadersH cookiesH postDataH
+	statusH replyHeadersH
+	handleDataH
+	_bufferH _contentH _contentLengthH _transferH
+	cbHeaderH cbRequestH cbMessageH
+	];;
+
+
+
+const ASCII_DOUBLE_QUOTE=34;;
+const ASCII_SIMPLE_QUOTE=39;;
+
+//-------------- content operations
+fun _argUnescape arg=
+	let strLength arg -> len in
+	match strGet arg 0 with
+		ASCII_SIMPLE_QUOTE -> strSub arg 1 len-2,
+		ASCII_DOUBLE_QUOTE -> let strSub arg 1 len-2 -> arg in
+			let strReplace arg "\\\"" "\"" -> arg in
+			let strReplace arg "\\\\" "\\" -> arg in
+			arg,
+		_-> arg;;
+
+fun _parseUrlEncoded d args=
+	let strSplit "&" args -> listArgs in
+	for arg in listArgs do
+		let strPos arg "=" 0 -> i in
+		if i<>nil then hashmapSet d (urlToStr strLeft arg i) (urlToStr strSub arg i+1 nil);;
+
+fun _findBoundary boundary data i=
+	let strPos data "\r\n" i -> j in
+	if j<>nil then
+	let strPos data "\r\n\r\n" i -> k in
+	if k<>nil then
+	let strPos data boundary k+4 -> next in
+	if next<>nil then 
+	let strPosRev data "\r\n" next -> end in
+	if end<>nil then
+	let if j<>k then strSplit "\r\n" strSub data j+2 k-j-2 -> headers in
+	[headers strSub data k+4 end-k-4 next];;
+
+fun _parseNextPart ds df data boundary i=
+	if i<>nil then
+	let _findBoundary boundary data i -> result in
+	if result<>nil then let result ->[headers content next] in
+	(
+		let strSplit "; " hd headers -> (disposition:name:filename:_) in
+		if disposition=="Content-Disposition: form-data" then
+		if strStartsWith name "name=" then
+		let _argUnescape strSub name 5 nil -> name in
+		if !strStartsWith filename "filename=" then (hashmapSet ds name content; nil)
+		else let _argUnescape strSub filename 9 nil -> filename in
+		hashmapSet df name [filename content];
+		_parseNextPart ds df data boundary next
+	);;
+
+fun _parseMultipart contentType ds df data=
+	let strSplit "=" hd tl contentType-> (key:val:nil) in
+	if key=="boundary" then let val -> boundary in 
+	let strPos data boundary 0 -> i in
+	_parseNextPart ds df data boundary 0;
+	nil;;
+
+//-------------- common operations
+
+fun _httpSend h data=
+	set h.sendH=strCat h.sendH data;
+//	echo "send "; echoLn 
+	set h.iH=XTcpWrite h.ttH h.sendH h.iH;
+	if h.iH>=strLength h.sendH then (
+		if h.closeAfterH then
+		(
+			XTcpClose h.ttH;
+			set h.ttH=nil
+		);
+		set h.sendH=nil;
+		set h.iH=0;
+	);;
+
+fun _serverReset h =
+	set h.handleDataH=#_headerHandleData;
+
+	set h.replyHeadersH=hashmapCreate 4;
+	srvHttpSetHeader h "Server" "Minimacy HTTP server";
+	srvHttpSetHeader h "Content-Type" "text/html";
+
+	set h.requestH=nil;
+	set h.requestHeadersH=nil;
+	set h.cookiesH=nil;
+	set h.postDataH=nil;
+
+	set h._bufferH=nil;
+	set h._transferH=nil;
+	set h._contentH=nil;
+	set h._contentLengthH=0;;
+
+//-------------- http content operations
+
+// return true if provided data contains the end of the content
+fun _checkContentLength h data len=
+	if 0<strLength data then
+	(
+		set h._contentH=data:h._contentH;
+		set h._contentLengthH= h._contentLengthH+strLength data
+	);
+	(h._contentLengthH>=len);;	// Warning, we assume that there are no immediately chained data
+
+fun _checkContentChunked h data=
+	if 0<strLength data then set h._bufferH=strCat h._bufferH data;
+	let strPos h._bufferH "\r\n" 0 -> i in
+	if i==nil then false	// not even the first line of the chunk
+	else let hexToInt strLeft h._bufferH i -> len in
+	if i+len+4>strLength h._bufferH then false	// not the ending of the chunk (including final \r\n)
+	else
+	(
+		if len<>0 then set h._contentH=(strSub h._bufferH i+2 len):h._contentH;
+		set h._bufferH=strSub h._bufferH i+len+4 nil;
+		if len==0 then true	// last chunk reached
+		else _checkContentChunked h ""
+	);;	
+
+fun _checkContent h data=
+	match h._transferH with
+		transferLength len -> _checkContentLength h data len,
+		transferChunked -> _checkContentChunked h data,
+		transferNone -> true;;
+
+fun _httpBuildHeaderList headers content=
+	let fifoCreate -> fifo in
+	(
+		hashmapFind headers (lambda key vals= for v in vals do fifoIn fifo strBuild {key ": " v}; false);
+		fifoIn fifo "";
+		fifoIn fifo content;
+		fifoList fifo
+	);;
+
+fun _httpBuild h firstLine data=
+	let if data==nil then "" else data -> content in
+	(
+		srvHttpSetHeader h HTTP_CONTENT_LENGTH intToDec if data<>nil then strLength data else 0;
+		let firstLine:_httpBuildHeaderList h.replyHeadersH content -> lines in
+		strJoin "\r\n" lines
+	);;
+
+fun _httpBuildReply h content=
+	let strJoin " " h.statusH -> firstLine in
+	_httpBuild h firstLine content;;
+
+fun _httpSendReply h reply keepAlive=
+	set h._contentH=nil;
+//	consoleLn ["KeepAlive: " keepAlive];
+	if !keepAlive then set h.closeAfterH=true;
+	let _httpBuildReply h reply -> data in
+	_httpSend h data;
+	if keepAlive then _serverReset h;
+	nil;;
+
+fun _httpGetReply h=
+	set h.postDataH=strBuild rev h._contentH nil;
+	let h.requestH -> [verb uri version] in
+	let (hashmapGet h.requestHeadersH "Connection")=="keep-alive" -> keepAlive in
+	(
+		set h._contentH=nil;
+		let call h.cbRequestH h uri -> content in
+		_httpSendReply h content keepAlive
+	);;
+
+fun _httpHandleData h data=
+	if data<>nil && _checkContent h data then _httpGetReply h;;
+
+fun _httpHandleHeader h=
+	if h.cbRequestH<>nil && (h.cbHeaderH==nil || call h.cbHeaderH h) then
+	(
+		set h.handleDataH=#_httpHandleData;	// we switch to websocket data handler
+		set h.statusH=[HTTP_1_1 200 "OK"];
+		_httpHandleData h ""	//
+	)
+	else
+	(
+		set h.statusH=[HTTP_1_0 400 "Bad Request"];
+		_httpSendReply h nil false
+	);;
+
+//-------------- websockets operations
+fun _wsHashSecret key = b64Encode sha1 strCat key WS_UUID;;
+
+// return [maskStart maskLength dataLength]
+fun _wsParseFrame b=
+	let strLength b -> total in
+	let if 0<>0x80 & strRead8 b 1 then 4 else 0 -> maskLength in 
+	let 0x7f & strRead8 b 1 -> len in
+	if len<126 then [2 maskLength len]
+	else if total>=4 then
+	if len==126 then [4 maskLength (strRead16Msb b 2)]
+	else if total>=12 then [10 maskLength ((strRead32Msb b 2)<<32)+strRead32Msb b 6];;
+
+fun _wsCheckContent h data=
+	if 0<strLength data then set h._bufferH=strCat h._bufferH data;
+	let h._bufferH -> b in
+	let _wsParseFrame b -> [maskStart maskLength dataLength] in
+	if maskStart<>nil then
+	let bytesFromStr b maskStart+maskLength dataLength -> frame in
+	let strRead8 b 0 -> firstByte in
+	let firstByte&15 -> opcode in
+	if opcode==WS_OPCODE_CLOSE then
+	(
+		XTcpClose h.ttH;
+		set h.ttH=nil;
+		0+call h.cbMessageH h WS_OPCODE_CLOSE nil;
+		nil
+	)
+	else
+	(
+		set h._bufferH=strSub h._bufferH maskStart+maskLength+dataLength nil;
+		if maskLength<>0 then
+			let strSub b maskStart maskLength -> mask in
+			for i=0;i<dataLength;i+maskLength do bytesXor frame i mask 0 nil;
+		
+		set h._contentH=(bytesAsStr frame):h._contentH;
+		if 0<> 0x80 & firstByte then
+			let strListCat rev h._contentH nil -> fullData in
+			(
+				set h._contentH=nil;
+				call h.cbMessageH h opcode fullData;
+			);
+		if 0<strLength h._bufferH then _wsCheckContent h ""
+	);;
+
+fun _wsHeaders header=
+	let hashmapCreate 4 -> headers in
+	(
+		for line in tl header do
+			let strPos line ": " 0 -> i in
+			if i<>nil then hashmapSet headers (strLeft line i) (strSub line i+2 nil);
+		headers
+	);;
+
+fun _wsBuild h firstLine=
+	let firstLine:_httpBuildHeaderList h.replyHeadersH "" -> lines in
+	strJoin "\r\n" lines;;
+
+fun _wsBuildReply h=
+	let strJoin " " h.statusH -> firstLine in
+	_wsBuild h firstLine;;
+
+fun _wsLength client data=
+	let if client then 0x80 else 0 -> mask in
+	let strLength data -> len in
+	if len<126 then strInt8 mask|len
+	else if len<65536 then strBuild {strInt8 mask|126 strInt16Msb len}
+	else strBuild {strInt8 mask|127 (strInt32Msb len>>32) (strInt32Msb len)};;
+
+fun _wsData client data=
+	if !client then data
+	else let strRand 4 -> mask in
+	let strLength data -> len in
+	let bytesFromStr data 0 nil -> buffer in
+	(
+		for i=0;i<len;i+4 do bytesXor buffer i mask 0 nil;
+		strCat mask bytesAsStr buffer
+	);;
+
+fun _wsHandleData h data=
+	if data<>nil then _wsCheckContent h data;;
+
+fun _wsHandleHeader h=
+	if h.cbMessageH<>nil && (h.cbHeaderH==nil || call h.cbHeaderH h) then
+	(
+		XTcpSetTimeout h.ttH HTTPSERVER_WS_TIMEOUT;
+		set h.handleDataH=#_wsHandleData;	// we switch to websocket data handler
+		set h.replyHeadersH=hashmapCreate 4;
+		srvHttpSetHeader h "Server" "Minimacy WS server";
+		srvHttpSetHeader h "Upgrade" "websocket";
+		srvHttpSetHeader h "Connection" "Upgrade";
+		srvHttpSetHeader h WS_ACCEPT _wsHashSecret hashmapGet h.requestHeadersH WS_KEY;
+		set h.statusH=[HTTP_1_1 101 "Switching Protocols"];
+		_httpSend h _wsBuildReply h;
+		// the client is not supposed to send data before receiving this reply header
+		// then we don't need to process the remaining data
+		nil
+	)
+	else
+	(
+		set h.statusH=[HTTP_1_0 400 "Bad Request"];
+		_httpSendReply h nil false
+	);;
+
+//-------------- header operations
+fun _httpHeaders header=
+	let hashmapCreate 4 -> headers in
+	(
+		for line in tl header do
+			let strPos line ": " 0 -> i in
+			if i<>nil then hashmapSet headers (strLeft line i) (strSub line i+2 nil);
+		headers
+	);;
+
+fun _headerCookies h=
+	let hashmapGet h.requestHeadersH HTTP_COOKIE -> cookies in
+	if cookies<>nil then
+	let hashmapCreate 4 -> map in
+	(
+		for p in strSplit "; " cookies do
+			let strPos p "=" 0 -> i in
+			if i<>nil then hashmapSet map strLeft p i strSub p i+1 nil;
+		map
+	);;
+
+// return true if provided data contains the end of the header
+fun _checkHeader h data=
+	set h._bufferH= strCat h._bufferH data;
+	let h._bufferH -> begining in
+	let strPos begining "\r\n\r\n" 0 -> i in
+	if i<>nil then
+	let strLeft begining i -> header in
+	let strSplit "\r\n" header -> header in
+	let _httpHeaders header -> headers in
+	let decToInt hashmapGet headers HTTP_CONTENT_LENGTH -> contentLength in
+	let HTTP_CHUNKED==hashmapGet headers HTTP_TRANSFER_ENCODING -> chunked in
+	let strSplit " " hd header -> firstLine in
+	let strSub begining i+4 nil -> ending in
+	let firstLine -> (verb:uri:version:_) in
+	(
+		set h._bufferH=nil;
+
+		set h._transferH=
+			if contentLength<>nil then transferLength contentLength
+			else if chunked then transferChunked
+			else transferNone;
+		match h._transferH with
+			transferChunked -> (set h._bufferH=ending; nil),
+			_ -> (set h._contentH=ending:nil; set h._contentLengthH=strLength ending);
+
+		set h.requestH=[verb uri version];
+		set h.requestHeadersH=headers;
+		set h.cookiesH=_headerCookies h;
+		true
+	);;
+
+fun _headerHandleData h data=
+	if data<>nil && _checkHeader h data then
+	let (hashmapGet h.requestHeadersH "Upgrade")=="websocket" -> ws in
+	if ws then _wsHandleHeader h
+	else _httpHandleHeader h;;
+
+fun _httpFromServer tls tt port timeout cbHeader cbRequest cbMessage=
+	let XTcpGetServerName tt -> server in
+	let [ttH=tt tlsH=tls serverH=server portH=port
+		cbHeaderH=cbHeader cbRequestH=cbRequest cbMessageH=(lambda h op msg= call cbMessage h op msg;0)] -> h in
+	(
+//		dump httpGetRemote h;
+//		consoleTime "new incoming connection";
+		_serverReset h;
+		XTcpOn tt timeout
+			(lambda data=
+//echoLn "receive"; hexDump data;
+				0+call h.handleDataH h data
+			)
+			(lambda = _httpSend h nil);
+		h
+	);;
+
+
+//--------------------SERVER END USER FUNCTIONS
+public HttpSrv;;
+public:
+const COOKIE_SECURE=1;;
+const COOKIE_HTTP_ONLY=2;;
+const COOKIE_SAMESITE_LAX=4;;
+const COOKIE_SAMESITE_STRICT=8;;
+const COOKIE_SAMESITE_NONE=16;;
+
+fun srvHttpCreate hostList ip port cbHeader cbRequest cbMessage=
+	let hostList<>nil -> tls in
+	XTcpListen hostList ip port (lambda tt=
+		threadFork "httpd" (lambda =
+			_httpFromServer tls tt port HTTPSERVER_TIMEOUT cbHeader cbRequest cbMessage;
+			0
+		);
+		0
+	);;
+
+fun srvHttpGetRemote h = [(XTcpRemoteIp h.ttH) (XTcpRemotePort h.ttH)];;	// returns [ip port]
+
+fun srvHttpAddHeader h key val=
+	hashmapSet h.replyHeadersH  key val:hashmapGet h.replyHeadersH  key;
+	h;;
+
+fun srvHttpSetHeader h key val=
+	hashmapSet h.replyHeadersH  key val:nil;
+	h;;
+
+fun srvHttpRedirect h url=
+	srvHttpSetStatus h HTTP_1_0 302 "Found";
+	srvHttpAddHeader h HTTP_LOCATION url;
+	"";;
+
+fun _addIfNotNil a l= if a==nil then l else a:l;;
+
+fun srvHttpSetCookie h name value expires path domain attr=
+	srvHttpAddHeader h HTTP_SET_COOKIE echoLn strJoin "; " 
+		(strFormat "*=*" name value):
+		_addIfNotNil if expires<>nil then strCat "Expires=" fullDate expires
+		_addIfNotNil if path<>nil then strCat "Path=" path
+		_addIfNotNil if domain<>nil then strCat "Domain=" domain
+		_addIfNotNil if bitTest attr COOKIE_SECURE then "Secure"
+		_addIfNotNil if bitTest attr COOKIE_HTTP_ONLY then "HttpOnly"
+		_addIfNotNil if bitTest attr COOKIE_SAMESITE_LAX then "SameSite=Lax"
+		_addIfNotNil if bitTest attr COOKIE_SAMESITE_STRICT then "SameSite=Strict"
+		_addIfNotNil if bitTest attr COOKIE_SAMESITE_NONE then "SameSite=None"
+		nil;;
+
+fun srvHttpGetCookies h = h.cookiesH;;
+fun srvHttpGetCookie h cookie= hashmapGet h.cookiesH cookie;;
+
+
+fun srvHttpGetRequest h = h.requestH;;	// returns [verb uri version]
+fun srvHttpGetRequestHeaders h = h.requestHeadersH;;
+fun srvHttpGetPostData h = h.postDataH;;
+fun srvHttpSetStatus h version code text= set h.statusH=[version code text];;
+fun srvHttpGetClientCertificate h= XTcpGetClientCertificate h.ttH;;
+fun srvHttpGetClientCertificateLogin h= 
+	let XTcpGetClientCertificate h.ttH -> cer in
+	let strSplit OID_SEP OIDhashmapSUBJECT cer -> subject in
+	strSub find subject (lambda val= strStartsWith val "CN=") 3 nil;;
+
+fun srvHttpParseFormUrlEncoded s d=
+	let if d==nil then hashmapCreate 4 else d -> d in
+	let strSplit "&" s -> l in
+	(
+		for arg in l do let strSplit "=" arg -> (key:val:_) in hashmapSet d (urlToStr key) (urlToStr val);		
+		d
+	);;
+
+fun srvHttpParseArgs h=
+	let hashmapCreate 4 -> strings in
+	let hashmapCreate 1 -> files in
+	let h.requestH ->[_ uri _] in
+	let h.requestHeadersH -> headers in
+	let strSplit "; " hashmapGet headers HTTP_CONTENT_TYPE -> contentType in
+	let strPos uri "?" 0 -> i in
+	(
+		if i<>nil then _parseUrlEncoded strings strSub uri i+1 nil;
+		match hd contentType with
+			HTTP_URLENCODED -> _parseUrlEncoded strings h.postDataH,
+			HTTP_MULTIPART  -> _parseMultipart contentType strings files h.postDataH;
+		[strings files]
+	);;
+
+fun srvWsSend h opcode data=
+	let strBuild {
+		strInt8 0x80|opcode
+		_wsLength false data
+		_wsData false data
+	} -> frame in
+	_httpSend h frame;;
+
+fun srvWsClose h=
+	set h.closeAfterH=true;
+	srvWsSend h WS_OPCODE_CLOSE "";
+	0;;
+
+

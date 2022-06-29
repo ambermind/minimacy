@@ -1,0 +1,67 @@
+/* Copyright (c) 2022, Sylvain Huet, Ambermind
+   This program is free software: you can redistribute it and/or modify it
+   under the terms of the GNU General Public License, version 2.0, as
+   published by the Free Software Foundation.
+   This program is distributed in the hope that it will be useful, but WITHOUT
+   ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+   FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License,
+   version 2.0, for more details.
+   You should have received a copy of the GNU General Public License along
+   with this program. If not, see <https://www.gnu.org/licenses/>. */
+
+
+import core.net.tls.tcp;;
+
+sum XTcp = _clearX _, _tlsX _;;
+
+fun XTcpOn x timeout onRead onWrite=
+	match x with
+		_clearX tcp -> onTcp tcp timeout onRead onWrite,
+		_tlsX   h   -> tlsTcpOn h timeout onRead onWrite;
+	true;;
+
+fun XTcpWrite x data start=
+	match x with
+		_clearX tcp -> tcpWrite tcp data start,
+		_tlsX   h   -> tlsTcpWrite h data start;;
+
+fun _XTcpCall0 x cbClear cbTls=
+	match x with
+		_clearX tcp -> call cbClear tcp,
+		_tlsX   h   -> call cbTls h;;
+
+fun _XTcpCall1 x arg cbClear cbTls=
+	match x with
+		_clearX tcp -> call cbClear tcp arg,
+		_tlsX   h   -> call cbTls h arg;;
+
+
+		
+fun XTcpSetTimeout x timeout= _XTcpCall1 x timeout #tcpSetTimeout #tlsTcpSetTimeout;;
+fun XTcpNoDelay x noDelay= _XTcpCall1 x noDelay #tcpNoDelay #tlsTcpNoDelay;;
+fun XTcpRemoteIp x= _XTcpCall0 x #tcpRemoteIp #tlsTcpRemoteIp;;
+fun XTcpRemotePort x= _XTcpCall0 x #tcpRemotePort #tlsTcpRemotePort;;
+fun XTcpGetClientCertificate x= match x with _tlsX h -> tlsTcpGetClientCertificate h;;
+fun XTcpClose x= _XTcpCall0 x #tcpClose #tlsTcpClose;;
+fun XTcpGetServerName x= match x with _tlsX h -> tlsTcpGetServerName h;;
+
+fun XTcpSetCipherSuites x cipherSuites= match x with _tlsX h -> tlsTcpSetCipherSuites h cipherSuites;;
+
+
+// hostList is :
+// - for a http server: nil
+// - for a https server: a list of [serverName privateKey pwd certList] (see function tlsMakeHosts in core.net.tls for documentation)
+fun XTcpListen hostList ip port cb=
+	match hostList with
+		nil -> tcpListen ip port (lambda tcp= call cb _clearX tcp),
+		_   -> tlsTcpListen hostList ip port (lambda tt= call cb _tlsX tt);;
+
+// serverName is :
+// - for a http request: nil
+// - for a https request: either a domain name or a binary IP address (like "\1\1\1\1" for 1.1.1.1)
+fun XTcpOpen ip port serverName= XTcpOpenExt ip port serverName nil nil nil;;
+
+fun XTcpOpenExt ip port serverName cipherSuites clientCertificate clientKey=
+	match serverName with
+		nil -> _clearX tcpOpen ip port,
+		_   -> _tlsX tlsTcpOpen ip port serverName cipherSuites clientCertificate clientKey;;

@@ -1,0 +1,51 @@
+/* Copyright (c) 2022, Sylvain Huet, Ambermind
+   This program is free software: you can redistribute it and/or modify it
+   under the terms of the GNU General Public License, version 2.0, as
+   published by the Free Software Foundation.
+   This program is distributed in the hope that it will be useful, but WITHOUT
+   ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+   FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License,
+   version 2.0, for more details.
+   You should have received a copy of the GNU General Public License along
+   with this program. If not, see <https://www.gnu.org/licenses/>. */
+
+// Primal generation : bigPrimal nbits nloops
+fun _bigPrimalCandidate nbits one=
+	let bigRand (max 2 nbits) true -> b in
+	if bigIsEven b then bigAdd b one
+	else b;;
+
+fun __bigIsPrimal n nMinusOne r s one two nloops=
+	if nloops<=0 then true
+	else
+	let bigRand bigNbits n false -> y in
+	if (bigIsNull y)||bigGreater y nMinusOne then __bigIsPrimal n nMinusOne r s one two nloops
+	else let bigExpMod y r n-> y in
+	(
+		if y<>one then
+			let s-1 -> sMinusOne in
+			for j=0; y<>nMinusOne do
+			(
+				if j==sMinusOne then return false;
+				set y=bigExpMod y two n;
+				if y==one then return false
+			);
+		__bigIsPrimal n nMinusOne r s one two nloops-2
+	);;
+
+fun _bigIsPrimal n one two nloops=
+	let bigSub n one -> nMinusOne in
+	let bigLowestBit nMinusOne -> s in
+	let bigASR nMinusOne s -> r in
+	__bigIsPrimal n nMinusOne r s one two nloops;;
+
+fun bigPrimal nbits nloops=
+	let bigFromInt 1 -> one in
+	let bigFromInt 2 -> two in
+	for i=1;true do
+		let _bigPrimalCandidate nbits one -> n in
+		if _bigIsPrimal n one two nloops then
+		(
+//			echoLn ["nb of candidates=" i];
+			return n
+		);;

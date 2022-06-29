@@ -1,0 +1,42 @@
+/* Copyright (c) 2022, Sylvain Huet, Ambermind
+   This program is free software: you can redistribute it and/or modify it
+   under the terms of the GNU General Public License, version 2.0, as
+   published by the Free Software Foundation.
+   This program is distributed in the hope that it will be useful, but WITHOUT
+   ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+   FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License,
+   version 2.0, for more details.
+   You should have received a copy of the GNU General Public License along
+   with this program. If not, see <https://www.gnu.org/licenses/>. */
+
+import core.crypto.block;;
+
+fun des3Key192 key= [(desCreate strSub key 0 8) (desCreate strSub key 8 8) (desCreate strSub key 16 8)];;
+
+fun des3Encrypt keys msg i=
+	let keys->[k1 k2 k3] in
+		let desOutput desEncrypt k1 msg i -> buf in 
+		let desOutput desDecrypt k2 buf 0 -> buf in 
+		desOutput desEncrypt k3 buf 0;;
+
+fun des3Decrypt keys msg i=
+	let keys->[k1 k2 k3] in
+		let desOutput desDecrypt k3 msg i -> buf in 
+		let desOutput desEncrypt k2 buf 0 -> buf in 
+		desOutput desDecrypt k1 buf 0;;
+
+fun des3EncryptEcb keys msg= 
+	let des3Key192 keys -> k3 in
+	strListCat ecbEncrypt msg DES_BLOCK 0 (lambda data i = des3Encrypt k3 data i);;
+
+fun des3DecryptEcb keys msg= 
+	let des3Key192 keys -> k3 in
+	strListCat ecbDecrypt msg DES_BLOCK 0 (lambda data i=des3Decrypt k3 msg i);;
+
+fun des3EncryptCbc keys iv msg= 
+	let des3Key192 keys -> k3 in
+	strListCat cbcEncrypt msg iv 0 (lambda data i = des3Encrypt k3 data i);;
+
+fun des3DecryptCbc keys iv msg= 
+	let des3Key192 keys -> k3 in
+	strListCat cbcDecrypt msg iv 0 (lambda data i=des3Decrypt k3 msg i);;

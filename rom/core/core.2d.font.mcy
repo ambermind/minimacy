@@ -1,0 +1,101 @@
+/* Copyright (c) 2022, Sylvain Huet, Ambermind
+   This program is free software: you can redistribute it and/or modify it
+   under the terms of the GNU General Public License, version 2.0, as
+   published by the Free Software Foundation.
+   This program is distributed in the hope that it will be useful, but WITHOUT
+   ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+   FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License,
+   version 2.0, for more details.
+   You should have received a copy of the GNU General Public License along
+   with this program. If not, see <https://www.gnu.org/licenses/>. */
+
+const ALIGN_HOR_MASK=3;;
+const ALIGN_LEFT=0;;
+const ALIGN_RIGHT=1;;
+const ALIGN_CENTER=2;;
+
+const ALIGN_VER_MASK=12;;
+const ALIGN_TOP=0;;
+const ALIGN_BOTTOM=4;;
+const ALIGN_BASELINE=8;;
+
+struct Font=[bmpF charsF wF hF baseLineF];;
+enum _X _Y _W _H;;
+
+fun _colorStart color= 0xff0000 == (color&0xffffff);;
+fun _colorBaseline color= 0xff00 == (color&0xffffff);;
+
+fun _fontHeight bmp i baseline=
+	if (i>=bitmapH bmp) || (_colorStart bitmapGet bmp 0 i) then [i (if baseline==nil then 0 else i-baseline)]
+	else if _colorBaseline (bitmapGet bmp 0 i) then _fontHeight bmp i+1 i
+	else _fontHeight bmp i+1 baseline;;
+
+fun _fontNext bmp i y=
+	if (i>=bitmapW bmp) || (_colorStart bitmapGet bmp i y) then i
+	else _fontNext bmp i+1 y;;
+
+// we assume (x-1),y is a red point
+fun _charsParse bmp x y h=
+	if y<bitmapH bmp then
+	if x>=bitmapW bmp then _charsParse bmp 1 y+h h
+	else let _fontNext bmp x y -> xx in
+	if x==xx then _charsParse bmp 1 y+h h
+	else {x y xx-x h}:_charsParse bmp xx+1 y h;;
+
+fun fontFromBitmap bmp= 
+	if _colorStart bitmapGet bmp 0 0 then
+	let _fontHeight bmp 1 nil ->[h baseLine] in
+	let listToArray _charsParse bmp 1 0 h -> chars in
+	(
+		bitmapComponents bmp COMP_B COMP_B COMP_B COMP_B;
+		bitmapFill bmp 0xffffff BLEND_ADD;
+		[bmpF=bmp charsF=chars hF=h baseLineF=baseLine]
+	);;
+
+fun _charsFixed bw bh x y w h=
+	if y+h<=bh then
+	if x+w>bw then _charsFixed bw bh 0 y+h w h
+	else {x y w h}:_charsFixed bw bh x+w y w h;;
+
+fun fontFixedFromBitmap bmp w h baseLine= 
+	bitmapComponents bmp COMP_B COMP_B COMP_B COMP_B;
+	bitmapFill bmp 0xffffff BLEND_ADD;
+	let listToArray _charsFixed bitmapW bmp bitmapH bmp 0 0 w h -> chars in
+	[bmpF=bmp charsF=chars wF=w hF=h baseLineF=baseLine];;
+	
+fun fontH f= f.hF;;
+
+fun fontStringWidth f str= 
+	let strLength str -> n in
+	if f.wF<>nil then n*f.wF
+	else
+	let 0->len in
+	for i=0;i<n do
+		let strGet str i -> c in
+		let f.charsF.c -> position in
+		set len=len+position._W;;
+
+fun bitmapText bmp x y flag text f fg bg=
+	let fontStringWidth f text -> width in
+	let fontH f -> height in
+	let match ALIGN_HOR_MASK&flag with
+		ALIGN_CENTER -> x-(width>>1),
+		ALIGN_RIGHT -> x-width,
+		_-> x
+	-> x in
+	let match ALIGN_VER_MASK&flag with
+		ALIGN_BASELINE -> y+f.baseLineF - height,
+		ALIGN_BOTTOM -> y+1-height,
+		_-> y
+	-> y in
+	(
+		if bg<>nil then bitmapFilledRectangle bmp x y width height bg nil;
+		let strLength text -> n in
+		for i=0;i<n do let f.charsF.(strGet text i) -> position in
+		if position<>nil then
+		(
+			bitmapToBitmapColored bmp x y f.bmpF position._X position._Y position._W position._H BLEND_ALPHA 0xff000000|fg BLEND_MUL;
+			set x=x+position._W
+		);
+		bmp
+	);;	

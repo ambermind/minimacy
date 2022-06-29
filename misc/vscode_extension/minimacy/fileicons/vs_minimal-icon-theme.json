@@ -1,0 +1,37 @@
+{
+  "iconDefinitions": {
+    "_file_dark": {
+      "iconPath": "./images/logo1.ico"
+    },
+    "_file_light": {
+      "iconPath": "./images/logo1.ico"
+    }
+  },
+  //	"file": "_file_dark",
+  "fileExtensions": {
+    "mcy": "_file_light"
+    // icons by file extension
+  },
+  "fileNames": {
+    // icons by file name
+  },
+  "languageIds": {
+    // icons by language id
+  },
+  "light": {
+    //		"file": "_file_light",
+    "fileExtensions": {
+      "mcy": "_file_light"
+      // icons by file extension
+    },
+    "fileNames": {
+      // icons by file name
+    },
+    "languageIds": {
+      // icons by language id
+    }
+  },
+  "highContrast": {
+    // overrides for high contrast
+  }
+}

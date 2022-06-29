@@ -1,0 +1,117 @@
+/* Copyright (c) 2022, Sylvain Huet, Ambermind
+   This program is free software: you can redistribute it and/or modify it
+   under the terms of the GNU General Public License, version 2.0, as
+   published by the Free Software Foundation.
+   This program is distributed in the hope that it will be useful, but WITHOUT
+   ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+   FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License,
+   version 2.0, for more details.
+   You should have received a copy of the GNU General Public License along
+   with this program. If not, see <https://www.gnu.org/licenses/>. */
+
+var _Uicb;;
+var _UiSize=0;;
+const _UI_DEBUG=false;;
+
+fun _uiOnPaint x y v=
+	if _UI_DEBUG then dump strFormat "paint *,* / *" x y v;
+	threadPost _uiThread (lambda= if _Uicb._EVENT_PAINT==nil then (uiUpdate;nil) else call _Uicb._EVENT_PAINT x y v  nil);;
+
+var _MultiTouch;;
+
+fun _uiOnMultiTouch x y v= if _UI_DEBUG then dump strFormat "multi *,* / *" x y v;
+	if v==0 then (set _MultiTouch=[x y]:_MultiTouch; nil)
+	else let _MultiTouch -> m in
+	(
+		set _MultiTouch=nil;
+		threadPost _uiThread (lambda= call _Uicb._EVENT_MULTITOUCH nil nil nil m)
+	);;
+
+fun _uiOnMousemove x y v= if _UI_DEBUG then dump strFormat "mousemove *,* / *" x y v; threadPost _uiThread (lambda= call _Uicb._EVENT_MOUSEMOVE x y v nil);;
+fun _uiOnClick x y v= if _UI_DEBUG then dump strFormat "click *,* / *" x y v; threadPost _uiThread (lambda= call _Uicb._EVENT_CLICK x y v nil);;
+fun _uiOnUnclick x y v= if _UI_DEBUG then dump strFormat "unclick *,* / *" x y v; threadPost _uiThread (lambda= call _Uicb._EVENT_UNCLICK x y v nil);;
+
+fun _uiOnVwheel x y v= if _UI_DEBUG then dump strFormat "vwheel *,* / *" x y v; threadPost _uiThread (lambda= call _Uicb._EVENT_VWHEEL x y v nil);;
+fun _uiOnHwheel x y v= if _UI_DEBUG then dump strFormat "hwheel *,* / *" x y v; threadPost _uiThread (lambda= call _Uicb._EVENT_HWHEEL x y v nil);;
+fun _uiOnKeydown x y v= if _UI_DEBUG then dump strFormat "keydown *,* / *" x y v; threadPost _uiThread (lambda= call _Uicb._EVENT_KEYDOWN x y v nil);;
+fun _uiOnKeyup x y v= if _UI_DEBUG then dump strFormat "keyup *,* / *" x y v; threadPost _uiThread (lambda= call _Uicb._EVENT_KEYUP x y v nil);;
+fun _uiOnSize x y v= if _UI_DEBUG then dump strFormat "size *,* / *" x y v; threadPost _uiThread (lambda= call _Uicb._EVENT_SIZE x y v nil);;
+fun _uiOnMove x y v= if _UI_DEBUG then dump strFormat "move *,* / *" x y v; threadPost _uiThread (lambda= call _Uicb._EVENT_MOVE x y v nil);;
+fun _uiOnClose x y v= if _UI_DEBUG then dump strFormat "close *,* / *" x y v; threadPost _uiThread (lambda= if _Uicb._EVENT_CLOSE==nil then (uiStop;nil) else call _Uicb._EVENT_CLOSE x y v nil);;
+fun _uiOnWillResize w h v=
+    if _UI_DEBUG then dump strFormat "willresize *,* / *" w h v;
+    threadPost _uiThread (lambda= uiResize uiX uiY w h);;
+fun _uiOnSuspend x y v= if _UI_DEBUG then dump strFormat "suspend *,* / *" x y v; threadPost _uiThread (lambda= call _Uicb._EVENT_SUSPEND x y v nil);;
+fun _uiOnResume x y v= if _UI_DEBUG then dump strFormat "resume *,* / *" x y v; threadPost _uiThread (lambda= call _Uicb._EVENT_RESUME x y v nil);;
+
+fun _uiInit=
+	_registerInternalHook _EVENT_PAINT #_uiOnPaint;
+	_registerInternalHook _EVENT_CLICK #_uiOnClick;
+	_registerInternalHook _EVENT_UNCLICK #_uiOnUnclick;
+	_registerInternalHook _EVENT_MOUSEMOVE #_uiOnMousemove;
+	_registerInternalHook _EVENT_KEYDOWN #_uiOnKeydown;
+	_registerInternalHook _EVENT_KEYUP #_uiOnKeyup;
+	_registerInternalHook _EVENT_CLOSE #_uiOnClose;
+	_registerInternalHook _EVENT_VWHEEL #_uiOnVwheel;
+	_registerInternalHook _EVENT_HWHEEL #_uiOnHwheel;
+	_registerInternalHook _EVENT_SIZE #_uiOnSize;
+	_registerInternalHook _EVENT_MOVE #_uiOnMove;
+    _registerInternalHook _EVENT_WILL_RESIZE #_uiOnWillResize;
+	_registerInternalHook _EVENT_SUSPEND #_uiOnSuspend;
+	_registerInternalHook _EVENT_RESUME #_uiOnResume;
+	_registerInternalHook _EVENT_MULTITOUCH #_uiOnMultiTouch;
+
+
+	set _Uicb=arrayCreate _INTERNAL_MAX_CODE nil;;
+
+var _uiThread;;
+var _uiBuffer;;
+//-----------------------------------
+fun _uiAlive= _uiThread<>nil;;
+fun _uiStopThread th= if th==_uiThread then uiStop;;
+
+fun uiStart x y w h type name=
+	if _uiThread==nil then
+	(
+		_uiInit;
+		set _uiThread= _This;
+		_workerEnter;
+		if _uiStart x y w h type name then
+		(
+			if bitTest type UI_GL then _glMakeContext;
+			true
+		)
+	);;
+fun uiStop =
+	if _uiThread<>nil then
+	(
+		set _uiThread= nil;
+		_uiStop
+	);;
+
+fun uiBuffer =
+	if _uiThread<>nil then
+	if _uiBuffer<>nil && (uiW==bitmapW _uiBuffer) && (uiH==bitmapH _uiBuffer) then _uiBuffer
+	else if uiW==0 && uiH==0 then _uiBuffer
+	else set _uiBuffer=bitmapCreate uiW uiH 0;;
+
+fun uiUpdate= _uiUpdate uiBuffer 0 0 nil nil; true;;
+fun uiUpdateRegion x y w h= _uiUpdate uiBuffer x y w h; true;;
+
+fun uiOnPaint cb= set _Uicb._EVENT_PAINT=(lambda x y v m= call cb; true);true;;
+fun uiOnMousemove cb= set _Uicb._EVENT_MOUSEMOVE=(lambda x y v m= call cb x y v; true);true;;
+fun uiOnClick cb= set _Uicb._EVENT_CLICK=(lambda x y v m= call cb x y v; true);true;;
+fun uiOnUnclick cb= set _Uicb._EVENT_UNCLICK=(lambda x y v m= call cb x y v; true);true;;
+fun uiOnMultitouch cb= set _Uicb._EVENT_MULTITOUCH=(lambda x y v m= call cb m; true);true;;
+fun uiOnVwheel cb= set _Uicb._EVENT_VWHEEL=(lambda x y v m= call cb x y v; true);true;;
+fun uiOnHwheel cb= set _Uicb._EVENT_HWHEEL=(lambda x y v m= call cb x y v; true);true;;
+fun uiOnKeydown cb= set _Uicb._EVENT_KEYDOWN=(lambda x y v m= call cb x; true);true;;
+fun uiOnKeyup cb= set _Uicb._EVENT_KEYUP=(lambda x y v m= call cb x; true);true;;
+fun uiOnSize cb= set _Uicb._EVENT_SIZE=(lambda x y v m= call cb x y; true);true;;
+fun uiOnMove cb= set _Uicb._EVENT_MOVE=(lambda x y v m= call cb x y; true);true;;
+fun uiOnClose cb= set _Uicb._EVENT_CLOSE=(lambda x y v m= call cb; true);true;;
+
+fun uiOnSuspend cb= set _Uicb._EVENT_SUSPEND=(lambda x y v m= call cb; true);true;;
+fun uiOnResume cb= set _Uicb._EVENT_RESUME=(lambda x y v m= call cb; true);true;;
+
+//		 windowCbDrop,

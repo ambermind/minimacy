@@ -1,0 +1,247 @@
+/* Copyright (c) 2022, Sylvain Huet, Ambermind
+   This program is free software: you can redistribute it and/or modify it
+   under the terms of the GNU General Public License, version 2.0, as
+   published by the Free Software Foundation.
+   This program is distributed in the hope that it will be useful, but WITHOUT
+   ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+   FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License,
+   version 2.0, for more details.
+   You should have received a copy of the GNU General Public License along
+   with this program. If not, see <https://www.gnu.org/licenses/>. */
+
+struct Tcp=[_socketT _incomingT _addrT _portT _thT _readT _writeT _timeT _timeoutT];;
+struct TcpSrv=[_socketS _addrS _portS _thS _acceptS];;
+struct UdpSrv=[_socketU _addrU _portU _thU _readU];;
+
+var _TcpList;;
+var _TcpSrvList;;
+var _UdpSrvList;;
+
+//-------------- TCPsrv
+fun tcpSrvClose srv=
+//consoleTime "tcpSrvClose";
+	_sockClose srv._socketS;
+	set srv._socketS=nil;
+	set srv._thS=nil;
+	true;;
+
+fun tcpListen addr port acceptCallback=
+	let _tcpListen addr port -> socket in
+	if socket<>nil then
+	let [_socketS=socket _addrS=addr _portS=port _thS= _This _acceptS=(lambda x= call acceptCallback x;0)] -> srv in
+	\atomic{
+		set _TcpSrvList=srv:_TcpSrvList;
+		srv
+	};;
+
+fun _tcpSrvList= map _TcpSrvList (lambda srv= [srv._addrS srv._portS srv._thS]);;
+
+fun _tcpSrvCheck=
+	set _TcpSrvList = filter _TcpSrvList (lambda srv=
+		let srv._thS -> th in
+		if th._stateT==_THREAD_DONE then
+		(
+			tcpSrvClose srv;
+			false
+		)
+		else let srv._socketS -> sock in
+		if sock<>nil then
+		(
+			if _sockReadable sock then
+				let _tcpFromSocket _tcpAccept sock true -> client in
+				threadPost th (lambda = call srv._acceptS client);
+			true
+		)
+	);;
+
+//-------------- UDP
+fun udpClose udp=
+	_sockClose udp._socketU;
+	set udp._socketU=nil;
+	set udp._thU=nil;
+	true;;
+
+fun udpCreate addr port readCallback=
+	let _udpCreate addr port -> socket in
+	if socket<>nil then
+	let [_socketU=socket _addrU=addr _portU=port _thU= _This _readU=(lambda x= call readCallback x;0)] -> udp in
+	\atomic{
+		set _UdpSrvList=udp:_UdpSrvList;
+		udp
+	};;
+
+fun _udpList= map _UdpSrvList (lambda udp= [udp._addrU udp._portU udp._thU]);;
+
+fun udpSend udp addr port data= _udpSend udp._socketU addr port data;;
+
+fun udpRemoteIp udp=_sockIp  udp._socketU;;
+fun udpRemotePort udp=_sockPort  udp._socketU;;
+
+fun _udpSrvCheck=
+	set _UdpSrvList = filter _UdpSrvList (lambda udp=
+		let udp._thU -> th in
+		if th==nil || th._stateT==_THREAD_DONE then
+		(
+			udpClose udp;
+			false
+		)
+		else let udp._socketU -> sock in
+		if sock<>nil then
+		(
+			if _sockReadable sock then
+			(
+				_sockSelectRead sock false;
+				threadPost th (lambda =
+					_sockSelectRead sock true;
+					let _sockRead sock -> data in
+					call udp._readU data;
+					nil
+				)
+			);
+			true
+		)
+	);;
+
+//-------------- TCP
+fun _tcpFromSocket socket incoming=
+	if socket<>nil then
+	let [_socketT=socket _incomingT=incoming _addrT=(_sockIp  socket) _portT=(_sockPort socket) _timeT=timeMs _timeoutT=_TCP_TIMEOUT] -> tcp in
+	(
+		set _TcpList=tcp:_TcpList;
+		tcp
+	);;
+
+fun _tcpList= map _TcpList (lambda tcp= [tcp._incomingT tcp._addrT tcp._portT tcp._thT]);;
+
+fun tcpClose tcp=
+//consoleTime "tcpClose";
+//cs nil;
+	_sockClose tcp._socketT;
+	set tcp._socketT=nil;
+	set tcp._thT=nil;
+	set tcp._readT=nil;
+	set tcp._writeT=nil;
+	true;;
+
+fun tcpOpen addr port =
+	_tcpFromSocket _tcpOpen addr port false;;
+
+fun onTcp tcp timeout readCallback writeCallback=
+	if tcp._thT==nil then
+		\atomic{
+			set tcp._thT= _This;
+			set tcp._readT=(lambda x= call readCallback x;0);
+			set tcp._writeT=(lambda = call writeCallback;0);
+			set tcp._timeoutT=timeout;
+			true
+		}
+	;;
+
+fun tcpWrite tcp data start=
+	set tcp._timeT=timeMs;
+	_sockWrite tcp._socketT data start;;
+
+fun tcpNoDelay tcp noDelay= _tcpNoDelay tcp._socketT noDelay; tcp;;
+
+
+fun tcpSetTimeout tcp timeout= set tcp._timeoutT=timeout; tcp;;
+fun tcpRemoteIp tcp=_sockIp  tcp._socketT;;
+fun tcpRemotePort tcp=_sockPort  tcp._socketT;;
+
+fun _tcpCheck=
+	set _TcpList = filter _TcpList (lambda tcp=
+		let tcp._thT -> th in
+		if th._stateT==_THREAD_DONE then
+		(
+			tcpClose tcp;
+			false
+		)
+		else if th==nil then true
+		else let tcp._socketT -> sock in
+		if sock<>nil then
+		(
+			if _sockWritable sock then
+			(
+				set tcp._timeT=timeMs;
+				threadPost th tcp._writeT
+			);
+			if _sockReadable sock then 
+			(
+				_sockSelectRead sock false;
+//				consoleLn ["_sockRead " strLength data];
+				set tcp._timeT=timeMs;
+				threadPost th (lambda =
+					_sockSelectRead sock true;
+					let _sockRead sock -> data in
+					let tcp._readT -> cbRead in
+					(
+						if data==nil then tcpClose tcp;
+						call cbRead data;
+						nil
+					)
+				);
+				nil
+			);
+			true
+		)
+	);;
+
+
+//-------------- Sockets
+
+fun _socketTimeout=
+	let timeMs -> now in
+	let nil -> timeout in
+	let _InternalPipe:nil -> sockets in
+	(
+		_sockSelectRead _InternalPipe true;
+		set _TcpList= filter _TcpList (lambda tcp= 
+			if tcp._thT._stateT<>_THREAD_DONE  && tcp._socketT<>nil then true
+			else
+			(
+				if tcp._socketT<>nil then tcpClose tcp;
+				false
+			)
+		);
+		for tcp in _TcpList do
+			if (tcp._timeoutT<>nil) && ((now-tcp._timeT)>tcp._timeoutT) then
+			(
+//			consoleTime "TCP Timeout";
+				let tcp._readT -> cbRead in
+				threadPost tcp._thT (lambda = call cbRead nil);
+				tcpClose tcp;
+				set timeout=now;
+				nil
+			)
+			else
+			(
+				if tcp._timeoutT<>nil then set timeout=_bestTimeout timeout tcp._timeT+tcp._timeoutT;
+				if tcp._thT<>nil then // no select on threadless socket
+//					let _threadFull tcp._thT -> full in
+//					let _sockSelectRead tcp._socketT !full -> sock in
+					if _sockSelectable tcp._socketT then set sockets=tcp._socketT:sockets
+			);
+		set _TcpSrvList= filter _TcpSrvList (lambda srv= if srv._thS._stateT<>_THREAD_DONE && srv._socketS<>nil then true else (tcpSrvClose srv;false));
+		for srv in _TcpSrvList do set sockets=srv._socketS:sockets;
+
+		set _UdpSrvList= filter _UdpSrvList (lambda udp= if udp._thU._stateT<>_THREAD_DONE && udp._socketU<>nil then true else (udpClose udp;false));
+		for udp in _UdpSrvList do
+			let _threadFull udp._thU -> full in
+			let _sockSelectRead udp._socketU !full -> sock in
+			if _sockSelectable sock then set sockets=sock:sockets;
+
+		_keyboardClean;
+
+		if _keyboardAlive then if _sockSelectable _KeyboardSock then set sockets=_KeyboardSock:sockets;
+		[timeout sockets]
+	);;
+
+fun _socketCheck=
+	_tcpSrvCheck;
+	_udpSrvCheck;
+	_tcpCheck;
+	_keyboardCheck;
+	_internalCheck;
+	0;;
+
+fun _netAlive= (_TcpList<>nil)||(_TcpSrvList<>nil)||(_UdpSrvList<>nil)||(_keyboardAlive);;

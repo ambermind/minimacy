@@ -1,0 +1,33 @@
+/* Copyright (c) 2022, Sylvain Huet, Ambermind
+   This program is free software: you can redistribute it and/or modify it
+   under the terms of the GNU General Public License, version 2.0, as
+   published by the Free Software Foundation.
+   This program is distributed in the hope that it will be useful, but WITHOUT
+   ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+   FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License,
+   version 2.0, for more details.
+   You should have received a copy of the GNU General Public License along
+   with this program. If not, see <https://www.gnu.org/licenses/>. */
+
+/*
+insertSort l f : fun list a0 (fun a0 a0 -> Bool) -> list a0
+  function f a b=
+   true : a before b
+   false : a equals or after b
+
+when the input list is almost ordered, use the insertSortIncremental:
+insertSortIncremental l f : fun list a0 (fun a0 a0 -> Int) -> list a0
+=> it first reverses the input list
+*/
+
+fun _insertSortElement p l fBefore=
+	if l==nil then p:nil
+	else if (call fBefore p hd l) then p:l
+	else (hd l):_insertSortElement p tl l fBefore;;
+
+fun _insertSort l result fBefore=
+	if l==nil then result
+	else _insertSort tl l (_insertSortElement hd l result fBefore) fBefore;;
+
+fun insertSort l fBefore= _insertSort l nil fBefore;;
+fun insertSortIncremental l fBefore= insertSort (rev l nil) fBefore;;

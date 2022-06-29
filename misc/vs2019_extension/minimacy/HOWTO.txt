@@ -1,0 +1,23 @@
+
+Pour mettre à jour les mots-clefs
+---------------------------------
+
+- lancer la commande C:\home\dev\c\minimacy\windows>minimacy -bios
+=> on récupère tous les mots du bios (natifs et minimacy)
+
+- les mettre à jour dans le fichier : Syntaxes\Language.plist
+
+On repère les deux listes :
+- les mots réservés du langage (if, then, let, ...) sont dans : keyword.control.mcy
+- les mots du bios sont : constant.language.mcy
+Ils sont sous forme d'expression régulière, et donc séparés par des pipes |
+
+Pour générer l'extension
+------------------------
+
+Lancer le build de Visual Studio (Ctr+F5)
+
+Le résultat est dans le fichier : bin/Release/minimacy.vsix
+
+Pour l'installer, supprimer d'abord l'ancienne extension.
+Pour installer la nouvelle, clic droit sur le fichier vsix, Open with/Microsoft Visual Studio Version Selector 

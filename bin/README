@@ -1,0 +1,7 @@
+This directory contains the binary version of the Minimacy Virtual Machine:
+
+- minimacy.exe : windows version
+- minimacy : linux without GUI
+- minimacyX11GL : linux with X11 and openGL
+- minimacyMac : macos command line without GUI
+- minimacyMacX11GL: macos command line with X11 and openGL

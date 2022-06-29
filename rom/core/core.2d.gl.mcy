@@ -1,0 +1,67 @@
+/* Copyright (c) 2022, Sylvain Huet, Ambermind
+   This program is free software: you can redistribute it and/or modify it
+   under the terms of the GNU General Public License, version 2.0, as
+   published by the Free Software Foundation.
+   This program is distributed in the hope that it will be useful, but WITHOUT
+   ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+   FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License,
+   version 2.0, for more details.
+   You should have received a copy of the GNU General Public License along
+   with this program. If not, see <https://www.gnu.org/licenses/>. */
+import core.3d.gl;;
+
+const SQUARE_VRT = floatsFromArray \float{{0 0 0  1 0 0  0 1 0  1 1 0}};;
+const SQUARE_UV = floatsFromArray \float{{0 0  1 0  0 1  1 1}};;
+const WHITE=colorMakeARGB 0xffffffff;;
+
+struct Sprite=[textureS uvS wS hS];;
+
+public Sprite;;
+public:
+fun gl2dDrawBackground bgColor=
+	glClearColor (floatsGet bgColor 0) (floatsGet bgColor 1) (floatsGet bgColor 2) (floatsGet bgColor 3);
+	glClear GL_COLOR_BUFFER_BIT;;
+
+fun gl2dInitScreen bgColor=
+	if 0<>uiW*uiH then
+	(
+		glViewport 0 0 uiW uiH; 
+		glMatrixMode GL_PROJECTION;
+		glLoadIdentity;
+		glOrtho 0. intToFloat uiW intToFloat uiH 0. 0. 1.;
+		glMatrixMode GL_MODELVIEW;
+		glEnable GL_BLEND;
+		glBlendFunc GL_SRC_ALPHA GL_ONE_MINUS_SRC_ALPHA;
+		if bgColor<>nil then gl2dDrawBackground bgColor
+	);;
+
+fun gl2dDrawFlatBox x y w h color=
+	glLoadIdentity;
+	glTranslatef intToFloat x intToFloat y 0.;
+	glScalef intToFloat w intToFloat h 1.;
+	renderFlat GL_TRIANGLE_STRIP SQUARE_VRT color;;
+
+fun gl2dSpriteCreate texture=
+	let texture.wT -> wt in
+	let texture.hT -> ht in
+	[textureS=texture uvS=SQUARE_UV wS=wt hS=ht];;
+
+fun gl2dSpriteUpdateUV s x y w h=
+	let textureComputeRectangleUV s.textureS x y w h -> uv in
+	(
+		set s.uvS=uv;
+		set s.wS=intToFloat w;
+		set s.hS=intToFloat h;
+		s
+	);;
+
+fun gl2dSpriteUpdateTexture s = textureUpdate s.textureS;;
+
+fun gl2dDrawColoredSprite s x y color=
+	glBindTexture GL_TEXTURE_2D s.textureS.glT ;
+	glLoadIdentity;
+	glTranslatef intToFloat x intToFloat y 0.;
+	glScalef s.wS s.hS 1.;
+	renderTexture GL_TRIANGLE_STRIP SQUARE_VRT s.uvS color;;
+
+fun gl2dDrawSprite s x y= gl2dDrawColoredSprite s x y WHITE;;

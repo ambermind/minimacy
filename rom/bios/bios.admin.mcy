@@ -1,0 +1,202 @@
+/* Copyright (c) 2022, Sylvain Huet, Ambermind
+   This program is free software: you can redistribute it and/or modify it
+   under the terms of the GNU General Public License, version 2.0, as
+   published by the Free Software Foundation.
+   This program is distributed in the hope that it will be useful, but WITHOUT
+   ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+   FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License,
+   version 2.0, for more details.
+   You should have received a copy of the GNU General Public License along
+   with this program. If not, see <https://www.gnu.org/licenses/>. */
+
+//------------ Admin
+fun help=
+	echoLn "Minimacy admin commands";
+	echoLn "------------------------";
+	echoLn "- ps             : list of applications and threads";
+	echoLn "- net            : list of network sockets";
+	echoLn "- timers         : list of pending timers";
+	echoLn "- inputListener  : current inputListener";
+	echoLn "- sys            : system overview (ps, net, timers, inputListener in one command)";
+	echoLn "- kill id        : kill a thread based on its id";
+	echoLn "- killApp id     : kill a thread based on its id, and all the threads from the same application";
+	echoLn "- pwd            : current working directory";
+	echoLn "- cd path        : change dir";
+	echoLn "- dir path       : show directory content (current working directory if path=nil)";
+	echoLn "- reboot         : restart the VM";
+	echoLn "- gc             : force a full gc";
+	echoLn "- pkg            : display the current package";
+	echoLn "- pkgList        : display the list of current compiled packages";
+	echoLn "- pkgByName name : search a package by its name";
+	echoLn "- pkgScope pkg   : display all labels visible from a given package";
+	echoLn "- pkgOverload pkg: display all overloaded labels from a given package";
+	true;;
+
+fun ps=
+gc;gc;
+	let lambda n1 i1 state count mem start caller=echoLn [strLeftSpacePadding 16 n1 strLeftSpacePadding 8 i1 strLeftSpacePadding 8 state
+		strLeftSpacePadding 12 mem strLeftSpacePadding 7 count strLeftSpacePadding 9 start " " caller] -> echoFormat in
+	let hashmapCreate 4 -> h in
+	(
+		for th in _threads do
+			let threadApp th -> m in
+			hashmapSet h m th:hashmapGet h m;
+
+		call echoFormat "Thread" "ID" "State" "Cycles" "Memory" "Start" "Origin";
+		for appMem in _mems do
+		(
+			let _memName appMem -> name in
+			let _memMaxMemory appMem -> maxMem in
+			echoLn strFormat "[application *: **]" name intToAbbrev 1024 (_memMemory appMem) (if maxMem>0 then ["/" intToAbbrev 1024 maxMem] );
+			let hashmapGet h appMem -> lthreads in
+//			if lthreads==nil then _memDump appMem
+			if lthreads==nil then nil
+			else for th in lthreads do
+			let threadMaxMemory th -> maxMem in
+			(
+				call echoFormat (threadName th) (intToDec threadId th) (stateName threadState th)
+				(intToAbbrev 1000 (threadCycles th))
+				strBuild [intToAbbrev 1024 (threadMemory th) (if maxMem>0 then ["/" intToAbbrev 1024 maxMem] )]
+				smallDate (threadT0 th)
+				threadOrigin th;
+				nil
+//				echoLn _threadPP th._threadT
+			)
+		);
+		0
+	);;
+
+fun net=
+	let lambda prot ip id name=echoLn [strLeftSpacePadding 6 prot strLeftSpacePadding 22 ip strLeftSpacePadding 6 id " " name] -> echoFormat in
+	(
+		call echoFormat "NET" "IP:port" "ID" "THREAD";
+		for [addr port th] in _tcpSrvList do call echoFormat "LISTEN" strBuild [addr ":" port] (intToDec threadId th) th._nameT;
+		for [addr port th] in _udpList do call echoFormat "UDP" strBuild [addr ":" port] (intToDec threadId th) th._nameT;
+		for [incoming addr port th] in _tcpList do call echoFormat (if incoming then "TCPin" else "TCPout") strBuild [addr ":" port] (intToDec threadId th) th._nameT;
+		nil
+	);;
+
+fun timers=
+	let lambda delay id name=echoLn [strLeftSpacePadding 12 delay strLeftSpacePadding 6 id " " name] -> echoFormat in
+	let _timerList -> lTimers in
+	(
+		call echoFormat "WAIT" "ID" "THREAD";
+		for [t th] in lTimers do call echoFormat (intToDec3 "," max 0 t-timeMs) (intToDec threadId th) th._nameT;
+		if lTimers==nil then (echoLn "-> none";nil);
+
+		nil
+	);;
+
+fun inputListener=
+	let lambda id name=echoLn [strLeftSpacePadding 6 id " " name] -> echoFormat in
+	(
+		call echoFormat "ID" "THREAD";
+		let _keyboardThread -> th in
+		if th<>nil then (call echoFormat (intToDec threadId th) th._nameT)
+		else (echoLn "-> none";nil);
+		nil
+	);;
+
+fun sys=
+	echoLn "\nSystem status";
+	echoLn "-------------";
+
+	echoLn "\npkgs:"; pkgList;
+
+	echoLn "\nthreads:"; ps;
+
+	echoLn "\ninputListener:"; inputListener;
+	echoLn "\ntimers:"; timers;
+	echoLn "\nnet:"; net;
+
+	echoLn "";
+	true;;
+
+fun kill id= 
+	threadStop _threadById id;;
+
+fun killApp id=
+	let threadApp _threadById id -> mem in
+	for th in _threads do if mem==threadApp th then threadStop th;;
+	
+fun cs id=
+	let _threadById id -> th in
+	if th<>nil then
+	let lambda n1 i1 pkg=echoLn [strLeftSpacePadding 16 n1 strLeftSpacePadding 8 i1] -> echoFormat in
+	(
+		call echoFormat "FUNCTION" "PC" "PKG";
+//		dump _callstack th._threadT;
+		for [name pc _ pkg] in threadCallstack th do 
+			echoLn {strLeftSpacePadding 16 name strLeftSpacePadding 8 intToDec pc "  " pkgName pkg};
+//			call echoFormat name intToDec pc;
+		0
+	);;
+
+fun reboot= 
+	set _Reboot=true;
+	_reboot;;
+
+
+fun _absoluteDir a= ('/'==strGet a 0)||(':'==strGet a 1);;
+
+fun _cleanHome path=
+	let strPos path "/~/" 0 -> i in
+	if i==nil then path
+	else _cleanHome strCat userDir strSub path i+3 nil;;
+	
+fun _clean2points path=
+	let strPos path "/../" 0 -> i in
+	if i==nil then path
+	else let strCharPosRev path '/' i-1 -> j in
+	let if j==nil then strSub path i+3 nil
+		else strCat strLeft path j strSub path i+3 nil
+	-> path in
+	_clean2points path;;
+
+fun _clean1point path=
+	let strPos path "/./" 0 -> i in
+	if i==nil then path
+	else _clean1point strCat strLeft path i strSub path i+2 nil;;
+
+fun _cleanRoot path=
+	let strPos path "//" 0 -> i in
+	if i==nil then path
+	else _cleanRoot strSub path i+1 nil;;
+
+fun cleanPath path=
+	let _clean2points path -> path in
+	let _clean1point path -> path in
+	let _cleanHome path -> path in
+	let _cleanRoot path -> path in
+	path;;
+
+fun parentDir f=
+	let strPosRev f "/" (strLength f)-2 -> i in
+	if i<>nil then strCat strLeft f i "/"
+	else "/";;
+
+fun dirAppend a b forceDir=
+	let if _absoluteDir b then b else strCat a b -> path in
+	let if forceDir && '/'<>strGet path (-1) then strCat path "/" else path -> path in
+	cleanPath path;;
+	
+fun pwd= _This._dirT;;
+
+fun cd path= set _This._dirT=dirAppend _This._dirT path true;;
+
+fun pathDir path =
+	let conc (dirList path) (fileList path) -> l in
+	(
+		for p in l do
+		echoLn {
+			strLeftSpacePadding 12 if p._dirFI then "DIRECTORY" else intToDec p._sizeFI
+			" | "
+			fullDate p._updateFI
+			" | "
+			p._nameFI
+		};
+		echoLn [listLength l " element(s)"];
+		true
+	);;
+
+fun dir = pathDir nil;;

@@ -1,0 +1,110 @@
+import core.3d.gl;;
+
+const TEXTURE="rsc/logo3-1024.png";;
+
+const CUBE_TXT= floatsFromArray \float{{
+0 0 1 0 1 1 0 0 1 1 0 1
+0 0 1 0 1 1 0 0 1 1 0 1
+0 0 1 0 1 1 0 0 1 1 0 1
+0 0 1 0 1 1 0 0 1 1 0 1
+0 0 1 0 1 1 0 0 1 1 0 1
+0 0 1 0 1 1 0 0 1 1 0 1
+}};;
+const CUBE_VRT= floatsFromArray \float{{
+(-1) (-1) (-1) 1 (-1) (-1) 1 1 (-1) (-1) (-1) (-1) 1 1 (-1) (-1) 1 (-1) 
+(-1) (-1) 1 (-1) 1 1 1 1 1 (-1) (-1) 1 1 1 1 1 (-1) 1 
+(-1) (-1) (-1) (-1) (-1) 1 1 (-1) 1 (-1) (-1) (-1) 1 (-1) 1 1 (-1) (-1) 
+(-1) 1 (-1) 1 1 (-1) 1 1 1 (-1) 1 (-1) 1 1 1 (-1) 1 1 
+(-1) (-1) (-1) (-1) 1 (-1) (-1) 1 1 (-1) (-1) (-1) (-1) 1 1 (-1) (-1) 1 
+1 (-1) (-1) 1 (-1) 1 1 1 1 1 (-1) (-1) 1 1 1 1 1 (-1) 
+}};;
+const _CUBE_COLORS= floatsFromArray \float{{
+1 0 0 1     1 1 0 1     1 0 1 1     1 1 1 1     1 0 0 1     1 1 0 1
+1 0 0 1     1 1 0 1     1 0 1 1     1 1 1 1     1 0 0 1     1 1 0 1
+1 0 0 1     1 1 0 1     1 0 1 1     1 1 1 1     1 0 0 1     1 1 0 1
+1 0 0 1     1 1 0 1     1 0 1 1     1 1 1 1     1 0 0 1     1 1 0 1
+1 0 0 1     1 1 0 1     1 0 1 1     1 1 1 1     1 0 0 1     1 1 0 1
+1 0 0 1     1 1 0 1     1 0 1 1     1 1 1 1     1 0 0 1     1 1 0 1
+}};;
+const CUBE_COLORS= floatsFromArray \float{{
+0 0 1 1     0 0 1 1     0 0 1 1     0 0 1 1     0 0 1 1     0 0 1 1
+0 1 0 1     0 1 0 1     0 1 0 1     0 1 0 1     0 1 0 1     0 1 0 1     
+0 1 1 1     0 1 1 1     0 1 1 1     0 1 1 1     0 1 1 1     0 1 1 1     
+1 0 0 1     1 0 0 1     1 0 0 1     1 0 0 1     1 0 0 1     1 0 0 1     
+1 0 1 1     1 0 1 1     1 0 1 1     1 0 1 1     1 0 1 1     1 0 1 1     
+1 1 0 1     1 1 0 1     1 1 0 1     1 1 0 1     1 1 0 1     1 1 0 1     
+}};;
+
+const SQUARE_VRT = floatsFromArray \float{{0 0 0  1 0 0  0 1 0  1 1 0}};;
+const AMBER=colorMakeARGB 0xffffc000;;
+
+var Logo;;
+
+fun drawBox x y z w h val=
+    glLoadIdentity;
+    glTranslatef x y z;
+    glScalef w h 1.;
+    glRotatef val*.30. 1. 1. 0.;
+//  renderColors GL_LINES CUBE_VRT CUBE_COLORS;
+//    renderColors GL_TRIANGLES CUBE_VRT CUBE_COLORS;
+    glBindTexture GL_TEXTURE_2D Logo.glT ;
+    renderTexture GL_TRIANGLES CUBE_VRT CUBE_TXT colorMakeARGB 0xffffffff;
+    nil;;
+
+fun render val=
+    glClearColor 0.2*.(sqr cos val) 0. 0. 1.;  
+    glClear GL_COLOR_BUFFER_BIT;  
+
+    glViewport 0 0 uiW uiH; 
+//    echoLn strFormat "viewport * *"uiW uiH;
+	glMatrixMode GL_PROJECTION;
+	glLoadIdentity;
+    let (intToFloat uiW)/.(intToFloat uiH) -> k in
+    glFrustum (-.k)  k (-1.) 1. (0.5) (150.);
+
+	glMatrixMode GL_MODELVIEW;
+
+    glEnable GL_CULL_FACE;
+	glCullFace GL_FRONT;
+
+    glClear GL_DEPTH_BUFFER_BIT;
+	glEnable GL_DEPTH_TEST;
+	glDepthFunc GL_LEQUAL;	
+
+    glEnable GL_BLEND;
+	glBlendFunc GL_SRC_ALPHA GL_ONE_MINUS_SRC_ALPHA;
+
+    drawBox (-20.) 10. (-50.) 30. 30. val;
+    drawBox 30. (-20.) (-100.) 20. 20. val*.1.2;
+//echoLn strFormat "ACC * * *" accelerometerX accelerometerY accelerometerZ;
+    glSwapBuffers;;
+    
+fun renderLoop val=  
+    if 0<> uiW*uiH then render val;
+    onTimeout 10 (lambda=  
+        renderLoop val+. 0.1  
+    );;  
+
+var KeyboardVisible=false;;
+
+fun toggleKeyboard=
+    if KeyboardVisible then keyboardHide else keyboardShow;
+    set KeyboardVisible=!KeyboardVisible;;
+
+fun run=  
+    uiStart 100 10 600 400 UI_GL|UI_RESIZE "gl UI"; 
+    uiOnClose (lambda = exit; true);
+    set Logo=textureCreate bitmapFromPng load TEXTURE false;
+    uiOnClick (lambda x y v= echoLn strFormat "click *,*/*" x y v; accelerometerInit nil);//toggleKeyboard);
+    uiOnUnclick (lambda x y v= echoLn strFormat "unclick *,*/*" x y v);
+    uiOnMousemove (lambda x y v= echoLn strFormat "move *,*/*" x y v);
+    uiOnMove (lambda x y = echoLn strFormat "move *,*" x y);
+    uiOnSize (lambda w h = echoLn strFormat "size *,*" w h);
+    uiOnKeydown (lambda k = echoLn strFormat "keydown *" k);
+    uiOnKeyup (lambda k = echoLn strFormat "keyup *" k);
+    uiOnSuspend (lambda = echoLn strFormat "suspend");
+    uiOnResume (lambda = echoLn strFormat "resume");
+    uiOnMultitouch (lambda k = echoLn strFormat "multitouch *" strJoin "," k);
+   	glInitShaders;
+//    accelerometerInit 2.;
+    renderLoop 0.;;

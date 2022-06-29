@@ -1,0 +1,109 @@
+/* Copyright (c) 2022, Sylvain Huet, Ambermind
+   This program is free software: you can redistribute it and/or modify it
+   under the terms of the GNU General Public License, version 2.0, as
+   published by the Free Software Foundation.
+   This program is distributed in the hope that it will be useful, but WITHOUT
+   ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+   FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License,
+   version 2.0, for more details.
+   You should have received a copy of the GNU General Public License along
+   with this program. If not, see <https://www.gnu.org/licenses/>. */
+var Prompt;;
+var consolePkg;;
+var PromptEcho= device=="windows";;
+var PromptCR= if PromptEcho then 13 else 10;;
+var PromptEsc;;
+var PromptLast;;
+var PromptNext;;
+
+fun _promptRun input=
+	if input=="new" then
+	(
+		set consolePkg=pkgCreate nil nil;
+		echo "> "
+	)
+	else
+	(
+		if input<>nil then
+		(
+			if input<>hd PromptLast then set PromptLast=input:PromptLast;
+			prompt input consolePkg;
+		);
+		echo "> "
+	);;
+
+fun _clearPrompt=
+	let strLength trim Prompt -> n in
+	for i=0;i<n do echo "\8 \8";
+	set Prompt="";;
+
+fun _cbChar  c=
+//	echoLn intToHex c; 
+//	if c==0x04 then exit;	// on windows
+	let charToStr c -> str in
+	if PromptEsc<>nil then
+	(
+		if c==0x48 then
+		(
+			let hd PromptLast -> cmd in
+			if cmd<>nil then
+			(
+				set PromptNext=cmd:PromptNext;
+				set PromptLast=tl PromptLast;
+				_clearPrompt;
+				echo set Prompt=cmd
+			)
+		)
+		else if c==0x50 then
+		(
+			let hd PromptNext -> cmd in
+			if cmd<>nil then
+			(
+				set PromptLast=cmd:PromptLast;
+				set PromptNext=tl PromptNext;
+				_clearPrompt;
+				echo set Prompt=cmd
+			)
+		);
+		set PromptEsc=nil;
+		nil
+	)
+	else if c==8 then
+	(
+		set Prompt=strSub Prompt 0 (strLength Prompt)-1;
+		echo "\8 \8"
+	)
+	else if c==0xe0 then
+	(
+		set PromptEsc=c;
+		nil
+	)
+	else
+	(
+		if PromptEcho then echo str;
+		if c== PromptCR then
+		(
+			if c==13 then echoLn "";
+			_promptRun Prompt;
+			set Prompt=nil
+		)
+		else set Prompt=strCat Prompt str;
+	);
+	0;;
+
+fun loopchar=
+	while true do
+		let readInput -> s in
+		if s==nil then return 0
+		else for i=0;i<strLength s do _cbChar strGet s i;;
+
+fun consoleStart pkg0=
+	set consolePkg=pkg0;
+	echo "Minimacy Top-level - Sylvain Huet - 2020\nReady\n\n> ";
+	if false then (loopchar;nil)	// when using this, the thread is mostly in WAIT mode, and therefore cannot handle any task (network, ...)
+	else onInput (lambda s=
+		if s==nil then exit;	// on unix
+		for i=0;i<strLength s do _cbChar strGet s i
+	);;
+
+fun run = consoleStart (pkgCreate nil nil);;

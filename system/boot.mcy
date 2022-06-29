@@ -1,0 +1,3 @@
+// Minimacy BOOT 0.1.0 - Sylvain Huet - 2022
+fun run =
+	RUN "core.console" nil;;

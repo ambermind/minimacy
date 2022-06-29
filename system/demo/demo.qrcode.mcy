@@ -1,0 +1,4 @@
+
+import core.2d.qrcode;;
+
+fun run= qrcodeEcho qrcodeWithBorder "https://minimacy.net" ECC_MEDIUM 1;;

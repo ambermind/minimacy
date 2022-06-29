@@ -1,0 +1,900 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="Source Files">
+      <UniqueIdentifier>{4FC737F1-C7A5-4376-A066-2A32D752A2FF}</UniqueIdentifier>
+      <Extensions>cpp;c;cc;cxx;c++;cppm;ixx;def;odl;idl;hpj;bat;asm;asmx</Extensions>
+    </Filter>
+    <Filter Include="Header Files">
+      <UniqueIdentifier>{93995380-89BD-4b04-88EB-625FBE52EBFB}</UniqueIdentifier>
+      <Extensions>h;hh;hpp;hxx;h++;hm;inl;inc;ipp;xsd</Extensions>
+    </Filter>
+    <Filter Include="Resource Files">
+      <UniqueIdentifier>{67DA6AB6-F800-4c08-8B7A-83BB121AAD01}</UniqueIdentifier>
+      <Extensions>rc;ico;cur;bmp;dlg;rc2;rct;bin;rgs;gif;jpg;jpeg;jpe;resx;tiff;tif;png;wav;mfcribbon-ms</Extensions>
+    </Filter>
+    <Filter Include="libjpg">
+      <UniqueIdentifier>{6938a9de-22f7-4096-8f33-3ad593edcd9f}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="libpng">
+      <UniqueIdentifier>{b30b4c4c-ed75-4831-8c10-6769d65032ba}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="rom">
+      <UniqueIdentifier>{02c3e131-0a85-4abb-80c0-077d42dd0342}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="rom\bios">
+      <UniqueIdentifier>{9e52d1b2-877b-41ea-a8a8-ff66a68c68ca}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="rom\core">
+      <UniqueIdentifier>{0d2171dc-0e5c-4ab7-9bd4-dd8355e3808d}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="system">
+      <UniqueIdentifier>{4f383737-1c57-48a3-82f6-9ee2e402da81}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="system\demo">
+      <UniqueIdentifier>{68f0cc68-34e1-4ed9-880a-631f5d397988}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="..\..\src\compiler.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\src\compiler_globals.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\src\compiler_locals.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\src\compiler_parser.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\src\crypto_aes.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\src\crypto_des.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\src\crypto_md5.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\src\crypto_rc4.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\src\crypto_sha1.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\src\crypto_sha2.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\src\hw.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\src\hw_thread.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\src\system.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\src\system_2d.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\src\system_bignum.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\src\system_core.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\src\system_event.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\src\system_file.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\src\system_socket.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\src\system_tmp.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\src\system_ui.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\src\system_ui_gl.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\src\system_ui_keydef.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\src\system_worker.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\src\util.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\src\util_2d.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\src\util_buffer.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\src\util_convert.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\src\util_hashmap.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\src\vm_interpreter.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\src\vm_memory.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\src\vm_opcodes.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\src\vm_term.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\src\vm_thread.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\src\vm_types.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\src\libs\jpg\jchuff.h">
+      <Filter>libjpg</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\src\libs\jpg\jconfig.h">
+      <Filter>libjpg</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\src\libs\jpg\jdct.h">
+      <Filter>libjpg</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\src\libs\jpg\jdhuff.h">
+      <Filter>libjpg</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\src\libs\jpg\jerror.h">
+      <Filter>libjpg</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\src\libs\jpg\jinclude.h">
+      <Filter>libjpg</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\src\libs\jpg\jmemsys.h">
+      <Filter>libjpg</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\src\libs\jpg\jmorecfg.h">
+      <Filter>libjpg</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\src\libs\jpg\jpegint.h">
+      <Filter>libjpg</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\src\libs\jpg\jpeglib.h">
+      <Filter>libjpg</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\src\libs\jpg\jversion.h">
+      <Filter>libjpg</Filter>
+    </ClInclude>
+    <ClInclude Include="resource.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\src\libs\png\crc32.h">
+      <Filter>libpng</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\src\libs\png\deflate.h">
+      <Filter>libpng</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\src\libs\png\inffast.h">
+      <Filter>libpng</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\src\libs\png\inffixed.h">
+      <Filter>libpng</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\src\libs\png\inflate.h">
+      <Filter>libpng</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\src\libs\png\inftrees.h">
+      <Filter>libpng</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\src\libs\png\png.h">
+      <Filter>libpng</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\src\libs\png\pngconf.h">
+      <Filter>libpng</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\src\libs\png\trees.h">
+      <Filter>libpng</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\src\libs\png\zconf.h">
+      <Filter>libpng</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\src\libs\png\zconf.in.h">
+      <Filter>libpng</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\src\libs\png\zlib.h">
+      <Filter>libpng</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\src\libs\png\zutil.h">
+      <Filter>libpng</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\src\minimacy.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="..\..\src\compiler.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\compiler_call.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\compiler_globals.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\compiler_instances.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\compiler_letgetset.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\compiler_locals.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\compiler_loops.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\compiler_match.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\compiler_parser.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\compiler_prog.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\compiler_step1.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\compiler_step2.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\compiler_step3.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\compiler_step4.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\compiler_struct.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\compiler_sum.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\compiler_term.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\compiler_try.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\crypto_aes.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\crypto_des.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\crypto_md5.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\crypto_rc4.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\crypto_sha1.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\crypto_sha2.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\hw.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\hw_thread.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\main.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\system.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\system_2d.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\system_bignum.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\system_binary.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\system_buffer.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\system_bytes.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\system_convert.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\system_core.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\system_crypto.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\system_event.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\system_file.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\system_gzip.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\system_lzw.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\system_socket.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\system_str.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\system_tmp.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\system_ui.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\system_ui_gl.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\system_ui_win.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\system_ui_x11.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\system_worker.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\util.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\util_2d.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\util_buffer.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\util_convert.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\util_hashmap.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\util_xml.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\vm_interpreter.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\vm_memory.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\vm_opcodes.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\vm_term.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\vm_thread.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\vm_types.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\libs\jpg\jcapimin.c">
+      <Filter>libjpg</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\libs\jpg\jcapistd.c">
+      <Filter>libjpg</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\libs\jpg\jccoefct.c">
+      <Filter>libjpg</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\libs\jpg\jccolor.c">
+      <Filter>libjpg</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\libs\jpg\jcdctmgr.c">
+      <Filter>libjpg</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\libs\jpg\jchuff.c">
+      <Filter>libjpg</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\libs\jpg\jcinit.c">
+      <Filter>libjpg</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\libs\jpg\jcmainct.c">
+      <Filter>libjpg</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\libs\jpg\jcmarker.c">
+      <Filter>libjpg</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\libs\jpg\jcmaster.c">
+      <Filter>libjpg</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\libs\jpg\jcomapi.c">
+      <Filter>libjpg</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\libs\jpg\jcparam.c">
+      <Filter>libjpg</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\libs\jpg\jcphuff.c">
+      <Filter>libjpg</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\libs\jpg\jcprepct.c">
+      <Filter>libjpg</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\libs\jpg\jcsample.c">
+      <Filter>libjpg</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\libs\jpg\jctrans.c">
+      <Filter>libjpg</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\libs\jpg\jdapimin.c">
+      <Filter>libjpg</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\libs\jpg\jdapistd.c">
+      <Filter>libjpg</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\libs\jpg\jdatadst.c">
+      <Filter>libjpg</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\libs\jpg\jdatasrc.c">
+      <Filter>libjpg</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\libs\jpg\jdcoefct.c">
+      <Filter>libjpg</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\libs\jpg\jdcolor.c">
+      <Filter>libjpg</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\libs\jpg\jddctmgr.c">
+      <Filter>libjpg</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\libs\jpg\jdhuff.c">
+      <Filter>libjpg</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\libs\jpg\jdinput.c">
+      <Filter>libjpg</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\libs\jpg\jdmainct.c">
+      <Filter>libjpg</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\libs\jpg\jdmarker.c">
+      <Filter>libjpg</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\libs\jpg\jdmaster.c">
+      <Filter>libjpg</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\libs\jpg\jdmerge.c">
+      <Filter>libjpg</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\libs\jpg\jdphuff.c">
+      <Filter>libjpg</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\libs\jpg\jdpostct.c">
+      <Filter>libjpg</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\libs\jpg\jdsample.c">
+      <Filter>libjpg</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\libs\jpg\jdtrans.c">
+      <Filter>libjpg</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\libs\jpg\jerror.c">
+      <Filter>libjpg</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\libs\jpg\jfdctflt.c">
+      <Filter>libjpg</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\libs\jpg\jfdctfst.c">
+      <Filter>libjpg</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\libs\jpg\jfdctint.c">
+      <Filter>libjpg</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\libs\jpg\jidctflt.c">
+      <Filter>libjpg</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\libs\jpg\jidctfst.c">
+      <Filter>libjpg</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\libs\jpg\jidctint.c">
+      <Filter>libjpg</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\libs\jpg\jidctred.c">
+      <Filter>libjpg</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\libs\jpg\jmemmgr.c">
+      <Filter>libjpg</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\libs\jpg\jmemnobs.c">
+      <Filter>libjpg</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\libs\jpg\jquant1.c">
+      <Filter>libjpg</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\libs\jpg\jquant2.c">
+      <Filter>libjpg</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\libs\jpg\jutils.c">
+      <Filter>libjpg</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\libs\jpg\mjpeg.c">
+      <Filter>libjpg</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\libs\png\adler32.c">
+      <Filter>libpng</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\libs\png\compress.c">
+      <Filter>libpng</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\libs\png\crc32.c">
+      <Filter>libpng</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\libs\png\deflate.c">
+      <Filter>libpng</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\libs\png\infback.c">
+      <Filter>libpng</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\libs\png\inffast.c">
+      <Filter>libpng</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\libs\png\inflate.c">
+      <Filter>libpng</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\libs\png\inftrees.c">
+      <Filter>libpng</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\libs\png\mgzip.c">
+      <Filter>libpng</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\libs\png\mpng.c">
+      <Filter>libpng</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\libs\png\png.c">
+      <Filter>libpng</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\libs\png\pngerror.c">
+      <Filter>libpng</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\libs\png\pnggccrd.c">
+      <Filter>libpng</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\libs\png\pngget.c">
+      <Filter>libpng</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\libs\png\pngmem.c">
+      <Filter>libpng</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\libs\png\pngpread.c">
+      <Filter>libpng</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\libs\png\pngread.c">
+      <Filter>libpng</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\libs\png\pngrio.c">
+      <Filter>libpng</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\libs\png\pngrtran.c">
+      <Filter>libpng</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\libs\png\pngrutil.c">
+      <Filter>libpng</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\libs\png\pngset.c">
+      <Filter>libpng</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\libs\png\pngtrans.c">
+      <Filter>libpng</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\libs\png\pngvcrd.c">
+      <Filter>libpng</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\libs\png\pngwio.c">
+      <Filter>libpng</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\libs\png\pngwrite.c">
+      <Filter>libpng</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\libs\png\pngwtran.c">
+      <Filter>libpng</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\libs\png\pngwutil.c">
+      <Filter>libpng</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\libs\png\trees.c">
+      <Filter>libpng</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\libs\png\zutil.c">
+      <Filter>libpng</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ResourceCompile Include="minimacy.rc">
+      <Filter>Resource Files</Filter>
+    </ResourceCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <Image Include="icon1.ico">
+      <Filter>Resource Files</Filter>
+    </Image>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="..\..\rom\bios\bios.net.mcy">
+      <Filter>rom\bios</Filter>
+    </None>
+    <None Include="..\..\rom\bios\bios.pkg.mcy">
+      <Filter>rom\bios</Filter>
+    </None>
+    <None Include="..\..\rom\bios\bios.scheduler.mcy">
+      <Filter>rom\bios</Filter>
+    </None>
+    <None Include="..\..\rom\bios\bios.thread.mcy">
+      <Filter>rom\bios</Filter>
+    </None>
+    <None Include="..\..\rom\bios\bios.timer.mcy">
+      <Filter>rom\bios</Filter>
+    </None>
+    <None Include="..\..\rom\bios\bios.ui.mcy">
+      <Filter>rom\bios</Filter>
+    </None>
+    <None Include="..\..\rom\bios\bios.util.mcy">
+      <Filter>rom\bios</Filter>
+    </None>
+    <None Include="..\..\rom\bios\bios.worker.mcy">
+      <Filter>rom\bios</Filter>
+    </None>
+    <None Include="..\..\rom\bios\bios.admin.mcy">
+      <Filter>rom\bios</Filter>
+    </None>
+    <None Include="..\..\rom\bios\bios.date.mcy">
+      <Filter>rom\bios</Filter>
+    </None>
+    <None Include="..\..\rom\bios\bios.file.mcy">
+      <Filter>rom\bios</Filter>
+    </None>
+    <None Include="..\..\rom\bios\bios.keyboard.mcy">
+      <Filter>rom\bios</Filter>
+    </None>
+    <None Include="..\..\rom\bios\bios.mcy">
+      <Filter>rom\bios</Filter>
+    </None>
+    <None Include="..\..\rom\bios\bios.lock.mcy">
+      <Filter>rom\bios</Filter>
+    </None>
+    <None Include="..\..\rom\core\core.crypto.block.mcy">
+      <Filter>rom\core</Filter>
+    </None>
+    <None Include="..\..\rom\core\core.crypto.cer.mcy">
+      <Filter>rom\core</Filter>
+    </None>
+    <None Include="..\..\rom\core\core.crypto.csr.mcy">
+      <Filter>rom\core</Filter>
+    </None>
+    <None Include="..\..\rom\core\core.crypto.curve25519.mcy">
+      <Filter>rom\core</Filter>
+    </None>
+    <None Include="..\..\rom\core\core.crypto.des.mcy">
+      <Filter>rom\core</Filter>
+    </None>
+    <None Include="..\..\rom\core\core.crypto.ec.mcy">
+      <Filter>rom\core</Filter>
+    </None>
+    <None Include="..\..\rom\core\core.crypto.ed25519.mcy">
+      <Filter>rom\core</Filter>
+    </None>
+    <None Include="..\..\rom\core\core.crypto.hash.mcy">
+      <Filter>rom\core</Filter>
+    </None>
+    <None Include="..\..\rom\core\core.crypto.key.mcy">
+      <Filter>rom\core</Filter>
+    </None>
+    <None Include="..\..\rom\core\core.crypto.oaep.mcy">
+      <Filter>rom\core</Filter>
+    </None>
+    <None Include="..\..\rom\core\core.crypto.oid.mcy">
+      <Filter>rom\core</Filter>
+    </None>
+    <None Include="..\..\rom\core\core.crypto.pem.mcy">
+      <Filter>rom\core</Filter>
+    </None>
+    <None Include="..\..\rom\core\core.crypto.pkcs1.mcy">
+      <Filter>rom\core</Filter>
+    </None>
+    <None Include="..\..\rom\core\core.crypto.primal.mcy">
+      <Filter>rom\core</Filter>
+    </None>
+    <None Include="..\..\rom\core\core.crypto.rsa.mcy">
+      <Filter>rom\core</Filter>
+    </None>
+    <None Include="..\..\rom\core\core.crypto.rsapss.mcy">
+      <Filter>rom\core</Filter>
+    </None>
+    <None Include="..\..\rom\core\core.crypto.shamir.mcy">
+      <Filter>rom\core</Filter>
+    </None>
+    <None Include="..\..\rom\core\core.crypto.sign.mcy">
+      <Filter>rom\core</Filter>
+    </None>
+    <None Include="..\..\rom\core\core.db.compiler.mcy">
+      <Filter>rom\core</Filter>
+    </None>
+    <None Include="..\..\rom\core\core.db.kv.mcy">
+      <Filter>rom\core</Filter>
+    </None>
+    <None Include="..\..\rom\core\core.db.lambda.mcy">
+      <Filter>rom\core</Filter>
+    </None>
+    <None Include="..\..\rom\core\core.net.dns.mcy">
+      <Filter>rom\core</Filter>
+    </None>
+    <None Include="..\..\rom\core\core.net.http.cli.mcy">
+      <Filter>rom\core</Filter>
+    </None>
+    <None Include="..\..\rom\core\core.net.http.mcy">
+      <Filter>rom\core</Filter>
+    </None>
+    <None Include="..\..\rom\core\core.net.http.srv.mcy">
+      <Filter>rom\core</Filter>
+    </None>
+    <None Include="..\..\rom\core\core.net.mime.mcy">
+      <Filter>rom\core</Filter>
+    </None>
+    <None Include="..\..\rom\core\core.net.mysql.mcy">
+      <Filter>rom\core</Filter>
+    </None>
+    <None Include="..\..\rom\core\core.net.ssh.mcy">
+      <Filter>rom\core</Filter>
+    </None>
+    <None Include="..\..\rom\core\core.net.ssh.sftp.mcy">
+      <Filter>rom\core</Filter>
+    </None>
+    <None Include="..\..\rom\core\core.net.ssh.shell.mcy">
+      <Filter>rom\core</Filter>
+    </None>
+    <None Include="..\..\rom\core\core.net.telnetd.mcy">
+      <Filter>rom\core</Filter>
+    </None>
+    <None Include="..\..\rom\core\core.net.tls.tcp.mcy">
+      <Filter>rom\core</Filter>
+    </None>
+    <None Include="..\..\rom\core\core.net.tls12.mcy">
+      <Filter>rom\core</Filter>
+    </None>
+    <None Include="..\..\rom\core\core.net.tls13.mcy">
+      <Filter>rom\core</Filter>
+    </None>
+    <None Include="..\..\rom\core\core.net.websocket.mcy">
+      <Filter>rom\core</Filter>
+    </None>
+    <None Include="..\..\rom\core\core.net.xtcp.mcy">
+      <Filter>rom\core</Filter>
+    </None>
+    <None Include="..\..\rom\core\core.util.base64.mcy">
+      <Filter>rom\core</Filter>
+    </None>
+    <None Include="..\..\rom\core\core.util.gzip.mcy">
+      <Filter>rom\core</Filter>
+    </None>
+    <None Include="..\..\rom\core\core.util.hashmap.mcy">
+      <Filter>rom\core</Filter>
+    </None>
+    <None Include="..\..\rom\core\core.util.hashset.mcy">
+      <Filter>rom\core</Filter>
+    </None>
+    <None Include="..\..\rom\core\core.util.insertsort.mcy">
+      <Filter>rom\core</Filter>
+    </None>
+    <None Include="..\..\rom\core\core.util.json.mcy">
+      <Filter>rom\core</Filter>
+    </None>
+    <None Include="..\..\rom\core\core.util.marshal.mcy">
+      <Filter>rom\core</Filter>
+    </None>
+    <None Include="..\..\rom\core\core.util.marshal.maker.mcy">
+      <Filter>rom\core</Filter>
+    </None>
+    <None Include="..\..\rom\core\core.util.quicksort.mcy">
+      <Filter>rom\core</Filter>
+    </None>
+    <None Include="..\..\rom\core\core.util.regexp.mcy">
+      <Filter>rom\core</Filter>
+    </None>
+    <None Include="..\..\rom\core\core.util.table.mcy">
+      <Filter>rom\core</Filter>
+    </None>
+    <None Include="..\..\rom\core\core.util.tar.mcy">
+      <Filter>rom\core</Filter>
+    </None>
+    <None Include="..\..\rom\core\core.util.token.mcy">
+      <Filter>rom\core</Filter>
+    </None>
+    <None Include="..\..\rom\core\core.util.tree1D.mcy">
+      <Filter>rom\core</Filter>
+    </None>
+    <None Include="..\..\rom\core\core.util.tree23.mcy">
+      <Filter>rom\core</Filter>
+    </None>
+    <None Include="..\..\rom\core\core.util.xml.mcy">
+      <Filter>rom\core</Filter>
+    </None>
+    <None Include="..\..\rom\core\core.util.zip.mcy">
+      <Filter>rom\core</Filter>
+    </None>
+    <None Include="..\..\rom\core\core.2d.bmp.mcy">
+      <Filter>rom\core</Filter>
+    </None>
+    <None Include="..\..\rom\core\core.2d.font.mcy">
+      <Filter>rom\core</Filter>
+    </None>
+    <None Include="..\..\rom\core\core.2d.gif.mcy">
+      <Filter>rom\core</Filter>
+    </None>
+    <None Include="..\..\rom\core\core.2d.gl.mcy">
+      <Filter>rom\core</Filter>
+    </None>
+    <None Include="..\..\rom\core\core.2d.polygon.mcy">
+      <Filter>rom\core</Filter>
+    </None>
+    <None Include="..\..\rom\core\core.2d.qrcode.mcy">
+      <Filter>rom\core</Filter>
+    </None>
+    <None Include="..\..\rom\core\core.3d.gl.mcy">
+      <Filter>rom\core</Filter>
+    </None>
+    <None Include="..\..\rom\core\core.console.mcy">
+      <Filter>rom\core</Filter>
+    </None>
+    <None Include="..\..\rom\core\core.crypto.aes.mcy">
+      <Filter>rom\core</Filter>
+    </None>
+    <None Include="..\..\rom\core\core.crypto.asn1.mcy">
+      <Filter>rom\core</Filter>
+    </None>
+    <None Include="..\..\rom\bios\bios.start.mcy">
+      <Filter>rom\bios</Filter>
+    </None>
+    <None Include="..\..\system\demo\demo.fun.queens.mcy">
+      <Filter>system\demo</Filter>
+    </None>
+    <None Include="..\..\system\demo\demo.fun.tetris.mcy">
+      <Filter>system\demo</Filter>
+    </None>
+    <None Include="..\..\system\demo\demo.qrcode.mcy">
+      <Filter>system\demo</Filter>
+    </None>
+    <None Include="..\..\system\demo\demo.ui.cube.mcy">
+      <Filter>system\demo</Filter>
+    </None>
+    <None Include="..\..\system\demo\demo.fun.mandelbrot.mcy">
+      <Filter>system\demo</Filter>
+    </None>
+    <None Include="..\..\system\demo\demo.fun.maze.mcy">
+      <Filter>system\demo</Filter>
+    </None>
+    <None Include="..\..\system\boot.mcy">
+      <Filter>system</Filter>
+    </None>
+  </ItemGroup>
+</Project>

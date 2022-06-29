@@ -1,0 +1,92 @@
+/* Copyright (c) 2022, Sylvain Huet, Ambermind
+   This program is free software: you can redistribute it and/or modify it
+   under the terms of the GNU General Public License, version 2.0, as
+   published by the Free Software Foundation.
+   This program is distributed in the hope that it will be useful, but WITHOUT
+   ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+   FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License,
+   version 2.0, for more details.
+   You should have received a copy of the GNU General Public License along
+   with this program. If not, see <https://www.gnu.org/licenses/>. */
+import core.crypto.hash;;
+import core.crypto.rsa;;
+import core.crypto.oid;;
+
+fun _mkMask fHash data count bytesToCompute=
+	if bytesToCompute>0 then
+	let call fHash strCat data strInt32Msb count -> hash in
+	hash:_mkMask fHash data count+1 bytesToCompute - strLength hash;;
+
+fun mkMask data blockLen fHash hashLen=
+	let blockLen-hashLen-1 -> maskLen in
+	let _mkMask fHash data 0 maskLen -> mask in
+	strLeft (strListCat mask) maskLen;;
+
+fun checkMask1 buf len=
+	for i=0;i<len do if 0<>bytesGet buf i then return false;
+	0x01==bytesGet buf len;;
+
+fun checkMask2 buf off len=
+	for i=0;i<len do if 0<>bytesGet buf off+i then return false;
+	true;;
+
+fun mkDataHash fHash data=
+	let "                                " -> space32 in
+	let strBuild {
+		space32 space32
+		data
+	} -> toSign in
+	call fHash toSign;;
+
+fun mkMask2 fHash data salt=
+	let mkDataHash fHash data -> hash in
+	call fHash strBuild {
+		"\0\0\0\0\0\0\0\0"
+		hash
+		salt
+	};;
+
+fun _computeFromPublicKey publicKey =
+	let bigNbits publicKey -> rsaBitLen in 
+	let (rsaBitLen+7)>>3 -> blockLen in
+	let rsaBitLen-1 -> emBits in
+	let 0xff >> (rsaBitLen - emBits) -> firstByteMask in
+	[firstByteMask blockLen];;
+
+fun rsaPssSign rsa data fHash hashLen=
+	let _computeFromPublicKey (rsaModulus rsa) -> [firstByteMask blockLen] in
+	let strRand hashLen -> salt in
+	let mkMask2 fHash data salt -> mask2 in
+	let bytesCreate blockLen 0 -> block in
+	let mkMask mask2 blockLen fHash hashLen -> mask1 in
+	(
+		bytesSet block blockLen-2*hashLen-2 0x01;
+		bytesCopy block blockLen-2*hashLen-1 salt 0 nil;
+		bytesCopy block blockLen-hashLen-1 mask2 0 nil;
+		bytesSet block blockLen-1 0xBC;
+		bytesXor block 0 mask1 0 nil;
+		bytesSet block 0 firstByteMask&bytesGet block 0;
+		let bigFromBin bytesAsStr block -> msg in
+		bigToBin (rsaComputePrivateExp rsa msg) blockLen
+	);;
+	
+fun rsaPssVerify certificate data fHash hashLen signature=
+	let bigFromHex OIDhashmapMODULUS certificate -> modulus in
+	let bigFromHex OIDhashmapPUBEXP certificate -> pubExp in
+	let _computeFromPublicKey modulus -> [firstByteMask blockLen] in
+	let bigToBin (bigExpMod bigFromBin signature pubExp modulus) blockLen -> block in
+	if 0xbc <> strGet block (-1) then false
+	else let bytesFromStr block 0 nil -> buf in
+	let mkMask (strSub block blockLen-hashLen-1 hashLen) blockLen fHash hashLen-> mask in
+	(
+		bytesXor buf 0 mask 0 nil;
+		bytesSet buf 0 firstByteMask&bytesGet buf 0;
+		let checkMask1 buf blockLen-hashLen*2-2 -> check in
+		if check then
+		let strSub bytesAsStr buf blockLen-hashLen*2-1 hashLen -> salt in
+		let mkMask2 fHash data salt -> mask2 in
+		(
+			bytesXor buf blockLen-hashLen-1 mask2 0 nil;
+			checkMask2 buf blockLen-hashLen-1 hashLen
+		)
+	);;

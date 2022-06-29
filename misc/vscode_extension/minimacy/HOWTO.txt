@@ -1,0 +1,27 @@
+
+Pour mettre à jour les mots-clefs
+---------------------------------
+
+Mettre à jour les mots-clefs dans le fichier : syntaxes\mcy.tmLanguage.json
+
+Les mots réservés du langage (if, then, let, ...) sont dans : repository/keywords/patterns/match
+Les mots du bios sont : repository/api/patterns/match
+Ils sont sous forme d'expression régulière, et donc séparés par des pipes |
+
+Pour générer l'extension
+------------------------
+
+Lancer la commande suivante depuis le répertoire minimacy\misc\vscode_extension\minimacy: vsce package
+
+PS C:\home\dev\c\minimacy\misc\vscode_extension\minimacy> vsce package
+ WARNING  A 'repository' field is missing from the 'package.json' manifest file.
+Do you want to continue? [y/N] y
+ DONE  Packaged: C:\home\dev\c\minimacy\misc\vscode_extension\minimacy\minimacy-0.0.1.vsix (12 files, 17.09KB)
+ INFO 
+The latest version of vsce is 2.5.1 and you have 1.99.0.
+Update it now: npm install -g vsce
+PS C:\home\dev\c\minimacy\misc\vscode_extension\minimacy> 
+
+Le résultat est dans le fichier : minimacy-0.0.1.vsix
+
+Pour l'installer, supprimer d'abord l'ancienne extension puis installer la nouvelle.

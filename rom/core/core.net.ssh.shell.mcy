@@ -1,0 +1,70 @@
+/* Copyright (c) 2022, Sylvain Huet, Ambermind
+   This program is free software: you can redistribute it and/or modify it
+   under the terms of the GNU General Public License, version 2.0, as
+   published by the Free Software Foundation.
+   This program is distributed in the hope that it will be useful, but WITHOUT
+   ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+   FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License,
+   version 2.0, for more details.
+   You should have received a copy of the GNU General Public License along
+   with this program. If not, see <https://www.gnu.org/licenses/>. */
+
+
+import core.net.ssh;;
+
+struct SSHshell= SSH + [stateSH];;
+
+// we'll get two SSH2_MSG_CHANNEL_SUCCESS (pty-req and shell requests)
+// state is a false -> first request (pty-req)
+// state is true -> second request (shell)
+fun shellParseChannelSuccess h data=
+	sshEchoLn "shellParseChannelSuccess";
+	let strRead32Msb data 1 -> channel in
+	if !h.stateSH then
+	(
+		set h.stateSH=true;
+		sshSendMsg h SSH2_MSG_CHANNEL_REQUEST {
+			sshMsgInt    0 //recipient channel
+			sshMsgStr    "shell"
+			sshMsgChar   1 //want reply
+		};
+		0
+	)
+	else sshNotify h SSH_OK nil;;
+
+fun shellParseChannelData h data=
+	sshEchoLn "shellParseChannelData";
+	let strRead32Msb data 1 -> channel in
+	let sshParseVals data 5 1 -> (content:_) in
+	sshNotify h SSH_OK content;;
+
+
+fun shellHandle h code data=
+	match code with
+		SSH2_MSG_CHANNEL_DATA -> shellParseChannelData h data,
+		SSH2_MSG_CHANNEL_SUCCESS -> shellParseChannelSuccess h data,
+		_-> sshHandleDefault h code data;;
+
+fun shellStart h cbResult=
+	sshMakeCb h cbResult;
+	set h.fHandlePacketS=(lambda code data= shellHandle h code data);
+	sshSendMsg h SSH2_MSG_CHANNEL_REQUEST {
+		sshMsgInt    0 //recipient channel
+		sshMsgStr    "pty-req"
+		sshMsgChar   1 //want_reply
+		sshMsgStr    "xterm-256color" // TERM environment variable value (e.g., vt100)
+		sshMsgInt    80 // terminal width, characters (e.g., 80)
+		sshMsgInt    24 //terminal height, rows (e.g., 24)
+		sshMsgInt    0 //terminal width, pixels (e.g., 640)
+		sshMsgInt    0 //terminal height, pixels (e.g., 480)
+		sshMsgStr    hexToBin "00"
+	};;
+
+fun shellConnect ip port login auth cb=
+	let [SSHshell] -> h in
+	let (lambda code data=call cb h code data;nil) -> cb in
+	sshConnect h ip port login auth (lambda code data=
+	echoLn ["==============CALLBACK " code];
+		if code==SSH_OK then shellStart h cb
+		else (call cb code data;0)
+	);;

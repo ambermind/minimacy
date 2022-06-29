@@ -1,0 +1,75 @@
+/* Copyright (c) 2022, Sylvain Huet, Ambermind
+   This program is free software: you can redistribute it and/or modify it
+   under the terms of the GNU General Public License, version 2.0, as
+   published by the Free Software Foundation.
+   This program is distributed in the hope that it will be useful, but WITHOUT
+   ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+   FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License,
+   version 2.0, for more details.
+   You should have received a copy of the GNU General Public License along
+   with this program. If not, see <https://www.gnu.org/licenses/>. */
+
+extend Exception with msgException _;;
+
+sum _State= _THREAD_RUN, _THREAD_WAIT, _THREAD_DONE, _THREAD_IDLE, _THREAD_SUSPEND;;
+sum _Posting= _ioP _, _userPostP _;;
+
+struct Thread=[
+	_threadT
+	_nameT
+	_callerT
+
+	_echoT _echoEnableT
+	_consoleT _consoleEnableT 
+	_stateT
+	
+	_suspendT
+	_postingT
+	_tasksT
+	_cyclesT
+	_t0T
+	_locksT 
+	_dirT
+];;
+
+fun stateName s= match s with _THREAD_IDLE-> "IDLE", _THREAD_DONE -> "DONE", _THREAD_WAIT -> "WAIT", _THREAD_RUN -> "RUN", _THREAD_SUSPEND -> "SUSP";;
+
+const MAX_MEMORY_STANDALONE=nil;;
+const MAX_MEMORY_BOOT=128*1024*1024;;
+
+const _MAX__THREAD_EXEC=1000*1000;;	// queens16@thinkpad -> 25M in 170ms -> 150M opcodes per second. 1M -> at least 150 tasks switch/s
+const _MAX__THREAD_TASKS=10;;	// postMessage will freeze the caller if there are too many tasks in the callee's queue 
+
+const _SELECT_TIMEOUT=10000;;
+const _TCP_TIMEOUT=2000;;
+
+const SOURCE_EXTENSION=".mcy";;
+
+const _systemPkg=pkg;;
+var _SystemDir;;
+
+var _Reboot=false;;
+
+const _threadBios=[_threadT=_threadCurrent _nameT="BIOS" _callerT="system"
+	_echoEnableT=_echoIsEnabled
+	_consoleEnableT=_consoleIsEnabled
+	_stateT=_THREAD_RUN _suspendT=0
+	_t0T=time];;
+var _This=_threadBios;;
+
+
+//------------------------------
+include bios.start;;
+include bios.util;;
+include bios.lock;;
+include bios.worker;;
+include bios.keyboard;;
+include bios.timer;;
+include bios.net;;
+include bios.file;;
+include bios.scheduler;;
+include bios.thread;;
+include bios.date;;
+include bios.pkg;;
+include bios.admin;;
+include bios.ui;;

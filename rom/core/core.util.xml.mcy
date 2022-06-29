@@ -1,0 +1,203 @@
+/* Copyright (c) 2022, Sylvain Huet, Ambermind
+   This program is free software: you can redistribute it and/or modify it
+   under the terms of the GNU General Public License, version 2.0, as
+   published by the Free Software Foundation.
+   This program is distributed in the hope that it will be useful, but WITHOUT
+   ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+   FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License,
+   version 2.0, for more details.
+   You should have received a copy of the GNU General Public License along
+   with this program. If not, see <https://www.gnu.org/licenses/>. */
+
+// fun xmlParse src i0 -> [xml next]
+// i0 start index
+// next is nil when reaching end of string, else index of the remaining data
+// type: fun Str Int Bool -> [Xml Int] # -> throw msgException
+
+// fun xmlEncode: fun Xml -> Str
+// fun xmlEncodePretty: fun Xml -> Str
+
+import core.util.hashset;;
+import core.util.token;;
+sum Xml= tagXml _ _ _, contentXml _;;
+
+const TOKEN_ATTRIB= arrayInit 128 (lambda c=(c>='a' && c<='z')||(c>='A' && c<='Z')||(c=='_')||(c=='-')||(c=='.')||(c=='/')||(c==':')||(c>='0' && c<='9'));;
+
+const XML_SYMBOLS="< > = </ />";;
+const XML_FILTERS=
+	(tokenFilterSkip false):
+	(tokenFilterKeywords strSplit " " XML_SYMBOLS):
+	tokenFilterXmlWord:
+	(tokenFilterString TOKEN_DOUBLEQUOTE):
+	(tokenFilterString TOKEN_QUOTE):
+	nil;;
+
+const XML_CONTENT=
+	(tokenFilterKeywords "<":"</":nil):
+	(tokenFilterUntil "<"):
+	nil;;
+
+fun _tokenTake p= tokenTake p XML_FILTERS;;
+fun _tokenTakeContent p= tokenTake p XML_CONTENT;;
+
+const NOCHILD=hashsetInit 4 "meta":"br":"link":"hr":nil;;
+
+fun _xmlError p str= throw msgException strFormat str tokenContextError p 20;;
+
+
+fun tokenFilterXmlWord = (lambda fifo str i=
+	if TOKEN_ALPHANUM_UNDER.(strGet str i) then
+	for j=i+1;true do if !TOKEN_ATTRIB.strGet str j then 
+	(
+		fifoIn fifo strSub str i j-i;
+		return j
+	)
+);;
+
+fun _xmlFilterAttr s=
+	let strGet s 0 -> c in
+	if c==TOKEN_QUOTE || c==TOKEN_DOUBLEQUOTE then
+		strSub s 1 (strLength s)-2
+	else s;;
+
+fun xmlFilterTag lChilds tagName=
+	map lChilds (lambda xml= if tagName==xmlGetTag xml then xml);;
+
+fun xmlFindAttr lAttr attr=
+	if lAttr<>nil then
+	let hd lAttr ->[key val] in
+	if key==attr then val
+	else xmlFindAttr tl lAttr attr;;
+
+fun _xmlParseTagFinal p tag lattr lchild=
+	let strLowercase _tokenTake p -> tagFinal in
+	if tag<>tagFinal then _xmlError p (strFormat "unbalanced tag * / *" tag tagFinal)
+	else let _tokenTake p -> val in
+	if val<>">" then _xmlError p "'>' expected, found '*'"
+	else tagXml tag lattr lchild;;
+
+fun _xmlParseAttrKey p tag key lattr=
+	if key==nil then _xmlError p "empty attribute key around *" ;
+	if key=="/>" then tagXml tag (rev lattr nil) nil
+	else if key==">" then 
+		if hashsetContains NOCHILD tag then tagXml tag (rev lattr nil) nil
+		else _xmlParseTagFinal p tag (rev lattr nil) (_xmlParseContent p)
+	else let _tokenTake p -> sep in
+	if sep<>"=" then _xmlParseAttrKey p tag sep [key key]:lattr
+	else let _tokenTake p -> val in
+	_xmlParseAttr p tag [key _xmlFilterAttr val]:lattr;;
+
+fun _xmlParseAttr p tag lattr=
+	let _tokenTake p -> key in
+	_xmlParseAttrKey p tag key lattr;;
+
+fun _xmlParseTag p=
+	let strLowercase _tokenTake p -> tag in
+	_xmlParseAttr p tag nil;;
+
+fun _xmlParseContent p=
+	let _tokenTakeContent p -> val in
+	if val<>nil then
+	match val with
+		"</" -> nil,
+		"<" -> (_xmlParseTag p):_xmlParseContent p,
+		_ -> (contentXml val):_xmlParseContent p;;
+
+fun _xmlNoMixChilds j strFilter=
+	match j with
+		contentXml val -> contentXml call strFilter val,
+		tagXml tag lattr lchild -> 
+			let map lchild (lambda p=_xmlNoMixChilds p strFilter) -> lchild in
+			if nil==tl lchild then tagXml tag lattr lchild
+			else let map lchild (lambda p= match p with tagXml _ _ _ -> p) -> lchild in
+			tagXml tag lattr lchild;;
+fun _xmlMixChilds j strFilter=
+	match j with
+		contentXml val -> let trim val ->val2 in if val2<>"" then contentXml call strFilter val,
+		tagXml tag lattr lchild -> 
+			let map lchild (lambda p=_xmlMixChilds p strFilter) -> lchild in
+			tagXml tag lattr lchild;;
+
+fun _mixedContent l=
+	if l<>nil then match hd l with
+		contentXml _ -> true,
+		tagXml _ _ _ -> _mixedContent tl l;;
+
+fun _xmlEncodePretty j pref final=
+	match j with
+		contentXml str -> strToXml str,
+		tagXml tag lattr lchild -> 
+			let nil<>tl lattr -> multiAttr in
+			let (match hd lchild with tagXml _ _ _ -> true) -> multiChild in
+			let (_mixedContent lchild)&& nil<>tl lchild -> mixedContent in
+			strBuild [
+			pref "<" tag
+			map lattr (lambda p=
+				let p->[key val] in {
+				if multiAttr then "\n  " else " "
+				if multiAttr then pref
+				key 
+				"=\"" strToXml val "\""
+			})
+			if multiAttr then ["\n" pref]
+			if lchild==nil then "/>"
+			else
+			strBuild [			
+				">"
+				if multiChild && !mixedContent then "\n"
+				map lchild (lambda p= 
+					_xmlEncodePretty p 
+						if !mixedContent then strCat pref "  "
+						if !mixedContent then "\n")
+				if multiChild && !mixedContent then pref
+				"</" tag ">" 
+			]
+			final
+		];;
+
+public Xml;;
+public:
+fun xmlEncodePretty j= _xmlEncodePretty j "" "\n";;
+
+fun xmlEncode j=
+	match j with
+		contentXml str -> strToXml str,
+		tagXml tag lattr lchild -> strBuild [
+			"<" tag
+			map lattr (lambda p=
+				let p->[key val] in [" " key "=\"" strToXml val "\""]
+			)
+			if lchild==nil then "/>"
+			else strBuild [
+				">"
+				map lchild #xmlEncode
+				"</" tag ">"
+			]
+		];;
+
+fun _xmlStartDetect src i0=
+	let strCharPos src '<' i0 -> i in
+	if i<>nil then
+	if nil==strCharPos "!?" (strGet src i+1) 0 then i
+	else _xmlStartDetect src i+1;;
+		
+// try to guess if the source is Utf8, so that it can decode entities with code >= 256
+fun xmlParse src i0 noMixChild=
+	let if isU8 src then #xmlToU8 else #xmlToLatin -> strFilter in
+	let _xmlStartDetect src i0 -> i in
+	if i<>nil then
+	let tokenCreate src i-> p in
+	let hd _xmlParseContent p -> xml in
+	let if noMixChild then (_xmlNoMixChilds xml strFilter) else (_xmlMixChilds xml strFilter) -> xml in
+	let tokenIndex p -> next in
+	[xml next];;
+
+
+fun xmlGetTag xml= match xml with tagXml tag _ _ -> tag;;
+fun xmlGetAttributes xml= match xml with tagXml _ attributes _ -> attributes;;
+fun xmlGetChilds xml= match xml with tagXml _ _ childs -> childs;;
+fun xmlGetContent xml= match xml with contentXml content -> content;;
+
+fun xmlGetAttribute xml attribute= xmlFindAttr (xmlGetAttributes xml) attribute;;
+fun xmlFilterChilds xml tag= xmlFilterTag (xmlGetChilds xml) tag;;
+

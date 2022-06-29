@@ -1,0 +1,56 @@
+/* Copyright (c) 2022, Sylvain Huet, Ambermind
+   This program is free software: you can redistribute it and/or modify it
+   under the terms of the GNU General Public License, version 2.0, as
+   published by the Free Software Foundation.
+   This program is distributed in the hope that it will be useful, but WITHOUT
+   ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+   FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License,
+   version 2.0, for more details.
+   You should have received a copy of the GNU General Public License along
+   with this program. If not, see <https://www.gnu.org/licenses/>. */
+
+
+fun _dirBestMatch dir candidate i result=
+	let strCharPos candidate '/' i -> i in
+	if i==nil then result
+	else
+	if !strEndsWith dir (strLeft candidate i+1) then result
+	else _dirBestMatch dir candidate i+1 strLeft dir (-i);;
+
+fun _start compile=
+//	let true->compile in
+	let listGet args (listLength args)-1 -> last in
+	let !strEndsWith last SOURCE_EXTENSION -> standalone in
+//	let true -> standalone in
+	let if !standalone then last else "../system/boot.mcy" -> boot in
+	let if standalone then MAX_MEMORY_BOOT else MAX_MEMORY_STANDALONE -> maxMemory in
+
+	let strReplace boot "\\" "/" -> boot in
+	let strLeft boot (-strLength SOURCE_EXTENSION) -> boot in	// remove .mcy
+	let dirAppend _currentDir boot false -> path in
+	let strCharPosRev path '/' nil -> i in
+	let strLeft path i+1 -> dir in
+	let strSub path i+1 nil -> pkg in
+	let _dirBestMatch dir (strCat "/" strReplace pkg "." "/") 1 dir -> dir in
+	(
+		consoleEnable true;
+		consoleLn ["> system: " dir];
+		_setSystemDir set _SystemDir=dir;
+		set _This._dirT=dir;
+		_launchApp pkg maxMemory compile caller
+	);
+	_schedulerStart;;
+
+fun _handleArgs l compile=
+	if l==nil then _start compile
+	else let l ->(a:b:_) in
+	match a with
+		"-dir" ->_handleArgs tl tl l compile,
+		"-compile" ->_handleArgs tl l true,
+		_ ->_handleArgs tl l compile;;
+
+fun _init=
+	msgException "";	// this prevents the weak type in msgException
+	_threadSetUser _threadCurrent _threadBios;
+//	echoLn "args:"; dump args; return nil;
+	_handleArgs args false;;

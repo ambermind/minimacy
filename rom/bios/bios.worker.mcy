@@ -1,0 +1,108 @@
+/* Copyright (c) 2022, Sylvain Huet, Ambermind
+   This program is free software: you can redistribute it and/or modify it
+   under the terms of the GNU General Public License, version 2.0, as
+   published by the Free Software Foundation.
+   This program is distributed in the hope that it will be useful, but WITHOUT
+   ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+   FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License,
+   version 2.0, for more details.
+   You should have received a copy of the GNU General Public License along
+   with this program. If not, see <https://www.gnu.org/licenses/>. */
+
+const _INTERNAL_MAX_CODE=32;;
+
+const _InternalPipe=_internalOpen;;
+var _InternalBuffer=nil;;
+var _InternalHook= arrayCreate _INTERNAL_MAX_CODE nil;;
+
+fun _registerInternalHook event cb=set _InternalHook.event=cb;;
+fun _sign32 v=	if bitTest v 0x80000000 then v-0x100000000 else v;;
+fun _handleInternal i=
+	let strLength _InternalBuffer -> len in
+	if i==len then
+	(
+		set _InternalBuffer=nil
+	)
+	else if (i+16)<=len then
+	let strGet _InternalBuffer i -> cmd in
+	let _sign32 strRead32Lsb _InternalBuffer i+1 -> x in
+	let _sign32 strRead32Lsb _InternalBuffer i+5 -> y in
+	let _sign32 strRead32Lsb _InternalBuffer i+9 -> v in
+	(
+		call _InternalHook.cmd x y v;
+		_handleInternal i+16
+	);;
+fun _internalCheck=
+	if _sockReadable _InternalPipe then
+	(
+		set _InternalBuffer=strCat _InternalBuffer _sockRead _InternalPipe;
+		_handleInternal 0
+	);
+	0;;
+
+var _Workers;;
+
+fun _workerCheck =
+	set _Workers=filter _Workers (lambda th =
+		if th._stateT<>_THREAD_WAIT then false
+		else if _workerDone th._threadT then
+		(
+			_scheduleThread th;
+			false
+		)
+		else true
+	);;
+fun _workerEnter=
+	set _Workers=_This:_Workers;;
+
+fun _workerAlive = nil<>_Workers;;
+
+//-----------------------------------
+
+fun bitmapFromPng data = _workerEnter; _bitmapFromPng data;;
+fun bitmapToPng b mode = _workerEnter; _bitmapToPng b mode;;
+
+fun bitmapFromJpg data = _workerEnter; _bitmapFromJpg data;;
+fun bitmapToJpg b mode = _workerEnter; _bitmapToJpg b mode;;
+
+fun bitmapErase b color= bitmapFill b color nil;;
+
+//-----------------------------------
+fun ipByName hostname= _workerEnter; _ipByName hostname;;
+fun nameByIp ip= _workerEnter; _nameByIp ip;;
+
+//-----------------------------------
+const INFLATE_WITH_HEADER=1;;	// for png
+const INFLATE_NO_HEADER=0;;	// for gzip, zip
+fun inflate data mode = _workerEnter; _inflate data mode;;
+fun deflate data mode = _workerEnter; _deflate data mode;;
+
+//struct Zstream = [_lockZ _bufferZ _streamZ];;
+//fun zCreate mode = [_lockZ=lockCreate _bufferZ=bufferCreateWithSize 1024*16 _streamZ=_zCreate mode];;
+
+//-----------------------------------
+struct Lzw = [_lockL _bufferL _lzwL];;
+
+fun lzwCreate nbits = [_lockL=lockCreate _bufferL=bufferCreateWithSize 1024*16 _lzwL=_lzwCreate nbits];;
+fun _lzwProcess lzw src start length fProcess=
+	lockSync lzw._lockL (lambda=
+		bufferReset lzw._bufferL;
+		_workerEnter;
+		if (false<>call fProcess lzw._lzwL lzw._bufferL src start length) then
+			bufferToStr lzw._bufferL
+	);;
+fun lzwDeflate lzw src start length= _lzwProcess lzw src start length #_lzwDeflate;;
+fun lzwInflate lzw src start length= _lzwProcess lzw src start length #_lzwInflate;;
+
+fun lzwDeflateFinalize lzw = lzwDeflate lzw nil nil nil;;
+
+fun strToLzw data bitLen=
+	let lzwCreate bitLen -> lzw in
+	strCat
+		lzwDeflate lzw data 0 nil
+		lzwDeflateFinalize lzw
+	;;
+
+fun lzwToStr data bitLen=
+	let lzwCreate bitLen -> lzw in
+	lzwInflate lzw data 0 nil;;

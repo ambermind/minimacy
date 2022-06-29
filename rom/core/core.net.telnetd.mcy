@@ -1,0 +1,85 @@
+/* Copyright (c) 2022, Sylvain Huet, Ambermind
+   This program is free software: you can redistribute it and/or modify it
+   under the terms of the GNU General Public License, version 2.0, as
+   published by the Free Software Foundation.
+   This program is distributed in the hope that it will be useful, but WITHOUT
+   ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+   FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License,
+   version 2.0, for more details.
+   You should have received a copy of the GNU General Public License along
+   with this program. If not, see <https://www.gnu.org/licenses/>. */
+
+// telnet server
+// fffb1ffffb20fffb18fffb27fffd01fffb03fffd03 -> initialisation
+// ffec -> ctr-d
+// fff8 -> ctr-c
+// 1b5b357e -> page-up
+// 1b5b367e -> page-down
+// 1b5b41 -> up
+// 1b5b42 -> down
+// 1b5b44 -> left
+// 1b5b43 -> right
+// 09 -> tab
+// 1b -> esc
+
+//http://mud-dev.wikidot.com/telnet:negotiation
+
+
+
+struct Prompt=[tcpP inputP replyP iP pkgP];;
+
+fun _promptWrite p = 
+	set p.iP=tcpWrite p.tcpP p.replyP p.iP;
+	if p.iP>=strLength p.replyP then
+	(
+		set p.replyP=nil;
+		set p.iP=0
+	);;
+
+fun promptReply p data=
+	let strReplace data "\n" "\r\n" -> data in
+	set p.replyP= strCat p.replyP data;
+	_promptWrite p;;
+
+fun _promptFilter data =
+	let strPos data "\$ff" 0 -> i in
+	if i==nil then data
+	else strCat strLeft data i _promptFilter strSub data i+3 nil;;
+
+fun _promptRun p input=
+	let strPosRev input ";;" nil -> i in
+	if i==nil then input
+	else (
+		prompt strLeft input i+2 p.pkgP;
+		echo "> ";
+		_promptRun p strSub input i+2 nil
+	);;
+
+fun promptReceive p data=
+//hexDump data;
+	if strContains data "\$ff\$ec" then tcpClose p.tcpP
+	else
+	(
+		let _promptFilter strCat p.inputP data -> input in
+		set p.inputP=_promptRun p input;
+		true
+	);;
+
+fun promptCreate tcp=
+	let [tcpP=tcp inputP="" replyP="" iP=0 pkgP=pkgCreate nil nil] -> p in
+	(
+		echoLn ["incoming connection " tcpRemoteIp tcp ":" tcpRemotePort tcp];
+		onEcho nil (lambda str= promptReply p str);
+		onConsole nil (lambda str= promptReply p str);
+		onTcp tcp nil
+			(lambda data=
+				if data<>nil then promptReceive p data
+			)
+			(lambda = _promptWrite p);
+		echo "Minimacy Top-level\nReady\n> ";
+		0
+	);;
+
+public:
+fun telnetD ip port= tcpListen ip port (lambda tcp= (threadFork "telnet" (lambda = promptCreate tcp; 0));0);;
+

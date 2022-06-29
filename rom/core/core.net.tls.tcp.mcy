@@ -1,0 +1,125 @@
+/* Copyright (c) 2022, Sylvain Huet, Ambermind
+   This program is free software: you can redistribute it and/or modify it
+   under the terms of the GNU General Public License, version 2.0, as
+   published by the Free Software Foundation.
+   This program is distributed in the hope that it will be useful, but WITHOUT
+   ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+   FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License,
+   version 2.0, for more details.
+   You should have received a copy of the GNU General Public License along
+   with this program. If not, see <https://www.gnu.org/licenses/>. */
+
+
+import core.net.tls13;;
+
+struct TlsTcp=[tcpTT sendTT iTT closeAfterTT onReadTT onWriteTT tlsTT];;
+
+const _DEBUG=false;;
+
+fun _tlsTcpClosed h=
+	call h.onReadTT nil;
+	set h.onReadTT=nil;
+	set h.onWriteTT=nil;
+	0;;
+
+fun _tlsTcpSend h data=
+//hexDump 
+	set h.sendTT=strCat h.sendTT data;
+//	echo "send "; echoLn 
+	set h.iTT=tcpWrite h.tcpTT h.sendTT h.iTT;
+	if h.iTT>=strLength h.sendTT then (
+		if h.closeAfterTT then tcpClose h.tcpTT;
+		set h.sendTT=nil;
+		set h.iTT=0;
+	);
+	strLength data;;
+
+fun _tlsTcpManage tcp tls req=
+	let [tlsTT=tls tcpTT=tcp sendTT=req iTT=0] -> h in
+	(
+		tlsOnAlert tls (lambda alert=
+			if _DEBUG then echoLn [(tlsWho tls) "----------ONALERT " intToHex alert];
+			0
+		);
+		tlsOnStage tls (lambda stage=
+			if _DEBUG then echoLn [(tlsWho tls) "----------ONSTAGE "];
+			match stage with
+				TLS_STAGE_NEXT data-> (
+					_tlsTcpSend h data
+				),
+				TLS_STAGE_READY data -> (
+					_tlsTcpSend h data;
+					call h.onWriteTT;
+					nil
+				),
+				TLS_STAGE_ERROR -> (
+					if _DEBUG then echoLn strFormat "*----------ERROR *" (tlsWho tls) intToHex tlsAlert tls;
+					tcpClose h.tcpTT;
+					_tlsTcpClosed h;
+					nil
+				);
+			0
+		);
+		tlsOnReceive tls (lambda data=
+			if _DEBUG then echoLn "----------ONRECEIVE ";
+			call h.onReadTT data;
+			0
+		);
+		h
+	);;
+	
+public TlsTcp;;
+public:
+fun tlsTcpOn h timeout onRead onWrite=
+	set h.onReadTT=onRead;
+	set h.onWriteTT=onWrite;
+	onTcp h.tcpTT timeout
+		(lambda data=
+//			echoLn "<< receive"; hexDump data;
+//			echoLn binToHex data;
+			if data<>nil then tlsReceive h.tlsTT data
+			else
+			(
+				if _DEBUG then echoLn "----------ONCLOSE";
+				_tlsTcpClosed h;
+				nil
+			)
+		)
+		(lambda = _tlsTcpSend h nil);
+	true;;
+
+fun tlsTcpWrite h data start=
+	match tlsStage h.tlsTT with
+		TLS_STAGE_READY _ -> _tlsTcpSend h (tlsSend h.tlsTT strSub data start nil),
+		_ -> 0;;
+
+fun tlsTcpClose h=
+	set h.closeAfterTT=true;
+	set h.onReadTT=nil;
+	set h.onWriteTT=nil;
+	_tlsTcpSend h tlsClose h.tlsTT;
+	true;;
+
+fun tlsTcpListen hostList ip port cb=
+	let tlsMakeHosts hostList -> hosts in
+	tcpListen ip port (lambda tcp= 
+		let tlsCreateSrv hosts -> tls in
+		let _tlsTcpManage tcp tls nil -> tt in
+		call cb tt
+	);;
+
+fun tlsTcpOpen ip port serverName cipherSuites clientCertificate clientKey=
+//consoleTime "tlsTcpOpen";
+	let tlsCreateCli serverName cipherSuites clientCertificate clientKey -> tls in
+	let tlsClientHello tls -> req in
+	let tcpOpen ip port -> tcp in
+	_tlsTcpManage tcp tls req;;
+
+fun tlsTcpSetCipherSuites h cipherSuites= tlsSetCipherSuites h.tlsTT cipherSuites;;
+fun tlsTcpNoDelay h noDelay= tcpNoDelay h.tcpTT noDelay;;
+fun tlsTcpSetTimeout h timeout= tcpSetTimeout h.tcpTT timeout;;
+fun tlsTcpRemoteIp h=tcpRemoteIp h.tcpTT;;
+fun tlsTcpRemotePort h=tcpRemotePort h.tcpTT;;
+fun tlsTcpGetServerName h= tlsGetServerName h.tlsTT;;
+fun tlsTcpGetClientCertificate h = tlsGetClientCertificate h.tlsTT;;
+

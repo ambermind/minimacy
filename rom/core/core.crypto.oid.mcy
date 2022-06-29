@@ -1,0 +1,177 @@
+/* Copyright (c) 2022, Sylvain Huet, Ambermind
+   This program is free software: you can redistribute it and/or modify it
+   under the terms of the GNU General Public License, version 2.0, as
+   published by the Free Software Foundation.
+   This program is distributed in the hope that it will be useful, but WITHOUT
+   ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+   FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License,
+   version 2.0, for more details.
+   You should have received a copy of the GNU General Public License along
+   with this program. If not, see <https://www.gnu.org/licenses/>. */
+import core.util.quicksort;;
+const OID_SEP=", ";;
+
+const OID_1_2_840_10045_2_1="1.2.840.10045.2.1";;
+const OID_1_2_840_10045_3_1_7="1.2.840.10045.3.1.7";;
+const OID_1_2_840_113549_1_1_1="1.2.840.113549.1.1.1";;
+const OID_1_2_840_113549_1_1_11="1.2.840.113549.1.1.11";;
+const OID_1_2_840_113549_1_1_13="1.2.840.113549.1.1.13";;
+const OID_1_2_840_113549_1_9_1="1.2.840.113549.1.9.1";;
+const OID_1_2_840_113549_1_9_14="1.2.840.113549.1.9.14";;
+const OID_1_3_6_1_4_1_11129_2_4_2="1.3.6.1.4.1.11129.2.4.2";;
+const OID_1_3_6_1_4_1_11129_2_5_3="1.3.6.1.4.1.11129.2.5.3";;
+const OID_1_3_6_1_4_1_311_21_10="1.3.6.1.4.1.311.21.10";;
+const OID_1_3_6_1_4_1_311_21_7="1.3.6.1.4.1.311.21.7";;
+const OID_1_3_6_1_4_1_311_42_1="1.3.6.1.4.1.311.42.1";;
+const OID_1_3_6_1_4_1_311_60_2_1_2="1.3.6.1.4.1.311.60.2.1.2";;
+const OID_1_3_6_1_4_1_311_60_2_1_3="1.3.6.1.4.1.311.60.2.1.3";;
+const OID_1_3_6_1_5_5_7_1_1="1.3.6.1.5.5.7.1.1";;
+const OID_1_3_6_1_5_5_7_2_1="1.3.6.1.5.5.7.2.1";;
+const OID_1_3_6_1_5_5_7_3_1="1.3.6.1.5.5.7.3.1";;
+const OID_1_3_6_1_5_5_7_3_2="1.3.6.1.5.5.7.3.2";;
+const OID_1_3_6_1_5_5_7_48_1="1.3.6.1.5.5.7.48.1";;
+const OID_1_3_6_1_5_5_7_48_2="1.3.6.1.5.5.7.48.2";;
+const OID_2_16_840_1_114412_1_1="2.16.840.1.114412.1.1";;
+const OID_2_16_840_1_114412_2_1="2.16.840.1.114412.2.1";;
+const OID_2_23_140_1_1="2.23.140.1.1";;
+const OID_2_23_140_1_2_1="2.23.140.1.2.1";;
+const OID_2_23_140_1_2_2="2.23.140.1.2.2";;
+const OID_2_5_29_14="2.5.29.14";;
+const OID_2_5_29_15="2.5.29.15";;
+const OID_2_5_29_17="2.5.29.17";;
+const OID_2_5_29_19="2.5.29.19";;
+const OID_2_5_29_31="2.5.29.31";;
+const OID_2_5_29_32="2.5.29.32";;
+const OID_2_5_29_35="2.5.29.35";;
+const OID_2_5_29_37="2.5.29.37";;
+const OID_2_5_4_10="2.5.4.10";;
+const OID_2_5_4_11="2.5.4.11";;
+const OID_2_5_4_15="2.5.4.15";;
+const OID_2_5_4_3="2.5.4.3";;
+const OID_2_5_4_5="2.5.4.5";;
+const OID_2_5_4_6="2.5.4.6";;
+const OID_2_5_4_7="2.5.4.7";;
+const OID_2_5_4_8="2.5.4.8";;
+
+const OID_ecPublicKey=OID_1_2_840_10045_2_1;;
+const OID_prime256v1=OID_1_2_840_10045_3_1_7;;
+const OID_rsaEncryption=OID_1_2_840_113549_1_1_1;;
+const OID_RSA_PKCS1_SHA256=OID_1_2_840_113549_1_1_11;;
+const OID_RSA_PKCS1_SHA512=OID_1_2_840_113549_1_1_13;;
+const OID_emailAddress=OID_1_2_840_113549_1_9_1;;
+const OID_id_ExtensionReq=OID_1_2_840_113549_1_9_14;;
+
+
+
+
+
+const OID_jurisdictionOfIncorporationStateOrProvinceName=OID_1_3_6_1_4_1_311_60_2_1_2;;
+const OID_jurisdictionOfIncorporationCountryName=OID_1_3_6_1_4_1_311_60_2_1_3;;
+const OID_authorityInfoAccess=OID_1_3_6_1_5_5_7_1_1;;
+const OID_cps=OID_1_3_6_1_5_5_7_2_1;;
+const OID_serverAuth=OID_1_3_6_1_5_5_7_3_1;;
+const OID_clientAuth=OID_1_3_6_1_5_5_7_3_2;;
+const OID_id_ad_ocsp=OID_1_3_6_1_5_5_7_48_1;;
+const OID_caIssuers=OID_1_3_6_1_5_5_7_48_2;;
+
+
+const OID_ev_guidelines=OID_2_23_140_1_1;;
+const OID_domain_validated=OID_2_23_140_1_2_1;;
+const OID_organization_validated=OID_2_23_140_1_2_2;;
+const OID_subjectKeyIdentifier=OID_2_5_29_14;;
+const OID_keyUsage=OID_2_5_29_15;;
+const OID_subjectAltName=OID_2_5_29_17;;
+const OID_basicConstraints=OID_2_5_29_19;;
+const OID_cRLDistributionPoints=OID_2_5_29_31;;
+const OID_certificatePolicies=OID_2_5_29_32;;
+const OID_authorityKeyIdentifier=OID_2_5_29_35;;
+const OID_extKeyUsage=OID_2_5_29_37;;
+const OID_O=OID_2_5_4_10;;
+const OID_OU=OID_2_5_4_11;;
+const OID_businessCategory=OID_2_5_4_15;;
+const OID_CN=OID_2_5_4_3;;
+const OID_serialNumber=OID_2_5_4_5;;
+const OID_C=OID_2_5_4_6;;
+const OID_L=OID_2_5_4_7;;
+const OID_ST=OID_2_5_4_8;;
+
+const OIDs=
+[OID_1_2_840_10045_2_1 "ecPublicKey"]:
+[OID_1_2_840_10045_3_1_7 "prime256v1"]:
+[OID_1_2_840_113549_1_1_1 "rsaEncryption"]:
+[OID_1_2_840_113549_1_1_11 "RSA_PKCS1_SHA256"]:
+[OID_1_2_840_113549_1_1_13 "RSA_PKCS1_SHA512"]:
+[OID_1_2_840_113549_1_9_1 "emailAddress"]:
+[OID_1_2_840_113549_1_9_14 "id_ExtensionReq"]:
+
+
+
+
+
+[OID_1_3_6_1_4_1_311_60_2_1_2 "jurisdictionOfIncorporationStateOrProvinceName"]:
+[OID_1_3_6_1_4_1_311_60_2_1_3 "jurisdictionOfIncorporationCountryName"]:
+[OID_1_3_6_1_5_5_7_1_1 "authorityInfoAccess"]:
+[OID_1_3_6_1_5_5_7_2_1 "cps"]:
+[OID_1_3_6_1_5_5_7_3_1 "serverAuth"]:
+[OID_1_3_6_1_5_5_7_3_2 "clientAuth"]:
+[OID_1_3_6_1_5_5_7_48_1 "id_ad_ocsp"]:
+[OID_1_3_6_1_5_5_7_48_2 "caIssuers"]:
+
+
+[OID_2_23_140_1_1 "ev_guidelines"]:
+[OID_2_23_140_1_2_1 "domain_validated"]:
+[OID_2_23_140_1_2_2 "organization_validated"]:
+[OID_2_5_29_14 "subjectKeyIdentifier"]:
+[OID_2_5_29_15 "keyUsage"]:
+[OID_2_5_29_17 "subjectAltName"]:
+[OID_2_5_29_19 "basicConstraints"]:
+[OID_2_5_29_31 "cRLDistributionPoints"]:
+[OID_2_5_29_32 "certificatePolicies"]:
+[OID_2_5_29_35 "authorityKeyIdentifier"]:
+[OID_2_5_29_37 "extKeyUsage"]:
+[OID_2_5_4_10 "O"]:
+[OID_2_5_4_11 "OU"]:
+[OID_2_5_4_15 "businessCategory"]:
+[OID_2_5_4_3 "CN"]:
+[OID_2_5_4_5 "serialNumber"]:
+[OID_2_5_4_6 "C"]:
+[OID_2_5_4_7 "L"]:
+[OID_2_5_4_8 "ST"]:
+nil;;
+
+fun nameByOID code =
+	for [c v] in OIDs do if code==c then return v;;
+fun niceOID code= let nameByOID code -> name in if name<>nil then name else code;;
+
+fun _oidVarUInt bin i=
+	if i<strLength bin then (strReadVarUInt bin i):_oidVarUInt bin strVarUIntNext bin i;;
+
+fun oidFromBin bin=
+	let _oidVarUInt bin 0 ->(first:next) in
+	strJoin "." map (first/40):(first%40):next (lambda a=intToDec a);;
+
+fun oidToBin oid=
+	let map (strSplit "." oid) (lambda a=decToInt a) ->(a:b:next) in
+	strBuild map (40*a+b):next (lambda x=strVarUInt x);;
+
+fun echoOIDHashmap h=
+	let hashmapToList h -> l in
+	let map l (lambda a=let a->[k v] in [niceOID k v]) -> l in
+	let quicksort l (lambda [ka _] [kb _] = 0>strCmp ka kb) -> l in
+	for [k v] in l do echoLn strFormat "*: *" k v;
+	h;;
+
+const OID_MODULUS="MODULUS";;
+const OID_PUBEXP="PUBEXP";;
+const OID_SUBJECT="SUBJECT";;
+const OID_INFO="INFO";;
+const OID_SIGNALGO="SIGNALGO";;
+const OID_SIGNATURE="SIGNATURE";;
+
+fun OIDhashmapMODULUS h = hashmapGet h OID_MODULUS;;
+fun OIDhashmapPUBEXP h = hashmapGet h OID_PUBEXP;;
+fun OIDhashmapSubjectAltName h = strSplit OID_SEP hashmapGet h OID_subjectAltName;;
+fun OIDhashmapSUBJECT h = hashmapGet h OID_SUBJECT;;
+fun OIDhashmapINFO h = hashmapGet h OID_INFO;;
+fun OIDhashmapSIGNALGO h = hashmapGet h OID_SIGNALGO;;
+fun OIDhashmapSIGNATURE h = hashmapGet h OID_SIGNATURE;;

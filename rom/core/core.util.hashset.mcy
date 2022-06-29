@@ -1,0 +1,33 @@
+/* Copyright (c) 2022, Sylvain Huet, Ambermind
+   This program is free software: you can redistribute it and/or modify it
+   under the terms of the GNU General Public License, version 2.0, as
+   published by the Free Software Foundation.
+   This program is distributed in the hope that it will be useful, but WITHOUT
+   ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+   FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License,
+   version 2.0, for more details.
+   You should have received a copy of the GNU General Public License along
+   with this program. If not, see <https://www.gnu.org/licenses/>. */
+
+//------------ Hashset
+// implementation as: hashmap key -> Bool
+
+fun hashsetCreate nbits= hashmapCreate nbits;;
+
+fun hashsetContains h val= hashmapGet h val;;
+fun hashsetAdd h val= hashmapSet h val true;;
+fun hashsetRemove h val= hashmapSet h val nil;;
+
+fun hashsetCount h= hashmapCount h;;
+
+fun hashsetFind d f= hashmapFind d (lambda key val=call f key);;
+fun hashsetMap d f= hashmapMap d (lambda key val=call f key);;
+fun hashsetToList d= hashmapMap d (lambda key val=key);;
+fun hashsetTest d f= nil<>hashsetFind d f;;
+
+fun hashsetInit n l=
+	let hashsetCreate n -> h in
+	(
+		for val in l do hashsetAdd h val;
+		h
+	);;

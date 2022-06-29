@@ -1,0 +1,134 @@
+/* Copyright (c) 2022, Sylvain Huet, Ambermind
+   This program is free software: you can redistribute it and/or modify it
+   under the terms of the GNU General Public License, version 2.0, as
+   published by the Free Software Foundation.
+   This program is distributed in the hope that it will be useful, but WITHOUT
+   ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+   FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License,
+   version 2.0, for more details.
+   You should have received a copy of the GNU General Public License along
+   with this program. If not, see <https://www.gnu.org/licenses/>. */
+
+// fun jsonParse src i0 -> [json next]
+// i0 start index
+// next is nil when reaching end of string, else index of the remaining data
+// type: fun Str Int -> [Json Int] # -> throw msgException
+
+// fun jsonEncode: fun Json -> Str
+// fun jsonEncodePretty: fun Json -> Str
+
+import core.util.token;;
+
+sum Json= jsonNumber _, jsonString _, jsonNull, jsonTrue, jsonFalse, jsonArray _, jsonObject _;;
+
+fun jsonNumberGet p=match p with jsonNumber v -> v;;
+fun jsonIntGet p= floatToInt match p with jsonNumber v -> v;;
+fun jsonBoolGet p=match p with jsonTrue -> true, jsonFalse -> false;;
+fun jsonStringGet p=match p with jsonString v -> v;;
+fun jsonObjectGet p=match p with jsonObject v -> v;;
+fun jsonArrayGet p=match p with jsonArray v -> v;;
+fun jsonFieldGet p field=match p with jsonObject l -> for q in l do let q->[key val] in if key==field then return val;;
+
+const _JSON_SYMBOLS="{ } [ ] : ,";;
+const _JSON_FILTERS=
+	(tokenFilterSkip false):
+	(tokenFilterKeywords strSplit " " _JSON_SYMBOLS):
+	tokenFilterNumber:
+	tokenFilterWord:
+	(tokenFilterString TOKEN_DOUBLEQUOTE):
+	nil;;
+
+fun _tokenTake p= tokenTake p _JSON_FILTERS;;
+
+fun _jsonError p str= throw msgException strFormat str tokenContextError p 20;;
+
+fun _jsonParseArray p first=
+	let _jsonParse p (if first then "]") -> val in
+	if val<>nil then
+	let _tokenTake p -> sep in
+	match sep with
+		"," -> val:_jsonParseArray p false,
+		"]" -> val:nil,
+		_ -> _jsonError p "',' or ']' expected, instead of '*'";;
+
+fun _jsonParseObject p first=
+	let _tokenTake p -> key in
+	if first&& key=="}" then nil
+	else
+	let strGet key 0 -> c in
+	if c<>TOKEN_DOUBLEQUOTE then _jsonError p "key string expected, instead of '*'"
+	else let jsonToU8 key -> key in
+	let _tokenTake p -> sep in
+	if sep<>":" then _jsonError p "':' expected, instead of '*'"
+	else let _jsonParse p nil -> val in
+	let _tokenTake p -> sep in
+	match sep with
+		"," -> [key val]:_jsonParseObject p false,
+		"}" -> [key val]:nil,
+		_ -> _jsonError p "',' or '}' expected, instead of '*'";;
+
+fun _jsonParse p terminate=
+	let _tokenTake p -> val in
+	if val<>nil && val<>terminate then
+	if val=="null" then jsonNull
+	else if val=="false" then jsonFalse
+	else if val=="true" then jsonTrue
+	else if val=="[" then jsonArray listToArray _jsonParseArray p true
+	else if val=="{" then jsonObject _jsonParseObject p true
+	else let strGet val 0 -> c in
+	if c==TOKEN_DOUBLEQUOTE then jsonString jsonToU8 val
+	else if tokenIsNumber val then jsonNumber strToFloat val
+	else throw msgException strFormat "unknown '*'" val;;
+
+fun jsonParse src i0=
+	let tokenCreate src i0-> p in
+	let _jsonParse p nil -> json in
+	let tokenIndex p -> next in
+	[json next];;
+
+fun jsonEncode j=
+	match j with
+		jsonNull -> "null",
+		jsonTrue -> "true",
+		jsonFalse -> "false",
+		jsonNumber f -> floatToStr f,
+		jsonString s -> u8ToJson s,
+		jsonArray a -> strBuild {"[" strJoin "," arrayMap a #jsonEncode "]"},
+		jsonObject a -> strBuild {
+			"{"
+			strJoin "," map a (lambda p=
+				let p->[key val] in
+				strBuild {u8ToJson key ":" jsonEncode val}
+			)
+			"}"
+		};;
+
+fun _jsonEncodePretty j pref=
+	match j with
+		jsonNull -> "null",
+		jsonTrue -> "true",
+		jsonFalse -> "false",
+		jsonNumber f -> floatToStr f,
+		jsonString s -> u8ToJson s,
+		jsonArray a -> let strCat pref "  " -> pref2 in strBuild {
+			"[\n"
+			strJoin ",\n" arrayMap a (lambda val=
+				strCat pref2 _jsonEncodePretty val pref2
+			)
+			(if 0<arrayLength a then "\n") 
+			pref
+			"]"
+		},
+		jsonObject a -> let strCat pref "  " -> pref2 in strBuild {
+			"{\n"
+			strJoin ",\n" map a (lambda p=
+				let p->[key val] in
+				strBuild {pref2 u8ToJson key ":" _jsonEncodePretty val pref2}
+			)
+			(if nil<>a then "\n") 
+			pref
+			"}"
+		};;
+
+fun jsonEncodePretty j= _jsonEncodePretty j "";;
+

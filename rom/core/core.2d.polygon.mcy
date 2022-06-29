@@ -1,0 +1,108 @@
+/* Copyright (c) 2022, Sylvain Huet, Ambermind
+   This program is free software: you can redistribute it and/or modify it
+   under the terms of the GNU General Public License, version 2.0, as
+   published by the Free Software Foundation.
+   This program is distributed in the hope that it will be useful, but WITHOUT
+   ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+   FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License,
+   version 2.0, for more details.
+   You should have received a copy of the GNU General Public License along
+   with this program. If not, see <https://www.gnu.org/licenses/>. */
+
+import core.util.insertsort;;
+
+const X=0;;
+const Y=1;;
+struct Edge=[xE yE dxE pointsE];;
+
+fun cmpX a b= a.xE<=.b.xE;;
+fun cmpY a b= a.yE<b.yE;;
+
+// get the index of point with the smallest y
+fun _polyTop points i iTop=
+	if i>=arrayLength points then iTop
+	else
+	_polyTop points i+1 if points.i.Y <points.iTop.Y then i else iTop;;
+fun polyTop points=_polyTop points 0 0;;
+
+fun makeEdge l= [yE=(hd l).Y pointsE=l];;
+fun polyTourUp points i0 di N current done=
+	if di==N then (makeEdge current):done
+	else
+	let points.((i0+di)%N) -> last in
+	let points.((i0+di+1)%N) -> next in
+	if next.Y <=last.Y then polyTourUp points i0 di+1 N next:current done
+	else polyTourDown points i0 di+1 N next:last:nil (makeEdge current):done;;
+
+fun polyTourDown points i0 di N current done=
+	let points.((i0+di)%N) -> last in
+	let points.((i0+di+1)%N) -> next in
+	if next.Y >=last.Y then polyTourDown points i0 di+1 N next:current done
+	else polyTourUp points i0 di+1 N next:last:nil (makeEdge rev current nil):done;;
+
+fun _edgeStart edge=
+	let hd edge.pointsE -> p in
+	(
+		set edge.pointsE= tl edge.pointsE;
+		let hd edge.pointsE -> q in
+		if q<>nil then
+		if p.Y==q.Y then _edgeStart edge	// skip horizontal borders
+		else
+		(
+			set edge.xE= intToFloat p.X;
+			set edge.dxE= (intToFloat q.X-p.X)/.(intToFloat q.Y-p.Y);
+			edge
+		)
+	);;
+
+fun _isOrdered edges =
+	(nil==tl edges)||
+	let edges -> (a:b:_) in
+	if a.xE<=. b.xE then _isOrdered tl edges;;
+
+fun _polyScanline bmp color blend y edges pending=
+	if edges<>nil || pending<>nil then
+	if y<=bitmapH bmp then
+	if y==(hd pending).yE then
+		let _edgeStart hd pending -> p in
+		_polyScanline bmp color blend y p:edges tl pending
+	else
+	let if _isOrdered edges then edges else insertSortIncremental edges #cmpX -> edges in
+	(
+		for l=edges;l<>nil;tl tl l do
+		let l->(a:b:_) in bitmapScanline bmp floatToInt a.xE floatToInt b.xE y color blend;
+		let map edges (lambda p=
+			let hd p.pointsE -> q in if y==q.Y then _edgeStart p else p
+		)-> edges in
+		(
+			for p in edges do set p.xE=p.xE+.p.dxE;
+			_polyScanline bmp color blend y+1 edges pending
+		)
+	);;
+
+fun _edgesFromPoly points=
+	let arrayLength points -> N in
+	let polyTop points -> iTop in
+	let polyTourDown points iTop 0 N points.iTop:nil nil -> edges in
+	insertSort edges #cmpY;;
+
+//-------------API
+public:
+// use this function for a simple polygon
+// 'points' is an array of vertices: array array Int
+// each vertice is an array of 2 integers
+// there order is either clockwise or counterclockwise
+// for example: {{250 30} {180 30} {40 300} {60 300} {200 150} {300 180}}
+fun bitmapPolygon bmp points color blend=
+	let _edgesFromPoly points -> edges in
+	let (hd edges).yE -> yStart in
+	_polyScanline bmp color blend yStart nil edges;;
+
+// use this function when there are holes in your polygon
+// 'polygons' should be a list of simple polygons 
+// for example: {{250 30} {180 30} {40 300} {60 300} {200 150} {300 180}}:{{220 40} {180 80} {230 50}}:nil
+fun bitmapPolygons bmp polygons color blend=
+	let doubleListCompress map polygons #_edgesFromPoly -> edges in
+	let insertSort edges #cmpY -> edges in
+	let (hd edges).yE -> yStart in
+	_polyScanline bmp color blend yStart nil edges;;

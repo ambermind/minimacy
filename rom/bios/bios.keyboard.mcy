@@ -1,0 +1,73 @@
+/* Copyright (c) 2022, Sylvain Huet, Ambermind
+   This program is free software: you can redistribute it and/or modify it
+   under the terms of the GNU General Public License, version 2.0, as
+   published by the Free Software Foundation.
+   This program is distributed in the hope that it will be useful, but WITHOUT
+   ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+   FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License,
+   version 2.0, for more details.
+   You should have received a copy of the GNU General Public License along
+   with this program. If not, see <https://www.gnu.org/licenses/>. */
+
+//------------ KEYBOARD
+struct _KBD=[_thK _readK];;
+var _KeyboardSock;;
+var _Keyboard;;
+
+fun _keyboardClean=
+	if _Keyboard<>nil then
+	let _Keyboard._thK._stateT -> state in
+	if state==_THREAD_DONE || (_Keyboard._readK==nil && state<>_THREAD_WAIT) then
+	set _Keyboard=nil;;
+
+fun _keyboardCheck=	// called on the Bios thread
+	_keyboardClean;
+
+	if _sockReadable _KeyboardSock then
+	(
+		_sockSelectRead _KeyboardSock false;
+		if _Keyboard<>nil then (// _threadBiosRun _Keyboard._thK (lambda =
+			if _Keyboard._readK==nil then
+			(
+				_threadUnfreeze _Keyboard._thK true;
+				set _Keyboard=nil;
+				nil
+			)
+			else
+			(
+				threadPost _Keyboard._thK (lambda =
+					_sockSelectRead _KeyboardSock true;
+					let _sockRead _KeyboardSock -> data in
+					(
+						call _Keyboard._readK data;
+						if data==nil then set _Keyboard=nil;
+						nil
+					)
+				);
+			)
+		)
+	);;
+
+fun onInput cbRead=
+\atomic{
+	if _KeyboardSock==nil then set _KeyboardSock=_kbdOpen;
+
+	if _Keyboard<>nil then
+	if _Keyboard._readK==nil then _threadUnfreeze _Keyboard._thK false
+	else threadPost _Keyboard._thK (lambda = call _Keyboard._readK nil; nil);
+
+	set _Keyboard= [_thK= _This _readK=if cbRead<>nil then (lambda x= call cbRead x;0)];
+	_sockSelectRead _KeyboardSock true;
+	true 
+};;
+
+fun readInput=
+\atomic{
+	onInput nil;
+	_threadHoldOn;
+	_sockRead _KeyboardSock
+};;
+
+fun _keyboardThread= _Keyboard._thK;;
+
+fun _keyboardAlive= _Keyboard<>nil;;

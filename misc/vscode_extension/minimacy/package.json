@@ -1,0 +1,53 @@
+{
+  "name": "minimacy",
+  "displayName": "Minimacy",
+  "description": "Syntax highlighting for Minimacy language",
+  "version": "0.0.1",
+  "engines": {
+    "vscode": "^1.60.0"
+  },
+  "icon": "fileicons/images/logo1.ico",
+  "categories": [
+    "Programming Languages"
+  ],
+  "publisher": "amberMind",
+  "contributes": {
+    "languages": [
+      {
+        "id": "mcy",
+        "aliases": [
+          "Minimacy",
+          "mcy"
+        ],
+        "extensions": [
+          ".mcy"
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "mcy",
+        "scopeName": "source.mcy",
+        "path": "./syntaxes/tmLanguage.json"
+      }
+    ],
+    "themes": [
+      {
+        "label": "Minimacy",
+        "extensions": [
+          ".mcy"
+        ],
+        "uiTheme": "vs-dark",
+        "path": "./themes/color-theme.json"
+      }
+    ],
+    "iconThemes": [
+      {
+        "id": "vs-minimal",
+        "label": "%minimalIconThemeLabel%",
+        "path": "./fileicons/vs_minimal-icon-theme.json"
+      }
+    ]
+  }
+}

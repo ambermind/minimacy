@@ -1,0 +1,321 @@
+/* Copyright (c) 2022, Sylvain Huet, Ambermind
+   This program is free software: you can redistribute it and/or modify it
+   under the terms of the GNU General Public License, version 2.0, as
+   published by the Free Software Foundation.
+   This program is distributed in the hope that it will be useful, but WITHOUT
+   ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+   FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License,
+   version 2.0, for more details.
+   You should have received a copy of the GNU General Public License along
+   with this program. If not, see <https://www.gnu.org/licenses/>. */
+import core.util.hashset;;
+
+//-----------GENERATOR
+fun initialUpper src= let strLeft src 1 -> first in let strSub src 1 nil -> next in strCat strUppercase first next;;
+fun initialGenerator src = let strLeft src 1 -> first in let strSub src 1 nil -> next in
+	[(strCat strUppercase first next) (strCat strLowercase first next)];;
+
+fun _dbGenerator ll database tables table fields indexes volatiles extras =
+	if ll==nil then
+		let if table<>nil then [table rev fields nil rev indexes nil rev volatiles nil extras]:tables else tables -> tables in
+		[database rev tables nil]
+	else let hd ll -> l in
+	match hd l with
+		"database"-> let tl l-> (name:strNum:_) in _dbGenerator tl ll [if name<>nil then name else "db" decToInt strNum] nil nil nil nil nil nil,
+		"table"-> let tl l ->(name:strNum:_) in let [name decToInt strNum] -> nextTable in
+			if table==nil then _dbGenerator tl ll database tables nextTable nil nil nil nil
+			else _dbGenerator tl ll database [table rev fields nil rev indexes nil rev volatiles nil extras]:tables nextTable nil nil nil nil ,
+		"field"-> let tl l->(strNum:name:type:_) in _dbGenerator tl ll database tables table [initialUpper name decToInt strNum type]:fields indexes volatiles extras,
+		"index"-> let tl l->(name:strSize:_) in _dbGenerator tl ll database tables table fields [initialUpper name decToInt (if strSize==nil then "0" else strSize)]:indexes volatiles extras,
+		"volatile"-> let tl l->(name:_) in _dbGenerator tl ll database tables table fields indexes (initialUpper name):volatiles extras,
+		"extra"-> let tl l->(name:_) in _dbGenerator tl ll database tables table fields indexes volatiles name:extras,
+		_ -> _dbGenerator tl ll database tables table fields indexes volatiles extras
+	;;
+
+fun checkLabel src =
+	for i=0;i<strLength src do let strGet src i -> c in
+		if !(
+			(c>='A' && c<='Z')||
+			(c>='a' && c<='z')||
+			(i>0 && (c>='0' && c<='9'))
+		) then checkError ["wrong label: "src];;
+
+fun checkError msg = throw msgException strBuild msg; nil;;
+
+var TableNames;;
+var TableNums;;
+var FieldNames;;
+var FieldNums;;
+var IndexesNames;;
+var ExtrasNames;;
+
+const Types="Str":"Int":"Float":"UInt":"Bool":"BigNum":"Time":nil;;
+
+fun checkTable p=
+	set FieldNames=hashsetCreate 4;
+	set FieldNums=hashsetCreate 4;
+	set IndexesNames=hashsetCreate 4;
+	set ExtrasNames=hashsetCreate 4;
+	let p->[t fields indexes volatiles extras] in
+	let t->[table num] in
+	(
+		checkLabel table;
+
+		if hashsetContains TableNames table then checkError ["table name '" table "' used twice"];
+		hashsetAdd TableNames table;
+
+		if hashsetContains TableNums num then checkError ["table num '" num "' used twice"];
+		hashsetAdd TableNums num;
+
+		if num<=0 then checkError ["wrong table number '"num"' in table '" table "'"];
+
+		for [field num type] in fields do
+		(
+			checkLabel field;
+			
+			if hashsetContains FieldNames field then checkError ["field name '"field"' used twice in table '"table"'"];
+			
+			if num==nil || num<0 || num>255 then checkError ["wrong field number '"num"' in table '"table"', field '" field"'"];
+			
+			if hashsetContains FieldNums num then checkError ["field num '" num "' used twice in table '"table"'"];
+			hashsetAdd FieldNums num;
+
+			if !test Types (lambda t= t==type) then checkError ["field unknown type '"type"' in table '"table"', field '" field"'"];
+			hashsetAdd FieldNames field;
+		);
+
+		for name in volatiles do
+		(
+
+			checkLabel name;
+			if hashsetContains FieldNames name then checkError ["volatile name '"name"' used twice in table '"table"'"];
+			hashsetAdd FieldNames name;
+		);
+		for name in extras do
+		(
+
+			checkLabel name;
+			if hashsetContains ExtrasNames name then checkError ["extra name '"name"' used twice in table '"table"'"];
+			hashsetAdd ExtrasNames name;
+		);
+		for [index size] in indexes do
+		(
+
+			checkLabel index;
+
+			if hashsetContains IndexesNames index then checkError ["index name '"index"' used twice in table '"table"'"];
+			hashsetAdd IndexesNames index;
+
+			if nil==hashmapGet FieldNames index then checkError ["index name '"index"' is not a field of table '"table"'"]
+		);
+		[t fields indexes volatiles extras]
+	);;
+
+fun checkDatabase database tables=
+	set TableNames=hashmapCreate 4;
+	set TableNums=hashmapCreate 4;
+	try
+		if database==nil then checkError ["no database definition"];
+		let database -> [name strMaxMem] in
+		checkLabel name;
+		map tables #checkTable
+	catch msgException msg -> (echo "Compile error: "; echoLn msg; nil);;
+
+fun maxTableNum l=
+	if l==nil then 0
+	else let hd l -> [[name num] fields indexes volatiles extras] in max num maxTableNum tl l;;
+fun maxFieldNum l=
+	if l==nil then 0
+	else let hd l ->[Field num type] in max num maxFieldNum tl l;;
+	
+fun dbBuild src database tables= 
+	let database -> [name maxMem] in
+	let initialGenerator name -> [Db db] in
+	strBuild [
+"// Database definition - 2021 - Sylvain Huet
+//------------------------------------------
+// File generated by core.db.compiler
+// Do not edit this file
+
+/*
+definition:
+
+"src"
+*/
+"
+
+"
+import core.db.lambda as parent;;
+import core.util.table as table;;
+
+var __"Db";;
+var __"Db"Lock = lockCreate;;
+"
+map tables (lambda x=let x -> [[name num] fields indexes volatiles extras] in
+	let initialGenerator name -> [Table table] in [
+"
+struct _"Table"=Block+["
+map fields (lambda x=let x ->[Field _ _] in [" _"table Field])
+map volatiles (lambda x= [" _"table x])
+map extras (lambda x= [" " x])
+" ];;
+fun _"db Table" x= _"Table"<Block x;;
+var __"Table";;
+"
+map indexes (lambda x=let x ->[Field size] in[
+"var __"Table Field"Index;;
+"
+])
+])
+//------------------
+"
+fun _"db"Load =
+	set __"Db"=parent.dbOpen "(maxTableNum tables)";
+"
+map tables (lambda x=let x -> [[name num] fields indexes volatiles extras] in
+	let initialGenerator name -> [Table table] in [
+"	set __"Table"= parent.dbTable __"Db" "num" "maxFieldNum fields" (lambda = Block<_"Table" [_"Table"]);
+	set __"Table".makeDataT= (lambda row=
+		let _"Table"<Block row -> row in parent.dbMakeContent __"Table" row
+		[
+"
+map fields (lambda x=let x ->[Field num type] in[
+"			parent.dbUpdate"type" "strToSource strVarUInt num " row._"table Field"
+"
+])
+"		]
+	);
+"
+map indexes (lambda x=let x ->[Field size] in[
+"	set __"Table Field"Index= parent.dbCreateMap "size";
+"
+])
+
+map fields (lambda x=let x ->[Field num type] in[
+"	parent.dbFied __"Table" "num" (lambda src i len row="
+map indexes (lambda x=let x ->[Field2 size] in if Field==Field2 then [
+" parent.dbAddMap __"Db" __"Table Field"Index (_"Table"<Block row)"
+])
+" set (_"Table"<Block row)._"table Field" = "
+	match type with
+		"Str" -> "strSub src i len",
+		"Int" -> "strReadVarInt src i",
+		"UInt" -> "strReadVarUInt src i",
+		"Time" -> "strReadVarUInt src i",
+		"Bool" -> "(0<>strGet src i)",
+		"Float" -> "binToFloat strSub src i len",
+		"BigNum" -> "bigFromSignedBin strSub src i len"
+	"; 0);
+"
+])
+])
+"	parent.dbLoad __"Db" pkg;
+	true;;
+
+//----------USER API
+
+fun "db"Open = parent.dbCheck __"Db"Lock (lambda= __"Db"<>nil) pkg " if maxMem<>nil then intToDec maxMem else "nil" " #_"db"Load;;
+fun "db"Restart = lockSync __"Db"Lock (lambda = parent.dbRestart __"Db" "(maxTableNum tables)" #_"db"Load);;
+
+fun "db"Dump = parent.dbDump __"Db";;
+fun "db"Status = parent.dbStatus __"Db";;
+fun "db"Export output= parent.dbExport __"Db" output;;
+
+"
+map tables (lambda x=let x -> [[name num] fields indexes volatiles extras] in
+	let initialGenerator name -> [Table table] in [
+"
+//----------Table __"Table"
+fun "db Table"Id row = parent.dbId row;;
+fun "db Table"ById id = _"Table"<Block parent.dbById __"Table" id;;
+
+fun "db Table"Visit f = parent.dbVisit __"Table" false f #_"db Table";;
+fun "db Table"VisitDesc f = parent.dbVisit __"Table" true f #_"db Table";;
+fun "db Table"Filter f = parent.dbFilter __"Table" false f #_"db Table";;
+fun "db Table"FilterDesc f = parent.dbFilter __"Table" true f #_"db Table";;
+fun "db Table"Map f = parent.dbMap __"Table" false f #_"db Table";;
+fun "db Table"MapDesc f = parent.dbMap __"Table" true f #_"db Table";;
+"
+map indexes (lambda x=let x ->[Field size] in[
+"fun "db Table Field"Index val= hashmapGet __"Table Field"Index val;;
+"
+])
+"
+"
+map fields (lambda x=let x ->[Field num type] in[
+"fun "db Table Field" row = row._"table Field";;
+fun "db Table "Set" Field" v row = dbMemoryUse __"Db" lambda= "
+map indexes (lambda x=let x ->[Field2 size] in if Field==Field2 then [
+" parent.dbUpdateMap __"Db" __"Table Field"Index row row._"table Field
+])
+" set row._"table Field" = dbMemoryTake __"Db" v; row;;
+
+"
+])
+
+map volatiles (lambda x=let x ->Field in[
+"fun "db Table Field" row = row._"table Field";;
+fun "db Table "Set" Field" v row = dbMemoryUse __"Db" lambda= "
+map indexes (lambda x=let x ->[Field2 size] in if Field==Field2 then [
+" parent.dbUpdateMap __"Db" __"Table Field"Index row row._"table Field
+])
+" set row._"table Field" = dbMemoryTake __"Db" v; row;;
+
+"
+])
+
+"fun "db Table"Flush row= _"Table"<Block parent.dbUpdate __"Table" Block<_"Table" row;;
+
+fun "db Table"Insert = dbMemoryUse __"Db" lambda= _"Table"<Block parent.dbInsert __"Table" Block<_"Table" [_"Table"] nil;;
+fun "db Table"InsertId id = dbMemoryUse __"Db" lambda= _"Table"<Block parent.dbInsert __"Table" Block<_"Table" [_"Table"] id;;
+fun "db Table"Delete row = dbMemoryUse __"Db" lambda= parent.dbDelete __"Table" Block<_"Table
+map indexes (lambda x=let x ->[Field size] in [
+" parent.dbDeleteMap __"Db" __"Table Field"Index row._"table Field
+])
+" row; true;;
+
+const "Db Table"Columns={\"Id\""
+map fields (lambda x=let x ->[Field num type] in[" \"" Field "\""])
+
+"};;
+fun "db Table"ToTable row={intToDec dbId row "
+map fields (lambda x=let x ->[Field num type] in [
+	match type with
+		"Int" -> "intToDec ",
+		"UInt" -> "intToDec ",
+		"Time" -> "fileDateSeconds ",
+		"Float" -> "floatToStr ",
+		"Bool" -> "boolToStr ",
+		"BigNum" -> "bigToDec "
+	"row._"table Field " "
+])
+
+"};;
+fun "db Table"Display f= parent.dbTableDisplay #"db Table"Visit "Db Table"Columns #"db Table"ToTable f;;
+fun "db Table"Count = __"Table".countT;;
+"
+])
+];;
+
+fun _dbFilterComments l=
+	if l<>nil then let l -> (a:next) in
+	if (!strStartsWith a "#")&&(!strStartsWith a "#") then a:_dbFilterComments next;;
+
+fun dbFilterComments ll=
+	if ll<>nil then (_dbFilterComments hd ll):dbFilterComments tl ll;;
+
+public:
+fun dbCompile src= 
+	let _dbGenerator wordExtract src nil nil nil nil nil nil nil -> [database tables] in
+	let	checkDatabase database tables-> tables in
+	if tables<>nil then
+	let dbBuild src database tables -> content in
+	let database -> [name strMaxMem] in
+	let initialGenerator name -> [Db db] in
+	let strBuild ["db." db ".mcy"] -> fileName in
+	(
+		save content fileName;
+		echoLn "\n] Compilation successful!";
+		echoLn ["] Database stored in: " fileName];
+		fileName
+	);;

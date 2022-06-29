@@ -1,0 +1,3 @@
+// minimacy TopLevel - Sylvain Huet - 2020
+fun run = RUN "core.console" nil;;
+

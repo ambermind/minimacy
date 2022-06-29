@@ -1,0 +1,87 @@
+/* Copyright (c) 2022, Sylvain Huet, Ambermind
+   This program is free software: you can redistribute it and/or modify it
+   under the terms of the GNU General Public License, version 2.0, as
+   published by the Free Software Foundation.
+   This program is distributed in the hope that it will be useful, but WITHOUT
+   ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+   FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License,
+   version 2.0, for more details.
+   You should have received a copy of the GNU General Public License along
+   with this program. If not, see <https://www.gnu.org/licenses/>. */
+
+//----------- DIR
+struct FileInfo=[_dirFI _nameFI _sizeFI _updateFI];;
+
+fun __decodeDir l prefix=
+	if l<>nil then let l ->(name:attr:next) in
+	let strSplit " " attr ->(hexSize:hexTime:type:nil) in
+	let type=="d" -> directory in
+	let strFormat "***" prefix name if directory then "/" -> fileName in
+	[_dirFI=directory _nameFI=fileName _sizeFI=(hexToInt hexSize) _updateFI=(hexToInt hexTime)]:__decodeDir next prefix;;
+
+fun _decodeDir str prefix= __decodeDir strSplit "\0" str prefix;;
+
+fun _diskListLoop path len prefix=
+	let if len==nil then 2048 else len -> len in
+	let bytesCreate len 0 -> buffer in
+	let (_workerEnter; _diskList path buffer) -> len2 in
+	if len2<=len then _decodeDir (strLeft bytesAsStr buffer max 0 len2-1) prefix
+	else _diskListLoop path len2 prefix;;
+
+fun _diskLoop path forceSlash=
+	let dirAppend _This._dirT path forceSlash -> path in
+	let if strStartsWith path _This._dirT then strSub path strLength _This._dirT nil else path -> prefix in
+	_diskListLoop path nil prefix;;
+
+fun diskList path= filter (_diskLoop path true) (lambda f= !f._dirFI || !strEndsWith f._nameFI "./");;
+fun fileList path= filter (_diskLoop path true) (lambda f= !f._dirFI);;
+fun dirList path= filter (_diskLoop path true) (lambda f= f._dirFI && !strEndsWith f._nameFI "./");;
+fun fileInfo path = hd _diskLoop path false;;
+	
+fun fileInfoName f=f._nameFI;;
+fun fileInfoSize f=f._sizeFI;;
+fun fileInfoUpdate f=f._updateFI;;
+fun fileInfoIsDir f=f._dirFI;;
+
+//----------- FILES
+fun fileOpen fileName mode= 
+	let (_workerEnter; _fileOpen (dirAppend _This._dirT fileName false) mode) -> f in
+	if f<>nil then f
+	else 
+	if mode==FILE_READ_ONLY then
+	(_workerEnter; _fileOpen (dirAppend _romDir fileName false) mode);;
+fun fileSize file = _workerEnter; _fileSize file;;
+fun fileClose file = _workerEnter; _fileClose file;;
+
+fun fileWrite file seek src start len=
+	if len==0 then 0
+	else if !(len<0) then
+	(
+		_workerEnter;
+		_fileWrite file seek src start len
+	);;	
+
+fun fileRead file seek len=
+	if len==0 then ""
+	else if !(len<0) then
+	let bytesCreate len 0 -> buffer in
+	(
+		_workerEnter; 
+		let _fileRead file seek buffer 0 len -> len2 in
+		strLeft bytesAsStr buffer len2
+	);;	// when len2==buffer length, the strLeft won't allocate memory and will return the entry
+
+fun load fileName =
+	let fileOpen fileName FILE_READ_ONLY -> file in
+	if file<>nil then
+	let fileSize file -> size in
+	let fileRead file nil size -> data in
+	let fileClose file -> _ in
+	data;;
+
+fun save data fileName =
+	let fileOpen fileName FILE_REWRITE -> file in
+	if file<>nil then
+	let if 0==strLength data then 0 else fileWrite file nil data 0 nil -> len in
+	fileClose file;;
+
