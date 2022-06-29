@@ -1,0 +1,2 @@
+# minimacy
+Minimacy main repository
