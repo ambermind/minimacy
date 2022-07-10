@@ -290,6 +290,8 @@ int hostLoop()
 	return 0;
 }
 
+#include "../windows/minimacy/resource.h"
+
 BOOL DeclareWindow(HINSTANCE this_inst)
 {
 	WNDCLASS    wc;
@@ -297,8 +299,7 @@ BOOL DeclareWindow(HINSTANCE this_inst)
 	HICON IconMain;
 	
 	if (UI.classRegistered) return 0;
-	IconMain = NULL;// LoadIcon(this_inst, (LPCTSTR)IDI_ICON1);
-
+	IconMain = LoadIcon(this_inst, (LPCTSTR)IDI_ICON1);
 	wc.style = CS_HREDRAW | CS_VREDRAW; // | CS_DBLCLKS;
 	wc.lpfnWndProc = (WNDPROC)WindowProc;
 	wc.cbClsExtra = 0;
@@ -396,6 +397,9 @@ MTHREAD_START _uiStart(Thread* th)
 	result = MM.trueRef;
 	workerDone(th, result);
 	hostLoop();
+#ifdef WITH_GLES2
+//	_windowReleaseGL();
+#endif
 	return MTHREAD_RETURN;
 
 //cleanup:
@@ -758,7 +762,7 @@ int coreUiHwInit(Thread* th, Pkg* system)
 	pkgAddFun(th, system, "fontDraw", fun_fontDraw, typeAlloc(th, TYPECODE_FUN, NULL, 6, MM.Bitmap, MM.I, MM.I, font->type, MM.S, MM.Boolean));
 	pkgAddFun(th, system, "fontDrawU16", fun_fontDrawU16, typeAlloc(th, TYPECODE_FUN, NULL, 6, MM.Bitmap, MM.I, MM.I, font->type, MM.S, MM.Boolean));
 
-	UI.thisInstance = NULL;
+	UI.thisInstance = GetModuleHandle(NULL);
 	UI.classRegistered = 0;
 	UI.win = 0;
 	UI.ikey = 0;

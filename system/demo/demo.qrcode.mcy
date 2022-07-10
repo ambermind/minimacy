@@ -1,4 +1,5 @@
 
 import core.2d.qrcode;;
+import core.2d.png;;
 
-fun run= qrcodeEcho qrcodeWithBorder "https://minimacy.net" ECC_MEDIUM 1;;
+fun run= save bitmapToPng (qrcodeEcho qrcodeWithBorder "https://minimacy.net" ECL_MEDIUM 1) true "outQRcode.png"; echoLn "done";;

@@ -155,12 +155,12 @@ fun _xmlEncodePretty j pref final=
 			final
 		];;
 
-public Xml;;
+public Xml contentXml tagXml;;
 public:
-fun xmlEncodePretty j= _xmlEncodePretty j "" "\n";;
+fun xmlEncodePretty xml= _xmlEncodePretty xml "" "\n";;
 
-fun xmlEncode j=
-	match j with
+fun xmlEncode xml=
+	match xml with
 		contentXml str -> strToXml str,
 		tagXml tag lattr lchild -> strBuild [
 			"<" tag

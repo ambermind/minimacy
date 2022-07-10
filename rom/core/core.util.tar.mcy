@@ -114,12 +114,13 @@ fun _tarEncode fileName update content=
 
 fun _tarFinalize lBlocks= strBuild [ lBlocks TAR_ZEROS TAR_ZEROS ];;
 
+fun tarExtract src= _tarExtract src 0;;
+
 //----------------API
 public TarFile;;
 public:
-fun tarExtract src= _tarExtract src 0;;
 
-fun tarType t=t.typeT;;
+//fun tarType t=t.typeT;;	// useless for now
 fun tarFileName t=t.fileNameT;;
 fun tarSize t=t.sizeT;;
 fun tarContent t=t.contentT;;
@@ -146,5 +147,5 @@ fun tarFromFileInfoList lFileInfo=	// lFileInfo: list of FileInfo structures (se
 	_tarFinalize map lFileInfo (lambda f=_tarEncode fileInfoName f fileInfoUpdate f load fileInfoName f);;
 
 // encode from memory data:
-fun tarFromData lData=	// lData : list of [fileName updateTime content]
+fun tarFromFileList lData=	// lData : list of [fileName updateTime content]
 	_tarFinalize map lData (lambda [fileName updateTime content]=_tarEncode fileName updateTime content);;

@@ -189,13 +189,13 @@ fun timeToDosTime t=
 
 fun zipFileName z=z.fileNameZ;;
 fun zipFlag z=z.flagZ;;
-fun zipMethod z=z.methodZ;;
+//fun zipMethod z=z.methodZ;;	// useless for now
 fun zipCompressed z=z.compressedZ;;
-fun zipUnompressed z=z.uncompressedZ;;
+fun zipUncompressed z=z.uncompressedZ;;
 fun zipContent z=z.contentZ;;
 fun zipUpdate z=z.updateZ;;
 
-fun zipDecode src=
+fun _zipDecode src=
 	let strPosRev src ENDHEADERMAGIC nil -> i in
 	if i<>nil then
 	let _zipHeader src i+4 ZIP_ENDHEADER -> (_:_:nbEntry:nb2:sizeDir:offset:commentSize:_) in
@@ -207,18 +207,18 @@ fun zipLoadContent src z=
 	let inflate comp INFLATE_NO_HEADER -> src in
 	if (z.uncompressedZ==strLength src) && (crc32 src 0)==z.crcZ then set z.contentZ=src;;
 
-fun zipFiles src withContent=
-	filter zipDecode src (lambda z=
+fun zipExtractFiles src withContent=
+	filter _zipDecode src (lambda z=
 		if withContent then zipLoadContent src z;
 		true
 	);;
 
 
 // encode from memory data:
-fun zipFromData lData= // lData : list of [fileName updateTime content]
+fun zipFromFileList lData= // lData : list of [fileName updateTime content]
 	_zipEncode lData 0 nil nil;;
 
 // encode from disk files:
 fun zipFromFileInfoList lFileInfo=	// lFileInfo: list of FileInfo structures (see bios functions fileList, fileInfo, fileInfoCreate)
-	zipFromData map lFileInfo (lambda f= if !fileInfoIsDir f then [fileInfoName f fileInfoUpdate f load fileInfoName f]);;
+	zipFromFileList map lFileInfo (lambda f= if !fileInfoIsDir f then [fileInfoName f fileInfoUpdate f load fileInfoName f]);;
 	

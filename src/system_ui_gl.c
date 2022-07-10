@@ -35,7 +35,6 @@ FUN_UINT_PCHAR_INT glGetUniformLocation = NULL;
 FUN_UINT_PCHAR_INT glGetAttribLocation = NULL;
 FUN_ENUM_VOID glDisableVertexAttribArray = NULL;
 FUN_INT_VOID glActiveTexture = NULL;
-FUN_INT_INT_VOID glUniform1i = NULL;
 FUN_INT_SIZEI_PFLOAT_VOID glUniform1fv = NULL;
 FUN_INT_SIZEI_PFLOAT_VOID glUniform2fv = NULL;
 FUN_INT_SIZEI_PFLOAT_VOID glUniform3fv = NULL;
@@ -92,7 +91,6 @@ void _GLES2Link()
 	glGetAttribLocation = (FUN_UINT_PCHAR_INT)myWglGetProcAddress("glGetAttribLocation");
 	glDisableVertexAttribArray = (FUN_ENUM_VOID)myWglGetProcAddress("glDisableVertexAttribArray");
 	glActiveTexture = (FUN_INT_VOID)myWglGetProcAddress("glActiveTexture");
-	glUniform1i = (FUN_INT_INT_VOID)myWglGetProcAddress("glUniform1i");
 	glUniform1fv = (FUN_INT_SIZEI_PFLOAT_VOID)myWglGetProcAddress("glUniform1fv");
 	glUniform2fv = (FUN_INT_SIZEI_PFLOAT_VOID)myWglGetProcAddress("glUniform2fv");
 	glUniform3fv = (FUN_INT_SIZEI_PFLOAT_VOID)myWglGetProcAddress("glUniform3fv");
@@ -257,7 +255,8 @@ void _glMakeGLcontextInitGL()
 	GL.instance++;
 }
 int fun_glMakeContext(Thread* th)
-{	printf("===============fun_glMakeContext\n");
+{
+//	printf("===============fun_glMakeContext\n");
 
 	if (!GL.win) return STACKPUSH(th, NIL);
 	_glMakeGLcontextInitGL();
@@ -542,7 +541,6 @@ GLP(fun_glLinkProgram, glLinkProgram)
 GLIs(fun_glGetString, glGetString)
 GLPSi(fun_glGetUniformLocation, glGetUniformLocation)
 GLPSi(fun_glGetAttribLocation, glGetAttribLocation)
-GLII(fun_glUniform1i, glUniform1i)
 GLIIFloats(fun_glUniform1fv, glUniform1fv)
 GLIIFloats(fun_glUniform2fv, glUniform2fv)
 GLIIFloats(fun_glUniform3fv, glUniform3fv)
@@ -676,7 +674,6 @@ int coreUiGLES2Init(Thread* th, Pkg* system)
 	pkgAddFun(th, system, "glGetString", fun_glGetString, GLIs);
 	pkgAddFun(th, system, "glGetUniformLocation", fun_glGetUniformLocation, GLPSi);
 	pkgAddFun(th, system, "glGetAttribLocation", fun_glGetAttribLocation, GLPSi);
-	pkgAddFun(th, system, "glUniform1i", fun_glUniform1i, GLII);
 	pkgAddFun(th, system, "glUniform1fv", fun_glUniform1fv, GLIIFloats);
 	pkgAddFun(th, system, "glUniform2fv", fun_glUniform2fv, GLIIFloats);
 	pkgAddFun(th, system, "glUniform3fv", fun_glUniform3fv, GLIIFloats);

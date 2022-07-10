@@ -10,21 +10,6 @@
    with this program. If not, see <https://www.gnu.org/licenses/>. */
 #include"minimacy.h"
 
-
-char* allocTest(Thread* th, LINT size)
-{
-	LB* p= memoryAllocStr(th, NULL, size);
-	printf("allocTest %lld\n", size);
-	if (p) return STRSTART(p);
-	return NULL;
-}
-
-
-int* stdloadPngEx(char* inbuffer, int size, int* w, int* h, void* fmalloc, void* ffree, void* user);
-char* stdmakePngEx(char* pixels, int* size, int w, int h, int alphaok, int mode, void* fmalloc, void* ffree, void* user);
-int* stdloadJpgEx(char* inbuffer, int size, int* w, int* h, void* fmalloc, void* ffree, void* user);
-char* stdmakeJpgEx(unsigned char* start, int w, int h, int quality, int* size, int R, int G, int B, int INC, void* fmalloc, void* ffree, void* user);
-
 void bitmapMark(LB* user)
 {
 	LBitmap* b = (LBitmap*)user;
@@ -65,82 +50,6 @@ LBitmap* _bitmapCreate(Thread* th, LINT w, LINT h)
 	return b;
 }
 
-MTHREAD_START _bitmapFromPng(Thread* th)
-{
-	LW result = NIL;
-	LBitmap* b;
-	int* content = NULL;
-	int w, h;
-
-	LB* data = VALTOPNT(STACKGET(th, 0));
-	if (!data) goto cleanup;
-	content = stdloadPngEx(STRSTART(data), (int)STRLEN(data), &w, &h, workerAllocStr, NULL, th);
-	if (!content) goto cleanup;
-	b = (LBitmap*)workerAllocBitmap(th, w, h); if (!b) goto cleanup;
-	memcpy(b->start8, content, w * h * 4);
-	result = PNTTOVAL(b);
-cleanup:
-	return workerDone(th, result);
-}
-
-int fun_bitmapFromPng(Thread* th) { return workerStart(th, 1, _bitmapFromPng); }
-
-MTHREAD_START _bitmapToPng(Thread* th)
-{
-	LW result = NIL;
-	int size = 0;
-	char* content;
-	LB* data;
-
-	LW alpha = STACKGET(th, 0);
-	LBitmap* b = (LBitmap*)VALTOPNT(STACKGET(th, 1));
-	if (!b) goto cleanup;
-	content = stdmakePngEx((char*)b->start8, &size, (int)b->w, (int)b->h, alpha == MM.trueRef ? 1 : 0, 0, workerAllocStr, NULL, th);
-	if (!content) goto cleanup;
-	data = workerAllocContent(th, content, size); if (!data) goto cleanup;
-	result = PNTTOVAL(data);
-cleanup:
-	return workerDone(th, result);
-}
-int fun_bitmapToPng(Thread* th) { return workerStart(th, 2, _bitmapToPng); }
-
-MTHREAD_START _bitmapFromJpg(Thread* th)
-{
-	LW result = NIL;
-	
-	LBitmap* b;
-	int* content=NULL;
-	int w,h;
-	LB* data = VALTOPNT(STACKGET(th, 0));
-	if (!data) goto cleanup;
-	content = stdloadJpgEx(STRSTART(data), (int)STRLEN(data), &w, &h, workerAllocStr,NULL,th);
-	if (!content) goto cleanup;
-	b = (LBitmap*) workerAllocBitmap(th, w, h); if (!b) goto cleanup;
-	memcpy(b->start8, content, w * h * 4);
-	result = PNTTOVAL(b);
-cleanup:
-	return workerDone(th, result); 
-}
-int fun_bitmapFromJpg(Thread* th) { return workerStart(th, 1, _bitmapFromJpg); }
-
-
-MTHREAD_START _bitmapToJpg(Thread* th)
-{
-	LW result = NIL;
-	int size=0;
-	char* content;
-	LB* data;
-	LINT quality = VALTOINT(STACKGET(th, 0));
-	LBitmap* b = (LBitmap*)VALTOPNT(STACKGET(th, 1));
-	if (!b) goto cleanup;
-	content = stdmakeJpgEx(b->start8, (int)b->w, (int)b->h, (int)quality, &size, 2,1,0,4, workerAllocStr, NULL, th);
-	if (!content) goto cleanup;
-	data = workerAllocContent(th, content, size); if (!data) goto cleanup;
-	result = PNTTOVAL(data);
-cleanup:
-	return workerDone(th, result);
-}
-int fun_bitmapToJpg(Thread* th) { return workerStart(th, 2, _bitmapToJpg); }
 
 int fun_bitmapCreate(Thread* th)
 {
@@ -373,10 +282,6 @@ int core2dInit(Thread* th, Pkg *system)
 	pkgAddConst(th, system,"BLEND_ALPHA",INTTOVAL(9),BlendFunction->type);
 
 	pkgAddFun(th, system, "bitmapCreate",fun_bitmapCreate,typeAlloc(th, TYPECODE_FUN,NULL,4,MM.I, MM.I,MM.I, MM.Bitmap));
-	pkgAddFun(th, system, "_bitmapFromPng", fun_bitmapFromPng, fun_S_B);
-	pkgAddFun(th, system, "_bitmapToPng", fun_bitmapToPng, fun_B_Bool_S);
-	pkgAddFun(th, system, "_bitmapFromJpg", fun_bitmapFromJpg, fun_S_B);
-	pkgAddFun(th, system, "_bitmapToJpg", fun_bitmapToJpg, fun_B_I_S);
 	pkgAddFun(th, system, "bitmapW", fun_bitmapW, fun_B_I);
 	pkgAddFun(th, system, "bitmapH", fun_bitmapH, fun_B_I);
 	pkgAddFun(th, system, "bitmapCopy", fun_bitmapCopy, typeAlloc(th, TYPECODE_FUN, NULL, 6, MM.Bitmap, MM.I, MM.I, MM.I, MM.I, MM.Bitmap));

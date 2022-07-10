@@ -37,8 +37,8 @@ fun gl2dInitScreen bgColor=
 
 fun gl2dDrawFlatBox x y w h color=
 	glLoadIdentity;
-	glTranslatef intToFloat x intToFloat y 0.;
-	glScalef intToFloat w intToFloat h 1.;
+	glTranslate intToFloat x intToFloat y 0.;
+	glScale intToFloat w intToFloat h 1.;
 	renderFlat GL_TRIANGLE_STRIP SQUARE_VRT color;;
 
 fun gl2dSpriteCreate texture=
@@ -60,8 +60,8 @@ fun gl2dSpriteUpdateTexture s = textureUpdate s.textureS;;
 fun gl2dDrawColoredSprite s x y color=
 	glBindTexture GL_TEXTURE_2D s.textureS.glT ;
 	glLoadIdentity;
-	glTranslatef intToFloat x intToFloat y 0.;
-	glScalef s.wS s.hS 1.;
+	glTranslate intToFloat x intToFloat y 0.;
+	glScale s.wS s.hS 1.;
 	renderTexture GL_TRIANGLE_STRIP SQUARE_VRT s.uvS color;;
 
 fun gl2dDrawSprite s x y= gl2dDrawColoredSprite s x y WHITE;;

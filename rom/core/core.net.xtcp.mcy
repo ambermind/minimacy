@@ -50,7 +50,7 @@ fun XTcpSetCipherSuites x cipherSuites= match x with _tlsX h -> tlsTcpSetCipherS
 
 // hostList is :
 // - for a http server: nil
-// - for a https server: a list of [serverName privateKey pwd certList] (see function tlsMakeHosts in core.net.tls for documentation)
+// - for a https server: a list of [serverName privateKey pwd certList authForClientCert] (see function tlsMakeHosts in core.net.tls for documentation)
 fun XTcpListen hostList ip port cb=
 	match hostList with
 		nil -> tcpListen ip port (lambda tcp= call cb _clearX tcp),

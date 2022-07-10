@@ -58,16 +58,6 @@ fun _workerEnter=
 fun _workerAlive = nil<>_Workers;;
 
 //-----------------------------------
-
-fun bitmapFromPng data = _workerEnter; _bitmapFromPng data;;
-fun bitmapToPng b mode = _workerEnter; _bitmapToPng b mode;;
-
-fun bitmapFromJpg data = _workerEnter; _bitmapFromJpg data;;
-fun bitmapToJpg b mode = _workerEnter; _bitmapToJpg b mode;;
-
-fun bitmapErase b color= bitmapFill b color nil;;
-
-//-----------------------------------
 fun ipByName hostname= _workerEnter; _ipByName hostname;;
 fun nameByIp ip= _workerEnter; _nameByIp ip;;
 

@@ -188,6 +188,8 @@ fun range val mn mx= (val>=mn) && (val<=mx);;
 
 fun boolToStr val= if val==true then "true" else if val==false then "false";;
 
+fun bitmapErase b color= bitmapFill b color nil;;
+
 fun await asyncFun=
 	let joinCreate -> join in
 	(

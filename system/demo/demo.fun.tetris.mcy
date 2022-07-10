@@ -1,6 +1,7 @@
 // Tetris - Feb 2003 - by Sylvain HUET
 
 import core.2d.font;;
+import core.2d.png;;
 
 const GRID_WIDTH=16;;
 const GRID_HEIGHT=32;;

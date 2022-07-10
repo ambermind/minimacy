@@ -254,6 +254,24 @@ int hostLoop()
     return 0;
 }
 
+struct MwmHints {
+    unsigned long flags;
+    unsigned long functions;
+    unsigned long decorations;
+    long input_mode;
+    unsigned long status;
+};
+enum {
+    MWM_HINTS_FUNCTIONS = (1L << 0),
+    MWM_HINTS_DECORATIONS =  (1L << 1),
+
+    MWM_FUNC_ALL = (1L << 0),
+    MWM_FUNC_RESIZE = (1L << 1),
+    MWM_FUNC_MOVE = (1L << 2),
+    MWM_FUNC_MINIMIZE = (1L << 3),
+    MWM_FUNC_MAXIMIZE = (1L << 4),
+    MWM_FUNC_CLOSE = (1L << 5)
+};
 void _uiApplyHints(LINT x, LINT y, LINT w, LINT h)
 {
 	XSizeHints* hints = XAllocSizeHints();
@@ -266,6 +284,16 @@ void _uiApplyHints(LINT x, LINT y, LINT w, LINT h)
 	hints->win_gravity = StaticGravity;
 	XSetWMNormalHints(UI.display, UI.win, hints);
 	XFree(hints);
+
+	if (UI.type&UI_FRAME)
+	{
+		Atom mwmHintsProperty = XInternAtom(UI.display, "_MOTIF_WM_HINTS", 0);
+		struct MwmHints hints;
+		hints.flags = MWM_HINTS_DECORATIONS;
+		hints.decorations = 0;
+		XChangeProperty(UI.display, UI.win, mwmHintsProperty, mwmHintsProperty, 32,
+    	    PropModeReplace, (unsigned char *)&hints, 5);
+	}
 	UI.x=x; UI.y=y; UI.w=w; UI.h=h;
 }
 
@@ -292,7 +320,7 @@ MTHREAD_START _uiStart(Thread* th)
 	x=(vx==NIL)?0:VALTOINT(vx);
 
 	UI.win=XCreateSimpleWindow(UI.display, RootWindow(UI.display,UI.screen),
-			x,y,w,h,1,WhitePixel(UI.display,UI.screen),
+			x,y,w,h,0,WhitePixel(UI.display,UI.screen),
 			BlackPixel(UI.display,UI.screen));
 	XSetStandardProperties(UI.display, UI.win, name,name,0,NULL,0,NULL);
 	UI.type=type;

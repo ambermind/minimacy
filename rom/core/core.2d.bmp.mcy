@@ -59,10 +59,21 @@ fun _extractInts data i l=
 	let match len with
 		8 -> strRead8 data i,
 		16 -> strRead16Lsb data i,
-		BMP_24 -> strRead24Lsb data i,
-		BMP_32 -> strRead32Lsb data i
+		24 -> strRead24Lsb data i,
+		32 -> strRead32Lsb data i
 	-> val in
 	if val<>nil then val:_extractInts data i+len/8 tl l;;
+
+fun _bitmapFrom32 bmp data start bpl w h y dy=
+	(
+		for i=0;i<h do
+		(
+			for x=0;x<w do bitmapSet bmp x y strRead32Lsb data start+x*4;
+			set start=start+bpl;
+			set y=y+dy
+		);
+		bmp
+	);;
 
 fun _bitmapFrom24 bmp data start bpl w h y dy=
 	(
@@ -72,6 +83,7 @@ fun _bitmapFrom24 bmp data start bpl w h y dy=
 			set start=start+bpl;
 			set y=y+dy
 		);
+		bitmapFill bmp 0xff000000 BLEND_OR;
 		bmp
 	);;
 
@@ -114,6 +126,7 @@ fun _bitmapFromData data headerNext start w h plans bpp compression colors=
 	let if h>0 then h-1 else 0 -> y0 in
 	let if h>0 then -1 else 1 -> dy in
 	match bpp with
+		32 -> _bitmapFrom32 bmp data start bpl w h y0 dy,
 		24 -> _bitmapFrom24 bmp data start bpl w h y0 dy,
 		8 -> _bitmapFrom8 bmp data headerNext colors start bpl w h y0 dy,
 		1 -> _bitmapFrom2 bmp data headerNext start bpl w h y0 dy

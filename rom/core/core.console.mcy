@@ -99,7 +99,7 @@ fun loopchar=
 
 fun consoleStart pkg0=
 	set consolePkg=pkg0;
-	echo "Minimacy Top-level - Sylvain Huet - 2020\nReady\n\n> ";
+	echo "Minimacy Top-level - Sylvain Huet - 2022\nReady\n\n> ";
 	if false then (loopchar;nil)	// when using this, the thread is mostly in WAIT mode, and therefore cannot handle any task (network, ...)
 	else onInput (lambda s=
 		if s==nil then exit;	// on unix

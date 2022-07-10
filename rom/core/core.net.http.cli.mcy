@@ -230,9 +230,11 @@ fun _httpRestart h=
 	h;;
 
 //--------------------CLIENT END USER FUNCTIONS
+public HttpArgs stringArg fileArg;;
+
 public:
 
-fun httpAddHeader h key val=
+fun httpSetHeader h key val=
 	hashmapSet h.requestHeadersH key val;
 	h;;
 fun httpGetRemote h = [(XTcpRemoteIp h.ttH) (XTcpRemotePort h.ttH)];;	// returns [ip port]
@@ -283,7 +285,7 @@ fun httpSetClientCertificate h clientCertificate clientKey=
 fun httpSetMultipart h l=
 	let _getMultiPartBoundary -> boundary in
 	(
-		 httpAddHeader h HTTP_CONTENT_TYPE strBuild { HTTP_MULTIPART "; boundary=----" boundary};
+		 httpSetHeader h HTTP_CONTENT_TYPE strBuild { HTTP_MULTIPART "; boundary=----" boundary};
 		 httpSetPostData h strJoin "\r\n" (_buildMultipart l strCat "------" boundary)
 	);;
 
@@ -306,13 +308,4 @@ fun httpSend h cb=
 fun httpGet url=
 	await (lambda join=
 		httpSend (httpCreate nil url HTTP_1_0) (lambda status headers data= joinSend join data)
-	);;
-
-fun httpGetEx url clientCertificate clientKey=
-	await (lambda join=
-		let httpCreate nil url HTTP_1_0 -> h in
-		(
-			httpSetClientCertificate h clientCertificate clientKey;
-			httpSend h (lambda status headers data= joinSend join data)
-		)
 	);;

@@ -78,5 +78,12 @@ fun b64Decode str=
 		bytesAsStr b
 	);;
 
-fun b64Safe str= strReplace (strReplace (strReplace str "+" "-") "/" "_") "=" "";;
-fun b64UnSafe str= strReplace (strReplace str "-" "+") "_" "/";;
+fun b64ToUrl str= strReplace (strReplace (strReplace str "+" "-") "/" "_") "=" "";;
+fun b64FromUrl str=
+	let strReplace (strReplace str "-" "+") "_" "/" -> data in
+	let (strLength data)&3 -> finalBlockLen in
+	match finalBlockLen with
+	0->data,
+	1->nil,
+	2->strCat data "==",
+	3->strCat data "=";;

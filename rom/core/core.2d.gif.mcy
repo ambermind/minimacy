@@ -132,7 +132,7 @@ fun _gifAnimate frames i cb=
 //-------------API
 public:
 // cb is called with the next bitmap frame and returns true to continue, nil or false to stop the animation
-fun gifAnimate frames cb= _gifAnimate frames 0 cb;;
+fun gifAnimate frames fRender= _gifAnimate frames 0 fRender;;
 
 fun gifToFrames src=
 	let gifExtract src -> gif in
@@ -152,3 +152,7 @@ fun gifToBitmap src=
 			bitmapToBitmap bmp x y image 0 0 nil nil BLEND_ALPHA;
 		bmp
 	);;
+
+/* Next:
+- gif encoding (require color quantization)
+*/

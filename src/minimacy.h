@@ -11,7 +11,7 @@
 #ifndef _MINIMACY_
 #define _MINIMACY_
 
-#define VERSION_MINIMACY "0.1.0"
+#define VERSION_MINIMACY "0.2.0"
 
 #ifdef ON_UNIX
 #include<stdio.h>

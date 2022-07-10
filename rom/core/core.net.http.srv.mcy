@@ -403,7 +403,8 @@ fun srvHttpCreate hostList ip port cbHeader cbRequest cbMessage=
 			0
 		);
 		0
-	);;
+	);
+	0;;
 
 fun srvHttpGetRemote h = [(XTcpRemoteIp h.ttH) (XTcpRemotePort h.ttH)];;	// returns [ip port]
 
@@ -423,7 +424,7 @@ fun srvHttpRedirect h url=
 fun _addIfNotNil a l= if a==nil then l else a:l;;
 
 fun srvHttpSetCookie h name value expires path domain attr=
-	srvHttpAddHeader h HTTP_SET_COOKIE echoLn strJoin "; " 
+	srvHttpAddHeader h HTTP_SET_COOKIE strJoin "; " 
 		(strFormat "*=*" name value):
 		_addIfNotNil if expires<>nil then strCat "Expires=" fullDate expires
 		_addIfNotNil if path<>nil then strCat "Path=" path
@@ -442,20 +443,12 @@ fun srvHttpGetCookie h cookie= hashmapGet h.cookiesH cookie;;
 fun srvHttpGetRequest h = h.requestH;;	// returns [verb uri version]
 fun srvHttpGetRequestHeaders h = h.requestHeadersH;;
 fun srvHttpGetPostData h = h.postDataH;;
-fun srvHttpSetStatus h version code text= set h.statusH=[version code text];;
+fun srvHttpSetStatus h version code text= set h.statusH=[version code text]; 0;;
 fun srvHttpGetClientCertificate h= XTcpGetClientCertificate h.ttH;;
 fun srvHttpGetClientCertificateLogin h= 
 	let XTcpGetClientCertificate h.ttH -> cer in
 	let strSplit OID_SEP OIDhashmapSUBJECT cer -> subject in
 	strSub find subject (lambda val= strStartsWith val "CN=") 3 nil;;
-
-fun srvHttpParseFormUrlEncoded s d=
-	let if d==nil then hashmapCreate 4 else d -> d in
-	let strSplit "&" s -> l in
-	(
-		for arg in l do let strSplit "=" arg -> (key:val:_) in hashmapSet d (urlToStr key) (urlToStr val);		
-		d
-	);;
 
 fun srvHttpParseArgs h=
 	let hashmapCreate 4 -> strings in
@@ -478,7 +471,8 @@ fun srvWsSend h opcode data=
 		_wsLength false data
 		_wsData false data
 	} -> frame in
-	_httpSend h frame;;
+	_httpSend h frame;
+	0;;
 
 fun srvWsClose h=
 	set h.closeAfterH=true;

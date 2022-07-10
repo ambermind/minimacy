@@ -128,16 +128,14 @@ endif
 
 export CFLAGS= $(CFLAG)
 
-STATIC=$(ROOT)/obj/jpglib.a $(ROOT)/obj/pnglib.a 
-JPGLIBDIR=$(ROOT)/src/libs/jpg
-PNGLIBDIR=$(ROOT)/src/libs/png
+STATIC=$(ROOT)/obj/zlib.a
+ZLIBDIR=$(ROOT)/src/libs/zlib
 
 $(OBJDIR)/%.o: %.c
 	$(CC) $(CFLAGS) $(INC) -c $< -o $@
 
 $(TARGET) : $(OBJ)
-	@(cd $(JPGLIBDIR) && $(MAKE) )
-	@(cd $(PNGLIBDIR) && $(MAKE) )
+	@(cd $(ZLIBDIR) && $(MAKE) )
 	$(CCL) $(OPTIONS) $(CFLAGS) -o $@ $^ $(STATIC) $(INC) $(LIBDIR) $(LIBS)
 	@echo "-------------------------------"
 	@echo "---> TARGET=" $(TARGET)
