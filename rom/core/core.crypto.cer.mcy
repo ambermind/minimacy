@@ -1,0 +1,201 @@
+/* Copyright (c) 2022, Sylvain Huet, Ambermind
+   This program is free software: you can redistribute it and/or modify it
+   under the terms of the GNU General Public License, version 2.0, as
+   published by the Free Software Foundation.
+   This program is distributed in the hope that it will be useful, but WITHOUT
+   ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+   FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License,
+   version 2.0, for more details.
+   You should have received a copy of the GNU General Public License along
+   with this program. If not, see <https://www.gnu.org/licenses/>. */
+
+use core.crypto.pem;;
+use core.crypto.rsa;;
+use core.crypto.sign;;
+use core.crypto.oid;;
+use core.crypto.asn1;;
+
+const _DEBUG=false;;
+
+const RootCertificates=hashmapCreate 6;;
+
+fun cerDefaultVersion certificateInfo=
+	let listFromAsn1 certificateInfo -> l in
+	match head l with
+		asn1ClassConstructed _ _ _ -> certificateInfo,
+		_ -> asn1Seq (asn1ClassConstructed ASN1_CONTEXT_SPECIFIC 0 (asn1Integer "\0"):nil):l;;
+
+fun __x509extractKeyUsage val i l=
+	if i>0 then
+	if bitTest i val then (head l):__x509extractKeyUsage val i>>1 tail l
+	else __x509extractKeyUsage val i>>1 tail l;;
+
+fun _x509extractKeyUsage str=
+	__x509extractKeyUsage (strGet str 0) 128
+		"digitalSignature":
+		"nonRepudiation":
+		"keyEncipherment":
+		"dataEncipherment":
+		"keyAgreement":
+		"keyCertSign":
+		"cRLSign":
+		"encipherOnly":
+		nil
+	;;
+
+fun _x509subExtract data = head asn1Unpack strFromAsn1 head data;;
+
+fun _x509bool elem = if boolFromAsn1 elem then "true" else "false";;
+
+fun _x509ExtExtract h ext=
+//asn1Echo "_x509ExtExtract=========================" ext;
+	for p in listFromAsn1 ext do
+	let listFromAsn1 p -> data in
+	let strFromAsn1 head data -> field in
+	let tail data -> data in
+	let match field with
+		OID_2_5_29_17 ->
+			let _x509subExtract data -> content in
+			asn1ListOfStr listFromAsn1 content,
+		OID_2_5_29_35->
+			let _x509subExtract data -> content in
+			asn1ListOfHex listFromAsn1 content,
+		OID_2_5_29_37->
+			let _x509subExtract data -> content in
+			asn1ListOfOid listFromAsn1 content,
+		OID_2_5_29_14->
+			let _x509subExtract data -> content in
+			(hexFromStr strFromAsn1 content):nil,
+		OID_2_5_29_15->
+			let _x509bool head data -> critical in
+			let _x509subExtract tail data -> content in
+			(critical:_x509extractKeyUsage strFromAsn1 content),
+		OID_2_5_29_19->
+			let _x509bool head data -> critical in
+			let listFromAsn1 _x509subExtract tail data -> seq in
+			let if seq==nil then "false" else _x509bool head seq -> isCa in
+			(
+				hashmapSet h "certificateAuthority" isCa;
+				critical:isCa:nil
+			),
+		OID_1_3_6_1_4_1_311_21_7-> (hexFromStr strFromAsn1 head data):nil,
+		OID_2_5_29_32-> (_x509ExtExtract h (_x509subExtract data); "present":nil),
+		OID_2_16_840_1_114412_2_1 -> (_x509ExtExtract h head data; "present":nil),
+		OID_2_23_140_1_1 -> "present":nil,
+		OID_2_23_140_1_2_2 -> "present":nil,
+		OID_2_23_140_1_2_2 -> "present":nil,
+		OID_1_3_6_1_4_1_11129_2_5_3 -> "present":nil,
+		OID_1_3_6_1_5_5_7_3_2 -> "present":nil,
+		OID_1_3_6_1_5_5_7_3_1 -> "present":nil,
+		OID_1_3_6_1_5_5_7_1_1-> (_x509ExtExtract h (_x509subExtract data); "present":nil),
+		OID_1_3_6_1_4_1_311_21_10-> (_x509ExtExtract h (_x509subExtract data); "present":nil),
+		OID_1_3_6_1_4_1_311_42_1-> (_x509ExtExtract h head data; "present":nil),
+		OID_2_16_840_1_114412_1_1-> (_x509ExtExtract h head data; "present":nil),
+		OID_1_3_6_1_4_1_11129_2_4_2 -> (hexFromStr strFromAsn1 (_x509subExtract data)):nil,
+		OID_1_3_6_1_5_5_7_48_1 -> (strFromAsn1 head data):nil,
+		OID_1_3_6_1_5_5_7_48_2 -> (strFromAsn1 head data):nil,
+		OID_1_3_6_1_5_5_7_2_1 -> (strFromAsn1 head data):nil,
+		OID_2_23_140_1_2_1 -> (strFromAsn1 head data):nil,
+		OID_2_5_29_31->
+			let _x509subExtract data -> content in
+			asn1ListOfRecStr (listFromAsn1 content) nil,
+		_ -> (
+//			echoLn ["UNKNOWN " field]; asn1Echo "" p;	// uncomment to display unknowns oid
+			"unsupported":(hexFromStr asn1Pack p):nil
+		)
+	-> value in hashmapSet h field strJoin OID_SEP value;;
+
+
+fun cerFromAsn1 asn1=
+//	asn1Echo "" asn1;
+	let hashmapCreate 4 -> h in
+	let listFromAsn1 asn1 ->(certificateInfo:signatureAlgorithm:signature:_) in
+	let cerDefaultVersion certificateInfo-> certificateInfo in
+	let listFromAsn1 certificateInfo -> (version:serial:signatureAlgorithm2:issuer:times:subject:pkInfo:ext:_) in
+	(
+		hashmapSet h "VERSION" decFromInt 1+intFromAsn1 head listFromAsn1 version;
+		hashmapSet h "SERIAL" hexFromStr strFromAsn1 serial;
+		hashmapSet h OID_ISSUER subjectFromAsn1 issuer;
+		hashmapSet h OID_SUBJECT subjectFromAsn1 subject;
+
+		let listFromAsn1 times ->(from:to:_) in
+		(
+			hashmapSet h "FROM" strFromAsn1 from;
+			hashmapSet h "TO" strFromAsn1 to;
+		);
+		if ext<>nil then _x509ExtExtract h head listFromAsn1 ext;
+		commonFromAsn1 h pkInfo signatureAlgorithm signature
+	);;
+
+fun cerFromDER der= derProcess der #cerFromAsn1;;
+fun cerFromPEM pem pwd=
+	let head pemDecode pem pwd ->[name der] in
+	if name=="CERTIFICATE" then cerFromDER der;;
+
+fun cerEcho c= echoOIDHashmap c;;
+
+fun cerCheckTime certificate t=
+	if t==nil then true
+	else
+	let timeFromYyddmmhhmmssz hashmapGet certificate "FROM" -> from in
+	let timeFromYyddmmhhmmssz hashmapGet certificate "TO" -> to in
+	(from<=t) && (t<=to);;
+
+fun cerMatchServerName certificate serverName=
+	let oidHashmapSubjectAltName certificate -> listNames in
+	listTest listNames (lambda v= 
+		(v==serverName)
+		||( (strStartsWith v "*.") && (strEndsWith serverName strSlice v 1 nil) )
+	);;
+
+// check a certificate by another (supposed to be its authority), return true if it matches	
+fun cerCheckByAuth certificate certAuth=
+//	dump certificate;
+//	dump certAuth;
+//	dump niceOID oidHashmapSIGNALGO certificate;
+	if certAuth<>nil then
+	signatureCheck (rsaSignAlgoByName niceOID oidHashmapSIGNALGO certificate) certAuth (strFromHex oidHashmapINFO certificate) (strFromHex oidHashmapSIGNATURE certificate);;
+
+fun rootCertificateRegister cer=
+	if !cerCheckTime cer time then (
+		echoLn ["CERTIFICATE OUT OF TIME " oidHashmapSUBJECT cer];
+		nil
+	)
+	else hashmapSet RootCertificates (oidHashmapISSUER cer) cer;;
+
+fun _cerCheckChain hChain t0 cer =
+	if _DEBUG then echoLn ["--check " oidHashmapSUBJECT cer];
+	if !cerCheckTime cer t0 then (strConcat "CERTIFICATE OUT OF TIME " oidHashmapSUBJECT cer)
+	else
+	let oidHashmapISSUER cer -> issuer in
+	let hashmapGet RootCertificates issuer -> root in
+	if cerCheckByAuth cer root then (
+	if _DEBUG then echoLn ["--find root " issuer];
+		nil
+	)
+	else 
+	let hashmapGet hChain issuer -> parentCer in
+	if parentCer==nil then (strConcat "MISSING ROOT CERTIFICATE: " issuer)
+	else
+	if !cerCheckByAuth cer parentCer then (strConcat "CERTIFICATE CHAIN FAILS FOR " oidHashmapSUBJECT cer)
+	else (
+		hashmapSet hChain issuer nil;
+		_cerCheckChain hChain t0 parentCer
+	);;
+
+fun cerCheckChain t0 siteCer lCertificates=
+	if _DEBUG then echoLn "cerCheckChain";
+	if 0==hashmapCount RootCertificates then (
+		if _DEBUG then echoLn "--no root registered. Skip test";
+		nil
+	)
+	else
+	let hashmapCreate 3 -> hChain in
+	(
+		for cer in lCertificates do
+			if "true"== hashmapGet cer "certificateAuthority" then hashmapSet hChain (oidHashmapSUBJECT cer) cer;
+		_cerCheckChain hChain t0 siteCer
+	);;
+
+fun cerByServerName serverName lCertificates=
+	listFind lCertificates lambda cer=cerMatchServerName cer serverName;;

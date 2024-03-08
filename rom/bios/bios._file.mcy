@@ -1,0 +1,338 @@
+/* Copyright (c) 2022, Sylvain Huet, Ambermind
+   This program is free software: you can redistribute it and/or modify it
+   under the terms of the GNU General Public License, version 2.0, as
+   published by the Free Software Foundation.
+   This program is distributed in the hope that it will be useful, but WITHOUT
+   ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+   FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License,
+   version 2.0, for more details.
+   You should have received a copy of the GNU General Public License along
+   with this program. If not, see <https://www.gnu.org/licenses/>. */
+
+//----------- FILE SYSTEM
+var _Volumes=_volumes;;
+var _Partitions;;
+struct File=[sizeF tellF closeF writeF readF];;
+struct FileWithContent=File+[indexF contentF];;
+
+fun volumeCreate name type index writable= set _Volumes=[name type index writable]:_Volumes;;
+
+fun romdiskImport name data = let _romdiskImport data -> index in
+	if index<>nil then (
+		volumeCreate name romdiskVolume index false;
+		partitionAdd _mkRomdiskPartition index "" "";
+		index
+	);;
+
+fun fileFromContent content=
+	if content<>nil then
+	let [
+		indexF=0
+		contentF=content
+		sizeF= (lambda = strLength content)
+		closeF= (lambda = nil)
+		writeF= (lambda seek src start len = nil)
+	] -> file in (
+		set file.tellF= (lambda = file.indexF);
+		set file.readF= (lambda seek len =
+			if seek<>nil then set file.indexF=seek;
+			let strSlice file.contentF file.indexF len -> data in (
+				set file.indexF= file.indexF+strLength data;
+				data
+			)
+		);
+		File<file
+	);;
+
+fun _mkAnsiFileWrite file = (lambda seek src start len =
+	if len==0 then 0
+	else if !(len<0) then
+	(
+		_workerEnter;
+		_ansiFileWrite file seek src start len
+	)
+);;	
+
+fun _mkAnsiFileRead file = (lambda seek len =
+	if len==0 then ""
+	else if !(len<0) then
+	let bytesCreate len 0 -> buffer in
+	(
+		_workerEnter; 
+		let _ansiFileRead file seek buffer 0 len -> len2 in
+		strLeftBytes buffer len2
+	)
+);;
+
+fun _mkAnsiOpen writable=
+	lambda path mode =
+		if mode==FILE_READ_ONLY || writable then 
+		let (_workerEnter; _ansiFileOpen path mode) -> f in
+		if f<>nil then [
+			sizeF= (lambda = _workerEnter; _ansiFileSize f)
+			tellF= (lambda = _ansiFileTell f)
+			closeF= (lambda = _workerEnter; _ansiFileClose f)
+			writeF= if writable then _mkAnsiFileWrite f
+			readF= _mkAnsiFileRead f
+		];;
+
+fun _mkUefiFileRead file = (lambda seek len =
+	if len==0 then ""
+	else if !(len<0) then
+	let bytesCreate len 0 -> buffer in
+	let _uefiFileRead file seek buffer 0 len -> len2 in
+	strLeftBytes buffer len2
+);;
+
+fun _mkUefiOpen index writable=
+	lambda path mode =
+		if mode==FILE_READ_ONLY || writable then 
+		let _uefiFileOpen index path mode -> f in
+		if f<>nil then [
+			sizeF= (lambda = _uefiFileSize f)
+			tellF= (lambda = _uefiFileTell f)
+			closeF= (lambda = _uefiFileClose f)
+			writeF= if writable then (lambda seek src start len = _uefiFileWrite f seek src start len)
+			readF= _mkUefiFileRead f
+		];;
+
+fun _mkRomdiskOpen index=
+	lambda path mode =
+		let _romdiskLoad index path -> content in
+		fileFromContent content;;
+
+fun _strFromVolumeType type = strReplace (strBuild type) "Volume" "";;
+
+fun _mkCheckPartition p=
+	let head listMap _Volumes (lambda [name type index writable]= if (p.typeP==type && p.indexP==index) then [name writable]) -> [name writable] in
+	if name<>nil then (
+		if p.nameP==nil then set p.nameP=name;
+		set p.volumeP=strFormat "*:*" (_strFromVolumeType p.typeP) p.indexP;
+		set p.writableP = p.writableP && writable;
+		p
+	);;
+	
+fun _mkAnsiPartition name writable mount root= [
+	nameP=name
+	typeP=ansiVolume
+	indexP=0
+	writableP=writable
+	mountP=mount
+	rootP=root
+	openP=_mkAnsiOpen writable
+	diskListP= (lambda output path= _workerEnter; _ansiDiskList output path)
+	fileDeleteP=#_ansiFileDelete
+];;
+fun _mkUefiPartition name index writable mount root= [
+	nameP=name
+	typeP=uefiVolume
+	indexP=index
+	writableP=writable
+	mountP=mount
+	rootP=root
+	openP=_mkUefiOpen index writable
+	diskListP= (lambda output path= _uefiDiskList index output path)
+	fileDeleteP=(lambda path= _uefiFileDelete index path)
+];;
+fun _mkRomdiskPartition index mount root= [
+	typeP=romdiskVolume
+	indexP=index
+	writableP=false
+	mountP=mount
+	rootP=root
+	openP=_mkRomdiskOpen index
+	diskListP=(lambda output path= _romdiskList index output path)
+	fileDeleteP=nil
+];;
+
+fun _partitionUpdate=
+	let listFind _Partitions (lambda p= p.typeP==romdiskVolume && p.nameP=="BOOTDISK") -> bootdisk in
+	if bootdisk<>nil then set _Partitions=bootdisk:listRemove _Partitions bootdisk;
+	
+	let listMap _Partitions (lambda p=
+		if p.typeP==ansiVolume || p.typeP==romdiskVolume || p.typeP==uefiVolume  then
+		if strEmpty p.mountP then
+		[p.typeP p.indexP p.rootP]
+	) -> partitions in
+	_setPartitions partitions;
+	true;;
+
+fun partitionAdd partition=
+	let _mkCheckPartition partition -> partition in
+	if partition<>nil then set _Partitions= partition:_Partitions;
+	_partitionUpdate;;
+
+fun _fsInit programDir =
+	set _Partitions= nil;
+	for [type index root] in listReverse _partitions do
+		match type with
+			ansiVolume -> (
+				partitionAdd _mkAnsiPartition "Rom" false "" root;
+				let if programDir<>nil then programDir else strConcat (strLeft root (-4)) "programs/" -> programDir in
+					partitionAdd _mkAnsiPartition "Programs" true "" programDir;
+				partitionAdd _mkAnsiPartition "Root" true "/" "/";
+			),
+			uefiVolume -> (
+				partitionAdd _mkUefiPartition "Rom" index false "" root;
+				partitionAdd _mkUefiPartition "Program" index true "" "/programs/";
+				partitionAdd _mkUefiPartition "Root" index true "/" "/";
+			),
+			romdiskVolume -> partitionAdd _mkRomdiskPartition index "" root,
+			_ -> nil;
+	true;;
+
+struct FileInfo=[_dirFI _nameFI _sizeFI _updateFI];;
+
+fun mkFileInfo dir name size update=
+	[_dirFI=dir _nameFI=name _sizeFI=size _updateFI=update];;
+
+fun _absoluteDir a= ('/'==strGet a 0)||(':'==strGet a 1);;
+
+fun _cleanHome path=
+	let strPos path "/~/" 0 -> i in
+	if i==nil then path
+	else _cleanHome strConcat userDir strSlice path i+3 nil;;
+	
+fun _clean2points path=
+	let strPos path "/../" 0 -> i in
+	if i==nil then path
+	else let strCharPosRev path '/' i-1 -> j in
+	if j<>nil then
+	let strConcat (strLeft path j) strSlice path i+3 nil -> path in
+	_clean2points path;;
+
+fun _clean1point path=
+	let strPos path "/./" 0 -> i in
+	if i==nil then path
+	else _clean1point strConcat (strLeft path i) strSlice path i+2 nil;;
+
+fun _cleanRoot path=
+	let strPos path "//" 0 -> i in
+	if i==nil then path
+	else _cleanRoot strSlice path i+1 nil;;
+
+fun cleanPath path=
+	let _clean2points path -> path in
+	let _clean1point path -> path in
+	let _cleanHome path -> path in
+	let _cleanRoot path -> path in
+	path;;
+
+fun parentDir f=
+	let strPosRev f "/" (strLength f)-2 -> i in
+	if i<>nil then strConcat (strLeft f i) "/"
+	else "/";;
+
+//----------- DIR
+fun _filesSort lFiles = quicksort lFiles (lambda a b= (strCmp a._nameFI b._nameFI)<0);;
+
+fun _partitionFilter p path =
+	let cleanPath path -> path in
+	if (_absoluteDir p.mountP)==(_absoluteDir path) then
+	if (strEmpty p.mountP) then strConcat p.rootP path
+	else if p.mountP=="/" && p.rootP=="/" then path
+	else if strStartsWith path p.mountP then
+	strConcat p.rootP strSlice path (strLength p.mountP) nil;;
+
+fun __decodeDir path0 l=
+	if l<>nil then let l ->(name:attr:next) in
+	if (strEmpty name) || name=="." || name==".." then __decodeDir path0 next
+	else
+	let strSplit " " attr ->(hexSize:hexTime:type:nil) in
+	let type=="d" -> directory in
+	let strFormat "***" path0 name (if directory then "/") -> fileName in
+	(mkFileInfo directory fileName (intFromHex hexSize) (intFromHex hexTime)):__decodeDir path0 next;;
+
+fun _decodeDir path0 str= __decodeDir path0 (strSplit "\0" str);;
+
+fun partitionDiskList p path0=
+	let if path0<>"" && !strEndsWith path0 "/" then strConcat path0 "/" else path0 -> path0 in
+	let _partitionFilter p path0 -> path in
+	if path==nil then (
+		let cleanPath path0 -> path in
+		if (_absoluteDir p.mountP)==(_absoluteDir path) then
+		if strStartsWith p.mountP path then
+		let strLength path -> i in
+		let strPos p.mountP "/" i -> j in
+		if j<>nil then 
+		(mkFileInfo true (strLeft p.mountP j+1) 0 nil):nil
+	)
+	else let bufferCreateWithSize 2048 -> output in (
+		call p.diskListP output path;
+		_decodeDir path0 (strFromBuffer output)
+	);;
+
+fun _diskListInfo path lPartitions=
+	let hashmapCreate 8 -> h in
+	(
+		for p in lPartitions do
+		let partitionDiskList p path -> lFiles in
+		for f in lFiles do if nil==hashmapGet h f._nameFI then hashmapSet h f._nameFI f;
+		listMap (listFromHashmap h) (lambda [key val]=val)
+	);;
+
+fun diskListInfo path= _diskListInfo path _Partitions;;
+
+fun partitionListInfo i path= _diskListInfo path (listGet _Partitions i):nil;;
+
+fun fileListInfo path= listFilter (diskListInfo path) (lambda f= !f._dirFI);;
+fun dirListInfo path= listFilter (diskListInfo path) (lambda f= f._dirFI);;
+fun fileList path= listMap (fileListInfo path) (lambda f= f._nameFI);;
+fun dirList path= listMap (dirListInfo path) (lambda f= f._nameFI);;
+
+fun fileInfo path = head diskListInfo path;;
+	
+fun fileInfoName f=f._nameFI;;
+fun fileInfoSize f=f._sizeFI;;
+fun fileInfoUpdate f=f._updateFI;;
+fun fileInfoIsDir f=f._dirFI;;
+
+//----------- FILES
+
+fun fileOpen path mode= 
+	for p in _Partitions do
+		let _partitionFilter p path -> path in
+		if path<>nil then
+		if mode==FILE_READ_ONLY || p.writableP then
+		let call p.openP path mode -> f in
+		if f<>nil then return f;
+	nil;;
+fun fileSize file = call file.sizeF;;
+fun fileTell file = call file.tellF;;
+fun fileClose file = call file.closeF;;
+fun fileWrite file seek src start len= call file.writeF seek src start len;;
+fun fileRead file seek len= call file.readF seek len;;
+
+fun fileDelete path=
+	listReduce _Partitions false (lambda v p= 
+		(
+			if p.writableP then
+			let _partitionFilter p path -> path in
+			if path<>nil then
+			call p.fileDeleteP path
+		)||v
+	);;
+
+fun load fileName =
+	let fileOpen fileName FILE_READ_ONLY -> file in
+	if file<>nil then
+	let fileSize file -> size in
+	let fileRead file nil size -> data in
+	let fileClose file -> _ in
+	data;;
+
+fun save data fileName =
+	if data==nil then fileDelete fileName
+	else
+	let fileOpen fileName FILE_REWRITE -> file in
+	if file<>nil then
+	let if 0==strLength data then 0 else fileWrite file nil data 0 nil -> len in
+	fileClose file;;
+
+fun append data fileName =
+	if data==nil then fileDelete fileName
+	else
+	let fileOpen fileName FILE_APPEND -> file in
+	if file<>nil then
+	let if 0==strLength data then 0 else fileWrite file nil data 0 nil -> len in
+	fileClose file;;

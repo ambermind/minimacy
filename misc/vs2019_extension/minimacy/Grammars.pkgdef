@@ -1,0 +1,13 @@
+﻿; Registering the package
+[$RootKey$\InstalledProducts\minimacyPackage]
+"Package"="{e7e3da7e-138e-4096-9cc5-c73e444a8093}"
+[$RootKey$\BindingPaths\{e7e3da7e-138e-4096-9cc5-c73e444a8093}]
+"$PackageFolder$"=""
+
+; Registering the TextMate grammar
+[$RootKey$\TextMate\Repositories]
+"minimacy"="$PackageFolder$\Syntaxes"
+
+; Match file extensions with icons. See full icon list at https://glyphlist.azurewebsites.net/knownmonikers/
+[$RootKey$\ShellFileAssociations\.mcy]
+"DefaultIconMoniker"="KnownMonikers.TextFile"

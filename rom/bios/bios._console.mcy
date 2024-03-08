@@ -1,0 +1,92 @@
+/* Copyright (c) 2022, Sylvain Huet, Ambermind
+   This program is free software: you can redistribute it and/or modify it
+   under the terms of the GNU General Public License, version 2.0, as
+   published by the Free Software Foundation.
+   This program is distributed in the hope that it will be useful, but WITHOUT
+   ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+   FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License,
+   version 2.0, for more details.
+   You should have received a copy of the GNU General Public License along
+   with this program. If not, see <https://www.gnu.org/licenses/>. */
+
+struct Console=[_inputC _pkgC _escC _nameC /*_prevHistoryC _nextHistoryC*/ ];;
+
+fun _promptEcho csl = echo strConcat csl._nameC "> ";;
+
+fun _promptRun csl input=
+	if input=="new" then set csl._pkgC=pkgCreate nil nil
+	else if input<>nil then
+	(
+//		if input<>head csl._prevHistoryC then set csl._prevHistoryC=input:csl._prevHistoryC;
+		_promptTry input csl._pkgC;
+		nil
+	);
+	_promptEcho csl;;
+
+fun _clearPrompt csl=
+	let strLength trim csl._inputC -> n in
+	for i=0;i<n do echo "\8 \8";
+	set csl._inputC="";;
+
+fun _consoleInput csl c=
+	let strFromChar c -> str in
+	if csl._escC<>nil then
+	(
+/*		if c==0x48 then
+		(
+			let head csl._prevHistoryC -> cmd in
+			if cmd<>nil then
+			(
+				set csl._nextHistoryC=cmd:csl._nextHistoryC;
+				set csl._prevHistoryC=tail csl._prevHistoryC;
+				_clearPrompt csl;
+				echo set csl._inputC=cmd
+			)
+		)
+		else if c==0x50 then
+		(
+			let head csl._nextHistoryC -> cmd in
+			if cmd<>nil then
+			(
+				set csl._prevHistoryC=cmd:csl._prevHistoryC;
+				set csl._nextHistoryC=tail csl._nextHistoryC;
+				_clearPrompt csl;
+				echo set csl._inputC=cmd
+			)
+		);
+*/		set csl._escC=nil;
+		nil
+	)
+	else if c==8 then	// this will happen only on windows
+	(
+		set csl._inputC=strSlice csl._inputC 0 (strLength csl._inputC)-1;
+		echo " \8"
+	)
+	else if c==0xe0 then
+	(
+		set csl._escC=c;
+		nil
+	)
+	else
+	(
+		if c== 10 || c==13 then
+		(
+			_promptRun csl csl._inputC;
+			set csl._inputC=nil
+		)
+		else set csl._inputC=strConcat csl._inputC str;
+	);
+	0;;
+
+fun consoleStart p0=
+	let if p0==_SystemPkg || p0==nil then (pkgCreate nil nil) else p0 -> p in
+	let [_pkgC=p _nameC=pkgName p0] -> csl in
+	_threadNew "console" MAX_MEMORY_CONSOLE caller (lambda =
+		echo "\n\nMinimacy Top-level\nReady\n\n";
+		onInput (lambda s=
+			if s==nil then exit;	// on unix
+			//hexDump s;
+			for i=0;i<strLength s do _consoleInput csl strGet s i
+		) (lambda = _promptEcho csl);
+	);
+	true;;

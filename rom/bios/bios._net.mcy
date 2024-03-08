@@ -1,0 +1,204 @@
+/* Copyright (c) 2022, Sylvain Huet, Ambermind
+   This program is free software: you can redistribute it and/or modify it
+   under the terms of the GNU General Public License, version 2.0, as
+   published by the Free Software Foundation.
+   This program is distributed in the hope that it will be useful, but WITHOUT
+   ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+   FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License,
+   version 2.0, for more details.
+   You should have received a copy of the GNU General Public License along
+   with this program. If not, see <https://www.gnu.org/licenses/>. */
+
+struct IP=Stream+[_addrIP _portIP];;
+struct TcpSrv=Stream+[_nameTS _onAcceptTS];;
+struct Tcp=IP+[_incomingT];;
+struct Udp=IP+[_localAddrU _localPortU _nameU _linkU];;
+struct Eth=Stream+[_ifE];;
+
+struct IpInterface=[
+	sockCloseII
+	udpCreateII udpSendII udpReadII
+	tcpOpenII tcpNoDelayII tcpReadII tcpWriteII
+	tcpListenII tcpAcceptII
+];;
+
+var _IP=[
+	sockCloseII=#_sockClose
+	udpCreateII=#_udpCreate
+	udpSendII=#_udpSend
+	udpReadII=#_udpRead
+	tcpOpenII=#_tcpOpen
+	tcpNoDelayII=#_tcpNoDelay
+	tcpReadII=#_tcpRead
+	tcpWriteII=#_tcpWrite
+	tcpListenII=#_tcpListen
+	tcpAcceptII=#_tcpAccept
+];;
+
+fun ipStackOverwrite interface=	set _IP=interface;;
+
+fun ipRemoteAddr ip= ip._addrIP;;
+fun ipRemotePort ip= ip._portIP;;
+
+//-------------- Bsd TCP server
+fun tcpSrvClose tcpSrv= streamClose TcpSrv<tcpSrv;;
+
+fun tcpSrvCreate addr port=
+	let call _IP.tcpListenII addr port -> socket in
+	if socket<>nil then
+	let [
+		_socketS=socket
+		_thS=_This
+		_nameTS=(strFormat "*:*" addr port)
+	] -> tcpSrv in (
+		set tcpSrv._onSelectReadS = (lambda =
+			_sockSetSelectRead tcpSrv._socketS true;
+			if _streamCheck tcpSrv then
+			let call _IP.tcpAcceptII socket -> [socket addr port] in
+			threadPost tcpSrv._thS (lambda =
+				let _tcpCreate socket tcpSrv._thS addr port true -> tcp in 
+				call tcpSrv._onAcceptTS tcp
+			)
+		);
+		set tcpSrv._closeS=(lambda = _streamClose tcpSrv);
+		set tcpSrv._showS = (lambda fEcho= call fEcho "TCPsrv" tcpSrv._nameTS tcpSrv._thS);
+		_sockSetSelectRead tcpSrv._socketS true;
+		tcpSrv
+	);;
+
+fun tcpSrvOnAccept tcpSrv onAccept=
+	set tcpSrv._thS= _This;
+	set tcpSrv._onAcceptTS= if onAccept<>nil then (lambda tcp= call onAccept tcp; 0);
+	if onAccept<>nil then _streamAddToList tcpSrv;
+	_sockSetSelectRead tcpSrv._socketS onAccept<>nil;
+	tcpSrv;;
+
+//-------------- Bsd TCP
+fun tcpClose tcp= streamClose Tcp<tcp;;
+
+fun _tcpCreate socket th addr port incoming=
+	let [
+		_socketS=socket
+		_addrIP=addr
+		_portIP=port
+		_incomingT=incoming
+	] -> tcp in (
+		set tcp._onSelectWriteS =  (lambda = _streamOnSelectWrite tcp);
+		set tcp._onSelectReadS = (lambda =
+			if _streamCheck tcp then threadPost tcp._thS (lambda =
+				_sockSetSelectRead tcp._socketS true;
+				let call _IP.tcpReadII tcp._socketS -> data in
+				let tcp._onReadS -> cbRead in
+				(
+//					echoLn ["]=== _sockRead " strLength data]; echoLn data;
+					if data==nil then tcpClose tcp;
+					call cbRead data;
+				)
+			);
+			true
+		);
+		set tcp._writeS= (lambda data start =
+//			echo "_writeS "; echoLn
+			call _IP.tcpWriteII tcp._socketS data start
+		);
+		set tcp._closeS=(lambda = _streamClose tcp);
+		set tcp._showS = (lambda fEcho= call fEcho (if tcp._incomingT then "TCPin" else "TCPout") (strBuild [tcp._addrIP ":" tcp._portIP]) tcp._thS);
+		tcp
+	);;
+
+fun tcpOnEvent tcp onRead onWrite= streamOnEvent (Tcp<tcp) onRead onWrite; streamSelectWrite tcp true; tcp;;
+
+fun tcpOpen addr port =
+	let call _IP.tcpOpenII addr port -> socket in
+	if socket<>nil then _tcpCreate socket _This addr port false;;
+
+fun tcpWrite tcp data start= streamWrite Tcp<tcp data start;;
+fun tcpRemoteIp tcp= ipRemoteAddr Tcp<tcp;;
+fun tcpRemotePort tcp= ipRemotePort Tcp<tcp;;
+
+fun tcpNoDelay tcp noDelay= call _IP.tcpNoDelayII (Tcp<tcp)._socketS noDelay; tcp;;
+
+//-------------- Bsd UDP
+fun udpClose udp= streamClose Udp<udp;;
+
+fun udpCreate remoteAddr remotePort localAddr localPort=
+	let call _IP.udpCreateII localAddr localPort -> socket in
+	let remoteAddr<>nil && remotePort<>nil -> link in
+	if socket<>nil then
+	let [
+		_socketS=socket
+		_localAddrU=localAddr
+		_localPortU=localPort
+		_linkU= link
+		_nameU= (strFormat "*:*" localAddr localPort)
+		_addrIP=remoteAddr
+		_portIP=remotePort
+	] -> udp in (
+		set udp._onSelectWriteS = (lambda = _streamOnSelectWrite udp);
+		set udp._onSelectReadS = (lambda =
+			if _streamCheck udp then
+			threadPost udp._thS (lambda =
+				_sockSetSelectRead udp._socketS true;
+				let call _IP.udpReadII udp._socketS -> [data ip port] in
+				if port<>nil then
+				if udp._linkU then (
+					if udp._addrIP==ip && udp._portIP==port then call udp._onReadS data
+				)
+				else (
+					set udp._addrIP=ip;
+					set udp._portIP=port;
+					call udp._onReadS data
+				)
+			);
+			true
+		);
+		set udp._writeS=(lambda msg start=
+			call _IP.udpSendII udp._socketS udp._localAddrU udp._localPortU udp._addrIP udp._portIP msg	// start is ignored
+		);
+		set udp._closeS=(lambda = _streamClose udp);
+		set udp._showS = (lambda fEcho= call fEcho (if udp._linkU then "UDPlink" else "UDPsrv") udp._nameU udp._thS);
+		udp
+	);;
+
+fun udpSend udp msg= streamWrite Udp<udp msg 0;;
+fun udpSendTo udp addr port msg=
+	set udp._addrIP=addr;
+	set udp._portIP=port;
+	udpSend udp msg;;
+
+fun udpRemoteIp udp= ipRemoteAddr Udp<udp;;
+fun udpRemotePort udp= ipRemotePort Udp<udp;;
+
+fun udpOnEvent udp onRead onWrite= streamOnEvent (Udp < udp) onRead onWrite;;
+
+//-------------- Ethernet
+fun ethClose eth= streamClose eth;;
+
+fun ethCreate ifindex=
+	let _ethCreate ifindex -> socket in
+	if socket<>nil then
+	let [
+		_socketS=socket
+		_ifE=ifindex
+	] -> eth in (
+		set eth._onSelectWriteS = (lambda = _streamOnSelectWrite eth);
+		set eth._onSelectReadS = (lambda =
+			_sockSetSelectRead eth._socketS true;
+			if _streamCheck eth then
+			let _ethRead eth._socketS -> data in	// should attribute this memory to the appropriate thread
+//			if !bitTest 31 intRand then (echoLn "skip received frame"; nil) else
+			threadPost eth._thS (lambda = call eth._onReadS data)
+		);
+		set eth._writeS=(lambda msg start=
+//			if !bitTest 31 intRand then (echoLn "skip sending frame"; nil) else
+			_ethSend eth._socketS eth._ifE msg
+		);	// we don't use start'
+		set eth._closeS=(lambda = _streamClose eth);
+		set eth._showS = (lambda fEcho= call fEcho "ethernet" (strFormat "if*" eth._ifE) eth._thS);
+		eth
+	);;
+
+fun onEth eth onRead onWrite= streamOnEvent eth onRead onWrite;;
+
+fun ethSend eth msg= streamWrite eth msg 0;;
+

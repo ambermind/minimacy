@@ -1,0 +1,41 @@
+/* Copyright (c) 2022, Sylvain Huet, Ambermind
+   This program is free software: you can redistribute it and/or modify it
+   under the terms of the GNU General Public License, version 2.0, as
+   published by the Free Software Foundation.
+   This program is distributed in the hope that it will be useful, but WITHOUT
+   ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+   FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License,
+   version 2.0, for more details.
+   You should have received a copy of the GNU General Public License along
+   with this program. If not, see <https://www.gnu.org/licenses/>. */
+
+fun _tableMaxRow data=
+	let 0->len in
+	(
+		for row in data do set len=max len arrayLength row;
+		arrayCreate len 0
+	);;
+fun _tableMaxFieldWidth data=
+	let _tableMaxRow data -> lens in
+	(
+		for row in data do
+			for v,i of row do let i -> _ in let strLength v -> len in
+				set lens.i = max lens.i len;
+		lens
+	);;
+
+fun tablePrettyPrint data=
+	let _tableMaxFieldWidth data -> lens in
+	let head data -> header in
+	for row,p in data do if row<>nil then
+	(
+		for v,i of row do let strLength v -> len in
+			echo ["|" (strCreate (lens.i)-len 32) v];
+		echoLn "|";
+		if header==row then
+		(
+			for v of lens do echo ["|" (strCreate v '-')];
+			echoLn "|";
+		)
+	);
+	data;; 

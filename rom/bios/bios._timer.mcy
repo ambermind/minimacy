@@ -1,0 +1,45 @@
+/* Copyright (c) 2022, Sylvain Huet, Ambermind
+   This program is free software: you can redistribute it and/or modify it
+   under the terms of the GNU General Public License, version 2.0, as
+   published by the Free Software Foundation.
+   This program is distributed in the hope that it will be useful, but WITHOUT
+   ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+   FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License,
+   version 2.0, for more details.
+   You should have received a copy of the GNU General Public License along
+   with this program. If not, see <https://www.gnu.org/licenses/>. */
+
+//------------ TIMERS
+struct _Timer=[_thTM _timeTM _cbTM];;
+
+var _TimerList;;
+
+fun _timerTimeout=
+	set _TimerList= listFilter _TimerList (lambda p= p._thTM._stateT<>_THREAD_DONE);
+	let head _TimerList -> t in t._timeTM;;
+
+fun __timerCheck l now=
+	if l<>nil then let head l -> p in
+	if (p._timeTM-now)>0 then l	// we assume that the list is sorted
+	else let p._thTM._stateT -> state in
+	(
+		if (p._cbTM==nil)&&(state==_THREAD_WAIT) then _threadUnfreeze p._thTM nil;
+		if p._cbTM<>nil then threadPost p._thTM (lambda = call p._cbTM);
+		__timerCheck (tail l) now
+	);;
+
+fun _timerCheck= set _TimerList=__timerCheck _TimerList timeMs;;
+
+fun onTimeout ms f=
+	let timeMs+ms -> t in
+	let [_thTM= _This _timeTM=t _cbTM=if f<>nil then (lambda = call f;0)] -> p in
+	\atomic (set _TimerList=listInsert _TimerList p (lambda p q= p._timeTM<q._timeTM); true );;
+
+fun sleepMs ms=
+	onTimeout ms nil;
+	_threadHoldOn;
+	true;;
+
+fun _timerList= listMap _TimerList (lambda p= [p._timeTM p._thTM]);;
+
+fun _timerAlive= _TimerList<>nil;;

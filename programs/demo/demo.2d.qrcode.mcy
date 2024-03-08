@@ -1,0 +1,44 @@
+
+use core.2d.qrcode;;
+use core.2d.png.maker;;
+
+var Prompt;;
+fun _consolePrompt = echo "\nqrcode> ";;
+
+fun _consoleInput c=
+	let strFromChar c -> str in
+	if c==8 then
+	(
+		set Prompt=strSlice Prompt 0 (strLength Prompt)-1;
+		echo " \8"
+	)
+	else
+	(
+		if c== 10 || c==13 then
+		(
+			if Prompt=="exit" then exit;
+			let timeMs -> t0 in
+			let qrcodeWithBorder Prompt ECL_MEDIUM 1 -> qr in
+			let timeMs - t0 -> dt in
+			(
+				qrcodeEcho qr;
+				echoLn ["code: " Prompt];
+				echo strFormat "done in * ms" dt;
+				_consolePrompt;
+
+			);
+			set Prompt=nil
+		)
+		else set Prompt=strConcat Prompt str;
+	);
+	0;;
+
+	
+fun run= 
+//	save (pngFromBitmap (qrcodeEcho qrcodeWithBorder "https://minimacy.net" ECL_MEDIUM 1) true) "outQRcode.png";
+	qrcodeEcho qrcodeWithBorder "https://minimacy.net" ECL_MEDIUM 1;
+	echo "Enter string to QR-encode:";
+	onInput (lambda s=
+		if s==nil then exit;	// on unix
+		for i=0;i<strLength s do _consoleInput strGet s i
+	) (lambda = _consolePrompt);;

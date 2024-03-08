@@ -1,0 +1,62 @@
+/* Copyright (c) 2022, Sylvain Huet, Ambermind
+   This program is free software: you can redistribute it and/or modify it
+   under the terms of the GNU General Public License, version 2.0, as
+   published by the Free Software Foundation.
+   This program is distributed in the hope that it will be useful, but WITHOUT
+   ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+   FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License,
+   version 2.0, for more details.
+   You should have received a copy of the GNU General Public License along
+   with this program. If not, see <https://www.gnu.org/licenses/>. */
+
+
+fun _dirBestMatch dir candidate i result=
+	let strCharPos candidate '/' i -> i in
+	if i==nil then result
+	else
+	if !strEndsWith dir (strLeft candidate i+1) then result
+	else _dirBestMatch dir candidate i+1 strLeft dir (-i);;
+
+fun _systemDirFromFile file=
+	let strReplace file "\\" "/" -> boot in
+	let strLeft boot (-strLength SOURCE_EXTENSION) -> boot in	// remove .mcy
+	let if _absoluteDir boot then boot else strConcat _currentDir boot -> path in
+	let cleanPath path -> path in
+	let strCharPosRev path '/' nil -> i in
+	let strLeft path i+1 -> dir in
+	let strSlice path i+1 nil -> pkg in
+	let _dirBestMatch dir (strConcat "/" strReplace pkg "." "/") 1 dir  -> dir in
+	[dir pkg];;
+
+fun _getBootPkg =
+	let listGet args (listLength args)-1 -> last in
+	if !strEndsWith last SOURCE_EXTENSION then
+		["boot" nil MAX_MEMORY_STANDALONE]
+	else
+	let _systemDirFromFile last -> [dir pkg] in
+	(
+		[pkg dir MAX_MEMORY_BOOT]
+	);;	
+
+fun _start compile=
+	echoEnable true;
+	let _getBootPkg ->[pkg programDir maxMemory] in
+	(
+		echoLn ["> current time: " fullDate time];
+		_fsInit programDir;
+		_launchApp pkg maxMemory compile caller
+	);
+	_schedulerStart;;
+
+fun _handleArgs l compile=
+	if l==nil then _start compile
+	else let l ->(a:b:_) in
+	match a with
+		"-compile" ->_handleArgs (tail l) true,
+		_ ->_handleArgs (tail l) compile;;
+
+fun _init=
+	msgException "";	// this prevents the weak type in msgException
+	_threadSetUser _threadCurrent _ThreadBios;
+//	echoLn "args:"; dump args; return nil;
+	_handleArgs args false;;

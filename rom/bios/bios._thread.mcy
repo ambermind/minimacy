@@ -1,0 +1,222 @@
+/* Copyright (c) 2022, Sylvain Huet, Ambermind
+   This program is free software: you can redistribute it and/or modify it
+   under the terms of the GNU General Public License, version 2.0, as
+   published by the Free Software Foundation.
+   This program is distributed in the hope that it will be useful, but WITHOUT
+   ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+   FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License,
+   version 2.0, for more details.
+   You should have received a copy of the GNU General Public License along
+   with this program. If not, see <https://www.gnu.org/licenses/>. */
+
+fun _rootMem m=	let _memParent m -> p in if p==nil then m else _rootMem p;;
+
+fun _memList m= if m<>nil then m:_memList _memNext m;;
+fun _mems= _memList _memNext nil;;
+
+//------------ THREAD
+const _BiosLock=lockCreate;;
+const _CheckList=fifoCreate;;
+
+
+fun _threadFull th= (fifoCount th._tasksT)>=_MAX__THREAD_TASKS ;;
+
+fun _threadNeedCheck th=
+	fifoIn _CheckList th;
+	nil;;
+
+fun _threadUnfreeze th val=
+	if th._stateT==_THREAD_WAIT then
+	(
+		_threadResume th._threadT val;
+		_scheduleThread th;
+		true
+	);;
+
+fun _threadUnblockPosting th=
+	let fifoOut th._postingT -> thBlocked in
+	_threadUnfreeze thBlocked nil;;
+
+fun _threadsCheck =
+	while nil<>fifoNext _CheckList do let fifoOut _CheckList -> th in
+		if th._stateT==_THREAD_IDLE then
+		let fifoOut th._tasksT -> task in
+		if task<>nil then
+		(
+			_threadExec th._threadT task;
+			_scheduleThread th;
+			_threadUnblockPosting th;
+		);;
+
+fun _threadCommonStart name mem caller start=
+	let _threadCreate mem -> sysThread in
+	if sysThread<>nil then
+	let caller ->[funName _ _ pkg] in
+	let [
+		_threadT=sysThread
+		_nameT=name
+		_echoEnableT=_This._echoEnableT
+		_postingT=fifoCreate _tasksT=fifoCreate
+		_callerT=strBuild [(pkgName pkg) "." funName]
+		_cyclesT=0 _t0T=time
+		_stateT= _THREAD_IDLE
+	] -> th in
+	(
+		_threadSetUser sysThread th;
+//		echoTime ["start #" threadId th " " th._nameT];
+		if start<>nil then threadPost th start;
+		th
+	);;
+
+// threadStart is always possible because the caller thread shares its memory with the new thread
+fun threadStart name start =
+	let caller -> caller in
+	let _threadCurrent -> th in
+	let _threadMemory th -> mem in
+	let _memParent mem -> parentMem in
+	let if parentMem<>nil then (_memCreate parentMem (_memName parentMem) nil) else mem -> mem in
+	_threadCommonStart name mem caller start;;
+
+fun _threadNew name maxMem caller fLoad=
+// here we could control the available space (>maxMem) and refuse to start the thread
+	let _memCreate nil name maxMem -> parentMem in
+	let _memCreate parentMem name nil -> mem in
+	_threadCommonStart name mem caller fLoad;;
+
+fun _threadSetMaxMemory val=
+	let _threadCurrent -> th in
+	let _threadMemory th -> mem in
+	_memSetMaxMemory mem val;;
+
+fun appStart lck fIsStarted name maxMem fStart=
+	let caller -> caller in
+	lockSync (if lck==nil then _BiosLock else lck) (lambda=
+		if (!call fIsStarted) then
+		let joinCreate -> join in
+		(
+			_threadNew name (if maxMem<>nil then maxMem*1024*1024) caller (lambda=
+				memoryTake memoryAuthorize name;
+				call fStart;
+				joinSend join true
+			);
+			joinWait join
+		)
+	);;
+
+fun _launchRun def=
+	if def<>nil then
+	if "run" <> defName def then _launchRun defNext def
+	else call _defSimpleFunction def;;
+
+fun _checkPkgName str i=
+	if i>=strLength str then true
+	else let strGet str i -> c in
+	if (c>='a' && c<='z')||(c>='A' && c<='Z')||(c=='_')||(c=='.')||(c>='0' && c<='9') then _checkPkgName str i+1;;
+
+fun _launchApp pkgName maxMem compile caller=
+	if !_checkPkgName pkgName 0 then ( // check syntax of pkgName
+		echoLn strFormat "Invalid package name '*'" pkgName;
+		nil
+	)
+	else
+	let strFormat "use *;;" pkgName -> src in
+	let _pkgCreate nil nil -> dummyPkg in
+	if compile then
+	(
+		_compile src dummyPkg;
+		_echoEnable false;
+		nil
+	)
+	else
+	_threadNew pkgName maxMem caller (lambda =
+		let timeMs -> t0 in
+		let _prompt src dummyPkg -> [type val] in
+		if type<>nil then
+		let echoLn strFormat "> compiled in * ms\n" timeMs-t0 -> _ in
+		let head _pkgImports dummyPkg ->[name p] in
+		_launchRun pkgDefs p;
+		nil
+	);
+	true;;
+
+fun start pkgName memory=
+	let if memory==nil then MAX_MEMORY_STANDALONE else memory -> memory in
+	_launchApp pkgName memory false caller;;
+
+fun threadStop th=
+	if th<>nil && th._stateT<>_THREAD_DONE then
+	\atomic (
+		_threadClear th._threadT;
+		_lockFreeThread th;
+		while nil<>fifoNext th._postingT do _threadUnblockPosting th;
+		_uiStopThread th;
+//		echoTime ["stop #" threadId th " " th._nameT];
+		set th._stateT=_THREAD_DONE;
+		true
+	);;
+
+fun exit=
+	threadStop _This;
+	_exit;;
+
+fun threadPost th task=
+	if th<>nil then
+	if th._stateT<>_THREAD_DONE then
+	let (lambda = call task;0) -> task in
+	(
+		if (_threadFull th) && (th<> _This) && ( _This<>_ThreadBios) then
+		\atomic (
+			fifoIn th._postingT _This;
+			_threadHoldOn
+		);
+		fifoIn th._tasksT task;
+		_threadNeedCheck th;
+		true
+	);;
+
+fun memoryUse memAuth f=
+	let _memoryAssign memAuth -> memSave in
+	try (
+		let (call f) -> result in
+		(
+			_memoryAssign memSave;
+			result
+		)
+	) catch
+	memoryException -> (
+		_memoryAssign memSave;
+		nil
+	),
+	_ -> (
+		_memoryAssign memSave;
+		throw _
+	);;
+
+
+fun threadId th= _threadId th._threadT;;
+fun threadName th= th._nameT;;
+fun threadOrigin th= th._callerT;;
+fun threadState th= th._stateT;;
+fun threadCycles th= th._cyclesT;;
+fun threadT0 th= th._t0T;;
+fun threadMemory th= _memMemory _threadMemory th._threadT;;
+fun threadMaxMemory th= _memMaxMemory _threadMemory th._threadT;;
+fun threadCallstack th= _callstack th._threadT;;
+fun threadTaskCount th= fifoCount th._tasksT;;
+
+fun threadApp th= _rootMem _threadMemory th._threadT;;
+
+fun _threadById id=
+	if id==nil then  _This
+	else
+	\atomic
+		for t=_threadNext nil; t<>nil; _threadNext t do if id==_threadId t then return _threadUser t;;
+
+fun _threadList t= if t<>nil then (_threadUser t):_threadList _threadNext t;;
+fun _threads= _threadList _threadNext nil;;
+
+fun thisThread= _This;;
+
+fun echoEnable enable= _echoEnable set _This._echoEnableT=enable;;
+fun systemLogEnable enable= _systemLogEnable enable;;
+

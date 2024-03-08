@@ -1,0 +1,66 @@
+/* Copyright (c) 2022, Sylvain Huet, Ambermind
+   This program is free software: you can redistribute it and/or modify it
+   under the terms of the GNU General Public License, version 2.0, as
+   published by the Free Software Foundation.
+   This program is distributed in the hope that it will be useful, but WITHOUT
+   ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+   FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License,
+   version 2.0, for more details.
+   You should have received a copy of the GNU General Public License along
+   with this program. If not, see <https://www.gnu.org/licenses/>. */
+
+//------------ KEYBOARD
+struct _Keyboard=Stream+[];;
+var _KeyboardSock;;	// the keyboard socket is opened once in the VM lifetime
+var _Keyboards;;
+
+fun _keyboardClean= set _Keyboards=listFilter _Keyboards (lambda kb= kb._thS._stateT <> _THREAD_DONE);;
+	
+fun _keyboardSync=
+	_keyboardClean;
+	for kb in tail _Keyboards do _streamRemoveFromList kb;
+	let head _Keyboards -> kb in
+	if kb<>nil then (
+		_sockSetSelectWrite kb._socketS true;
+		_streamAddToList kb
+	);;
+
+fun onInput cbRead cbWrite=
+	if cbRead<>nil then
+	\atomic	if _KeyboardSock==nil then set _KeyboardSock=_keyboardOpen;
+	_sockSetSelectRead _KeyboardSock true;
+	let [
+		_socketS=_KeyboardSock
+	] -> kb in
+	(
+		set kb._onSelectReadS = (lambda = 
+//			dump listLength _Keyboards;
+			threadPost kb._thS (lambda =
+				_sockSetSelectRead kb._socketS true;
+				let _keyboardRead kb._socketS -> data in
+				(
+					call kb._onReadS data;
+		//			if data==nil then set _Keyboard=nil;
+					nil
+				)
+			);
+			true
+		);
+		set kb._onSelectWriteS = (lambda = _streamOnSelectWrite kb);
+		set kb._showS=(lambda fEcho= call fEcho "keyboard" "-" kb._thS);
+\atomic (
+		set _Keyboards= kb:_Keyboards;
+		_keyboardSync
+);
+		set kb._closeS=(lambda = _keyboardSync; true);
+		streamOnEvent kb cbRead cbWrite;
+		streamSelectWrite kb true;
+		true
+	);;
+
+fun inputClose =
+\atomic (
+	set _Keyboards=listFilter _Keyboards (lambda kb= _This<>kb._thS);
+	_keyboardSync;
+	true
+);;

@@ -1,0 +1,804 @@
+/* Copyright (c) 2022, Sylvain Huet, Ambermind
+   This program is free software: you can redistribute it and/or modify it
+   under the terms of the GNU General Public License, version 2.0, as
+   published by the Free Software Foundation.
+   This program is distributed in the hope that it will be useful, but WITHOUT
+   ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+   FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License,
+   version 2.0, for more details.
+   You should have received a copy of the GNU General Public License along
+   with this program. If not, see <https://www.gnu.org/licenses/>. */
+
+#ifdef RPi4Device
+use baremetal.rpi4.eth;;
+#endif
+const DEBUG=false;;
+
+const MAC_BROADCAST="\$ff\$ff\$ff\$ff\$ff\$ff";;
+const MAC_EMPTY="\0\0\0\0\0\0";;
+const IP_BROADCAST="\$ff\$ff\$ff\$ff";;
+const IP_EMPTY="\0\0\0\0";;
+
+const LockIp=lockCreate;;
+const SocketClose=hashmapCreate 8;;
+
+fun _sockClose socket = call (hashmapGet SocketClose socket); nil;;
+
+//-------------------- READABLE FORMAT
+fun _strFormatMac mac i= if i<strLength mac then (strSlice mac i 2):_strFormatMac mac i+2;;
+fun _strFromMac mac i= strJoin ":" _strFormatMac (hexFromStr strSlice mac i 6) 0;;
+fun strFromMac mac = _strFromMac mac 0;;
+
+fun _strFromIp ip i=	strFormat "*.*.*.*" (strGet ip i) (strGet ip i+1) (strGet ip i+2) (strGet ip i+3);;
+fun strFromIp ip = _strFromIp ip 0;;
+
+fun macFromStr str = strFromHex strReplace str ":" "";;
+fun ipFromStr str = strListConcat listMap (strSplit "." str) (lambda val= strInt8 intFromDec val);;
+
+//-------------------- INTERFACE
+struct IfStruct=[indexI nameI macI maxPacketI socketI ipI submaskI gatewayI dnsI];;
+var If;;
+
+fun ifSet index name mac maxPacket cbRead=
+	let onEth (ethCreate index) cbRead nil -> socket in
+	set If=[
+		indexI=index nameI=name macI=mac maxPacketI=maxPacket socketI=socket
+		ipI=IP_EMPTY submaskI=IP_EMPTY gatewayI=IP_EMPTY dnsI=IP_EMPTY
+	];;
+
+fun ifSelect cbSelect cbRead=
+	let ethList ->el in
+	let listFind el (lambda [index name family mac maxPacket ip]= call cbSelect index name family mac maxPacket ip) -> [index name family mac maxPacket ip] in
+	(
+		echoLn ["use " index ": " name " mac=" (strFromMac mac) " maxPacket=" maxPacket];
+		ifSet index name mac maxPacket cbRead;
+		true
+	);;
+
+fun ifStatic ip mask gateway dns=
+	set If.ipI=ipFromStr ip;
+	set If.submaskI=ipFromStr mask;
+	set If.gatewayI=ipFromStr gateway;
+	set If.dnsI=ipFromStr dns;
+	true;;
+
+fun ifSetDefault = ifSelect (lambda index name family mac maxPacket ip= mac!=MAC_EMPTY) #ethHandle;;
+
+//-------------------- ETHERNET
+const ETH_ARP="\$08\$06";;
+const ETH_IPV4="\$08\$00";;
+
+fun ethHandle msg=
+//	echoLn strFormat "packet *" strLength msg;
+	if (strLength msg)>0 then
+	if (strLength msg)<14 then (echoLn " MALFORMED";nil)
+	else
+	let strSlice msg 0 6 -> localMac in
+	let strSlice msg 6 6 -> remoteMac in
+	let localMac==If.macI || localMac==MAC_BROADCAST -> incoming in 
+	let strRead16Msb msg 12 -> protocol in (
+//		echoLn strFormat " (*) -> (*) * *" (strFromMac remoteMac) (strFromMac localMac) (if incoming then " in" else "out") hexFromInt protocol;
+//		hexDump msg;
+		match protocol with
+			0x800 -> ipHandle incoming remoteMac msg 14,
+			0x806 -> arpHandle incoming remoteMac msg 14;
+//		echoLn ""
+	);;
+
+fun ethSendFrame macDest protocol msg=
+	let strBuild [macDest If.macI protocol msg] -> frame in
+	let if (strLength frame)<60 then strCreate (60-strLength frame) 0 -> padding in
+	(
+//		echoLn strFormat ">ETH */* *" (strFromMac macDest) (hexFromStr protocol) (strLength frame);
+//		hexDump frame;
+		let ethSend If.socketI strConcat frame padding -> result in
+		if DEBUG then echoTime strFormat ">ETH *" result
+		
+	);;
+
+//-------------------- ARP
+const ARP_REQUEST=1;;
+const ARP_ANSWER=2;;
+const ARP_RETRY=5;;
+
+sum ArpEntry = macA _, pendingA _;;
+const ArpBase = hashmapCreate 8;;
+const ArpLock = lockCreate;;
+
+fun arpFrame op mac ip = [
+	"\$00\$01\$08\$00\$06\$04\$00"
+	(strInt8 op)
+	If.macI
+	If.ipI
+	mac
+	ip
+];;
+
+fun arpHandle incoming remoteMac msg i0=
+	let strRead8 msg i0+7 -> arpType in
+	let strSlice msg i0+8 6 -> remoteMac in
+	let strSlice msg i0+14 4 -> remoteAddr in
+	let strSlice msg i0+18 6 -> localMac in
+	let strSlice msg i0+24 4 -> localAddr in
+	match arpType with
+		ARP_REQUEST -> 
+			(
+				if localAddr==If.ipI then (
+					if DEBUG then echoLn strFormat "<>ARP REQUESTED by * (*) who is *" (strFromMac remoteMac) (strFromIp remoteAddr) (strFromIp localAddr);
+					ethSendFrame MAC_BROADCAST ETH_ARP (arpFrame ARP_ANSWER remoteMac remoteAddr);
+				);
+				nil;
+			),
+		ARP_ANSWER ->
+			(
+				if incoming then (
+					if DEBUG then echoLn strFormat "<ARP ANSWERED * is *" (strFromMac remoteMac) strFromIp remoteAddr;
+					arpFeed remoteAddr remoteMac false
+				);
+				nil
+			);;
+
+fun _arpAddPending ip lPending cb=
+	let thisThread -> th in
+	hashmapSet ArpBase ip pendingA (lambda mac = threadPost th (lambda = call cb mac)):lPending;;
+
+fun _arpRequest ip i nbRetry=
+	if DEBUG then echoLn strFormat ">ARP REQUEST * *" (strFromIp ip) if i<>0 then strFormat "#*/*" i nbRetry;
+	ethSendFrame MAC_BROADCAST ETH_ARP arpFrame ARP_REQUEST MAC_EMPTY ip;
+	if i<nbRetry then onTimeout 500 (lambda =
+		match hashmapGet ArpBase ip with pendingA _ -> _arpRequest ip i+1 nbRetry
+	);;
+fun arpRequest ip cb=
+	let (lambda mac = call cb mac;true) -> cb in
+	if ip==IP_BROADCAST then call cb MAC_BROADCAST
+	else
+	let lockSync ArpLock (lambda =
+		match hashmapGet ArpBase ip with
+			macA mac -> mac,
+			pendingA lPending -> (_arpAddPending ip lPending cb; nil),
+			_ -> (
+				_arpAddPending ip nil cb;
+				_arpRequest ip 0 ARP_RETRY;
+				nil
+			)
+	) -> mac in
+	if mac<>nil then call cb mac;;
+
+fun arpFeed ip mac silent=
+	if DEBUG then if !silent then echoLn strFormat "ARP feed * is *" (strFromIp ip) (strFromMac mac);
+	let lockSync ArpLock (lambda =
+		let hashmapGet ArpBase ip -> current in (
+			hashmapSet ArpBase ip macA mac;
+			current
+		)
+	) -> current in
+	match current with 
+		pendingA lPending -> (
+			for cb in listReverse lPending do call cb mac;
+			true
+		);;
+
+//-------------------- IP
+const IP_UDP=17;;
+const IP_TCP=6;;
+const IP_ICMP=1;;
+
+fun ipHandle incoming remoteMac msg i0=
+	let strRead16Msb msg i0+2 -> ipLength in
+	let strRead8 msg i0+9 -> type in
+	let strSlice msg i0+12 4 -> remoteAddr in
+	let strSlice msg i0+16 4 -> localAddr in
+	(
+		if remoteAddr<>IP_BROADCAST && remoteAddr<>IP_EMPTY then
+			arpFeed remoteAddr remoteMac true;
+//		echoLn strFormat ">IP *: *->*" type (strFromIp remoteAddr) (strFromIp localAddr);
+//echoLn strFormat "* + *" ipLength (strLength msg)-ipLength;
+		let strSlice msg i0+20 ipLength-20 -> msg in
+		match type with
+//			IP_ICMP -> (echoLn ""; hexDump msg;nil),
+			IP_TCP -> tcpHandle incoming remoteAddr localAddr msg,
+			IP_UDP -> udpHandle incoming remoteAddr localAddr msg;
+		nil
+	);;
+
+fun ipSend ipDest protocol msg=
+	let strBuild [
+		"\$45\$00"
+		(strInt16Msb 20+strLength msg)
+		(strInt16Msb intRand)
+		"\$40\$00\$40"
+		(strInt8 protocol)
+	] -> headerStart in
+	let strConcat If.ipI ipDest -> headerEnd in
+	let strRead32Msb If.submaskI 0 -> mask in
+	let if (mask & strRead32Msb ipDest 0)==(mask & strRead32Msb If.ipI 0) then ipDest else If.gatewayI -> ipTransfer in
+	arpRequest ipTransfer (lambda macTransfer =
+		ethSendFrame macTransfer ETH_IPV4 [
+			headerStart
+			(ipChecksumFinal 
+				ipChecksum headerStart
+				ipChecksum headerEnd 
+				0
+			)
+			headerEnd
+			msg
+		]
+	);;
+
+//-------------------- UDP
+const UdpListener=hashmapCreate 8;;
+const UdpFifo=hashmapCreate 8;;
+
+fun udpHandle incoming remoteAddr localAddr msg=
+	let strRead16Msb msg 0 -> remotePort in
+	let strRead16Msb msg 2 -> localPort in
+	let strFromIp remoteAddr -> remoteAddr in
+	if incoming then (
+		if DEBUG then echoLn strFormat "<UDP *:*-> :* *" remoteAddr remotePort localPort (strLength msg)-8;
+		let hashmapGet UdpListener localPort -> socket in
+		if socket<>nil then (
+			fifoIn (hashmapGet UdpFifo socket) [(strSlice msg 8 nil) remoteAddr remotePort];
+			sockSetReadable socket true;
+		)
+	);;
+
+fun _udpSend sock localAddr localPort remoteAddr remotePort msg=
+	if DEBUG then echoLn strFormat ">UDP :*-> *:* *" localPort remoteAddr remotePort (strLength msg);
+	let strInt16Msb 8+strLength msg -> udpLen in
+	let strBuild [
+		(strInt16Msb localPort)
+		(strInt16Msb remotePort)
+		udpLen
+	] -> headerStart in
+	let ipFromStr remoteAddr -> remoteAddr in
+	let ipSend remoteAddr IP_UDP strBuild [
+		headerStart
+		(ipChecksumFinal 
+			ipChecksum headerStart 
+			ipChecksum msg 
+			ipChecksum If.ipI 
+			ipChecksum remoteAddr 
+			ipChecksum "\0\17"
+			ipChecksum udpLen
+			0
+		)
+		msg
+	] -> result in
+	if result then strLength msg;;
+
+fun _udpCreate localAddr localPort=
+//echoLn "_udpCreate"; dump
+	lockSync LockIp lambda=
+	if nil==hashmapGet UdpListener localPort then
+	let socketEmpty -> socket in (
+		hashmapSet UdpListener localPort socket;
+		hashmapSet UdpFifo socket fifoCreate;
+		hashmapSet SocketClose socket (lambda = lockSync LockIp (lambda=
+				hashmapSet UdpListener localPort nil;
+				hashmapSet UdpFifo socket nil;
+				hashmapSet SocketClose socket nil;
+				0
+			)
+		);
+		socket
+	);;
+
+fun _udpRead socket =
+	let hashmapGet UdpFifo socket -> fifo in (
+		sockSetReadable socket 1<fifoCount fifo;
+		fifoOut fifo
+	);;
+
+//-------------------- DHCP CLIENT
+const DHCP_DISCOVER=1;;
+const DHCP_OFFER=2;;
+const DHCP_REQUEST=3;;
+const DHCP_DECLINE=4;;
+const DHCP_ACK=5;;
+const _DHCP_PADDING=strCreate 236-34 0;;
+
+const DHCP_RETRY_NB=10;;
+const DHCP_RETRY_PERIOD=1000;;
+
+fun dhcpFrame op netip hostip newip =
+	strBuild [
+		"\1\1\6\0\0\0\0\0\0\0\0\0"
+		netip
+		"\0\0\0\0\0\0\0\0\0\0\0\0"
+		If.macI
+		_DHCP_PADDING
+		"\99\130\83\99\53\1"
+		(strInt8 op)
+		"\61\7\1"
+		If.macI
+		"\12\7Pabcdef\55\3\1\3\6"
+		if op==DHCP_REQUEST then {
+			"\54\4"
+			hostip
+			"\50\4"
+			newip
+		}
+		"\255"
+	];;
+
+fun _dhcpExtract src i type lease submask dns gateway mac=
+	if i<strLength src then
+	let strRead8 src i -> c in
+	if c==255 then [type lease submask dns gateway mac]
+	else let strRead8 src i+1 -> len in
+	let i+2->i in
+	if c==53 then _dhcpExtract src i+len (strRead8 src i) lease submask dns gateway mac
+	else if c==51 then _dhcpExtract src i+len type (strRead16Msb src i) submask dns gateway mac
+	else if c==1 then _dhcpExtract src i+len type lease (strSlice src i 4) dns gateway mac
+	else if c==6 then _dhcpExtract src i+len type lease submask (strSlice src i 4) gateway mac
+	else if c==3 then _dhcpExtract src i+len type lease submask dns (strSlice src i 4) mac
+	else if c==61 then _dhcpExtract src i+len type lease submask dns gateway (strSlice src i+1 6)
+	else _dhcpExtract src i+len type lease submask dns gateway mac;;
+
+fun dhcpHandle udp remoteAddr remotePort msg onReady=
+//	hexDump strSlice msg i0 nil;
+	let strRead8 msg 0 -> type in
+	if type==2 then	// Boot Reply
+	let strSlice msg 16 4 -> ipProposal in
+	let _dhcpExtract msg 240 0 nil nil nil nil nil -> [type lease submask dns gateway _] in
+	if type==DHCP_OFFER then
+	(
+		echoLn strFormat "----------<DHCP OFFER * by *" (strFromIp ipProposal) (remoteAddr) ;
+		echoLn strFormat "---------->DHCP REQUEST * for *" (remoteAddr) (strFromIp ipProposal);
+		udpSendTo udp "255.255.255.255" 67 (dhcpFrame DHCP_REQUEST IP_EMPTY (ipFromStr remoteAddr) ipProposal);
+//		udpSendTo udp remoteAddr 67 (dhcpFrame DHCP_REQUEST IP_EMPTY (ipFromStr remoteAddr) ipProposal);
+		nil
+	)
+	else if type==DHCP_ACK then
+	(
+		echoLn strFormat "----------<DHCP ACK * by *" (strFromIp ipProposal) remoteAddr;
+		udpClose udp;
+		set If.ipI=ipProposal;
+		set If.submaskI=submask;
+		set If.dnsI=dns;
+		set If.gatewayI=gateway;
+		echoLn ["ip      " strFromIp If.ipI];
+		echoLn ["mask    " strFromIp If.submaskI];
+		echoLn ["gateway " strFromIp If.gatewayI];
+		echoLn ["dns     " strFromIp If.dnsI];
+		call onReady true;
+		nil
+	);;
+
+fun _dhcpClientTry udp cbReady n=
+	if If.ipI==IP_EMPTY then (
+		echoLn "---------->DHCP DISCOVER";
+		udpSendTo udp "255.255.255.255" 67 (dhcpFrame DHCP_DISCOVER IP_EMPTY nil nil);
+		if n>0 then onTimeout DHCP_RETRY_PERIOD (lambda = _dhcpClientTry udp cbReady n-1)
+		else (call cbReady false; nil)
+	);;
+
+fun dhcpClientStart cbReady=
+	let udpCreate nil nil nil 68 -> udp in
+	if udp==nil then (call cbReady false;nil)
+	else (
+		set If.ipI=IP_EMPTY;
+		udpOnEvent udp (lambda data = dhcpHandle udp (udpRemoteIp udp) (udpRemotePort udp) data cbReady) nil;
+		_dhcpClientTry udp cbReady DHCP_RETRY_NB
+	);;
+
+fun dhcpClientWait =	// watch out: the ethernet thread must run in another thread, else the await will freeze it and prevent from receiving frames
+	await (lambda join= dhcpClientStart (lambda result = joinSend join result));;
+//-------------------- TCP
+const TCP_FIN=0x01;;
+const TCP_SYN=0x02;;
+const TCP_RST=0x04;;
+const TCP_PSH=0x08;;
+const TCP_ACK=0x10;;
+const TCP_URG=0x20;;
+
+const TCP_FLAGS="FIN":"SYN":"RST":"PSH":"ACK":"URG":"ECE":"CWR":nil;;
+
+fun _tcpFlagName flag bit l=
+	if l<>nil then if bitTest flag bit then (head l):_tcpFlagName flag bit<<1 tail l
+	else _tcpFlagName flag bit<<1 tail l;;
+
+fun tcpFlagName flag= strJoin "|" _tcpFlagName flag 1 TCP_FLAGS;;
+
+const TCP_MAX_LEN=458;;
+//const TCP_MAX_LEN=0x600 - 54;;
+
+const TCP_WINDOW=1024*8;;
+const TCP_WINDOW_MAX_LEN=1024*8;;
+
+struct TcpSrv=[socketS keyS portS fifoS];;
+
+struct Tcp=[socketT keyT remoteAddrT localPortT remotePortT
+	seq0T
+	seqT	// sequence number of next sending
+	ackT	// sequence number acknowledged by peer
+	peer0T	// first acknowledged peer's sequence number (to display a readable seq number)
+	peerT	// last acknowledged peer's sequence number
+	windowT
+	stateT
+	lockT
+	nextFramesT
+	fifoRxT	// Rx fifo: messages to send to the onRead callback
+	fifoTxT	// Tx fifo: sent messages not yet acknowledged, may need to be resent
+	retryTimerT
+];;
+
+const TcpListener=hashmapCreate 8;;	// port -> sock
+const TcpInside=hashmapCreate 8;;	// sock -> tcp
+
+const TcpSrvListener = hashmapCreate 8;;
+const TcpSrvInside=hashmapCreate 8;;	// sock -> tcp
+
+const TcpLock = lockCreate;;
+var TcpPortCounter = time+strRead16Msb (strRand 2) 0;;
+
+fun _tcpSrvKey ip port= decFromInt port;; //strConcat ip (strInt16Msb port);;
+
+fun _tcpKey remoteAddr localAddr remotePort localPort=
+	strFormat "****" remoteAddr localAddr (strInt16Msb remotePort) (strInt16Msb localPort);;
+
+fun _seqIsBefore a b = ((signExtend32 a)-(signExtend32 b))<=0;;
+fun _seqIsBeforeStrict a b = ((signExtend32 a)-(signExtend32 b))<0;;
+fun _seqNext seq flag msg= 0xffffffff &(seq+(strLength msg)+(if bitTest flag TCP_SYN|TCP_FIN then 1 else 0));;
+
+sum TcpState= synSentTcp, establishedTcp, closingTcp, closedTcp;;
+
+fun _tcpForget t=
+	if DEBUG then echoLn "===============_tcpForget"; //dumpCallstack nil;
+	hashmapSet TcpListener t.keyT nil;
+	if 1>fifoCount t.fifoRxT then hashmapSet TcpInside t.socketT nil;
+	set t.stateT = closedTcp;;
+
+fun _tcpReceiveData t data=
+	if t.fifoRxT==nil then set t.fifoRxT=fifoCreate;
+	fifoIn t.fifoRxT data;
+	sockSetReadable t.socketT true;;
+
+// this function is called only when a new packet is available with the correct sequence number
+fun _tcpStateMachine t flag data=
+	if bitTest flag TCP_RST|TCP_FIN then (
+		if t.stateT==closingTcp then (
+			_tcpSendFrame t TCP_ACK false "";
+			_tcpForget t;
+			nil
+		)
+		else (
+			_tcpSendFrame t TCP_ACK|TCP_FIN true "";
+			if t.stateT==establishedTcp && !strEmpty data then _tcpReceiveData t data;
+			_tcpReceiveData t nil;
+			set t.stateT=closingTcp
+		)
+	)
+	else match t.stateT with
+	synSentTcp -> if bitTest flag TCP_SYN then (
+		sockSetWritable t.socketT true;
+		set t.stateT=establishedTcp
+	),
+	establishedTcp -> (
+//		echoLn strFormat "establishedTcp * bytes" strLength data;
+		if !strEmpty data then _tcpReceiveData t data;
+		sockSetWritable t.socketT t.windowT>((t.seqT-t.ackT)&0xffffffff);
+		nil
+	);;
+
+fun _dumpNextFrames t=
+	for msg in t.nextFramesT do echoLn strFormat "/*" ((strRead32Msb msg 4)-t.peer0T)&0xffffffff;;
+
+fun _insertNextFrame seqPeer msg l=
+	if l==nil then msg:nil
+	else
+	let strRead32Msb (head l) 4 -> seq in
+	if seqPeer<>seq then
+	if _seqIsBefore seqPeer seq then msg:l
+	else (head l):_insertNextFrame seqPeer msg tail l;;
+
+fun _tcpHandle t msg=
+	let strRead32Msb msg 4 -> seqPeer in
+	let strRead32Msb msg 8 -> ack in
+	let (strRead8 msg 12)>>2 -> offset in
+	let strRead8 msg 13 -> flag in
+	let strRead16Msb msg 14 -> window in
+	let strSlice msg offset nil -> data in
+	(
+		set t.windowT= min TCP_WINDOW_MAX_LEN window;
+		if bitTest flag TCP_SYN then (
+			set t.peer0T=set t.peerT=seqPeer;
+			if t.ackT==0 then set t.ackT=ack
+		);
+		if DEBUG then echoLn strFormat "----------<TCP * ack=* seq=* len=* (w=*)" (tcpFlagName flag) (ack-t.seq0T)&0xffffffff (seqPeer-t.peer0T)&0xffffffff (strLength data) window;
+
+		if (bitTest flag TCP_ACK) then _tcpAckProcess t ack;
+		let _seqNext t.peerT flag data -> seqNext in
+		let seqNext<>t.peerT -> ackToSend in
+		if t.peerT==seqPeer then	// we process only the next expected packet, else we stack it for further use
+		let t.peerT -> seqPeer0 in
+		(
+			set t.peerT=seqNext;
+			_tcpStateMachine t flag data;
+
+//			_dumpNextFrames t;
+//			echoLn strFormat "expect *" t.peerT-t.peer0T;
+			if (t.stateT <> closedTcp) && (t.stateT <> closingTcp) then
+			let head t.nextFramesT -> next in
+			let strRead32Msb next 4 -> seq in
+			if seq==t.peerT then (
+//				echoLn strFormat "use saved frame";
+				set t.nextFramesT=tail t.nextFramesT;
+				_tcpHandle t next
+			)
+			else if t.peerT<>seqPeer0 then _tcpSendFrame t TCP_ACK false ""
+		)
+		else (
+			if DEBUG then echoLn "==>wrong sequence, ignore TCP frame";
+			if ackToSend then (
+				if !_seqIsBefore seqPeer t.peerT then (
+	//				echoLn strFormat "++save future frame";
+					set t.nextFramesT = _insertNextFrame seqPeer msg t.nextFramesT;
+	//				_dumpNextFrames t
+				);
+				_tcpSendFrame t TCP_ACK false ""
+			)
+		)
+	);;
+
+fun _tcpHandlSyn remoteAddr localAddr remotePort localPort flag msg=
+	if DEBUG then echoLn strFormat "----------<TCP *" (tcpFlagName flag);
+	let hashmapGet TcpSrvListener (_tcpSrvKey localAddr localPort) -> srv in
+	let if srv<>nil then srv else hashmapGet TcpSrvListener (_tcpSrvKey nil localPort) -> srv in
+	if srv<>nil then
+	let _tcpCreate remoteAddr remotePort If.ipI localPort -> t in
+	if t<>nil then
+	let strRead16Msb msg 14 -> window in
+	let strRead32Msb msg 4 -> seqPeer in (
+		set t.stateT=establishedTcp;
+		set t.peer0T= seqPeer;
+		set t.peerT= seqPeer+1;
+		set t.windowT= window;
+		_tcpSendFrame t TCP_SYN|TCP_ACK true nil;
+		fifoIn srv.fifoS [t.socketT (strFromIp remoteAddr) remotePort];
+		sockSetReadable srv.socketS true;
+		sockSetWritable t.socketT true;
+		nil
+	);;
+
+fun tcpHandle incoming remoteAddr localAddr msg=
+lockSync TcpLock lambda =
+	let strRead16Msb msg 0 -> remotePort in
+	let strRead16Msb msg 2 -> localPort in
+	let strRead8 msg 13 -> flag in
+	(
+//		echo strFormat " :*->:* *" remotePort localPort tcpFlagName flag;
+		if incoming then
+		if flag==TCP_SYN then _tcpHandlSyn remoteAddr localAddr remotePort localPort flag msg
+		else
+		let _tcpKey remoteAddr localAddr remotePort localPort -> key in
+		let hashmapGet TcpListener key -> t in
+		if t<>nil then (_tcpHandle t msg)
+		else nil;	// TODO: here we should ack any TCP_FIN message
+		nil
+	);;
+
+fun __tcpSendFrame t seq flag msg=
+	if DEBUG then echoLn strFormat "---------->TCP * seq=* ack=* len=* *"
+		(tcpFlagName flag)
+		(seq-t.seq0T)&0xffffffff
+		(t.peerT-t.peer0T)&0xffffffff
+		(strLength msg);
+	let if bitTest flag TCP_SYN then "\2\4\4\0" else ""-> options in	// Maximum segment size : 1024 (0x02=option id, 0x04=option length, 0x0400=1024)
+	let 20+strLength options -> headerLength in
+	let strInt16Msb headerLength+(strLength msg) -> tcpLen in
+	let strBuild [
+		(strInt16Msb t.localPortT)
+		(strInt16Msb t.remotePortT)
+		(strInt32Msb seq)
+		(strInt32Msb t.peerT)
+		(strInt8 4*headerLength)
+		(strInt8 flag)
+		(strInt16Msb TCP_WINDOW)
+	] -> headerStart in 
+	let strBuild [
+		headerStart
+		(ipChecksumFinal 
+			ipChecksum headerStart 
+			ipChecksum options 
+			ipChecksum msg 
+			ipChecksum If.ipI 
+			ipChecksum t.remoteAddrT 
+			ipChecksum "\0\6"
+			ipChecksum tcpLen
+			0
+		)
+		"\0\0"	// urgent pointer
+		options
+		msg
+	] -> frame in
+	ipSend t.remoteAddrT IP_TCP frame;;
+
+fun _tcpSendFrame t flag retry msg=
+	lockSync t.lockT lambda =
+	let t.seqT -> seq in
+	(
+		set t.seqT=_seqNext t.seqT flag msg;
+		if seq<>t.seqT then (
+			fifoIn t.fifoTxT [timeMs seq flag msg];
+			if !t.retryTimerT then (
+				set t.retryTimerT=true;
+				onTimeout 1000 (lambda = _tcpCheckRetry t)
+			)
+		);
+		__tcpSendFrame t seq flag msg;
+		strLength msg	
+	);;
+
+fun _tcpAckFifo t=
+	let fifoNext t.fifoTxT ->[t0 seq flag msg] in
+	if t0<>nil then
+	if _seqIsBeforeStrict seq t.ackT then (
+		fifoOut t.fifoTxT;
+		_tcpAckFifo t
+	)
+	else
+	let timeMs-t0 -> age in
+	if age>1000 then
+	__tcpSendFrame t seq flag msg;;
+
+fun _tcpAckProcess t ack=
+	if (_seqIsBefore ack t.seqT)&&(_seqIsBefore t.ackT ack) then
+	lockSync t.lockT lambda =
+	(
+		set t.ackT=ack;
+		_tcpAckFifo t
+	);;
+
+fun _tcpCheckRetry t=
+	if t.stateT <> closedTcp then
+	lockSync t.lockT lambda =
+	let fifoNext t.fifoTxT -> [t0 seq flag msg] in
+	if t0==nil then	( // if fifo empty we stop the timer
+		set t.retryTimerT=nil;
+		nil
+	)
+	else
+	let timeMs-t0 -> age in
+	(
+		if (age>500) then __tcpSendFrame t seq flag msg;
+		onTimeout 1000 (lambda = _tcpCheckRetry t)
+	);;
+
+fun _tcpCreate remoteAddr remotePort localAddr localPort=
+	let _tcpKey remoteAddr localAddr remotePort localPort -> key in
+	lockSync TcpLock (lambda =
+		if nil == hashmapGet TcpListener key then	// check existing connection
+		let socketEmpty -> socket in
+		let intRand & 0xffffffff-> seq0 in
+		let [
+			socketT=socket
+			keyT=key
+			stateT=synSentTcp 
+			remoteAddrT=remoteAddr
+			remotePortT=remotePort 
+			localPortT=localPort
+			seq0T=seq0
+			seqT= seq0
+			ackT= seq0
+			peerT=0
+			windowT=1024	// this value will be updated at each received frame
+			fifoTxT=fifoCreate
+			lockT=lockCreate
+		] -> t in (
+			hashmapSet TcpListener key t;
+			hashmapSet TcpInside socket t;
+			hashmapSet SocketClose socket (lambda = lockSync TcpLock lambda = (
+				hashmapSet SocketClose socket nil;
+				if t.stateT==synSentTcp then (
+					_tcpForget t;
+					0
+				)
+				else (
+					if t.stateT<>closingTcp && t.stateT<>closedTcp then _tcpSendFrame t TCP_ACK|TCP_FIN true "";
+					set t.stateT=closingTcp;
+					0
+				)
+			));
+			t
+		)
+	);;
+
+fun _tcpOpen remoteAddr remotePort=
+lockSync TcpLock lambda =
+	let ipFromStr remoteAddr -> remoteAddr in
+	let 1024+set TcpPortCounter=(TcpPortCounter+1)&16383 -> localPort in
+	let _tcpCreate remoteAddr remotePort If.ipI localPort -> t in
+	if t<>nil then (
+		if DEBUG then echoLn strFormat "---------->TCP *:*-> *:* *" (strFromIp If.ipI) localPort (strFromIp remoteAddr) remotePort (tcpFlagName TCP_SYN);
+		_tcpSendFrame t TCP_SYN true nil;
+		t.socketT
+	);;
+
+fun _tcpWriteLoop t data start lenToSend=
+	if lenToSend<=0 then start
+	else 
+	let min lenToSend TCP_MAX_LEN -> send in
+	let if send==lenToSend then TCP_PSH else 0 -> psh in (
+		_tcpSendFrame t TCP_ACK|psh true (strSlice data start send);
+		// we don't use the result (_tcpSendFrame is asynchronous)
+		// => the network stack takes responsability of lenToSend bytes
+		_tcpWriteLoop t data start+send lenToSend-send
+	);;
+
+fun _tcpWrite socket data start=
+//	echoLn "_tcpWrite";
+lockSync TcpLock lambda =
+	let hashmapGet TcpInside socket -> t in
+	if (t.stateT== establishedTcp) then
+	let min (strLength data)-start
+			(t.windowT)-(((t.seqT)-(t.ackT))&0xffffffff)
+	-> lenToSend in
+	_tcpWriteLoop t data start lenToSend;;
+
+// returns :
+// - non empty string : received data
+// - empty string : socket ok but no received data
+// - nil : closed or failed socket
+fun _tcpRead socket =
+lockSync TcpLock lambda =
+//echoLn "_tcpRead";
+	let hashmapGet TcpInside socket -> t in
+	if t.fifoRxT<>nil then	// fifo is created only when the first user data is received
+	if 0==fifoCount t.fifoRxT then ""
+	else let fifoOut t.fifoRxT -> data in
+	(
+		sockSetReadable socket (fifoCount t.fifoRxT)>0;
+		if data==nil then hashmapSet TcpInside t.socketT nil;
+//echoLn strFormat "-> tcpRead * bytes" strLength data;
+		data
+	);;
+
+fun _tcpAccept socket =
+lockSync TcpLock lambda =
+	let hashmapGet TcpSrvInside socket -> t in
+	let fifoOut t.fifoS -> tcp in (
+		sockSetReadable socket (fifoCount t.fifoS)>0;
+		tcp
+	);;
+
+fun _tcpListen ip port=
+	let _tcpSrvKey (ipFromStr ip) port -> key in
+	lockSync TcpLock (lambda =
+		if nil == hashmapGet TcpSrvListener key then	// check existing connection
+		let socketEmpty -> socket in
+		let [
+			socketS=socket
+			keyS=key
+			portS=port
+			fifoS=fifoCreate
+		] -> t in (
+			hashmapSet TcpSrvListener key t;
+			hashmapSet TcpSrvInside socket t;
+			hashmapSet SocketClose socket (lambda = 
+				hashmapSet TcpSrvListener key nil;
+				hashmapSet TcpSrvInside socket nil;
+				hashmapSet SocketClose socket nil;
+				// we should also close all the tcp stream issued by this server?
+				0
+			);
+			socket
+		)
+	);;
+
+fun ipOverEthSetup =
+	ipStackOverwrite [
+		sockCloseII=#_sockClose
+
+		udpCreateII=#_udpCreate
+		udpSendII=#_udpSend
+		udpReadII=#_udpRead
+
+		tcpOpenII=#_tcpOpen
+//		tcpNoDelayII=#_tcpNoDelay
+		tcpReadII=#_tcpRead
+		tcpWriteII=#_tcpWrite
+		tcpListenII=#_tcpListen
+		tcpAcceptII=#_tcpAccept
+
+	];;

@@ -1,0 +1,58 @@
+/* Copyright (c) 2022, Sylvain Huet, Ambermind
+   This program is free software: you can redistribute it and/or modify it
+   under the terms of the GNU General Public License, version 2.0, as
+   published by the Free Software Foundation.
+   This program is distributed in the hope that it will be useful, but WITHOUT
+   ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+   FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License,
+   version 2.0, for more details.
+   You should have received a copy of the GNU General Public License along
+   with this program. If not, see <https://www.gnu.org/licenses/>. */
+   
+fun _mkTitleAndContent content files=
+	if files<>nil then
+	let head files->[path data] in
+	let strListConcat path:"\0":data:nil -> data in
+	let strLength data -> len in
+	(
+		bufferAppend content data;
+		len:_mkTitleAndContent content tail files
+	);;
+
+fun _recTable offset lSize=
+	if lSize==nil then 0:nil
+	else offset:_recTable (offset+head lSize) tail lSize;;
+
+	
+fun _mkTable lSize =
+	let listReduce lSize 0 (lambda s v= s+v) -> dataLen in
+	let listLength lSize -> nbEntry in
+	let (nbEntry+2)*4 -> dataOffset in
+	let (dataLen+dataOffset):_recTable dataOffset lSize -> table in
+	let strBuild listMap table (lambda offset= strInt32Lsb offset) -> data in
+	data;;
+	
+
+fun _romdiskBuildLoop i fifo path=
+	for fi in partitionListInfo i path do
+		let fileInfoName fi -> path in
+		if fileInfoIsDir fi then _romdiskBuildLoop i fifo path
+		else
+		if strEndsWith path ".mcy" then let load dump path -> data in
+		if data<>nil then fifoIn fifo [path data];;
+
+
+fun romdiskFromFiles files=
+	let bufferCreate -> content in
+	(
+		let _mkTitleAndContent content files -> lSize in
+		let _mkTable lSize -> data in
+		strConcat data (strFromBuffer content)
+	);;
+
+fun romdiskFromPartitionSources i =
+	let fifoCreate -> fifo in (
+		_romdiskBuildLoop i fifo "";
+		let romdiskFromFiles fifoList fifo -> data in
+		romdiskImport "Import" data;
+	);;

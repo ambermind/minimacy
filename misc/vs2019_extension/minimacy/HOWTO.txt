@@ -1,0 +1,11 @@
+
+Build the extension
+------------------------
+
+Open minimacy.sln with Visual Studio 2019
+Launch the build process (Ctr+F5)
+
+The resulting extension is: bin/Release/minimacy.vsix
+
+Remove the previous extension before installing the new one.
+In order to install the new one, double-click on minimacy.vsix.

@@ -1,0 +1,66 @@
+/* Copyright (c) 2022, Sylvain Huet, Ambermind
+   This program is free software: you can redistribute it and/or modify it
+   under the terms of the GNU General Public License, version 2.0, as
+   published by the Free Software Foundation.
+   This program is distributed in the hope that it will be useful, but WITHOUT
+   ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+   FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License,
+   version 2.0, for more details.
+   You should have received a copy of the GNU General Public License along
+   with this program. If not, see <https://www.gnu.org/licenses/>. */
+
+const NTP_SERVER="20.101.57.9";;	// time.windows.com
+const NTP_PORT=123;;
+const DELTA1900=2208988800;;	// seconds from 01/01/1900 to 01/01/1970
+
+fun _strTime t=
+	strConcat (strInt32Msb t/1000+DELTA1900) (strInt32Msb ((t%1000)<<32)/1000);;
+	
+fun _strReadTime data i=
+	let (strRead32Msb data i)-DELTA1900 -> seconds in
+	let ((strRead32Msb data i+4) * 1000)>>32 -> millis in
+	seconds*1000 + millis;;
+
+fun _ntpReceive udp t3 data=
+	udpClose udp;
+	if (strLength data)>=48 then
+		let _strReadTime data 24 -> t0 in
+		let _strReadTime data 32 -> t1 in
+		let _strReadTime data 40 -> t2 in
+		let (t1+t2)/2 -> tServer in
+		let (t0+t3)/2 -> tClient in
+		let tServer-tClient -> dt in
+		timeMs+dt;;
+
+fun ntpRequest cb =
+	let udpCreate NTP_SERVER NTP_PORT nil NTP_PORT -> udp in
+	if udp==nil then (call cb nil;nil)
+	else
+	let strBuild [
+		(strInt32Msb 0xd9000afa)
+		(strInt32Msb 0)
+		(strInt32Msb 0x00010290)
+		(strInt32Msb 0)
+		(strInt32Msb 0) (strInt32Msb 0)
+		(strInt32Msb 0) (strInt32Msb 0)
+		(strInt32Msb 0) (strInt32Msb 0)
+		(_strTime timeMs)
+	] -> trame in (
+		udpOnEvent udp (lambda data=
+			let _ntpReceive udp timeMs data -> t in (
+				timeSet t/1000;
+				call cb t
+			)
+		) nil;
+		udpSend udp trame
+	);;
+	
+fun run=
+	let timeMs -> t in
+	echoLn strFormat "local time: * *ms" (fullDate t/1000) t%1000;
+	ntpRequest (lambda t= 
+		echoLn t;
+		let timeMs -> t in
+		echoLn strFormat "ntp time  : * *ms" (fullDate t/1000) t%1000;
+	);
+	echoLn "done";;

@@ -1,0 +1,225 @@
+/* Copyright (c) 2022, Sylvain Huet, Ambermind
+   This program is free software: you can redistribute it and/or modify it
+   under the terms of the GNU General Public License, version 2.0, as
+   published by the Free Software Foundation.
+   This program is distributed in the hope that it will be useful, but WITHOUT
+   ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+   FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License,
+   version 2.0, for more details.
+   You should have received a copy of the GNU General Public License along
+   with this program. If not, see <https://www.gnu.org/licenses/>. */
+
+//------------ Admin
+fun help=
+	echoLn "Minimacy admin commands";
+	echoLn "------------------------";
+	echoLn "- ps             : list of applications and threads";
+	echoLn "- fs             : list of volumes and partitions";
+	echoLn "- inputs         : list of active inputs (sockets, keyboard, ...)";
+	echoLn "- eth            : list of network interfaces (only on Linux and bare-metal)";
+	echoLn "- timers         : list of pending timers";
+	echoLn "- sys            : system overview (pkgList, ps, inputs, timers in one command)";
+	echoLn "- kill id        : kill a thread based on its id";
+	echoLn "- killApp id     : kill a thread based on its id, and all the threads from the same application";
+	echoLn "- dir path       : show directory content";
+	echoLn "- reboot         : restart the VM";
+	echoLn "- gc             : force a full gc";
+	echoLn "- pkg            : display the current package";
+	echoLn "- pkgList        : display the list of current compiled packages";
+	echoLn "- pkgByName name : search a package by its name";
+	echoLn "- pkgScope pkg   : display all labels visible from a given package";
+	echoLn "- pkgOverload pkg: display all overloaded labels from a given package";
+	true;;
+
+fun ps=
+gc;gc;
+	let lambda n1 i1 state count mem start caller=echoLn [(strLeftSpacePadding 16 n1) (strLeftSpacePadding 8 i1) (strLeftSpacePadding 8 state)
+		(strLeftSpacePadding 12 mem) (strLeftSpacePadding 7 count) (strLeftSpacePadding 9 start) " " caller] -> echoFormat in
+	let hashmapCreate 4 -> h in
+	(
+		for th in _threads do
+			let threadApp th -> m in
+			hashmapSet h m th:hashmapGet h m;
+
+		call echoFormat "Thread" "ID" "State" "Cycles" "Memory" "Start" "Origin";
+		for appMem in _mems do
+		(
+			let _memName appMem -> name in
+			let _memMaxMemory appMem -> maxMem in
+			echoLn strFormat "[application *: **]" name (intAbbrev 1024 _memMemory appMem) (if maxMem>0 then ["/" intAbbrev 1024 maxMem] );
+			let hashmapGet h appMem -> lthreads in
+//			if lthreads==nil then _memDump appMem
+			if lthreads==nil then nil
+			else for th in lthreads do
+			let threadMaxMemory th -> maxMem in
+			(
+				call echoFormat (threadName th) (decFromInt threadId th) (stateName threadState th)
+				(intAbbrev 1000 threadCycles th)
+				(strBuild [(intAbbrev 1024 threadMemory th) (if maxMem>0 then ["/" intAbbrev 1024 maxMem] )])
+				(smallDate threadT0 th)
+				threadOrigin th;
+				nil
+//				echoLn _threadPP th._threadT
+			)
+		);
+		true
+	);;
+
+fun inputs=
+	let lambda type detail th= echoLn strFormat "*** *"
+		(strLeftSpacePadding 10 type)
+		(strLeftSpacePadding 21 detail)
+		(strLeftSpacePadding 6 if th==nil then "ID" else decFromInt threadId th)
+		(if th==nil then "THREAD" else th._nameT)
+	-> echoFormat in
+	(
+		call echoFormat "Type" "Detail" nil;
+		for s in _Streams do call s._showS echoFormat;
+		true
+	);;
+
+fun timers=
+	let lambda delay id name=echoLn [(strLeftSpacePadding 12 delay) (strLeftSpacePadding 6 id) " " name] -> echoFormat in
+	let _timerList -> lTimers in
+	(
+		call echoFormat "WAIT" "ID" "THREAD";
+		for [t th] in lTimers do call echoFormat (dec3FromInt "," max 0 t-timeMs) (decFromInt threadId th) th._nameT;
+		if lTimers==nil then (echoLn "-> none";nil);
+		true
+	);;
+
+fun sys=
+	echoLn "\nSystem status";
+	echoLn "-------------";
+	echoLn "\npkgs:"; pkgList;
+	echoLn "\nthreads:"; ps;
+	echoLn "\ntimers:"; timers;
+	echoLn "\ninputs:"; inputs;
+	echoLn "";
+	true;;
+
+fun kill id= 
+	threadStop _threadById id;;
+
+fun killApp id=
+	let threadApp _threadById id -> mem in
+	for th in _threads do if mem==threadApp th then threadStop th;;
+	
+fun dumpCallstack id=
+	let _threadById id -> th in
+	if th<>nil then
+	let lambda n1 i1 pkg=echoLn [(strLeftSpacePadding 16 n1) (strLeftSpacePadding 8 i1)] -> echoFormat in
+	(
+		call echoFormat "FUNCTION" "PC" "PKG";
+//		dump _callstack th._threadT;
+		for [name pc _ pkg] in threadCallstack th do 
+			echoLn {(strLeftSpacePadding 16 name) (strLeftSpacePadding 8 decFromInt pc) "  " pkgName pkg};
+//			call echoFormat name decFromInt pc;
+		true
+	);;
+
+fun reboot= 
+	set _HardStop=true;
+	_reboot;;
+
+fun hardStop=
+	set _HardStop=true;;
+
+fun niceStop=
+	set _NiceStop=true;;
+
+fun volumes=
+	echoLn "      Type     Index    Access  Name";
+	for [name type index writable] in _Volumes do
+		echoLn [
+			(strLeftSpacePadding 10 _strFromVolumeType type)
+			(strLeftSpacePadding 10 strBuild index)
+			(strLeftSpacePadding 10 if writable then "writable" else "readonly")
+			"  "
+			name
+		];
+	echoLn "";
+	true;;
+
+fun _strFromPath path= if strEmpty path then "[empty]" else path;;
+
+fun partitions=
+	let 1+max 7 listReduce _Partitions 0 (lambda mx p= max mx strLength p.mountP) -> mountWidth in
+	(
+		echoLn [" Id        Name        Volume    Access" (strLeftSpacePadding mountWidth "Mount") "  Root"];
+		listReduce _Partitions 0 (lambda i p =
+			echoLn [
+				(strLeftSpacePadding 3 strFormat "*:" i)
+				(strLeftSpacePadding 12 p.nameP)
+				(strLeftSpacePadding 14 p.volumeP)
+				(strLeftSpacePadding 10 if p.writableP then "writable" else "readonly")
+				(strLeftSpacePadding mountWidth _strFromPath p.mountP)
+				"  "
+				(_strFromPath p.rootP)
+			];
+			i+1
+		);
+		echoLn "";
+		true
+	);;
+
+fun fs=
+	echoLn "Volumes:"; volumes;
+	echoLn "Partitions:"; partitions;
+	true;;
+	
+fun partitionDir i path =
+	let if i==nil then diskListInfo path else partitionListInfo i path -> l in
+	let listFilter l (lambda f= f._dirFI) -> lDirs in
+	let listFilter l (lambda f= !f._dirFI) -> lFiles in
+	(
+		for p in listConcat (_filesSort lDirs) (_filesSort lFiles) do
+		echoLn {
+			(strLeftSpacePadding 12 if p._dirFI then "DIRECTORY" else decFromInt p._sizeFI)
+			" | "
+			(if p._updateFI<>nil then fullDate p._updateFI else "          [mounted partition]")
+			" | "
+			p._nameFI
+		};
+		echoLn [(listLength l) " element(s)"];
+		true
+	);;
+
+fun dir path = partitionDir nil path;;
+
+fun _removeIndex n l=
+	if n==0 || l==nil then tail l
+	else (head l):_removeIndex n-1 tail l;;
+
+fun _insertIndex val n l=
+	if n==0 || l==nil then val:l
+	else (head l):_insertIndex val n-1 tail l;;
+
+fun umount n =
+	set _Partitions= _removeIndex n _Partitions;
+	_partitionUpdate;;
+
+fun mountMove from to=
+	let listGet _Partitions from -> p in
+	if p<>nil then set _Partitions= _insertIndex p to _removeIndex from _Partitions;
+	_partitionUpdate;;
+
+fun mount name type index writable mountPath physPath=
+	partitionAdd match type with
+		"ansi"   -> _mkAnsiPartition name writable mountPath physPath,
+		"uefi"   -> _mkUefiPartition name index writable mountPath physPath,
+		"romdisk"-> _mkRomdiskPartition index mountPath physPath;;
+
+fun eth=		//only for root on Linux
+	echoLn " ID      NAME FAMILY          MAC MAX_PACKET        IP";
+	for [index name family mac maxPacketLength ip] in ethList do
+		echoLn [
+			(strLeftSpacePadding 3 decFromInt index)
+			(strLeftSpacePadding 10 name)
+			(strLeftSpacePadding 7 decFromInt family)
+			(strLeftSpacePadding 13 hexFromStr mac)
+			(strLeftSpacePadding 11 decFromInt maxPacketLength)
+			" "
+			ip
+		];
+	true;;

@@ -1,0 +1,62 @@
+/* Copyright (c) 2022, Sylvain Huet, Ambermind
+   This program is free software: you can redistribute it and/or modify it
+   under the terms of the GNU General Public License, version 2.0, as
+   published by the Free Software Foundation.
+   This program is distributed in the hope that it will be useful, but WITHOUT
+   ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+   FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License,
+   version 2.0, for more details.
+   You should have received a copy of the GNU General Public License along
+   with this program. If not, see <https://www.gnu.org/licenses/>. */
+
+
+//-------------- SCHEDULER
+const _RunList=fifoCreate;;
+
+fun _scheduleThread th=
+	fifoIn _RunList th;
+	set th._stateT=_THREAD_RUN;;
+
+fun _isAlive=
+	if _HardStop then false
+	else if _NiceStop then (0<fifoCount _RunList) || _workerAlive
+	else (0<fifoCount _RunList) || _timerAlive || _streamAlive || _workerAlive || _uiAlive || soundPlaying;;
+
+fun _schedulerStart=
+	_schedulerInitIO;
+	_threadsCheck;
+	while _isAlive do
+	(
+		_ioCheck;
+		_threadsCheck;
+		let fifoOut _RunList -> th in
+		(
+//			echoLn [";" th._stateT];
+			if th._stateT==_THREAD_RUN then
+			let _threadId th._threadT -> uid in
+			(
+				set _This._cyclesT=_threadCount _This._threadT;
+				set _This=th;
+				_echoEnable _This._echoEnableT;
+				let try
+					_threadRun th._threadT _MAX_THREAD_EXEC
+				catch _ -> EXEC_EXIT
+				-> execResult in
+				let match execResult with
+					EXEC_IDLE -> _THREAD_IDLE,
+					EXEC_PREEMPTION -> (_scheduleThread th;nil),
+					EXEC_WAIT -> _THREAD_WAIT,//nil,
+					EXEC_EXIT -> (threadStop th; _THREAD_DONE),
+					EXEC_OM -> (echoLn "!!!!! OM error";threadStop th; _THREAD_DONE)
+				-> state in if state<>nil then set th._stateT= state;
+				_threadNeedCheck th;
+
+				set th._cyclesT=_threadCount th._threadT;
+				set _This=_ThreadBios;
+				_echoEnable _This._echoEnableT;
+			);
+//			echoLn ["->" th._stateT]
+		);
+		_threadsCheck
+	);
+	uiStop;;

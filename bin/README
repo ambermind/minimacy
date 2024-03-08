@@ -1,0 +1,10 @@
+This directory is expected to contain the binary versions of the Minimacy Virtual Machine:
+
+- minimacy.exe : windows version
+- minimacy : linux without GUI
+- minimacyX11GL : linux with X11 and openGL
+- minimacyRPiOS64 : raspberry Pi OS 64 bits with X11 and openGL
+- minimacyMac : macos command line without GUI
+- minimacyMacX11GL: macos command line with X11 and openGL
+
+In order to build these binaries, see: https://github.com/ambermind/minimacy/blob/main/README.md

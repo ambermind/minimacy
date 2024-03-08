@@ -1,0 +1,41 @@
+/* Copyright (c) 2022, Sylvain Huet, Ambermind
+   This program is free software: you can redistribute it and/or modify it
+   under the terms of the GNU General Public License, version 2.0, as
+   published by the Free Software Foundation.
+   This program is distributed in the hope that it will be useful, but WITHOUT
+   ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+   FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License,
+   version 2.0, for more details.
+   You should have received a copy of the GNU General Public License along
+   with this program. If not, see <https://www.gnu.org/licenses/>. */
+
+const HTTPCLIENT_TIMEOUT=30000;;
+const WEBSOCKET_TIMEOUT=120000;;
+
+sum Transfer = transferLength @Int, transferChunked, transferNone;;
+
+const HTTP_1_0="HTTP/1.0";;
+const HTTP_1_1="HTTP/1.1";;
+const HTTP_CONTENT_LENGTH="Content-Length";;
+const HTTP_CONTENT_TYPE="Content-Type";;
+const HTTP_CACHE_CONTROL="Cache-Control";;
+const HTTP_LOCATION="Location";;
+const HTTP_COOKIE="Cookie";;
+const HTTP_SET_COOKIE="Set-Cookie";;
+const HTTP_TRANSFER_ENCODING="Transfer-Encoding";;
+const HTTP_CHUNKED="chunked";;
+const HTTP_URLENCODED="application/x-www-form-urlencoded";;
+const HTTP_MULTIPART="multipart/form-data";;
+
+const WS_KEY="Sec-WebSocket-Key";;
+const WS_ACCEPT="Sec-WebSocket-Accept";;
+
+const WS_UUID="258EAFA5-E914-47DA-95CA-C5AB0DC85B11";;
+
+const WS_OPCODE_CONTINUE=0;;
+const WS_OPCODE_TEXT=1;;
+const WS_OPCODE_BIN=2;;
+const WS_OPCODE_CLOSE=8;;
+const WS_OPCODE_PING=9;;
+const WS_OPCODE_PONG=10;;
+

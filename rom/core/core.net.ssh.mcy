@@ -1,0 +1,872 @@
+/* Copyright (c) 2022, Sylvain Huet, Ambermind
+   This program is free software: you can redistribute it and/or modify it
+   under the terms of the GNU General Public License, version 2.0, as
+   published by the Free Software Foundation.
+   This program is distributed in the hope that it will be useful, but WITHOUT
+   ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+   FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License,
+   version 2.0, for more details.
+   You should have received a copy of the GNU General Public License along
+   with this program. If not, see <https://www.gnu.org/licenses/>. */
+
+
+use core.crypto.hash;;
+use core.crypto.aes;;
+use core.crypto.ed25519;;
+use core.crypto.pkcs1;;
+use core.crypto.rsa;;
+use core.crypto.key;;
+use core.crypto.curve25519;;
+
+const SSH_DEBUG=false;;
+//const SSH_DEBUG=true;;
+
+sum SshAuth= sshAuthPassword _, sshAuthPublicKey _ _;;
+
+sum SSH_CODE= SSH_OK, SSH_NO_ALGO, SSH_SIGNATURE, SSH_USERAUTH_FAILURE, SSH_CHANNEL_FAILURE, SSH_UNKNOWN, SSH_HMAC, SSH_CHANNEL_EOF, SSH_CLOSED, SSH_NOK;;
+
+//const SSH_CLIENT="SSH-2.0-PuTTY_Release_0.74";;
+//const SSH_CLIENT="SSH-2.0-OpenSSH_8.6";;
+const SSH_CLIENT="SSH-2.0-Minimacy_1.0";;
+
+const SSH2_MSG_DISCONNECT     =1;;
+const SSH2_MSG_IGNORE         =2;;
+const SSH2_MSG_SERVICE_REQUEST=5;;
+const SSH2_MSG_SERVICE_ACCEPT =6;;
+
+const SSH2_MSG_KEXINIT=20;;
+const SSH2_MSG_NEWKEYS=21;;
+
+const SSH2_MSG_KEX_ECDH_INIT =30;;
+const SSH2_MSG_KEX_ECDH_REPLY=31;;
+
+const SSH2_MSG_KEX_DH_GEX_GROUP  =31;;
+const SSH2_MSG_KEX_DH_GEX_INIT   =32;;
+const SSH2_MSG_KEX_DH_GEX_REPLY  =33;;
+const SSH2_MSG_KEX_DH_GEX_REQUEST=34;;
+
+const SSH2_USERAUTH="ssh-userauth";;
+const SSH2_MSG_USERAUTH_REQUEST=50;;
+const SSH2_MSG_USERAUTH_FAILURE=51;;
+const SSH2_MSG_USERAUTH_SUCCESS=52;;
+const SSH2_MSG_USERAUTH_BANNER =53;;
+
+const SSH2_MSG_USERAUTH_PK_OK=60;;
+
+const SSH2_MSG_GLOBAL_REQUEST=80;;
+const SSH2_MSG_REQUEST_SUCCESS=81;;
+const SSH2_MSG_REQUEST_FAILURE=82;;
+
+
+const SSH2_MSG_CHANNEL_OPEN=90;;
+const SSH2_MSG_CHANNEL_OPEN_CONFIRMATION=91;;
+const SSH2_MSG_CHANNEL_OPEN_FAILURE=92;;
+const SSH2_MSG_CHANNEL_WINDOW_ADJUST=93;;
+const SSH2_MSG_CHANNEL_DATA=94;;
+const SSH2_MSG_CHANNEL_EOF=96;;
+const SSH2_MSG_CHANNEL_CLOSE=97;;
+const SSH2_MSG_CHANNEL_REQUEST=98;;
+const SSH2_MSG_CHANNEL_SUCCESS=99;;
+const SSH2_MSG_CHANNEL_FAILURE=100;;
+
+const SSH_MIN=1024;;
+const SSH_N=4096;;
+const SSH_MAx=8192;;
+
+const CLIENT_PACKET_MAX_SIZE=0x4000;;
+const CLIENT_WINDOW_INIT=0x10000;;
+
+const SSH_ZERO_PADDING=false;;
+
+const BLOCK_SIZE=16;;
+
+const HMAC_FAILED=[nil nil];;
+
+const OID_SHA1=strFromHex "3021300906052b0e03021a05000414";;
+const OID_SHA256=strFromHex "3031300d060960864801650304020105000420";;
+const OID_SHA512=strFromHex "3051300d060960864801650304020305000440";;
+
+sum SshStage= greetingS, packetsS;;
+
+struct SshDhgex=[pDH gDH xDH eDH fDH kDH hDH ecDH QsDH hostKeyDH signDH];;
+struct SshKeys=[encIvK decIvK encKeyK decKeyK encMacK decMacK decMacLenK gcmEncK gcmDecK encEnabledK decEnabledK];;
+
+enum
+	kex_algorithms
+	server_host_key_algorithms
+	encryption_algorithms_client_to_server
+	encryption_algorithms_server_to_client
+	mac_algorithms_client_to_server
+	mac_algorithms_server_to_client
+	compression_algorithms_client_to_server
+	compression_algorithms_server_to_client
+	languages_client_to_server
+	languages_server_to_client;;
+const Mandatory={true true true true true true true true false false};;
+
+struct SshInit=[
+	cookieI
+	algosI
+	sequenceNumberI
+];;
+
+struct SSH=[
+	tcpS sendS iS closeAfterS _bufferS
+	stageS 
+	headerS
+	clientInitS
+	srvInitS
+	dhgexS
+	hashDataS
+	keysS
+	publicKeyS
+	fHandlePacketS
+	cbResultS
+	serverPacketMaxSizeS	// accepted by server
+	serverWindowS
+	sendingS	// data ready to send
+	clientPacketMaxSizeS	// accepted by client
+	clientWindowS
+
+];;
+
+fun sshClientInit=[
+	cookieI=strRand 16
+	algosI={
+	// kex_algorithms
+	"curve25519-sha256,diffie-hellman-group-exchange-sha256"
+	// server_host_key_algorithms
+	"ssh-ed25519,rsa-sha2-512,rsa-sha2-256,ssh-rsa"
+	// encryption_algorithms_client_to_server
+	"aes256-gcm@openssh.com,aes256-ctr,aes192-ctr,aes128-ctr"
+	// encryption_algorithms_server_to_client
+	"aes256-gcm@openssh.com,aes256-ctr,aes192-ctr,aes128-ctr"
+	// mac_algorithms_client_to_server
+	"hmac-sha2-512,hmac-sha2-256"
+	// mac_algorithms_server_to_client
+	"hmac-sha2-512,hmac-sha2-256"
+	// compression_algorithms_client_to_server
+	"none"
+	// compression_algorithms_server_to_client
+	"none"
+	// languages_client_to_server
+	nil
+	// languages_server_to_client
+	nil
+	}
+	sequenceNumberI=-1
+];;
+
+fun sshEchoLn val = if SSH_DEBUG then echoLn val; val;;
+fun sshDump val = if SSH_DEBUG then dump val; val;;
+fun sshHexDump val = if SSH_DEBUG then hexDump val; val;;
+
+fun _sshMakeVal val={(strInt32Msb strLength val) val};;
+
+fun _sshMpintFromBin v=
+	strBuild _sshMakeVal
+	if 0<>(0x80 & strGet v 0) then strConcat "\0" v
+	else v;;
+fun _sshMpintFromBig v=
+	strBuild _sshMakeVal
+	let strFromBig v 0 -> result in
+	if 0<>(0x80 & strGet result 0) then strConcat "\0" result
+	else result;;
+
+fun _sshHashRaw h str= fifoIn h.hashDataS str; str;;
+fun _sshHashStr h str= fifoIn h.hashDataS strBuild _sshMakeVal str; str;;
+fun _sshHashInt h val= fifoIn h.hashDataS strInt32Msb val; val;;
+fun _sshHashMPint h val= fifoIn h.hashDataS _sshMpintFromBig val; val;;
+
+fun _sshKeyDerivation H K str len=
+//	K1 = HASH(K || H || X || session_id)
+//	K2 = HASH(K || H || K1)
+	let sha256 strBuild {K H str H} -> K1 in
+	if len<=strLength K1 then strLeft K1 len
+	else strLeft (strConcat K1 sha256 strBuild {K H K1}) len;;
+
+fun _sshIv fKey str algo=
+	match algo with
+		"aes256-gcm@openssh.com" -> refCreate bigFromStr (call fKey str 12),
+		_ -> refCreate bigFromStr (call fKey str BLOCK_SIZE);;
+
+fun _sshCiphering fKey str algo=
+	match algo with
+		"aes128-ctr" -> let aesCreate (call fKey str 16) -> aes in (lambda iv msg= aesEncryptCtrIncr aes iv msg),
+		"aes256-ctr" -> let aesCreate (call fKey str 32) -> aes in (lambda iv msg= aesEncryptCtrIncr aes iv msg),
+		"aes192-ctr" -> let aesCreate (call fKey str 24) -> aes in (lambda iv msg= aesEncryptCtrIncr aes iv msg);;
+
+fun _sshHmac fKey str algo=
+	match algo with
+		"hmac-sha2-256" -> let call fKey str 32 -> key in (lambda count msg= hmacSha256 key strConcat (strInt32Msb count) msg),
+		"hmac-sha2-512" -> let call fKey str 64 -> key in (lambda count msg= hmacSha512 key strConcat (strInt32Msb count) msg);;
+
+fun _sshHmacLen algoEncryption algoMac=
+	match algoEncryption with
+		"aes256-gcm@openssh.com" -> 16,
+		_ -> match algoMac with
+			"hmac-sha2-256" -> 32,
+			"hmac-sha2-512" -> 64;;
+
+fun _sshGcmKey fKey str algo=
+	match algo with
+		"aes256-gcm@openssh.com" -> call fKey str 32;;
+
+fun _sshMakeKeys K H algos=
+	let (lambda str len=_sshKeyDerivation H K str len) -> fKey in
+	[
+		encIvK= _sshIv fKey "A" algos.encryption_algorithms_client_to_server
+		decIvK= _sshIv fKey "B" algos.encryption_algorithms_server_to_client
+		encKeyK=_sshCiphering fKey "C" algos.encryption_algorithms_client_to_server
+		decKeyK=_sshCiphering fKey "D" algos.encryption_algorithms_server_to_client
+		encMacK=_sshHmac fKey "E" algos.mac_algorithms_client_to_server
+		decMacK=_sshHmac fKey "F" algos.mac_algorithms_server_to_client
+		decMacLenK=_sshHmacLen algos.encryption_algorithms_server_to_client algos.mac_algorithms_server_to_client
+		gcmEncK= _sshGcmKey fKey "C" algos.encryption_algorithms_client_to_server
+		gcmDecK= _sshGcmKey fKey "D" algos.encryption_algorithms_server_to_client
+	];;
+
+fun _sshHashPayload h=
+	_sshHashInt h SSH_MIN;
+	_sshHashInt h SSH_N;
+	_sshHashInt h SSH_MAx;
+	_sshHashMPint h h.dhgexS.pDH;
+	_sshHashMPint h h.dhgexS.gDH;
+	_sshHashMPint h h.dhgexS.eDH;
+	_sshHashMPint h h.dhgexS.fDH;
+	_sshHashRaw h h.dhgexS.kDH;
+	let strBuild fifoList h.hashDataS -> data in
+	set h.dhgexS.hDH= sha256 data;;
+
+fun _sshHashPayloadEcdh h=
+	_sshHashStr h x25519KeyPub h.dhgexS.ecDH;
+	_sshHashStr h h.dhgexS.QsDH;
+	_sshHashRaw h h.dhgexS.kDH;
+	let strBuild fifoList h.hashDataS -> data in
+	set h.dhgexS.hDH= sha256 data;;
+
+fun sshMakePacket h extrapad data=
+	set h.clientInitS.sequenceNumberI = h.clientInitS.sequenceNumberI + 1;
+	let strLength data -> len in
+	let if h.keysS.encEnabledK && nil<>h.keysS.gcmEncK then len+1 else len+5 -> lenForPadding in
+	let (BLOCK_SIZE-lenForPadding)&(BLOCK_SIZE-1) -> padding in
+	let extrapad+ (if padding<4 then BLOCK_SIZE+padding else padding) -> padding in
+	let if SSH_ZERO_PADDING then (strCreate padding 0) else strRand padding -> paddingStr in
+	strBuild [(strInt32Msb 1+len+padding) (strInt8 padding) data paddingStr];;
+
+fun sshMsgStr val= strBuild _sshMakeVal val;;
+fun sshMsgRaw val= val;;
+fun sshMsgChar val= strFromChar val;;
+fun sshMsgInt val= strInt32Msb val;;
+fun sshMsgInt64 val= strConcat (strInt32Msb val>>32) (strInt32Msb val&0xffffffff);;
+
+fun sshMakeMsg h extrapad code datas=
+	sshMakePacket h extrapad strBuild [(strInt8 code) datas];;
+
+fun _sshMakeAlgos algos i=
+	if i<arrayLength algos then (_sshMakeVal algos.i):_sshMakeAlgos algos i+1;;
+
+fun sshMakeKeyExchangeInit h =
+	let h.clientInitS -> p in
+	sshMakePacket h 0 _sshHashStr h strBuild
+	[
+		(strInt8 SSH2_MSG_KEXINIT)
+		p.cookieI
+		(_sshMakeAlgos p.algosI 0)
+		"\z"
+		strInt32Msb 0
+	];;
+
+fun sshMakeDhgeRequest h =
+	sshMakePacket h 0 strBuild
+	[
+		(strInt8 SSH2_MSG_KEX_DH_GEX_REQUEST)
+		(strInt32Msb SSH_MIN)
+		(strInt32Msb SSH_N)
+		strInt32Msb SSH_MAx
+	];;
+fun sshMakeEcdhRequest h =
+	set h.fHandlePacketS=(lambda code data= sshHandleConnectEcdh h code data);
+	let x25519KeyPair nil -> key in
+	let x25519KeyPub key -> pub in
+	(
+		set h.dhgexS=[ecDH=key];
+		sshMakePacket h 0 strBuild
+		[
+			(strInt8 SSH2_MSG_KEX_ECDH_INIT)
+			sshMsgStr pub
+		]
+	);;
+
+fun sshMakeDhgeInit h =
+	sshMakePacket h 0 strBuild
+	[
+		(strInt8 SSH2_MSG_KEX_DH_GEX_INIT)
+		_sshMpintFromBig h.dhgexS.eDH
+	];;
+
+fun sshMakeNewKeys h =
+	sshMakePacket h 0 strBuild
+	[
+		strInt8 SSH2_MSG_NEWKEYS
+	];;
+
+fun _sshTcpClosed h close=
+	if close then tcpClose h.tcpS;
+	sshNotify h SSH_CLOSED nil;
+	set h.cbResultS=nil;
+	0;;
+
+fun sshTcpClose h=
+	tcpClose h.tcpS;
+	set h.cbResultS=nil;
+	0;;
+
+fun _sshSend h data=
+	if data<>nil then (sshEchoLn ["->send " hexFromInt strLength data]);// sshHexDump data);
+	set h.sendS=strConcat h.sendS data;
+	set h.iS=tcpWrite h.tcpS h.sendS h.iS;
+	if h.iS>=strLength h.sendS then (
+		if h.closeAfterS then sshTcpClose h;
+		set h.sendS=nil;
+		set h.iS=0;
+	);
+	strLength data;;
+
+fun sshParseGreeting h=
+	let strPos h._bufferS "\10" 0 -> i in
+	if i<>nil then
+	let if 13==strGet h._bufferS i-1 then i-1 else i -> len in
+	(
+		_sshHashStr h set h.headerS=strLeft h._bufferS len;
+		set h._bufferS=strSlice h._bufferS i+1 nil;
+		_sshSend h sshMakeKeyExchangeInit h;
+		set h.stageS=packetsS;
+		sshParse h nil
+	);;
+
+fun sshParseVals data i n=
+	if n>0 && i<strLength data then
+	let strRead32Msb data i -> len in
+	(strSlice data i+4 len):sshParseVals data i+4+len n-1;;
+
+
+fun sshNotify h code data= call h.cbResultS code data; 0;;
+fun sshCodeUnknown h code= sshNotify h SSH_UNKNOWN strBuild code;nil;;
+fun sshFail h code data= call h.cbResultS code data; sshTcpClose h; 0;;
+
+fun _sshSelectAlgo h client server mandatory=
+	let strSplit "," client -> client in
+	let strSplit "," server -> server in
+	let listFind client (lambda p= listContains server p)-> algo in
+	if mandatory && algo==nil then
+	(
+		sshFail h SSH_NO_ALGO nil;
+		throw anyException
+	)
+	else algo;;
+
+fun _sshFusionAlgos h i lc ls lm=
+	if ls<>nil then (_sshSelectAlgo h lc.i (head ls) lm.i):_sshFusionAlgos h i+1 lc (tail ls) lm;;
+
+fun sshParseKeyExchangeInit h data=
+	sshEchoLn "sshParseKeyExchangeInit";
+	_sshHashStr h data;
+	let h.clientInitS.algosI -> algosCli in
+	let sshDump sshParseVals data 17 10 -> algosSrv in
+	try (
+		let _sshFusionAlgos h 0 algosCli algosSrv Mandatory -> algos in
+		let sshDump arrayFromList algos -> algos in
+		(
+			set h.srvInitS=[
+				cookieI=strSlice data 1 16
+				algosI=algos
+				sequenceNumberI=1
+			];
+			match algos.kex_algorithms with
+				"curve25519-sha256" -> _sshSend h sshMakeEcdhRequest h,
+				"diffie-hellman-group-exchange-sha256" -> _sshSend h sshMakeDhgeRequest h
+		)
+	) catch _ -> nil;
+	0;;
+
+fun sshParseKexDhgeGroup h data=
+	sshEchoLn "sshParseKexDhgeGroup";
+	let sshParseVals data 1 2 -> (P:G:_) in
+	let bigFromStr P -> p in
+	let bigFromStr G -> g in
+	let bigNbits p -> n in
+	let 512 -> n in
+	let bigRand n false-> x in
+	let bigExpMod g x p -> e in
+	(
+		set h.dhgexS=[
+			pDH=p
+			gDH=g
+			xDH=x
+			eDH=e
+		];
+		_sshSend h sshMakeDhgeInit h;
+	);;
+fun sshParseKexDhgeReply h data=
+	sshEchoLn "sshParseKexDhgeReply";
+	let sshParseVals data 1 3 -> (hostKey:F:sign:_) in	// hostkey, e^y mod p, hash
+	let h.dhgexS -> dh in
+	let bigFromStr F -> f in
+	(
+		set dh.fDH=f;
+		set dh.signDH=sign;
+		set dh.hostKeyDH=hostKey;
+		_sshHashStr h hostKey;
+		let bigExpMod f dh.xDH dh.pDH -> K in
+		set dh.kDH=_sshMpintFromBig K;
+		_sshHashPayload h
+	);
+	0;;
+
+fun sshParseKexEcdhReply h data=
+	sshEchoLn "sshParseKexEcdhReply";
+	let sshParseVals data 1 3 -> (hostKey:Qs:sign:_) in	// hostkey, e^y mod p, hash
+	let h.dhgexS -> dh in
+	(
+		set dh.QsDH=Qs;
+		set dh.signDH=sign;
+		set dh.hostKeyDH=hostKey;
+		_sshHashStr h hostKey;
+		let x25519Ecdh dh.ecDH Qs -> K in
+		set dh.kDH=_sshMpintFromBin K;
+		_sshHashPayloadEcdh h
+	);
+	0;;
+
+fun sshSendCrypt h msg=
+	sshEchoLn ["------> sshSendCrypt code=" (strGet msg 5) " count=" h.clientInitS.sequenceNumberI]; sshHexDump msg;
+//	sshEchoLn hexFromStr msg; 
+	let h.keysS -> keys in
+	if nil<>keys.gcmEncK then
+		let strLeft msg 4 -> A in
+		let strSlice msg 4 nil -> plainText in
+		let strFromBig (refGet keys.encIvK) 12 -> iv in
+		let aesGcmEncrypt keys.gcmEncK plainText iv A -> [crypt hmac] in
+		(
+			\bigNum refSet keys.encIvK 1+refGet keys.encIvK;
+			_sshSend h strBuild {A crypt hmac}
+		)
+	else
+		let call keys.encKeyK keys.encIvK msg -> crypt in
+		let h.clientInitS.sequenceNumberI -> count in
+		let call keys.encMacK count msg -> hmac in
+		_sshSend h strConcat crypt hmac;;
+
+fun _sshCheckSignEd25519 dh=
+	let sshParseVals dh.hostKeyDH 0 2 -> (type:pub:_) in
+	let sshParseVals dh.signDH 0 2 -> (signType:sign:_) in
+	if type=="ssh-ed25519" && type==signType then
+	ed25519verify pub dh.hDH sign;;
+
+fun _sshCheckSignRSA dh keyType signType signVal=
+	let sshParseVals dh.hostKeyDH 0 3 -> (type:rsaE:rsaN:_) in
+	let sshParseVals dh.signDH 0 2 -> (signType2:signCrypt:_) in
+	if keyType==type && signType==signType2 then
+	let pkcs1DecryptPub (bigFromStr rsaN) (bigFromStr rsaE) signCrypt -> signVal2 in
+	signVal==signVal2;;
+
+fun sshCheckSign h=
+	let h.dhgexS -> dh in
+	let h.srvInitS.algosI.server_host_key_algorithms -> algo in
+	match algo with
+		"ssh-ed25519"->_sshCheckSignEd25519 dh,
+		"ssh-rsa"-> _sshCheckSignRSA dh algo algo (strConcat OID_SHA1 sha1 dh.hDH),
+		"rsa-sha2-256"-> _sshCheckSignRSA dh "ssh-rsa" algo (strConcat OID_SHA256 sha256 dh.hDH),
+		"rsa-sha2-512"-> _sshCheckSignRSA dh "ssh-rsa" algo (strConcat OID_SHA512 sha512 dh.hDH),
+		_-> (sshEchoLn algo;false);;
+
+fun sshParseNewKeys h data=
+	sshEchoLn "sshParseNewKeys";
+	set h.keysS=_sshMakeKeys h.dhgexS.kDH h.dhgexS.hDH h.srvInitS.algosI;
+	if false&& !sshCheckSign h then sshFail h SSH_SIGNATURE nil
+	else
+	(
+		_sshSend h sshMakeNewKeys h;
+		set h.keysS.decEnabledK=true;
+		set h.keysS.encEnabledK=true;
+		sshNotify h SSH_OK nil
+	);
+	0;;
+
+fun sshParseServiceAccept h data=
+	sshEchoLn "sshParseServiceAccept";
+	let sshParseVals data 1 1 -> (service:_) in
+	match service with
+		SSH2_USERAUTH->
+			sshNotify h SSH_OK nil,
+		_ -> sshCodeUnknown h service;
+	0;;
+
+fun sshParseUserAuthPkOk h data=
+	sshEchoLn "sshParseUserAuthPkOk";
+	let h.publicKeyS ->[login rsa] in
+	let strBuild {
+		(sshMsgStr h.dhgexS.hDH)
+		(strInt8 SSH2_MSG_USERAUTH_REQUEST)
+		(sshMsgStr login)
+		(sshMsgStr "ssh-connection")
+		(sshMsgStr "publickey")
+		(sshMsgChar 1)
+		(sshMsgStr "rsa-sha2-512")
+		sshMsgStr _sshKeyBlob h
+	} -> plain in
+	let strConcat OID_SHA512 sha512 plain -> hash in
+	let pkcs1EncryptPrivRsa rsa hash -> sign in
+//	let pkcs1DecryptPubRsa rsa sign -> _ in
+	let strBuild [(sshMsgStr "rsa-sha2-512") sshMsgStr sign]->sign in
+	sshSendMsg h SSH2_MSG_USERAUTH_REQUEST {
+		(sshMsgStr login)
+		(sshMsgStr "ssh-connection")
+		(sshMsgStr "publickey")
+		(sshMsgChar 1)
+		(sshMsgStr "rsa-sha2-512")
+		(sshMsgStr _sshKeyBlob h)
+		sshMsgStr sign
+	};;
+
+fun sshParseUserAuthFailure h data=
+	sshEchoLn "sshParseUserAuthFailure";
+	let sshParseVals data 1 1 -> (reason:_) in
+	sshNotify h SSH_USERAUTH_FAILURE reason;;	//eg: publickey,password
+
+fun sshParseUserAuthSuccess h data=
+	sshEchoLn "sshParseUserAuthSuccess";
+	sshSendMsg h SSH2_MSG_CHANNEL_OPEN {
+		(sshMsgStr "session")
+		(sshMsgInt 0)	//channel number
+		(sshMsgInt h.clientWindowS)
+		sshMsgInt h.clientPacketMaxSizeS
+	};
+	sshSendMsg h SSH2_MSG_GLOBAL_REQUEST {
+		(sshMsgStr "no-more-sessions@openssh.com")
+		sshMsgChar 0	// no reply
+	};
+	0;;
+
+fun sshParseChannelOpenConfirmation h data=
+	sshEchoLn "sshParseChannelOpenConfirmation";
+	let strRead32Msb data 1 -> channel in
+	let strRead32Msb data 5 -> senderChannel in
+	let strRead32Msb data 9 -> serverWindow in
+	let strRead32Msb data 13 -> serverPacketMaxSize in
+	(
+		set h.serverWindowS=serverWindow;
+		set h.serverPacketMaxSizeS=serverPacketMaxSize;
+		sshEchoLn ["serverWindow= " hexFromInt h.serverWindowS];
+		sshEchoLn ["serverPacketMaxSize= " hexFromInt h.serverPacketMaxSizeS];
+		sshNotify h SSH_OK nil;
+		0
+	);;
+
+fun sshParseChannelWindowAdjust h data=
+	sshEchoLn "sshParseChannelWindowAdjust";
+	let strRead32Msb data 1 -> channel in
+	let strRead32Msb data 5 -> bytesToAdd in
+	(
+		set h.serverWindowS=h.serverWindowS+bytesToAdd;
+		sshEchoLn ["adjust serverWindow-----------------> " hexFromInt h.serverWindowS];
+		_sshCheckSending h;
+		0
+	);;
+
+fun sshParseChannelSuccess h data=
+	sshEchoLn "sshParseChannelSuccess";
+	let strRead32Msb data 1 -> channel in
+	0;;
+
+fun sshParseChannelFailure h data=
+	let strRead32Msb data 1 -> channel in
+	sshNotify h SSH_CHANNEL_FAILURE nil;;
+
+fun sshParseChannelEof h data=
+	let strRead32Msb data 1 -> channel in
+	sshNotify h SSH_CHANNEL_EOF nil;
+	0;;
+
+fun sshParseChannelClose h data=
+	let strRead32Msb data 1 -> channel in
+	sshEchoLn ["sshParseChannelClose " channel];
+	_sshTcpClosed h true;
+	0;;
+
+
+fun sshParseChannelRequest h data=
+	let strRead32Msb data 1 -> channel in
+	let sshParseVals data 5 1 -> (type:_) in
+	let strRead8 data 5+4+strLength type -> wantReply in
+	sshEchoLn ["sshParseChannelRequest " channel " " type " wantReply " wantReply];
+	0;;
+
+fun sshParseGlobalRequestDefault h data =
+	sshEchoLn "sshParseGlobalRequestDefault";
+	let sshParseVals data 1 1 -> (name:_) in
+	let strRead8 data 1+4+strLength name -> wantReply in
+	(
+		sshEchoLn ["name:" name " wantReply:" wantReply];
+		if wantReply<>0 then
+			sshSendMsg h SSH2_MSG_REQUEST_FAILURE ""
+	);
+	0;;
+
+fun sshDecodePacket h buf=
+	if BLOCK_SIZE<= strLength buf then
+	let h.keysS -> keys in
+	if !keys.decEnabledK then
+		let 4+strRead32Msb buf 0 -> len in
+		(
+			if len<= strLength buf then [(strLeft buf len) len]
+		)
+	else if nil<>keys.gcmDecK then
+		let 4+keys.decMacLenK+strRead32Msb buf 0 -> len in
+		(
+			if len<= strLength buf then
+			let strLeft buf 4 -> A in
+			let strSlice buf 4 len-4-keys.decMacLenK -> cipherText in
+			let strSlice buf len-keys.decMacLenK keys.decMacLenK ->mac in
+			let strFromBig (refGet keys.decIvK) 12 -> iv in
+			let aesGcmDecrypt keys.gcmDecK cipherText mac iv A -> plainText in
+			if plainText<>nil then
+			let strConcat A plainText -> data in
+			(
+				\bigNum refSet keys.decIvK 1+refGet keys.decIvK;
+				[data len]
+			)
+		)
+	else
+	let refGet keys.decIvK -> iv in // we need a copy
+	let call keys.decKeyK keys.decIvK strLeft buf BLOCK_SIZE -> firstBlock in
+	let 4+strRead32Msb firstBlock 0 -> len in
+	if (strLength buf)< (len+h.keysS.decMacLenK) then
+	(
+		refSet keys.decIvK iv;
+		sshEchoLn ["uncomplete "  (strLength buf)" < " (len+h.keysS.decMacLenK)];
+		nil
+	)
+	else
+	let strSlice buf BLOCK_SIZE len-BLOCK_SIZE -> data in
+	let call keys.decKeyK keys.decIvK data -> nextBlocks in
+	let strConcat firstBlock nextBlocks -> data in
+	let call keys.decMacK h.srvInitS.sequenceNumberI data -> mac in
+	if len<>strPosRev buf mac len then
+	(
+		sshEchoLn ["wrong hmac"]; sshHexDump data;
+		sshFail h SSH_HMAC nil;
+		HMAC_FAILED
+	)
+	else
+	[data len+h.keysS.decMacLenK];;
+
+fun sshHandleDefault h code data=
+	match code with
+		SSH2_MSG_CHANNEL_WINDOW_ADJUST -> sshParseChannelWindowAdjust h data,
+		SSH2_MSG_CHANNEL_EOF -> sshParseChannelEof h data,
+		SSH2_MSG_CHANNEL_CLOSE -> sshParseChannelClose h data,
+		SSH2_MSG_CHANNEL_REQUEST -> sshParseChannelRequest h data,
+		SSH2_MSG_CHANNEL_SUCCESS -> sshParseChannelSuccess h data,
+		SSH2_MSG_CHANNEL_FAILURE -> sshParseChannelFailure h data,
+		SSH2_MSG_GLOBAL_REQUEST -> sshParseGlobalRequestDefault h data,
+		_-> sshCodeUnknown h code;;
+
+fun sshHandleConnectEcdh h code data=
+	match code with
+		SSH2_MSG_KEX_ECDH_REPLY -> sshParseKexEcdhReply h data,
+		SSH2_MSG_NEWKEYS -> sshParseNewKeys h data,
+		_-> sshHandleDefault h code data;;
+
+fun sshHandleConnect h code data=
+	match code with
+		SSH2_MSG_KEXINIT -> sshParseKeyExchangeInit h data,
+		SSH2_MSG_KEX_DH_GEX_GROUP -> sshParseKexDhgeGroup h data,
+		SSH2_MSG_KEX_DH_GEX_REPLY -> sshParseKexDhgeReply h data,
+		SSH2_MSG_NEWKEYS -> sshParseNewKeys h data,
+		_-> sshHandleDefault h code data;;
+
+fun sshHandleAuth h code data=
+	match code with
+		SSH2_MSG_SERVICE_ACCEPT -> sshParseServiceAccept h data,
+		SSH2_MSG_USERAUTH_FAILURE -> sshParseUserAuthFailure h data,
+		SSH2_MSG_USERAUTH_SUCCESS -> sshParseUserAuthSuccess h data,
+		SSH2_MSG_USERAUTH_PK_OK -> sshParseUserAuthPkOk h data,
+		SSH2_MSG_CHANNEL_OPEN_CONFIRMATION -> sshParseChannelOpenConfirmation h data,
+		_-> sshHandleDefault h code data;;
+
+
+fun sshParsePacket h=
+	let sshDecodePacket h h._bufferS -> result in
+	if result<>nil then
+	if result==HMAC_FAILED then
+	(
+		nil
+	)
+	else
+	let result -> [data len] in
+	let strGet data 4 -> padlen in
+	let strGet data 5 -> code in
+	let strSlice data 5 (strLength data)-5-padlen -> data in
+	(
+		sshEchoLn ["<------ sshParsePacket seq="h.srvInitS.sequenceNumberI" code=" code];
+		sshHexDump strSlice data 1 nil;
+		set h._bufferS=strSlice h._bufferS len nil;
+		set h.srvInitS.sequenceNumberI = h.srvInitS.sequenceNumberI + 1;
+		call h.fHandlePacketS code data;
+		if code==SSH2_MSG_CHANNEL_DATA then
+		(
+			set h.clientWindowS=h.clientWindowS +9 - strLength data;
+			sshEchoLn ["clientWindowS=" hexFromInt h.clientWindowS];
+
+			if h.clientWindowS<(CLIENT_WINDOW_INIT>>1) then
+			let CLIENT_WINDOW_INIT -> add in
+			(
+				set h.clientWindowS=h.clientWindowS+add;
+				sshEchoLn ["->" hexFromInt h.clientWindowS];
+				sshSendMsg h SSH2_MSG_CHANNEL_WINDOW_ADJUST {
+					(sshMsgInt    0) //channel
+					sshMsgInt    add
+				}
+			)
+		);
+		sshParse h nil
+	);;
+
+fun sshParse h data=
+	set h._bufferS=strConcat h._bufferS data;
+	match h.stageS with
+		greetingS -> sshParseGreeting h,
+		_ -> sshParsePacket h;;
+
+fun sshMakeCb h cbResult= set h.cbResultS=(lambda code data = call cbResult code data;0);;
+
+fun _sshConnect h ip port cbResult=
+	set h.tcpS=tcpOpen ip port;
+	set h.iS=0;
+	set h.sendS=strConcat SSH_CLIENT "\13\10";
+	set h.stageS=greetingS;
+	set h.clientInitS=sshClientInit;
+	set h.hashDataS=fifoCreate;
+	set h.fHandlePacketS=(lambda code data= sshHandleConnect h code data);
+	set h.clientPacketMaxSizeS=CLIENT_PACKET_MAX_SIZE;
+	set h.clientWindowS=CLIENT_WINDOW_INIT;
+
+	_sshHashStr h SSH_CLIENT;
+	sshMakeCb h cbResult;
+
+	tcpOnEvent h.tcpS
+		(lambda data=
+			sshEchoLn ["<< receive " hexFromInt strLength data];//sshHexDump data;
+			if data<>nil then sshParse h data
+			else
+			(
+				_sshTcpClosed h false;
+				nil
+			)
+		)
+		(lambda = _sshSend h nil);
+	h;;
+
+fun sshAuth h cbResult=
+	sshMakeCb h cbResult;
+	set h.fHandlePacketS=(lambda code data= sshHandleAuth h code data);
+	sshSendMsg h SSH2_MSG_SERVICE_REQUEST {sshMsgStr SSH2_USERAUTH};;
+	
+fun sshAuthWithPassword h login pwd cbResult=
+	sshMakeCb h cbResult;
+	sshSendMsg h SSH2_MSG_USERAUTH_REQUEST {
+		(sshMsgStr login)
+		(sshMsgStr "ssh-connection")
+		(sshMsgStr "password")
+		(sshMsgChar 0)
+		sshMsgStr pwd
+	};;
+
+fun _sshKeyBlob h=
+	let h.publicKeyS ->[login rsa] in
+	strBuild [
+		(sshMsgStr "ssh-rsa")
+		(_sshMpintFromBig rsaPubExp rsa)
+		_sshMpintFromBig rsaModulus rsa
+	];;
+
+fun sshAuthWithPublicKey h login cbResult=
+	sshMakeCb h cbResult;
+	sshSendMsg h SSH2_MSG_USERAUTH_REQUEST {
+		(sshMsgStr login)
+		(sshMsgStr "ssh-connection")
+		(sshMsgStr "publickey")
+		(sshMsgChar 0)
+		(sshMsgStr "rsa-sha2-512")
+		sshMsgStr _sshKeyBlob h
+	};;
+
+fun sshSendMsg h code data= sshSendCrypt h sshMakeMsg h 0 code data;;
+
+fun _sshCheckSending h=
+	let h.serverPacketMaxSizeS -> serverPacketMaxSize in
+	let 0x4000 -> serverPacketMaxSize in
+	let min h.serverWindowS serverPacketMaxSize -> toSend in
+	let min toSend strLength h.sendingS -> toSend in
+	if toSend>0 then
+	let strLeft h.sendingS toSend -> data in
+	(
+	sshEchoLn ["sendData  ---------------->length=" (hexFromInt toSend) " of remaining " hexFromInt strLength h.sendingS];
+		set h.serverWindowS=h.serverWindowS-toSend;
+	sshEchoLn ["serverWindowS becomes----->" hexFromInt h.serverWindowS];
+		set h.sendingS = strSlice h.sendingS toSend nil;
+		sshSendMsg h SSH2_MSG_CHANNEL_DATA {
+			(sshMsgInt    0) //channel
+			sshMsgStr    data
+		};
+		_sshCheckSending h
+	);;
+
+fun sshSendData h data= 
+	set h.sendingS=strConcat h.sendingS data;
+	_sshCheckSending h;;
+
+fun sshConnectAndAuth h ip port cbResult=
+	_sshConnect h ip port (lambda code data=	
+		sshEchoLn ["_sshConnect: " code];
+		if code==SSH_OK then sshAuth h (lambda code data=
+			sshEchoLn ["sshAuth: " code];
+			call cbResult code data;
+			0
+		)
+		else call cbResult code data;
+		0
+	);;
+
+fun sshConnectWithPublicKey h ip port login pem password cbResult=
+	let rsaFromPEM pem password-> rsa in
+	sshConnectAndAuth h ip port (lambda code data=
+		set h.publicKeyS=[login rsa];
+		if code==SSH_OK then sshAuthWithPublicKey h login (lambda code data=
+			sshEchoLn ["sshAuthWithPublicKey: " code];
+			call cbResult code data;
+			0
+		)
+		else call cbResult code data;
+		0
+	);;
+fun sshConnectWithPassword h ip port login password cbResult=
+	sshConnectAndAuth h ip port (lambda code data=
+		if code==SSH_OK then sshAuthWithPassword h login password (lambda code data=
+			sshEchoLn ["sshAuthWithPassword: " code];
+			call cbResult code data;
+			0
+		)
+		else call cbResult code data;
+		0
+	);;
+
+fun sshConnect h ip port login auth cbResult=
+	match auth with
+		sshAuthPassword password -> sshConnectWithPassword h ip port login password cbResult,
+		sshAuthPublicKey pem password -> sshConnectWithPublicKey h ip port login pem password cbResult;; 
+
+fun sshClose h=
+	sshTcpClose h;;

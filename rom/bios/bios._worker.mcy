@@ -1,0 +1,149 @@
+/* Copyright (c) 2022, Sylvain Huet, Ambermind
+   This program is free software: you can redistribute it and/or modify it
+   under the terms of the GNU General Public License, version 2.0, as
+   published by the Free Software Foundation.
+   This program is distributed in the hope that it will be useful, but WITHOUT
+   ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+   FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License,
+   version 2.0, for more details.
+   You should have received a copy of the GNU General Public License along
+   with this program. If not, see <https://www.gnu.org/licenses/>. */
+
+const _INTERNAL_MAX_CODE=32;;
+struct _Internal=Stream+[];;
+
+var _InternalPipe;;
+var _InternalBuffer;;
+var _InternalHook @(array fun Int Int Int -> Bool)= arrayCreate _INTERNAL_MAX_CODE nil;;
+var _InternalGrouping;;
+
+fun _registerInternalHook event cb=set _InternalHook.event=cb;;
+fun _sign32 v=	if bitTest v 0x80000000 then v-0x100000000 else v;;
+
+fun _flushInternalGrouping except=
+	if _InternalGrouping<>nil then
+	let _InternalGrouping -> [cmd x y v] in
+	if cmd<>except then (
+//		echo ["<" cmd ">"];
+		call _InternalHook.cmd x y v;
+		set _InternalGrouping=nil
+	);;
+
+fun _handleInternal i=
+	let strLength _InternalBuffer -> len in
+	if i==len then
+	(
+		set _InternalBuffer=nil;
+		_flushInternalGrouping nil
+	)
+	else if (i+16)>len then _flushInternalGrouping nil
+	else
+	let strGet _InternalBuffer i -> cmd in
+	let _sign32 strRead32Lsb _InternalBuffer i+1 -> x in
+	let _sign32 strRead32Lsb _InternalBuffer i+5 -> y in
+	let _sign32 strRead32Lsb _InternalBuffer i+9 -> v in
+	(
+		if cmd==_EVENT_MOUSEMOVE || cmd==_EVENT_VWHEEL || cmd==_EVENT_HWHEEL || cmd==_EVENT_PAINT || cmd==_EVENT_SIZE then ( // grouping these events
+			_flushInternalGrouping cmd;
+			set _InternalGrouping=[cmd x y v];
+			nil
+		) else (
+			if cmd<>_EVENT_MULTITOUCH then _flushInternalGrouping nil;	// no need for multitouch as they do not fire any user event
+//			echo ["<" cmd ">"];
+			call _InternalHook.cmd x y v;
+		);
+		_handleInternal i+16
+	);;
+
+fun _internalInit=
+	set _InternalPipe= [
+		_socketS=_internalOpen
+		_thS=_This
+		_onSelectReadS = (lambda =
+			_sockSetSelectRead _InternalPipe._socketS true;
+			set _InternalBuffer=strConcat _InternalBuffer _internalRead _InternalPipe._socketS;
+			_handleInternal 0;
+			true
+		)
+		_showS=(lambda fEcho= call fEcho "internal" "-" _ThreadBios)
+	];
+	_streamAddToList _InternalPipe;
+	_sockSetSelectRead _InternalPipe._socketS true;;
+
+var _Workers;;
+
+fun _workerCheck =
+	set _Workers=listFilter _Workers (lambda th =
+		if th._stateT<>_THREAD_WAIT then false
+		else if _workerDone th._threadT then
+		(
+			_scheduleThread th;
+			false
+		)
+		else true
+	);;
+fun _workerEnter=
+	set _Workers=_This:_Workers;;
+
+fun _workerAlive = nil<>_Workers;;
+
+//-----------------------------------
+fun ipByName hostname= let bufferCreateWithSize 32 -> output in (
+	_workerEnter;
+	if 0<_ipByName output hostname then strSplit "\0" strFromBuffer output
+);;
+fun nameByIp ip= let bufferCreateWithSize 32 -> output in (
+	_workerEnter;
+	if 0<_nameByIp output ip then strFromBuffer output
+);;
+
+//-----------------------------------
+fun inflate data = let bufferCreateWithSize 3*strLength data -> output in (
+	_workerEnter;
+	if _inflate output data then strFromBuffer output
+);;
+fun deflate data = let bufferCreateWithSize strLength data -> output in (
+	_workerEnter;
+	if _deflate output data then strFromBuffer output
+);;
+fun deflateBytes data = let bufferCreateWithSize bytesLength data -> output in (
+	_workerEnter;
+	if _deflateBytes output data then strFromBuffer output
+);;
+
+//-----------------------------------
+struct Lzw = [_lockL _bufferL _lzwL];;
+
+fun lzwCreate nbits = [_lockL=lockCreate _bufferL=bufferCreateWithSize 1024*16 _lzwL=_lzwCreate nbits];;
+fun _lzwProcess lzw src start length fProcess=
+	lockSync lzw._lockL (lambda=
+		bufferReset lzw._bufferL;
+		_workerEnter;
+		if (false<>call fProcess lzw._lzwL lzw._bufferL src start length) then
+			strFromBuffer lzw._bufferL
+	);;
+fun lzwDeflate lzw src start length= _lzwProcess lzw src start length #_lzwDeflate;;
+fun lzwInflate lzw src start length= _lzwProcess lzw src start length #_lzwInflate;;
+
+fun lzwDeflateFinalize lzw = lzwDeflate lzw nil nil nil;;
+
+fun lzwFromStr data bitLen=
+	let lzwCreate bitLen -> lzw in
+	strConcat
+		(lzwDeflate lzw data 0 nil)
+		lzwDeflateFinalize lzw
+	;;
+
+fun strFromLzw data bitLen=
+	let lzwCreate bitLen -> lzw in
+	lzwInflate lzw data 0 nil;;
+
+
+#ifdef _mp3Decode
+fun mp3Decode mp3 =
+	let bufferCreateWithSize 1024+10*strLength mp3 -> buffer in 
+	(
+		_workerEnter;
+		if _mp3Decode buffer mp3 then strFromBuffer buffer
+	);;
+#endif

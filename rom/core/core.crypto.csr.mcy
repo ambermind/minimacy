@@ -1,0 +1,85 @@
+/* Copyright (c) 2022, Sylvain Huet, Ambermind
+   This program is free software: you can redistribute it and/or modify it
+   under the terms of the GNU General Public License, version 2.0, as
+   published by the Free Software Foundation.
+   This program is distributed in the hope that it will be useful, but WITHOUT
+   ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+   FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License,
+   version 2.0, for more details.
+   You should have received a copy of the GNU General Public License along
+   with this program. If not, see <https://www.gnu.org/licenses/>. */
+
+use core.crypto.pem;;
+use core.crypto.rsa;;
+use core.crypto.sign;;
+use core.crypto.oid;;
+use core.crypto.asn1;;
+use core.crypto.pem;;
+
+
+//-------------CSR-----------------------------
+// https://datatracker.ietf.org/doc/html/rfc2986
+
+fun _csrFromAsn1 asn1=
+//	asn1Echo "" asn1;
+	let hashmapCreate 4 -> h in
+	let listFromAsn1 asn1 ->(certificationRequestInfo:signatureAlgorithm:signature:_) in
+	let listFromAsn1 certificationRequestInfo ->(version:subject:pkInfo:attributes:_) in
+	(
+		hashmapSet h "VERSION" strFromAsn1 version;
+		hashmapSet h OID_SUBJECT subjectFromAsn1 subject;
+		commonFromAsn1 h pkInfo signatureAlgorithm signature
+	);;
+
+fun _csrInfoAsn1 subject modulus pubExp=
+	let listFromAsn1Subject subject -> subjectList in
+	let head tail listFind subjectList (lambda a= "CN"==head a) -> domain in
+	asn1Seq
+	(asn1Integer "\0"):
+	(asn1Subject subjectList):
+	(asn1RsaEncryption modulus pubExp):
+	(asn1ClassConstructed ASN1_CONTEXT_SPECIFIC 0
+		(asn1Seq
+			(asn1ObjectIdentifier OID_id_ExtensionReq):
+			(asn1Set
+				(asn1Seq
+					(asn1Seq
+						(asn1ObjectIdentifier OID_subjectAltName):
+						(asn1OctetString asn1Pack
+							asn1Seq
+							(
+								asn1ClassPrimitive ASN1_CONTEXT_SPECIFIC 2 domain
+							):
+							nil
+						):
+						nil
+					):
+					nil
+				):
+				nil
+			):
+			nil
+		):
+		nil
+	):
+	nil;;
+
+fun _csrAsn1 key algo subject=
+	let hashmapGet key OID_MODULUS -> modulus in
+	let hashmapGet key OID_PUBEXP -> pubExp in
+	let rsaImport key -> rsa in
+	let _csrInfoAsn1 subject modulus pubExp -> infos in
+	asn1RsaSign algo rsa infos;;
+
+fun csrDER key algo subject=
+	let _csrAsn1 key algo subject -> csr in
+	asn1Pack csr;;
+	
+fun csrPEM key algo subject=
+	let csrDER key algo subject -> der in
+	pemMake "CERTIFICATE REQUEST" der;;
+
+fun csrFromDER der= derProcess der #_csrFromAsn1;;
+fun csrFromPEM pem pwd=
+	let head pemDecode pem pwd ->[name der] in
+	if name=="CERTIFICATE REQUEST" then csrFromDER der;;
