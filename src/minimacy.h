@@ -11,7 +11,7 @@
 #ifndef _MINIMACY_
 #define _MINIMACY_
 
-#define VERSION_MINIMACY "1.3.0"
+#define VERSION_MINIMACY "1.3.2"
 
 
 #ifdef ON_WINDOWS
@@ -139,6 +139,13 @@
 #define HIDE_COMPILER_LISTING
 #endif
 
+#ifdef ON_UNIX_X11GL
+#define ON_UNIX
+#define WITH_UI
+#define WITH_GL
+#define WITH_AUDIO
+#endif
+
 #ifdef ON_UNIX
 #define DEVICE_MODE "Unix"
 #define GROUP_FULL_ANSI
@@ -160,6 +167,13 @@
 #define USE_X11
 #define USE_ALSA
 #define USE_ETH_UNIX
+#endif
+
+#ifdef ON_MACOS_X11GL
+#define ON_MACOS_CMDLINE
+#define WITH_UI
+#define WITH_GL
+#define WITH_AUDIO
 #endif
 
 #ifdef ON_MACOS_CMDLINE

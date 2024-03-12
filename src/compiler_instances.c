@@ -18,9 +18,9 @@ void compileInstanceDefClean(Def* def)
 	instances = def->instances;
 	while (instances)
 	{
-		Def* target = (Def*)(TABPNT(instances, INSTANCE_DEF));
+		Def* target = (Def*)(ARRAY_PNT(instances, INSTANCE_DEF));
 		compileInstanceDefClean(target);
-		instances = (TABPNT(instances, INSTANCE_NEXT));
+		instances = (ARRAY_PNT(instances, INSTANCE_NEXT));
 	}
 	def->instances = NULL;
 }
@@ -37,12 +37,12 @@ LINT compileInstanceDefSolver(Compiler* c,Def* def)
 	{
 		Type* defType;
 		LINT k;
-		Def* target = (Def*)(TABPNT(instances, INSTANCE_DEF));
-		Type* t= (Type*)(TABPNT(instances, INSTANCE_TYPE));
+		Def* target = (Def*)(ARRAY_PNT(instances, INSTANCE_DEF));
+		Type* t= (Type*)(ARRAY_PNT(instances, INSTANCE_TYPE));
 		if ((k = compileInstanceDefSolver(c, target))) return k;
-//		PRINTF(LOG_DEV,"#unify again instance of %s in %s\n", STRSTART(target->name), defName(def));
-		c->parser= (Parser*)(TABPNT(instances, INSTANCE_PARSER));
-		c->parser->index0=(int) (TABINT(instances, INSTANCE_POSITION));
+//		PRINTF(LOG_DEV,"#unify again instance of %s in %s\n", STR_START(target->name), defName(def));
+		c->parser= (Parser*)(ARRAY_PNT(instances, INSTANCE_PARSER));
+		c->parser->index0=(int) (ARRAY_INT(instances, INSTANCE_POSITION));
 		defType = typeCopy(c->th, target->type); if (!defType) return EXEC_OM;
 //		{ typePrint(LOG_SYS, target->type); PRINTF(LOG_DEV,"\n"); }
 //		{ typePrint(LOG_SYS, t); PRINTF(LOG_DEV,"\n"); }
@@ -50,13 +50,13 @@ LINT compileInstanceDefSolver(Compiler* c,Def* def)
 		k = typeUnify(c, defType, t);
 		if (k)
 		{	
-			if (c->parser->name) PRINTF(LOG_USER, "Compiler: error in %s\n", c->parser->name);
-			PRINTF(LOG_USER, "Compiler: type error when '%s' calls '%s'\n", defName(def), defName(target));
+			if (c->parser->name) PRINTF(LOG_USER, "> Compiler error: error in %s\n", c->parser->name);
+			PRINTF(LOG_USER, "> Compiler error: type error when '%s' calls '%s'\n", defName(def), defName(target));
 			return k;
 		}
 //		if (TypeTest) { typePrint(LOG_SYS, TypeTest); PRINTF(LOG_DEV,"\n"); }
 
-		instances= (TABPNT(instances, INSTANCE_NEXT));
+		instances= (ARRAY_PNT(instances, INSTANCE_NEXT));
 	}
 	compileInstanceDefClean(def);
 	return 0;
@@ -91,18 +91,18 @@ Type* typeInstance(Compiler* c, Def* def)
 	if ((def->proto==0) && (!def->instances)) return t;
 
 /*	PRINTF(LOG_DEV,"#make instance of %s.%s in %s.%s\n",
-		STRSTART(def->pkg->name),
+		STR_START(def->pkg->name),
 		defName(def),
-		STRSTART(from->pkg->name),
-		STRSTART(from->name));
+		STR_START(from->pkg->name),
+		STR_START(from->name));
 */
-	list = memoryAllocTable(c->th,INSTANCE_LEN, DBG_TUPLE);
+	list = memoryAllocArray(c->th,INSTANCE_LENGTH, DBG_TUPLE);
 	if (!list) return NULL;
-	TABSETPNT(list, INSTANCE_DEF, ((LB*)def));
-	TABSETPNT(list, INSTANCE_TYPE, ((LB*)t));
-	TABSETINT(list, INSTANCE_POSITION, (c->parser->index0));
-	TABSETPNT(list, INSTANCE_PARSER, ((LB*)c->parser));
-	TABSETPNT(list, INSTANCE_NEXT, (from->instances));
+	ARRAY_SET_PNT(list, INSTANCE_DEF, ((LB*)def));
+	ARRAY_SET_PNT(list, INSTANCE_TYPE, ((LB*)t));
+	ARRAY_SET_INT(list, INSTANCE_POSITION, (c->parser->index0));
+	ARRAY_SET_PNT(list, INSTANCE_PARSER, ((LB*)c->parser));
+	ARRAY_SET_PNT(list, INSTANCE_NEXT, (from->instances));
 	from->instances = list;
 	return t;
 }

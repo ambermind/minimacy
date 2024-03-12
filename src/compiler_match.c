@@ -74,7 +74,7 @@ Type* compileMatchStruct(Compiler* c, Type* tval, Type* tresult, LINT* end, Def*
 
 	root = def;
 	while (root->parent) root = root->parent;
-	if (def->type->nb!=root->type->nb) return compileError(c, "Compiler: no cast between %s and %s (different number of parameters)\n", defName(def), defName(root));
+	if (def->type->nb!=root->type->nb) return compileError(c,"no cast between %s and %s (different number of parameters)\n", defName(def), defName(root));
 
 	t0 = typeCopy(c->th, root->type); if (!t0) return NULL;
 	tchild = typeCopy(c->th, def->type); if (!tchild) return NULL;
@@ -100,7 +100,7 @@ Type* compileMatchStruct(Compiler* c, Type* tval, Type* tresult, LINT* end, Def*
 
 	localsBefore = c->fmk->locals;
 
-	if ((!parserNext(c)) || !islabel(c->parser->token)) return compileError(c, "Compiler: label expected (found '%s')\n", compileToken(c));
+	if ((!parserNext(c)) || !islabel(c->parser->token)) return compileError(c,"label expected (found '%s')\n", compileToken(c));
 
 	locals = funMakerAddLocal(c, c->parser->token); if (!locals) return NULL;
 
@@ -158,7 +158,7 @@ Type* compileMatchCons(Compiler* c,Type* tval,Type* tresult,LINT* end, Def* def,
 
 	for(i=0;i<argc;i++)
 	{
-		if (!parserNext(c)) return compileError(c,"Compiler: unexpected end of file\n");
+		if (!parserNext(c)) return compileError(c,"unexpected end of file\n");
 
 		if (strcmp(c->parser->token,"_"))
 		{
@@ -187,7 +187,7 @@ Type* compileMatchChoice(Compiler* c,Type* tval,Type* tresult,LINT* end,int tryc
 	Type* t;
 	Def* def;
 
-	if (!parserNext(c)) return compileError(c,"Compiler: constructor or expression or '_' expected (found '%s')\n",compileToken(c));
+	if (!parserNext(c)) return compileError(c,"constructor or expression or '_' expected (found '%s')\n",compileToken(c));
 
 	if (!strcmp(c->parser->token,"_"))
 	{
@@ -209,7 +209,7 @@ Type* compileMatchChoice(Compiler* c,Type* tval,Type* tresult,LINT* end,int tryc
 		if (def && (def->code == DEF_CODE_CONS0)) return compileMatchCons0(c, tval, tresult, end, def, trycatch);
 		if (def && (def->code == DEF_CODE_STRUCT)) return compileMatchStruct(c, tval, tresult, end, def, trycatch);
 	}
-//	if (trycatch) return compileError(c,"Compiler: constructor or '_' expected (found '%s')\n",compileToken(c));
+//	if (trycatch) return compileError(c,"constructor or '_' expected (found '%s')\n",compileToken(c));
 	return compileMatchValue(c,tval,tresult,end,trycatch);
 
 }

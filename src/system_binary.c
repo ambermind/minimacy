@@ -16,21 +16,21 @@ int fun_strFromChar(Thread* th);
 
 int fun_strU8Previous(Thread* th)
 {
-	LINT index = STACKINT(th, 0);
-	LB* p = STACKPNT(th, 1);
+	LINT index = STACK_INT(th, 0);
+	LB* p = STACK_PNT(th, 1);
 	if (!p) FUN_RETURN_NIL;
-	FUN_CHECK_CONTAINS(p,index, 0, STRLEN(p));
+	FUN_CHECK_CONTAINS(p,index, 0, STR_LENGTH(p));
 
-	index = u8Previous(STRSTART(p),(int)index);
+	index = u8Previous(STR_START(p),(int)index);
 	FUN_RETURN_INT(index)
 }
 int fun_strU8Next(Thread* th)
 {
-	LINT index = STACKINT(th, 0);
-	LB* p = STACKPNT(th, 1);
-	FUN_CHECK_CONTAINS(p, index, 1, STRLEN(p));
-	index += u8Next(STRSTART(p) + index);
-	if (index > STRLEN(p)) index = STRLEN(p);
+	LINT index = STACK_INT(th, 0);
+	LB* p = STACK_PNT(th, 1);
+	FUN_CHECK_CONTAINS(p, index, 1, STR_LENGTH(p));
+	index += u8Next(STR_START(p) + index);
+	if (index > STR_LENGTH(p)) index = STR_LENGTH(p);
 	FUN_RETURN_INT(index)
 }
 int fun_strReadU8(Thread* th)
@@ -38,11 +38,11 @@ int fun_strReadU8(Thread* th)
 	int len;
 	LINT val = 0;
 
-	LINT index = STACKINT(th, 0);
-	LB* p = STACKPNT(th, 1);
-	FUN_CHECK_CONTAINS(p, index, 1, STRLEN(p));
+	LINT index = STACK_INT(th, 0);
+	LB* p = STACK_PNT(th, 1);
+	FUN_CHECK_CONTAINS(p, index, 1, STR_LENGTH(p));
 
-	val = u8Value(STRSTART(p) + index, &len);
+	val = u8Value(STR_START(p) + index, &len);
 	if (val<0) FUN_RETURN_NIL;
 	FUN_RETURN_INT(val)
 }
@@ -51,12 +51,12 @@ int fun_strVarIntNext(Thread* th)
 {
 	char* str;
 
-	LINT index = STACKINT(th, 0);
-	LB* p = STACKPNT(th, 1);
-	FUN_CHECK_CONTAINS(p, index, 1, STRLEN(p));
-	str = STRSTART(p);
+	LINT index = STACK_INT(th, 0);
+	LB* p = STACK_PNT(th, 1);
+	FUN_CHECK_CONTAINS(p, index, 1, STR_LENGTH(p));
+	str = STR_START(p);
 	while (str[index] & 0x80) index++;
-	if (index < STRLEN(p)) index++;
+	if (index < STR_LENGTH(p)) index++;
 	FUN_RETURN_INT(index)
 }
 int _strReadVarInt(Thread* th, int sign)
@@ -64,12 +64,12 @@ int _strReadVarInt(Thread* th, int sign)
 	LINT val = 0;
 	char* str;
 
-	LINT index = STACKINT(th, 0);
-	LB* p = STACKPNT(th, 1);
-	FUN_CHECK_CONTAINS(p, index, 1, STRLEN(p));
-	str = STRSTART(p);
+	LINT index = STACK_INT(th, 0);
+	LB* p = STACK_PNT(th, 1);
+	FUN_CHECK_CONTAINS(p, index, 1, STR_LENGTH(p));
+	str = STR_START(p);
 	while (str[index] & 0x80) val = (val << 7) + (str[index++] & 0x7f);
-	if (index < STRLEN(p)) val = (val << 7) + (str[index++] & 0x7f);
+	if (index < STR_LENGTH(p)) val = (val << 7) + (str[index++] & 0x7f);
 
 	if (sign)
 	{
@@ -87,7 +87,7 @@ int _strVarInt(Thread* th, int sign)
 	int len = 1;
 	int msk = 0;
 	char* str;
-	LINT v0 = STACKPULLINT(th);
+	LINT v0 = STACK_PULL_INT(th);
 	if (sign)
 	{
 		if (v0 < 0) v0 = (-v0 - 1) << 1 | 1;
@@ -97,7 +97,7 @@ int _strVarInt(Thread* th, int sign)
 	tmp = val;
 	while (tmp >= 128) { tmp >>= 7; len++; }
 	FUN_PUSH_STR( NULL, len);
-	str = STRSTART((STACKPNT(th, 0)));
+	str = STR_START((STACK_PNT(th, 0)));
 	len--;
 	while (len >= 0)
 	{
@@ -117,9 +117,9 @@ int _bytesWriteVarInt(Thread* th, int sign)
 	int msk = 0;
 	LINT next;
 	char* str;
-	LINT v0 = STACKPULLINT(th);
-	LINT start = STACKPULLINT(th);
-	LB* p = STACKPNT(th, 0);
+	LINT v0 = STACK_PULL_INT(th);
+	LINT start = STACK_PULL_INT(th);
+	LB* p = STACK_PNT(th, 0);
 	if (sign)
 	{
 		if (v0 < 0) v0 = (-v0 - 1) << 1 | 1;
@@ -129,12 +129,12 @@ int _bytesWriteVarInt(Thread* th, int sign)
 	tmp = val;
 	while (tmp >= 128) { tmp >>= 7; len++; }
 
-	FUN_CHECK_CONTAINS(p, start, len, STRLEN(p));
+	FUN_CHECK_CONTAINS(p, start, len, STR_LENGTH(p));
 
 	next = start + len;
 
 	len--;
-	str = STRSTART(p) + start;
+	str = STR_START(p) + start;
 	while (len >= 0)
 	{
 		str[len--] = (char)(msk | (val & 0x7f));
@@ -151,11 +151,11 @@ int fun_bytesReadFloat(Thread* th)
 {
 	unsigned char* str;
 	LFLOAT* f;
-	LINT start = STACKPULLINT(th);
-	LB* p = STACKPNT(th, 0);
-	FUN_CHECK_CONTAINS(p, start, (int)sizeof(LFLOAT), STRLEN(p));
+	LINT start = STACK_PULL_INT(th);
+	LB* p = STACK_PNT(th, 0);
+	FUN_CHECK_CONTAINS(p, start, (int)sizeof(LFLOAT), STR_LENGTH(p));
 
-	str = (unsigned char*)(STRSTART(p) + start);
+	str = (unsigned char*)(STR_START(p) + start);
 	f = (LFLOAT*)str;
 	FUN_RETURN_FLOAT(*f);
 }
@@ -163,39 +163,39 @@ int fun_bytesReadFloat(Thread* th)
 #define CORE_BYTESREAD(name,type,convert) \
 int name(Thread* th) {\
 	char* str; LINT val; \
-	LINT start = STACKPULLINT(th); \
-	LB* p = STACKPNT(th, 0); \
-	FUN_CHECK_CONTAINS(p, start, (int)sizeof(type), STRLEN(p));	\
-	str = STRSTART(p) + start; val = (*(type*)str); val = convert(val); \
+	LINT start = STACK_PULL_INT(th); \
+	LB* p = STACK_PNT(th, 0); \
+	FUN_CHECK_CONTAINS(p, start, (int)sizeof(type), STR_LENGTH(p));	\
+	str = STR_START(p) + start; val = (*(type*)str); val = convert(val); \
 	FUN_RETURN_INT(val); \
 }
 
 #define CORE_BYTESWRITE(name,type,convert) \
 int name(Thread* th) {\
 	char* str; \
-	LINT val = STACKPULLINT(th); \
-	LINT start = STACKPULLINT(th); \
-	LB* p = STACKPNT(th, 0); \
-	FUN_CHECK_CONTAINS(p, start, (int)sizeof(type), STRLEN(p));	\
-	str = STRSTART(p) + start; *(type*)str = (type)convert(val); \
+	LINT val = STACK_PULL_INT(th); \
+	LINT start = STACK_PULL_INT(th); \
+	LB* p = STACK_PNT(th, 0); \
+	FUN_CHECK_CONTAINS(p, start, (int)sizeof(type), STR_LENGTH(p));	\
+	str = STR_START(p) + start; *(type*)str = (type)convert(val); \
 	return 0; \
 }
 
 #define CORE_STRFROMINT(name,type,convert) \
 int name(Thread* th) {\
-	LINT val = STACKPULLINT(th); \
+	LINT val = STACK_PULL_INT(th); \
 	FUN_PUSH_STR(NULL,sizeof(type));\
-	*(type*)STRSTART(STACKPNT(th,0)) = (int)convert(val);\
+	*(type*)STR_START(STACK_PNT(th,0)) = (int)convert(val);\
 	return 0;\
 }
 
 #define CORE_BYTESREAD16(name,convert) \
 int name(Thread* th) {\
 	unsigned char* str; LINT val; \
-	LINT start = STACKPULLINT(th); \
-	LB* p = STACKPNT(th, 0); \
-	FUN_CHECK_CONTAINS(p, start, 2, STRLEN(p));	\
-	str = (unsigned char*) (STRSTART(p) + start); \
+	LINT start = STACK_PULL_INT(th); \
+	LB* p = STACK_PNT(th, 0); \
+	FUN_CHECK_CONTAINS(p, start, 2, STR_LENGTH(p));	\
+	str = (unsigned char*) (STR_START(p) + start); \
 	val = str[1]; val<<=8; \
 	val += str[0]; \
 	val = convert(val); \
@@ -205,11 +205,11 @@ int name(Thread* th) {\
 #define CORE_BYTESWRITE16(name,convert) \
 int name(Thread* th) {\
 	char* str; \
-	LINT val = STACKPULLINT(th); \
-	LINT start = STACKPULLINT(th); \
-	LB* p = STACKPNT(th, 0); \
-	FUN_CHECK_CONTAINS(p, start, 2, STRLEN(p));	\
-	str = STRSTART(p) + start; \
+	LINT val = STACK_PULL_INT(th); \
+	LINT start = STACK_PULL_INT(th); \
+	LB* p = STACK_PNT(th, 0); \
+	FUN_CHECK_CONTAINS(p, start, 2, STR_LENGTH(p));	\
+	str = STR_START(p) + start; \
 	val = convert(val); \
 	memcpy(str,&val,2);	/*see remark below on CORE_BYTESWRITE32 */	\
 	return 0; \
@@ -218,9 +218,9 @@ int name(Thread* th) {\
 #define CORE_STRFROMINT16(name,convert) \
 int name(Thread* th) {\
 	char* str; \
-	LINT val = STACKPULLINT(th); \
+	LINT val = STACK_PULL_INT(th); \
 	FUN_PUSH_STR(NULL,2);\
-	str=STRSTART(STACKPNT(th,0)); \
+	str=STR_START(STACK_PNT(th,0)); \
 	val = convert(val); \
 	*(str++) = val&255; val>>=8; \
 	*(str++) = val&255; val>>=8; \
@@ -230,10 +230,10 @@ int name(Thread* th) {\
 #define CORE_BYTESREAD24(name,convert) \
 int name(Thread* th) {\
 	unsigned char* str; LINT val; \
-	LINT start = STACKPULLINT(th); \
-	LB* p = STACKPNT(th, 0); \
-	FUN_CHECK_CONTAINS(p, start, 3, STRLEN(p));	\
-	str = (unsigned char*) (STRSTART(p) + start); \
+	LINT start = STACK_PULL_INT(th); \
+	LB* p = STACK_PNT(th, 0); \
+	FUN_CHECK_CONTAINS(p, start, 3, STR_LENGTH(p));	\
+	str = (unsigned char*) (STR_START(p) + start); \
 	val = str[2]; val<<=8; \
 	val += str[1]; val <<= 8; \
 	val += str[0]; \
@@ -244,11 +244,11 @@ int name(Thread* th) {\
 #define CORE_BYTESWRITE24(name,convert) \
 int name(Thread* th) {\
 	char* str; \
-	LINT val = STACKPULLINT(th); \
-	LINT start = STACKPULLINT(th); \
-	LB* p = STACKPNT(th, 0); \
-	FUN_CHECK_CONTAINS(p, start, 3, STRLEN(p));	\
-	str = STRSTART(p) + start; \
+	LINT val = STACK_PULL_INT(th); \
+	LINT start = STACK_PULL_INT(th); \
+	LB* p = STACK_PNT(th, 0); \
+	FUN_CHECK_CONTAINS(p, start, 3, STR_LENGTH(p));	\
+	str = STR_START(p) + start; \
 	val = convert(val); \
 	memcpy(str,&val,3);	/*see remark below on CORE_BYTESWRITE32 */\
 	return 0; \
@@ -257,9 +257,9 @@ int name(Thread* th) {\
 #define CORE_STRFROMINT24(name,convert) \
 int name(Thread* th) {\
 	char* str; \
-	LINT val = STACKPULLINT(th); \
+	LINT val = STACK_PULL_INT(th); \
 	FUN_PUSH_STR(NULL,3);\
-	str=STRSTART(STACKPNT(th,0)); \
+	str=STR_START(STACK_PNT(th,0)); \
 	val = convert(val); \
 	*(str++) = val&255; val>>=8; \
 	*(str++) = val&255; val>>=8; \
@@ -270,10 +270,10 @@ int name(Thread* th) {\
 #define CORE_BYTESREAD32(name,convert) \
 int name(Thread* th) {\
 	unsigned char* str; LINT val; \
-	LINT start = STACKPULLINT(th); \
-	LB* p = STACKPNT(th, 0); \
-	FUN_CHECK_CONTAINS(p, start, 4, STRLEN(p));	\
-	str = (unsigned char*) (STRSTART(p) + start); \
+	LINT start = STACK_PULL_INT(th); \
+	LB* p = STACK_PNT(th, 0); \
+	FUN_CHECK_CONTAINS(p, start, 4, STR_LENGTH(p));	\
+	str = (unsigned char*) (STR_START(p) + start); \
 	val = str[3]; val<<=8; \
 	val += str[2]; val <<= 8; \
 	val += str[1]; val <<= 8; \
@@ -291,11 +291,11 @@ int name(Thread* th) {\
 #define CORE_BYTESWRITE32(name,convert) \
 int name(Thread* th) {\
 	char* str; \
-	LINT val = STACKPULLINT(th); \
-	LINT start = STACKPULLINT(th); \
-	LB* p = STACKPNT(th, 0); \
-	FUN_CHECK_CONTAINS(p, start, 4, STRLEN(p));	\
-	str = STRSTART(p) + start; \
+	LINT val = STACK_PULL_INT(th); \
+	LINT start = STACK_PULL_INT(th); \
+	LB* p = STACK_PNT(th, 0); \
+	FUN_CHECK_CONTAINS(p, start, 4, STR_LENGTH(p));	\
+	str = STR_START(p) + start; \
 	val = convert(val); \
 	memcpy(str,&val,4);	/*see above remark */	\
 	return 0; \
@@ -304,9 +304,9 @@ int name(Thread* th) {\
 #define CORE_STRFROMINT32(name,convert) \
 int name(Thread* th) {\
 	char* str; \
-	LINT val = STACKPULLINT(th); \
+	LINT val = STACK_PULL_INT(th); \
 	FUN_PUSH_STR(NULL,4);\
-	str=STRSTART(STACKPNT(th,0)); \
+	str=STR_START(STACK_PNT(th,0)); \
 	val = convert(val); \
 	*(str++) = val&255; val>>=8; \
 	*(str++) = val&255; val>>=8; \
@@ -358,13 +358,13 @@ CORE_STRFROMINT24(fun_strInt24Msb, MSB24)
 
 int coreBinaryInit(Thread* th, Pkg *system)
 {
-	Type* fun_I_S = typeAlloc(th,TYPECODE_FUN, NULL, 2, MM.I, MM.S);
-	Type* fun_S_I_I = typeAlloc(th,TYPECODE_FUN, NULL, 3, MM.S, MM.I, MM.I);
-	Type* fun_S_I_F = typeAlloc(th,TYPECODE_FUN, NULL, 3, MM.S, MM.I, MM.F);
-	Type* fun_B_I_I = typeAlloc(th,TYPECODE_FUN, NULL, 3, MM.Bytes, MM.I, MM.I);
-	Type* fun_B_I_F = typeAlloc(th,TYPECODE_FUN, NULL, 3, MM.Bytes, MM.I, MM.F);
-	Type* fun_B_I_I_I = typeAlloc(th,TYPECODE_FUN, NULL, 4, MM.Bytes, MM.I, MM.I, MM.I);
-	Type* fun_B_I_I_B = typeAlloc(th,TYPECODE_FUN, NULL, 4, MM.Bytes, MM.I, MM.I, MM.Bytes);
+	Type* fun_I_S = typeAlloc(th,TYPECODE_FUN, NULL, 2, MM.Int, MM.Str);
+	Type* fun_S_I_I = typeAlloc(th,TYPECODE_FUN, NULL, 3, MM.Str, MM.Int, MM.Int);
+	Type* fun_S_I_F = typeAlloc(th,TYPECODE_FUN, NULL, 3, MM.Str, MM.Int, MM.Float);
+	Type* fun_B_I_I = typeAlloc(th,TYPECODE_FUN, NULL, 3, MM.Bytes, MM.Int, MM.Int);
+	Type* fun_B_I_F = typeAlloc(th,TYPECODE_FUN, NULL, 3, MM.Bytes, MM.Int, MM.Float);
+	Type* fun_B_I_I_I = typeAlloc(th,TYPECODE_FUN, NULL, 4, MM.Bytes, MM.Int, MM.Int, MM.Int);
+	Type* fun_B_I_I_B = typeAlloc(th,TYPECODE_FUN, NULL, 4, MM.Bytes, MM.Int, MM.Int, MM.Bytes);
 
 	pkgAddFun(th, system, "strU8Next", fun_strU8Next, fun_S_I_I);
 	pkgAddFun(th, system, "strU8Previous", fun_strU8Previous, fun_S_I_I);

@@ -15,7 +15,7 @@
 Type* compileStructure1(Compiler* c, Def* structDef)
 {
 	if ((!parserNext(c)) || ((!islabel(c->parser->token)) && strcmp(c->parser->token, "[") ))
-		return compileError(c, "Compiler: type name or '[' expected (found '%s')\n", compileToken(c));
+		return compileError(c,"type name or '[' expected (found '%s')\n", compileToken(c));
 
 	if (strcmp(c->parser->token, "["))
 	{
@@ -31,23 +31,17 @@ Type* compileStructure1(Compiler* c, Def* structDef)
 		Def* fieldDef;
 		LB* fieldName;
 		LINT pIndex;
-//		char lastChar;
 
 		if ((!parserNext(c))||((!islabel(c->parser->token))&&strcmp(c->parser->token,"]")))
-			return compileError(c,"Compiler: field name or ']' expected (found '%s')\n",compileToken(c));
+			return compileError(c,"field name or ']' expected (found '%s')\n",compileToken(c));
 		pIndex = parserIndex(c);
 		if (!islabel(c->parser->token)) break;	// "]" case
-//		lastChar = c->parser->token[strlen(c->parser->token)-1];
-//		if (lastChar<'A' || lastChar>'Z') return compileError(c, "Compiler: field names must end with a capital letter (found '%s')\n", compileToken(c));
-//		if (lastChar<'A' || lastChar>'Z') PRINTF(LOG_DEV,"Compiler: field names must end with a capital letter (found '%s')\n", compileToken(c));
-		if (!exportLabelListIsSingle(c, c->parser->token)) return compileError(c, "Compiler: the export declaration is not compatible with a type (should have no argument)\n");
+		if (!exportLabelListIsSingle(c, c->parser->token)) return compileError(c,"the export declaration is not compatible with a type (should have no argument)\n");
 
-//		if (!startsWithLowercase(c->parser->token)) return compileError(c, "Compiler: field name should start with lowercase (found '%s')\n", compileToken(c));
-
-		if (pkgFirstGet(c->pkg, c->parser->token)) return compileError(c, "Compiler: '%s' already defined\n", compileToken(c));
+		if (pkgFirstGet(c->pkg, c->parser->token)) return compileError(c,"'%s' already defined\n", compileToken(c));
 		fieldName = memoryAllocStr(c->th, c->parser->token, -1); if (!fieldName) return NULL;
 
-		if (!parserNext(c)) return compileError(c, "Compiler: unexpected end of file\n");
+		if (!parserNext(c)) return compileError(c,"unexpected end of file\n");
 
 		if (!strcmp(c->parser->token, "@"))
 		{
@@ -59,7 +53,7 @@ Type* compileStructure1(Compiler* c, Def* structDef)
 
 		fieldDef=defAlloc(c->th, DEF_CODE_FIELD,0,structDef->val, structDef->valType, fieldType); if (!fieldDef) return NULL;
 		fieldDef->proto = 1;
-		defSet(structDef,PNTTOVAL((LB*)fieldDef),VAL_TYPE_PNT);
+		defSet(structDef,VAL_FROM_PNT((LB*)fieldDef),VAL_TYPE_PNT);
 		fieldDef->parent = structDef;
 		defSetParser(fieldDef, c, pIndex);
 		if (pkgAddDef(c->th, c->pkg, fieldName, fieldDef)) return NULL;
@@ -73,14 +67,14 @@ Type* compileStructure2(Compiler* c, Def* structDef, Locals* labels)
 	Type* derivative = typeDerivate(c->th, structDef->type,0); if (!derivative) return NULL;
 
 	if ((!parserNext(c)) || ((!islabel(c->parser->token)) && strcmp(c->parser->token, "[")))
-		return compileError(c, "Compiler: type name or '[' expected (found '%s')\n", compileToken(c));
+		return compileError(c,"type name or '[' expected (found '%s')\n", compileToken(c));
 
 	if (strcmp(c->parser->token, "["))
 	{
 		Def* defParent;
 		Type* t;
 		if ((!(defParent = compileGetDef(c))) || (defParent->code != DEF_CODE_STRUCT))
-			return compileError(c, "Compiler: type struct expected (found '%s')\n", compileToken(c));
+			return compileError(c,"type struct expected (found '%s')\n", compileToken(c));
 		t = defParent->type;
 
 		if (t->nb)
@@ -91,10 +85,10 @@ Type* compileStructure2(Compiler* c, Def* structDef, Locals* labels)
 			{
 				Locals* lb;
 				if ((!parserNext(c)) || (!islabel(c->parser->token)))
-					return compileError(c, "Compiler: parameter expected (found '%s')\n", compileToken(c));
+					return compileError(c,"parameter expected (found '%s')\n", compileToken(c));
 				lb = localsGet(labels, 0, c->parser->token);
-				if (!lb) return compileError(c, "Compiler: parameter expected (found '%s')\n", compileToken(c));
-				if (lb->index != i) return compileError(c, "Compiler: wrong parameter, parent structure must have the same parameters in the same order than the derivative (found '%s')\n", compileToken(c));
+				if (!lb) return compileError(c,"parameter expected (found '%s')\n", compileToken(c));
+				if (lb->index != i) return compileError(c,"wrong parameter, parent structure must have the same parameters in the same order than the derivative (found '%s')\n", compileToken(c));
 				if (i < t->nb - 1)
 				{
 					if (parserAssume(c, ",")) return NULL;
@@ -114,14 +108,14 @@ Type* compileStructure2(Compiler* c, Def* structDef, Locals* labels)
 		Type* t;
 
 		if ((!parserNext(c))||((!islabel(c->parser->token))&& strcmp(c->parser->token, "+") && strcmp(c->parser->token,"]")))
-			return compileError(c,"Compiler: field name or ']' expected (found '%s')\n",compileToken(c));
+			return compileError(c,"field name or ']' expected (found '%s')\n",compileToken(c));
 
 		if (!islabel(c->parser->token)) break;
 			
 		defField= pkgFirstGet(c->pkg, c->parser->token);
-		if (!defField) return compileError(c, "Compiler: cannot find prototype of '%s'\n", compileToken(c));
+		if (!defField) return compileError(c,"cannot find prototype of '%s'\n", compileToken(c));
 
-		if (!parserNext(c)) return compileError(c, "Compiler: unexpected end of file\n");
+		if (!parserNext(c)) return compileError(c,"unexpected end of file\n");
 
 		if (!strcmp(c->parser->token, "@"))
 		{
@@ -144,8 +138,8 @@ Type* compileStructure3(Compiler* c, Def* structDef, int rec)
 {
 	Def* def;
 	Def* defParent = structDef->parent;
-	if (rec<0) return compileError(c, "Compiler: loop detected in struct '%s' defined in package '%s'\n", defName(structDef), pkgName(structDef->pkg));
-	if (!structDef->proto) return MM.I;
+	if (rec<0) return compileError(c,"loop detected in struct '%s' defined in package '%s'\n", defName(structDef), pkgName(structDef->pkg));
+	if (!structDef->proto) return MM.Int;
 	if (defParent)
 	{
 		if (!compileStructure3(c, defParent, rec - 1)) return NULL;
@@ -153,13 +147,13 @@ Type* compileStructure3(Compiler* c, Def* structDef, int rec)
 		structDef->dI = defParent->dCI;
 		structDef->index = defParent->index + 1;
 	}
-	for (def = (Def*)VALTOPNT(structDef->val); def; def = (Def*)VALTOPNT(def->val))
+	for (def = (Def*)PNT_FROM_VAL(structDef->val); def; def = (Def*)PNT_FROM_VAL(def->val))
 	{
 		def->index = structDef->index++;
 		def->proto = 0;
 	}
 	structDef->proto = 0;
-	return MM.I;
+	return MM.Int;
 }
 
 // first field has already been read, and is in 'def' argument
@@ -194,11 +188,11 @@ Type* compileFields(Compiler* c, Def* def)
 		if (bc_byte_or_int(c,def->index, OPupdtb,OPupdt)) return NULL;
 		
 		if ((!parserNext(c))||((!islabel(c->parser->token))&&strcmp(c->parser->token,"]")))
-			return compileError(c,"Compiler: field name or ']' expected (found '%s')\n",compileToken(c));
+			return compileError(c,"field name or ']' expected (found '%s')\n",compileToken(c));
 		if (!strcmp(c->parser->token, "]")) break;
 		// necessary islabel=true
 		def=compileGetDef(c);
-		if ((!def)||(def->code!=DEF_CODE_FIELD)) return compileError(c,"Compiler: '%s' is not a field name\n",compileToken(c));
+		if ((!def)||(def->code!=DEF_CODE_FIELD)) return compileError(c,"'%s' is not a field name\n",compileToken(c));
 	}
 //	PRINTF(LOG_DEV,"typeUnderivate\n");
 	root = typeUnderivate(c, root);

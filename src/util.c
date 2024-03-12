@@ -328,13 +328,13 @@ int lwEquals(LW a, int ta, LW b, int tb)
 	if (a == b) return 1;
 	else if ((a != NIL) && (b != NIL) && (ta==VAL_TYPE_PNT))
 	{
-		LB* pa = VALTOPNT(a);
-		LB* pb = VALTOPNT(b);
+		LB* pa = PNT_FROM_VAL(a);
+		LB* pb = PNT_FROM_VAL(b);
 		if (HEADER_DBG(pa) == HEADER_DBG(pb))
 		{
 			if (HEADER_DBG(pa) == DBG_S)
 			{
-				if ((STRLEN(pa) == STRLEN(pb)) && (!memcmp(STRSTART(pa), STRSTART(pb), STRLEN(pa)))) return 1;
+				if ((STR_LENGTH(pa) == STR_LENGTH(pb)) && (!memcmp(STR_START(pa), STR_START(pb), STR_LENGTH(pa)))) return 1;
 			}
 			else if (HEADER_DBG(pa) == DBG_B)
 			{

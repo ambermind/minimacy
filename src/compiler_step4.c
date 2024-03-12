@@ -135,7 +135,7 @@ Locals* funMakerAddLocal(Compiler* c, char* name)
 	FunMaker* f = c->fmk;
 	LINT nblocals = localsNb(f->locals);
 
-	if (nblocals + 1 > LOCALS_MAX_NUMBER) return (Locals*)compileError(c, "Compiler: maximum number of local variables has been reached (%d)\n", LOCALS_MAX_NUMBER);
+	if (nblocals + 1 > LOCALS_MAX_NUMBER) return (Locals*)compileError(c,"maximum number of local variables has been reached (%d)\n", LOCALS_MAX_NUMBER);
 	t = typeAllocUndef(c->th); if (!t) return NULL;
 	f->locals = localsCreate(c->th, name, f->level, t, f->locals); if (!f->locals) return NULL;
 	nblocals++;
@@ -166,7 +166,7 @@ LB* bytecodeFinalize(Compiler* c, LINT argc, LB* name)
 	LB* globals;
 	if (bufferAddChar(c->th, c->bytecode, OPret)) return NULL;	// be carefull this can change c->bytecode->buffer !!
 
-//	PRINTF(LOG_DEV,"fun %s args=%lld locals=%lld\n", name ? STRSTART(name) : "_", argc, c->fmk->maxlocals);
+//	PRINTF(LOG_DEV,"fun %s args=%lld locals=%lld\n", name ? STR_START(name) : "_", argc, c->fmk->maxlocals);
 
 	start = (LINT*)c->bytecode->buffer;
 	start[0] = argc;	// number of arguments (only usefull to check the stack after a call)
@@ -176,13 +176,13 @@ LB* bytecodeFinalize(Compiler* c, LINT argc, LB* name)
 	if (!bytecode) return NULL;
 	bytecodeOptimize(bytecode);
 
-	result = memoryAllocTable(c->th, FUN_USER_LEN, DBG_FUN);
+	result = memoryAllocArray(c->th, FUN_USER_LENGTH, DBG_FUN);
 	if (!result) return NULL;
-	TABSETPNT(result, FUN_USER_NAME, name);
-	TABSETPNT(result, FUN_USER_BC, bytecode);
+	ARRAY_SET_PNT(result, FUN_USER_NAME, name);
+	ARRAY_SET_PNT(result, FUN_USER_BC, bytecode);
 	if (globalsExtract(c->th, c->fmk->globals, &globals)) return NULL;
-	TABSETPNT(result, FUN_USER_GLOBALS, (globals));
-	TABSETPNT(result, FUN_USER_PKG, (LB*)(c->pkg));
+	ARRAY_SET_PNT(result, FUN_USER_GLOBALS, (globals));
+	ARRAY_SET_PNT(result, FUN_USER_PKG, (LB*)(c->pkg));
 	return result;
 }
 Type* compileFinalize(Compiler* c, Type* result)
@@ -192,7 +192,7 @@ Type* compileFinalize(Compiler* c, Type* result)
 	if (_init)
 	{
 		LINT global;
-		if (_init->code!=0) return compileError(c, "Compiler: '_init' is reserved for the initialization of the package. It must be a function without argument.\n");
+		if (_init->code!=0) return compileError(c,"'_init' is reserved for the initialization of the package. It must be a function without argument.\n");
 		if (funMakerNeedGlobal(c->fmk, (LB*)_init, &global)) return NULL;
 		if (bc_byte_or_int(c, global, OPrglobb, OPrglob)) return NULL;
 		if (bc_byte_or_int(c, _init->code, OPexecb, OPexec)) return NULL;
@@ -202,13 +202,13 @@ Type* compileFinalize(Compiler* c, Type* result)
 	}
 	bc = bytecodeFinalize(c, 0, c->pkg->start->name);
 	if (!bc) return NULL;
-	defSet(c->pkg->start,PNTTOVAL(bc),VAL_TYPE_PNT);
+	defSet(c->pkg->start,VAL_FROM_PNT(bc),VAL_TYPE_PNT);
 	c->pkg->start->proto = 0;
 //	pkgSetStart(c->pkg, bc);	// function start is the initialisation function.
 
 // HERE YOU CAN get the full pkg description by uncommenting the following line
 
-//	itemDump(LOG_SYS,PNTTOVAL(c->pkg->defs),VAL_TYPE_PNT); getchar();
+//	itemDump(LOG_SYS,VAL_FROM_PNT(c->pkg->defs),VAL_TYPE_PNT); getchar();
 	return result;
 
 }
@@ -228,7 +228,7 @@ Type* compileFun4(Compiler *c, Def* def)
 //	PRINTF(LOG_USER,"----------HANDLE FUN %s\n",defName(def));
 
 	if (funMakerInit(c,&Fmk,NULL,NULL,0,def,def)) return NULL;
-	if (!parserNext(c)) return compileError(c, "Compiler: unexpected end of file\n");
+	if (!parserNext(c)) return compileError(c,"unexpected end of file\n");
 	if (!strcmp(c->parser->token, "@")) {
 		definedType = compilerParseTypeDef(c, 0, &c->fmk->typeLabels);
 		if (!definedType) return NULL;
@@ -261,7 +261,7 @@ Type* compileFun4(Compiler *c, Def* def)
 			}
 			bufferCut(c->bytecode, firstOpcode);
 		}
-		STACKPUSHPNT_ERR(c->th, (LB*)(argType), NULL);
+		STACK_PUSH_PNT_ERR(c->th, (LB*)(argType), NULL);
 		i++;
 	}
 	parserGiveback(c);
@@ -269,7 +269,7 @@ Type* compileFun4(Compiler *c, Def* def)
 
 	// prepare the type structure of the function (fun arg0 arg1 ... argn-1 result)
 	resultType = typeAllocUndef(c->th); if (!resultType) return NULL;
-	TYPEPUSH_NULL(c, resultType);	// push the type of the result
+	TYPE_PUSH_NULL(c, resultType);	// push the type of the result
 	type = typeAllocFromStack(c->th, NULL, TYPECODE_FUN, argc + 1); if (!type) return NULL;
 
 	if (typeUnify(c, type, def->type)) return NULL;
@@ -285,7 +285,7 @@ Type* compileFun4(Compiler *c, Def* def)
 
 	bc=bytecodeFinalize(c, argc, def->name);
 	if (!bc) return NULL;
-	defSet(def,PNTTOVAL(bc),VAL_TYPE_PNT);
+	defSet(def,VAL_FROM_PNT(bc),VAL_TYPE_PNT);
 
 	funMakerRelease(c);
 
@@ -299,13 +299,13 @@ Type* compileFun4(Compiler *c, Def* def)
 Type* compileVarOrConst4(Compiler* c, LINT code, Def* def)
 {
 	LINT global;
-	if (!parserNext(c)) return compileError(c, "Compiler: unexpected end of file\n");
+	if (!parserNext(c)) return compileError(c,"unexpected end of file\n");
 
 	if (!strcmp(c->parser->token, "@")) {
 		Type* t = compilerParseTypeDef(c, 1, &c->fmk->typeLabels);
 		if (!t) return NULL;
 		if (typeUnify(c, def->type, t)) return NULL;
-		if (!parserNext(c)) return compileError(c, "Compiler: unexpected end of file\n");
+		if (!parserNext(c)) return compileError(c,"unexpected end of file\n");
 	}
 	if (!strcmp(c->parser->token, "="))
 	{
@@ -345,15 +345,15 @@ Type* compileRecDefs4(Compiler* c, Def* def)
 			if (bufferAddChar(c->th, c->bytecode, OPdrop)) return NULL;
 			if (!(result = compileVarOrConst4(c, def->code, def)))
 			{
-				if (def->code == DEF_CODE_VAR) return compileError(c, "Compiler: error compiling var '%s'\n", defName(def));
-				return compileError(c, "Compiler: error compiling const '%s'\n", defName(def));
+				if (def->code == DEF_CODE_VAR) return compileError(c,"error compiling var '%s'\n", defName(def));
+				return compileError(c,"error compiling const '%s'\n", defName(def));
 			}
 			parserReset(c);
 		}
 		else if (def->code >= 0) {
 			parserRestoreFromDef(c, def);
 			if (bufferAddChar(c->th, c->bytecode, OPdrop)) return NULL;
-			if (!(result = compileFun4(c, def))) return compileErrorInFunction(c, "Compiler: error compiling function '%s'\n", defName(def));
+			if (!(result = compileFun4(c, def))) return compileErrorInFunction(c, "error compiling function '%s'\n", defName(def));
 			parserReset(c);
 		}
 	}

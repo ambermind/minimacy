@@ -44,7 +44,7 @@ extern Type* TypeTest;
 #define TYPEFIELD_MAIN 0
 #define TYPEFIELD_FIELD 1
 
-#define TYPEPUSH_NULL(c,t) STACKPUSHPNT_ERR((c)->th,(LB*)t,NULL)
+#define TYPE_PUSH_NULL(c,t) STACK_PUSH_PNT_ERR((c)->th,(LB*)t,NULL)
 
 typedef struct TypeLabel TypeLabel;
 

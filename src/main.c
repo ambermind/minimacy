@@ -52,16 +52,16 @@ int start(int argc, char** argv)
 		if ((!strcmp(arg, "-v")) || (!strcmp(arg,"-verbose"))) termSetMask(LOG_ALL);
 	}
 
-	PRINTF(LOG_SYS,"\nMinimacy - Sylvain Huet - 2020-24 - "VERSION_MINIMACY"/"DEVICE_MODE"\n");
-	PRINTF(LOG_SYS,"----\n");
+	PRINTF(LOG_SYS,"\n> Minimacy - Sylvain Huet - 2020-24 - "VERSION_MINIMACY"/"DEVICE_MODE"\n");
+	PRINTF(LOG_SYS,"> ----\n");
 
 //	if (!standalone) termSetMask(LOG_USER);	// disable LOG_SYS
 
-	if ((LWLEN==8)&&(sizeof(LINT)==8)&&(sizeof(LFLOAT)==8)) PRINTF(LOG_SYS,"64 bits\n");
-	else if ((LWLEN==4)&&(sizeof(LINT)==4)&&(sizeof(LFLOAT)==4) && (sizeof(double) == 8)) PRINTF(LOG_SYS,"32 bits\n");
+	if ((LWLEN==8)&&(sizeof(LINT)==8)&&(sizeof(LFLOAT)==8)) PRINTF(LOG_SYS,"> 64 bits\n");
+	else if ((LWLEN==4)&&(sizeof(LINT)==4)&&(sizeof(LFLOAT)==4) && (sizeof(double) == 8)) PRINTF(LOG_SYS,"> 32 bits\n");
 	else
 	{
-		PRINTF(LOG_USER,"wrong system [P:%d I:%d F:%d D:%d]\n",LWLEN,sizeof(LINT),sizeof(LFLOAT),sizeof(double));
+		PRINTF(LOG_USER,"> wrong system [P:%d I:%d F:%d D:%d]\n",LWLEN,sizeof(LINT),sizeof(LFLOAT),sizeof(double));
 		return -1;
 	}
 
@@ -82,7 +82,7 @@ int start(int argc, char** argv)
 		goto cleanup;
 	}
 #ifdef USE_MEMORY_C
-	PRINTF(LOG_SYS,"Allocated memory: %lld bytes\n",MEMORY_C_LENGTH);
+	PRINTF(LOG_SYS,"> Allocated memory: %lld bytes\n",MEMORY_C_LENGTH);
 	cMallocInit();
 #endif
 	fsInit();
@@ -105,16 +105,16 @@ int start(int argc, char** argv)
 cleanup:
 	termEnd();
 
+	PRINTF(LOG_SYS, "> end of line\n");
 #ifdef DBG_MEM
 	MainTerm.mask = LOG_ALL;
-	PRINTF(LOG_SYS, "-------\n");
-	PRINTF(LOG_SYS, "leaks:\n");
+	PRINTF(LOG_SYS, "> -------\n");
+	PRINTF(LOG_SYS, "> leaks:\n");
 	_CrtSetReportMode( _CRT_WARN, _CRTDBG_MODE_FILE );
 	_CrtSetReportFile( _CRT_WARN, _CRTDBG_FILE_STDOUT );
 	_CrtDumpMemoryLeaks();
 #endif
 #ifdef ON_WINDOWS
-	PRINTF(LOG_SYS, "> end of line\n");
 	getchar();
 #endif
 	return 0;

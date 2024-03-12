@@ -15,5 +15,5 @@ Type* compileStep3(Compiler* c)
 	Def* def;
 	//c->nbDerivations counts the structure derivations for this compiling. Therefore it is the maximum length of derivation cycles.
 	for(def= c->pkg->first;def;def=def->next) if (def->proto&&(def->code==DEF_CODE_STRUCT)&&(!compileStructure3(c,def, c->nbDerivations))) return NULL;
-	return MM.I;
+	return MM.Int;
 }

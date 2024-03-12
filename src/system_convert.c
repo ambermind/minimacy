@@ -15,13 +15,13 @@ int fun_strSwap(Thread* th)
 	LINT i,offset;
 	char* dst, * src;
 
-	LB* a = STACKPNT(th, 0);
+	LB* a = STACK_PNT(th, 0);
 	if (!a) FUN_RETURN_NIL;
-	FUN_PUSH_STR( NULL, STRLEN(a));
+	FUN_PUSH_STR( NULL, STR_LENGTH(a));
 
-	dst = STRSTART(STACKPNT(th, 0));
-	src = STRSTART(a);
-	offset = STRLEN(a) - 1;
+	dst = STR_START(STACK_PNT(th, 0));
+	src = STR_START(a);
+	offset = STR_LENGTH(a) - 1;
 	for (i = 0; i <= offset; i++) dst[offset - i] = src[i];
 	return 0;
 }
@@ -31,9 +31,9 @@ int fun_sqlFromStr(Thread* th)
 	LINT finalsize, i;
 	char* dst, * src;
 
-	LB* a = STACKPNT(th, 0);
+	LB* a = STACK_PNT(th, 0);
 	if (!a) FUN_RETURN_NIL;
-	src = STRSTART(a);
+	src = STR_START(a);
 	finalsize = 0;
 	// 0 nul -> \z
 	// 10 \n -> \n
@@ -42,21 +42,21 @@ int fun_sqlFromStr(Thread* th)
 	// 34 " -> \"
 	// 39 ' -> \'
 	// 92 \ -> \\  //
-	for (i = 0; i < STRLEN(a); i++) {
+	for (i = 0; i < STR_LENGTH(a); i++) {
 		char c = src[i];
 		if ((c == 0) || (c == 10) || (c == 13) || (c == 26) || (c == 34) || (c == 39) || (c == 92)) finalsize++;
 	}
 //	if (!finalsize)
 //	{
-//		result = STACKPNT(th, 0);
+//		result = STACK_PNT(th, 0);
 //		FUN_RETURN_NIL;
 //	}
-	finalsize = STRLEN(a) + finalsize+2;
+	finalsize = STR_LENGTH(a) + finalsize+2;
 	FUN_PUSH_STR( NULL, finalsize);
 
-	dst = STRSTART(STACKPNT(th, 0));
+	dst = STR_START(STACK_PNT(th, 0));
 	*(dst++) = 39;
-	for (i = 0; i < STRLEN(a); i++) {
+	for (i = 0; i < STR_LENGTH(a); i++) {
 		char c = src[i];
 		if ((c == 0) || (c == 10) || (c == 13) || (c == 26))
 		{
@@ -81,22 +81,22 @@ int fun_urlFromStr(Thread* th)
 	LINT finalsize, spaces, i;
 	char* dst, * src;
 	
-	LB* a = STACKPNT(th, 0);
+	LB* a = STACK_PNT(th, 0);
 	if (!a) FUN_RETURN_NIL;
-	src = STRSTART(a);
+	src = STR_START(a);
 	finalsize = 0;
 	spaces = 0;
-	for (i = 0; i < STRLEN(a); i++) if (!isletnum(src[i]))
+	for (i = 0; i < STR_LENGTH(a); i++) if (!isletnum(src[i]))
 	{
 		if (src[i] == ' ') spaces++;
 		else finalsize++;
 	}
 	if ((!spaces) && (!finalsize)) return 0;
-	finalsize = STRLEN(a) + finalsize * 2;
+	finalsize = STR_LENGTH(a) + finalsize * 2;
 	FUN_PUSH_STR( NULL, finalsize);
 
-	dst = STRSTART(STACKPNT(th, 0));
-	for (i = 0; i < STRLEN(a); i++) if (src[i] == ' ') *(dst++) = '+';
+	dst = STR_START(STACK_PNT(th, 0));
+	for (i = 0; i < STR_LENGTH(a); i++) if (src[i] == ' ') *(dst++) = '+';
 	else if (isletnum(src[i])) *(dst++) = src[i];
 	else
 	{
@@ -112,24 +112,24 @@ int fun_strFromUrl(Thread* th)
 	LINT finalsize, spaces, i;
 	char* dst, * src;
 
-	LB* a = STACKPNT(th, 0);
+	LB* a = STACK_PNT(th, 0);
 	if (!a) FUN_RETURN_NIL;
-	src = STRSTART(a);
+	src = STR_START(a);
 	finalsize = 0;
 	spaces = 0;
-	for (i = 0; i < STRLEN(a); i++)
+	for (i = 0; i < STR_LENGTH(a); i++)
 		if (src[i] == '+') spaces++;
-		else if ((src[i] == '%') && (i + 2 < STRLEN(a)))
+		else if ((src[i] == '%') && (i + 2 < STR_LENGTH(a)))
 		{
 			finalsize++;
 			i += 2;
 		}
 	if ((!spaces) && (!finalsize)) return 0;
-	finalsize = STRLEN(a) - finalsize * 2;
+	finalsize = STR_LENGTH(a) - finalsize * 2;
 	FUN_PUSH_STR( NULL, finalsize);
-	dst = STRSTART(STACKPNT(th, 0));
-	for (i = 0; i < STRLEN(a); i++)
-		if ((src[i] == '%') && (i + 2 < STRLEN(a)))
+	dst = STR_START(STACK_PNT(th, 0));
+	for (i = 0; i < STR_LENGTH(a); i++)
+		if ((src[i] == '%') && (i + 2 < STR_LENGTH(a)))
 		{
 			*(dst++) = (htoc(src[i + 1]) << 4) + htoc(src[i + 2]);
 			i += 2;
@@ -144,13 +144,13 @@ int fun_strFromHex(Thread* th)
 	LINT i, len, start, k;
 	char *p, * q;
 
-	LB* a = STACKPNT(th, 0);
+	LB* a = STACK_PNT(th, 0);
 	if (!a) FUN_RETURN_NIL;
-	len = STRLEN(a);
+	len = STR_LENGTH(a);
 	start = len & 1;
 	FUN_PUSH_STR( NULL, (len + start) >> 1);
-	p = STRSTART(a);
-	q = STRSTART(STACKPNT(th, 0));
+	p = STR_START(a);
+	q = STR_START(STACK_PNT(th, 0));
 	k = 0;
 	for (i = start; i < len + start; i++)
 	{
@@ -165,11 +165,11 @@ int fun_hexFilter(Thread* th)
 	LINT i, len, lenFilter;
 	char *p, * q;
 
-	LB* a = STACKPNT(th, 0);
+	LB* a = STACK_PNT(th, 0);
 	if (!a) FUN_RETURN_NIL;
-	len = STRLEN(a);
+	len = STR_LENGTH(a);
 	lenFilter = 0;
-	p = STRSTART(a);
+	p = STR_START(a);
 	for (i = 0; i < len; i++)
 	{
 		int c = p[i];
@@ -182,7 +182,7 @@ int fun_hexFilter(Thread* th)
 	if (lenFilter == len) return 0;
 	
 	FUN_PUSH_STR( NULL, lenFilter);
-	q = STRSTART(STACKPNT(th, 0));
+	q = STR_START(STACK_PNT(th, 0));
 	for (i = 0; i < len; i++)
 	{
 		int c = p[i];
@@ -199,12 +199,12 @@ int fun_hexFromBin(Thread* th)
 	LINT i, len;
 	char *p, * q;
 
-	LB* a = STACKPNT(th, 0);
+	LB* a = STACK_PNT(th, 0);
 	if (!a) FUN_RETURN_NIL;
-	len = STRLEN(a);
+	len = STR_LENGTH(a);
 	FUN_PUSH_STR( NULL, len * 2);
-	p = STRSTART(a);
-	q = STRSTART(STACKPNT(th, 0));
+	p = STR_START(a);
+	q = STR_START(STACK_PNT(th, 0));
 	for (i = 0; i < len; i++)
 	{
 		LINT c = *(p++);
@@ -218,9 +218,9 @@ int fun_hexFromBin(Thread* th)
 int fun_floatFromStr(Thread* th)
 {
 	LFLOAT f;
-	LB* a = STACKPNT(th, 0);
+	LB* a = STACK_PNT(th, 0);
 	if (!a) FUN_RETURN_NIL;
-	f = ls_atof(STRSTART(a));
+	f = ls_atof(STR_START(a));
 	FUN_RETURN_FLOAT(f);
 }
 int fun_strFromFloat(Thread* th)
@@ -228,8 +228,8 @@ int fun_strFromFloat(Thread* th)
 	LFLOAT g;
 	LINT i;
 	char buf[32];
-	LFLOAT f = STACKFLOAT(th, 0);
-	if (STACKISNIL(th,0)) FUN_RETURN_NIL;
+	LFLOAT f = STACK_FLOAT(th, 0);
+	if (STACK_IS_NIL(th,0)) FUN_RETURN_NIL;
 	i = (LINT)f;
 	g = (LFLOAT)i;
 	if (g == f) snprintf(buf, 32, LSD, i);
@@ -240,15 +240,15 @@ int fun_strFromFloat(Thread* th)
 
 int fun_intFromDec(Thread* th)
 {
-	LB* a = STACKPNT(th, 0);
+	LB* a = STACK_PNT(th, 0);
 	if (!a) FUN_RETURN_NIL;
-	FUN_RETURN_INT(ls_atoi(STRSTART(a), 0));
+	FUN_RETURN_INT(ls_atoi(STR_START(a), 0));
 }
 int fun_decFromInt(Thread* th)
 {
 	char buf[32];
-	LINT a = STACKINT(th, 0);
-	if (STACKISNIL(th,0)) FUN_RETURN_NIL;
+	LINT a = STACK_INT(th, 0);
+	if (STACK_IS_NIL(th,0)) FUN_RETURN_NIL;
 	snprintf(buf, 32, LSD, a);
 	FUN_PUSH_STR( buf, strlen(buf));
 	return 0;
@@ -258,24 +258,24 @@ int fun_strFloat(Thread* th)
 {
 	double d;
 
-	LFLOAT f = STACKFLOAT(th, 0);
-	if (STACKISNIL(th, 0)) FUN_RETURN_NIL;
+	LFLOAT f = STACK_FLOAT(th, 0);
+	if (STACK_IS_NIL(th, 0)) FUN_RETURN_NIL;
 	d = (double)f;
 	FUN_RETURN_STR((char*)&d, sizeof(double));
 }
 
 int fun_intFromHex(Thread* th)
 {
-	LB* a = STACKPNT(th, 0);
+	LB* a = STACK_PNT(th, 0);
 	if (!a) FUN_RETURN_NIL;
-	FUN_RETURN_INT(ls_htoi(STRSTART(a)));
+	FUN_RETURN_INT(ls_htoi(STR_START(a)));
 }
 
 int fun_hexFromInt(Thread* th)
 {
 	char buf[20];
-	LINT a = STACKINT(th, 0);
-	if (STACKISNIL(th,0)) FUN_RETURN_NIL;
+	LINT a = STACK_INT(th, 0);
+	if (STACK_IS_NIL(th,0)) FUN_RETURN_NIL;
 	snprintf(buf, 20, LSX, a);
 	FUN_PUSH_STR( buf, strlen(buf));
 	return 0;
@@ -283,20 +283,20 @@ int fun_hexFromInt(Thread* th)
 
 int fun_isU8(Thread* th)
 {
-	LB* a = STACKPNT(th, 0);
+	LB* a = STACK_PNT(th, 0);
 	if (!a) FUN_RETURN_NIL;
-	STACKSETBOOL(th, 0, isU8(STRSTART(a),STRLEN(a)));
+	STACK_SET_BOOL(th, 0, isU8(STR_START(a),STR_LENGTH(a)));
 	return 0;
 }
 int fun_strLengthU8(Thread* th)
 {
-	LB* a = STACKPNT(th, 0);
-	FUN_RETURN_INT(a?stringLengthU8(STRSTART(a), STRLEN(a)):0);
+	LB* a = STACK_PNT(th, 0);
+	FUN_RETURN_INT(a?stringLengthU8(STR_START(a), STR_LENGTH(a)):0);
 }
 int fun_strLengthU16(Thread* th)
 {
-	LB* a = (STACKPNT(th, 0));
-	FUN_RETURN_INT(a?stringLengthU16(STRSTART(a), STRLEN(a)):0);
+	LB* a = (STACK_PNT(th, 0));
+	FUN_RETURN_INT(a?stringLengthU16(STR_START(a), STR_LENGTH(a)):0);
 }
 
 
@@ -304,10 +304,10 @@ int fun_strLengthU16(Thread* th)
 int name(Thread* th) \
 { \
 	int k; \
-	LB* a = STACKPNT(th, 0); \
+	LB* a = STACK_PNT(th, 0); \
 	if (!a) FUN_RETURN_NIL; \
-	if (keepSame(STRSTART(a), STRLEN(a))) return 0; \
-	k = convert(th, MM.tmpBuffer, STRSTART(a), STRLEN(a)); if (k == EXEC_OM) return k; \
+	if (keepSame(STR_START(a), STR_LENGTH(a))) return 0; \
+	k = convert(th, MM.tmpBuffer, STR_START(a), STR_LENGTH(a)); if (k == EXEC_OM) return k; \
 	if (k) FUN_RETURN_NIL; \
 	FUN_RETURN_BUFFER(MM.tmpBuffer);	\
 }
@@ -376,13 +376,13 @@ STR_CONVERT(fun_strUnaccentedU16Be, strUnaccentedU16Be, keepSameNever)
 
 int coreConvertInit(Thread* th, Pkg *system)
 {
-	Type* fun_S_I = typeAlloc(th, TYPECODE_FUN, NULL, 2, MM.S, MM.I);
-	Type* fun_S_F = typeAlloc(th, TYPECODE_FUN, NULL, 2, MM.S, MM.F);
-	Type* fun_F_S = typeAlloc(th, TYPECODE_FUN, NULL, 2, MM.F, MM.S);
-	Type* fun_I_S = typeAlloc(th, TYPECODE_FUN, NULL, 2, MM.I, MM.S);
-	Type* fun_S_S = typeAlloc(th, TYPECODE_FUN, NULL, 2, MM.S, MM.S);
-	Type* fun_S_Bytes = typeAlloc(th, TYPECODE_FUN, NULL, 2, MM.S, MM.Bytes);
-	Type* fun_S_B = typeAlloc(th, TYPECODE_FUN, NULL, 2, MM.S, MM.Boolean);
+	Type* fun_S_I = typeAlloc(th, TYPECODE_FUN, NULL, 2, MM.Str, MM.Int);
+	Type* fun_S_F = typeAlloc(th, TYPECODE_FUN, NULL, 2, MM.Str, MM.Float);
+	Type* fun_F_S = typeAlloc(th, TYPECODE_FUN, NULL, 2, MM.Float, MM.Str);
+	Type* fun_I_S = typeAlloc(th, TYPECODE_FUN, NULL, 2, MM.Int, MM.Str);
+	Type* fun_S_S = typeAlloc(th, TYPECODE_FUN, NULL, 2, MM.Str, MM.Str);
+	Type* fun_S_Bytes = typeAlloc(th, TYPECODE_FUN, NULL, 2, MM.Str, MM.Bytes);
+	Type* fun_S_B = typeAlloc(th, TYPECODE_FUN, NULL, 2, MM.Str, MM.Boolean);
 
 	pkgAddFun(th, system, "strSwap", fun_strSwap, fun_S_S);
 	pkgAddFun(th, system, "bytesSwapStr", fun_strSwap, fun_S_Bytes);

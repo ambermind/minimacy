@@ -116,16 +116,16 @@ LB* fsReadPackage(Thread* th, char* pkg, int* size, int verbose)
 	LB* result;
 	while (l)
 	{
-		LB* partition = TABPNT(l, 0);
+		LB* partition = ARRAY_PNT(l, 0);
 		if (partition) {
-			LB* type = TABPNT(partition, 0);
-			LINT index = TABINT(partition, 1);
-			LB* physicalPath = TABPNT(partition, 2);
+			LB* type = ARRAY_PNT(partition, 0);
+			LINT index = ARRAY_INT(partition, 1);
+			LB* physicalPath = ARRAY_PNT(partition, 2);
 			if (physicalPath) {
-				if ((result = _fsReadPackage(th, type, index, STRSTART(physicalPath), pkg, size, verbose))) return result;
+				if ((result = _fsReadPackage(th, type, index, STR_START(physicalPath), pkg, size, verbose))) return result;
 			}
 		}
-		l = TABPNT(l, 1);
+		l = ARRAY_PNT(l, 1);
 	}
 	return NULL;
 }
@@ -136,7 +136,7 @@ int _volumeList(Thread* th, char* name, LB* type, LINT index, int writable)
 	FUN_PUSH_PNT(type);
 	FUN_PUSH_INT(index);
 	FUN_PUSH_BOOL(writable);
-	FUN_MAKE_TABLE(4, DBG_TUPLE);
+	FUN_MAKE_ARRAY(4, DBG_TUPLE);
 	return 0;
 }
 int volumeList(Thread* th)
@@ -150,18 +150,18 @@ int volumeList(Thread* th)
 #endif
 	if (romdiskVolumeList(th, &n)) return EXEC_OM;
 	FUN_PUSH_NIL;
-	while (n--) FUN_MAKE_TABLE(LIST_LENGTH, DBG_LIST);
+	while (n--) FUN_MAKE_ARRAY(LIST_LENGTH, DBG_LIST);
 	return 0;
 }
 int _partitionAdd(LB* type, LINT index, char* physicalPath)
 {
-	STACKPUSHPNT_ERR(MM.tmpStack,type,EXEC_OM);
-	STACKPUSHINT_ERR(MM.tmpStack, index, EXEC_OM);
-	STACKPUSHSTR_ERR(MM.tmpStack, physicalPath, -1, EXEC_OM);
-	STACKMAKETABLE_ERR(MM.tmpStack, 3, DBG_TUPLE, EXEC_OM);
-	STACKPUSHPNT_ERR(MM.tmpStack, MM.partitionsFS, EXEC_OM);
-	STACKMAKETABLE_ERR(MM.tmpStack, 2, DBG_TUPLE, EXEC_OM);
-	MM.partitionsFS = STACKPULLPNT(MM.tmpStack);
+	STACK_PUSH_PNT_ERR(MM.tmpStack,type,EXEC_OM);
+	STACK_PUSH_INT_ERR(MM.tmpStack, index, EXEC_OM);
+	STACK_PUSH_STR_ERR(MM.tmpStack, physicalPath, -1, EXEC_OM);
+	STACK_PUSH_FILLED_ARRAY_ERR(MM.tmpStack, 3, DBG_TUPLE, EXEC_OM);
+	STACK_PUSH_PNT_ERR(MM.tmpStack, MM.partitionsFS, EXEC_OM);
+	STACK_PUSH_FILLED_ARRAY_ERR(MM.tmpStack, 2, DBG_TUPLE, EXEC_OM);
+	MM.partitionsFS = STACK_PULL_PNT(MM.tmpStack);
 	return 0;
 }
 char* fsCurrentDir(void) {
@@ -197,8 +197,8 @@ void fsInit()
 	strcpy(UserDir, "");
 	systemUserDir(UserDir, MAX_PATH);
 	systemCurrentDir(CurrentDir, MAX_PATH);
-	PRINTF(LOG_SYS, "Current working directory: %s\n", CurrentDir);
-	PRINTF(LOG_SYS, "Default user directory   : %s\n", UserDir);
+	PRINTF(LOG_SYS, "> Current working directory: %s\n", CurrentDir);
+	PRINTF(LOG_SYS, "> Default user directory   : %s\n", UserDir);
 
 }
 

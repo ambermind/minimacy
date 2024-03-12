@@ -680,7 +680,7 @@ void idct88(LB* array)
 			LFLOAT val = 0;
 			for (k = 0; k < 8; k++)
 			{
-				val += TABFLOAT(array, k + j * 8)* IDCT88[i + k * 8];
+				val += ARRAY_FLOAT(array, k + j * 8)* IDCT88[i + k * 8];
 			}
 			tmp[i + j * 8] = val;
 		}
@@ -692,7 +692,7 @@ void idct88(LB* array)
 			{
 				val += IDCT88[j + k * 8] * tmp[i + k * 8];
 			}
-			TABSETFLOAT(array,i + j * 8, val);
+			ARRAY_SET_FLOAT(array,i + j * 8, val);
 		}
 }
 void dct88(LB* array)
@@ -706,7 +706,7 @@ void dct88(LB* array)
 			LFLOAT val = 0;
 			for (k = 0; k < 8; k++)
 			{
-				val += TABFLOAT(array, k + j * 8) * IDCT88[k + i * 8];
+				val += ARRAY_FLOAT(array, k + j * 8) * IDCT88[k + i * 8];
 			}
 			tmp[i + j * 8] = val;
 		}
@@ -718,6 +718,6 @@ void dct88(LB* array)
 			{
 				val += IDCT88[k + j * 8] * tmp[i + k * 8];
 			}
-			TABSETFLOAT(array, i + j * 8, val);
+			ARRAY_SET_FLOAT(array, i + j * 8, val);
 		}
 }

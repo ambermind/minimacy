@@ -16,11 +16,11 @@ Def* compileParseDef(Compiler* c, char* what)
 	Def* def;
 	if ((!parserNext(c)) || (!islabel(c->parser->token)))
 	{
-		compileError(c, "Compiler: %s expected (found '%s')\n", what, compileToken(c));
+		compileError(c,"%s expected (found '%s')\n", what, compileToken(c));
 		return NULL;
 	}
 	def = pkgFirstGet(c->pkg, compileToken(c));
-	if (!def) compileError(c, "Compiler: cannot find prototype of '%s'\n", compileToken(c));
+	if (!def) compileError(c,"cannot find prototype of '%s'\n", compileToken(c));
 	return def;
 }
 
@@ -35,14 +35,14 @@ LINT compileTypeParams(Compiler* c, Locals** labels)
 		{
 			if ((!parserNext(c)) || !islabel(c->parser->token))
 			{
-				compileError(c, "Compiler: parameter or '}' expected (found '%s')\n", compileToken(c));
+				compileError(c,"parameter or '}' expected (found '%s')\n", compileToken(c));
 				return -1;
 			}
 			lb = localsCreate(c->th, c->parser->token, 0, NULL, lb); if (!lb) return -1;
 			n++;
 			if (!parserNext(c))
 			{
-				compileError(c, "Compiler: parameter or '}' expected (found '%s')\n", compileToken(c));
+				compileError(c,"parameter or '}' expected (found '%s')\n", compileToken(c));
 				return -1;
 			}
 			if (!strcmp(c->parser->token, "}")) break;
@@ -63,7 +63,7 @@ Type* compileType2(Compiler* c, Def* typeDef,char* separator,int sum)
 	LINT n = compileTypeParams(c, &labels);
 	if (n < 0) return NULL;
 	// the following test may fail only for extend
-	if (n != typeType->nb) return compileError(c, "Compiler: type mismatch (%d parameters while expecting %d)\n", n, typeType->nb);
+	if (n != typeType->nb) return compileError(c,"type mismatch (%d parameters while expecting %d)\n", n, typeType->nb);
 
 	for (tmp = labels; tmp; tmp = tmp->next) tmp->type = typeType->child[--n];
 
@@ -84,23 +84,23 @@ Type* compileRecDefs2(Compiler* c, Def* def)
 		if (def->code == DEF_CODE_SUM)
 		{
 			parserRestoreFromDef(c, def);
-			if (!compileType2(c, def, "=", 1)) return compileError(c, "Compiler: error compiling type '%s'\n", defName(def));
+			if (!compileType2(c, def, "=", 1)) return compileError(c,"error compiling type '%s'\n", defName(def));
 			parserReset(c);
 		}
 		else if (def->code == DEF_CODE_STRUCT)
 		{
 			parserRestoreFromDef(c, def);
-			if (!compileType2(c, def, "=", 0)) return compileError(c, "Compiler: error compiling type '%s'\n", defName(def));
+			if (!compileType2(c, def, "=", 0)) return compileError(c,"error compiling type '%s'\n", defName(def));
 			parserReset(c);
 		}
 		else if (def->code == DEF_CODE_EXTEND)
 		{
 			parserRestoreFromDef(c, def);
-			if (!parserNext(c)) return compileError(c, "Compiler: uncomplete extend definition (found EOF)\n");
+			if (!parserNext(c)) return compileError(c,"uncomplete extend definition (found EOF)\n");
 			def = compileGetDef(c);
 
-			if ((!def) || (def->code != DEF_CODE_SUM)) return compileError(c, "Compiler: '%s' is not a sum type\n", compileToken(c));
-			if (!compileType2(c, def, "with", 1)) return compileError(c, "Compiler: error compiling type '%s'\n", defName(def));
+			if ((!def) || (def->code != DEF_CODE_SUM)) return compileError(c,"'%s' is not a sum type\n", compileToken(c));
+			if (!compileType2(c, def, "with", 1)) return compileError(c,"error compiling type '%s'\n", defName(def));
 			parserReset(c);
 		}
 	}

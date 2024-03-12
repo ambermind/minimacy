@@ -267,7 +267,7 @@ int fun_lzwCreate(Thread* th)
 {
 	Dict* d;
 
-	LINT dataBitSize = STACKPULLINT(th);
+	LINT dataBitSize = STACK_PULL_INT(th);
 	if ((dataBitSize<0)||(dataBitSize> MAX_BIT_LENGTH)) FUN_RETURN_NIL;
 	if (dataBitSize == 0) dataBitSize = 8;
 	d = (Dict*)memoryAllocExt(th, sizeof(Dict), DBG_BIN, NULL, NULL); if (!d) return EXEC_OM;
@@ -279,12 +279,12 @@ int fun_lzwCreate(Thread* th)
 
 MTHREAD_START _lzwDeflate(Thread* th)
 {
-	int lenIsNil = STACKISNIL(th,0);
-	LINT len = STACKINT(th, 0);
-	LINT index = STACKINT(th, 1);
-	LB* src = STACKPNT(th, 2);
-	Buffer* b = (Buffer*)STACKPNT(th, 3);
-	Dict* d = (Dict*)STACKPNT(th, 4);
+	int lenIsNil = STACK_IS_NIL(th,0);
+	LINT len = STACK_INT(th, 0);
+	LINT index = STACK_INT(th, 1);
+	LB* src = STACK_PNT(th, 2);
+	Buffer* b = (Buffer*)STACK_PNT(th, 3);
+	Dict* d = (Dict*)STACK_PNT(th, 4);
 	if ((!b)||(!d)||(d->done!= LZW_ONGOING)) return workerDoneNil(th);
 	d->th = th;
 	d->output = b;
@@ -292,8 +292,8 @@ MTHREAD_START _lzwDeflate(Thread* th)
 	{
 		char* p;
 		LINT i;
-		WORKER_SUBSTR(src, index, len, lenIsNil, STRLEN(src));
-		p = STRSTART(src) + index;
+		WORKER_SUBSTR(src, index, len, lenIsNil, STR_LENGTH(src));
+		p = STR_START(src) + index;
 		for (i = 0; i < len; i++) _lzwEncodeChar(d, p[i]);
 	}
 	else
@@ -308,17 +308,17 @@ int fun_lzwDeflate(Thread* th) { return workerStart(th, 5, _lzwDeflate); }
 
 MTHREAD_START _lzwInflate(Thread* th)
 {
-	int lenIsNil = STACKISNIL(th,0);
-	LINT len = STACKINT(th, 0);
-	LINT index = STACKINT(th, 1);
-	LB* src = STACKPNT(th, 2);
-	Buffer* b = (Buffer*)STACKPNT(th, 3);
-	Dict* d = (Dict*)STACKPNT(th, 4);
+	int lenIsNil = STACK_IS_NIL(th,0);
+	LINT len = STACK_INT(th, 0);
+	LINT index = STACK_INT(th, 1);
+	LB* src = STACK_PNT(th, 2);
+	Buffer* b = (Buffer*)STACK_PNT(th, 3);
+	Dict* d = (Dict*)STACK_PNT(th, 4);
 	if ((!b)||(!d)||(d->done!= LZW_ONGOING)) return workerDoneNil(th);
 	d->th = th;
 	d->output = b;
-	WORKER_SUBSTR(src, index, len, lenIsNil, STRLEN(src));
-	_lzwDecodeStream(d, STRSTART(src) + index, len);
+	WORKER_SUBSTR(src, index, len, lenIsNil, STR_LENGTH(src));
+	_lzwDecodeStream(d, STR_START(src) + index, len);
 	if (d->done == LZW_DONE) return workerDonePnt(th, MM._true);
 	if (d->done == LZW_ERR) return workerDonePnt(th, MM._false);
 	return workerDoneNil(th);
@@ -328,9 +328,9 @@ int fun_lzwInflate(Thread* th) { return workerStart(th, 5, _lzwInflate); }
 int coreLzwInit(Thread* th, Pkg* system)
 {
 	Def* Lzw = pkgAddType(th, system, "_Lzw");
-	Type* fun_I_Lzw = typeAlloc(th, TYPECODE_FUN, NULL, 2, MM.I, Lzw->type);
+	Type* fun_I_Lzw = typeAlloc(th, TYPECODE_FUN, NULL, 2, MM.Int, Lzw->type);
 	Type* fun_Lzw_Buf_S_I_I_B = typeAlloc(th, TYPECODE_FUN, NULL, 6,
-		Lzw->type, MM.Buffer, MM.S, MM.I, MM.I, MM.Boolean);
+		Lzw->type, MM.Buffer, MM.Str, MM.Int, MM.Int, MM.Boolean);
 
 	pkgAddFun(th, system, "_lzwCreate", fun_lzwCreate, fun_I_Lzw);
 	pkgAddFun(th, system, "_lzwDeflate", fun_lzwDeflate, fun_Lzw_Buf_S_I_I_B);

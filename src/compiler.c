@@ -44,6 +44,7 @@ Type* compileError(Compiler* c, char *format, ...)
 	if (c->displayed) return NULL;
 	if (compileDisplay(LOG_USER,c)) return NULL;
 	PRINTF(LOG_USER,"\n");
+	PRINTF(LOG_USER,"> Compiler error: ");
 	va_start(arglist, format);
 	termPrintfv(LOG_USER, format, arglist);
 	va_end(arglist);
@@ -56,6 +57,7 @@ Type* compileErrorInFunction(Compiler* c, char* format, ...)
 	PRINTF(LOG_USER, "\n");
 	if (!c->pkg->forPrompt)	//we do not print this error when the error is in a prompt, because it would display: Error compiling function '_init'
 	{
+		PRINTF(LOG_USER,"> Compiler error: ");
 		va_start(arglist, format);
 		termPrintfv(LOG_USER, format, arglist);
 		va_end(arglist);
@@ -89,7 +91,7 @@ Type* compile(Compiler* c,LB* src,Pkg* pkg,Type* expectedType)
 	t0 = hwTimeMs();
 
 //	PRINTF(LOG_USER, "> compiling in package '%s'\n",pkgName(pkg));
-	if (parserFromData(c, pkgName(c->pkg), STRSTART(src))) return NULL;
+	if (parserFromData(c, pkgName(c->pkg), STR_START(src))) return NULL;
 
 	pkgRemoveDef(pkgGet(c->pkg, "_init", 0));
 	def0 = pkg->first;
@@ -120,11 +122,11 @@ Type* compile(Compiler* c,LB* src,Pkg* pkg,Type* expectedType)
 	if (!result)
 	{
 		pkg->importList = importsBefore;
-		MEMORYMARK((LB*)pkg, importsBefore);
+		MEMORY_MARK((LB*)pkg, importsBefore);
 		if (c->pkg->forPrompt) pkgCleanCompileError();
 		while (pkg->first && (pkg->first != def0)) pkgRemoveDef(pkg->first);
 		parserRestorechar(c);
-		if (c->parser && (c->displayed<2) && !weakError) termEchoSourceLine(c->pkg, c->th, LOG_USER, c->parser->name?STRSTART(c->parser->name):NULL, c->parser->src, c->parser->index0);
+		if (c->parser && (c->displayed<2) && !weakError) termEchoSourceLine(c->pkg, c->th, LOG_USER, c->parser->name?STR_START(c->parser->name):NULL, c->parser->src, c->parser->index0);
 	}
 	else
 	{
@@ -136,7 +138,7 @@ Type* compile(Compiler* c,LB* src,Pkg* pkg,Type* expectedType)
 #endif
 	}
 	c->pkg->forPrompt = 1;
-//	itemDump(c->th, LOG_USER, PNTTOVAL(c->exports), 0);
+//	itemDump(c->th, LOG_USER, VAL_FROM_PNT(c->exports), 0);
 	memoryLeaveFast();
 	return result;
 }
@@ -153,10 +155,10 @@ int promptOnThread(Thread* th)
 	Compiler c;
 	Type* result;
 
-	LINT def=STACKREF(th)-2;
-	LB* src = STACKPNT(th, 2);
-	Pkg* pkg=(Pkg*)STACKPNT(th,1);
-	Type* type = (Type*)STACKPNT(th, 0);
+	LINT def=STACK_REF_(th)-2;
+	LB* src = STACK_PNT(th, 2);
+	Pkg* pkg=(Pkg*)STACK_PNT(th,1);
+	Type* type = (Type*)STACK_PNT(th, 0);
 	MM.OM = 0;
 	if (!src) goto cleanup;
 
@@ -164,17 +166,17 @@ int promptOnThread(Thread* th)
 
 	if (!(result=compile(&c,src,pkg,type))) goto cleanup;
 
-	STACKDROPN(th, 3);
+	STACK_DROPN(th, 3);
 	FUN_PUSH_PNT((LB*)(result));
-	FUN_PUSH_PNT( VALTOPNT(pkg->start->val));
+	FUN_PUSH_PNT( PNT_FROM_VAL(pkg->start->val));
 
-//	STACKSKIP(th,3);
+//	STACK_SKIP(th,3);
 	return 0;
 
 cleanup:
 	if (th->OM) return EXEC_OM;
-	while(def!=STACKREF(th)) STACKDROP(th);
-	STACKSETNIL(th,0);
+	while(def!=STACK_REF_(th)) STACK_DROP(th);
+	STACK_SET_NIL(th,0);
 	FUN_PUSH_NIL;
 	return 0;
 
@@ -189,6 +191,6 @@ int compilePromptAndRun(Thread* th)
 	interpreterExec(th,0,0);
 	interpreterRun(th,0);
 
-	STACKDROPN(th,2);
+	STACK_DROPN(th,2);
 	return 0;
 }

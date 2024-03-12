@@ -70,7 +70,7 @@ void* myWglGetProcAddress(char* name)
 {
 	void* ad = wglGetProcAddress(name);
 	//	PRINTF(LOG_DEV,"wglGetProcAddress %s -> %llx", name, ad);
-	if (!ad) PRINTF(LOG_SYS, "cannot locate %s\n", name);
+	if (!ad) PRINTF(LOG_SYS, ">Error: cannot locate %s\n", name);
 	return ad;
 }
 
@@ -459,17 +459,17 @@ MTHREAD_START _uiStart(Thread* th)
 	RECT r;
 	int typeStyle;
 
-	LB* p = STACKPNT(th, 0);
-	LINT type = STACKINT(th, 1);
-	r.bottom = (LONG)STACKINT(th, 2);
-	r.right = (LONG)STACKINT(th, 3);
-	yIsNil= STACKISNIL(th, 4);
-	y = STACKINT(th, 4);
-	xIsNil= STACKISNIL(th, 5);
-	x = STACKINT(th, 5);
+	LB* p = STACK_PNT(th, 0);
+	LINT type = STACK_INT(th, 1);
+	r.bottom = (LONG)STACK_INT(th, 2);
+	r.right = (LONG)STACK_INT(th, 3);
+	yIsNil= STACK_IS_NIL(th, 4);
+	y = STACK_INT(th, 4);
+	xIsNil= STACK_IS_NIL(th, 5);
+	x = STACK_INT(th, 5);
 
 	if (!p) name = "Minimacy";
-	else name = STRSTART(p);
+	else name = STR_START(p);
 
 	UI.type = (int)type;
 	typeStyle= UI.type & UI_TYPE_MASK;
@@ -525,8 +525,8 @@ int fun_uiResize(Thread* th)
 	RECT r;
 	LINT y, x;
 
-	LINT h = STACKINT(th, 0);
-	LINT w = STACKINT(th, 1);
+	LINT h = STACK_INT(th, 0);
+	LINT w = STACK_INT(th, 1);
 	if (!UI.win) FUN_RETURN_NIL;
 
 	wnd.length = sizeof(WINDOWPLACEMENT);
@@ -590,9 +590,9 @@ int fun_screenH(Thread* th)
 
 int fun_uiSetTitle(Thread* th)
 {
-	LB* name = STACKPNT(th, 0);
+	LB* name = STACK_PNT(th, 0);
 	if ((!name) || (!UI.win)) FUN_RETURN_NIL;
-	SetWindowText(UI.win, STRSTART(name));
+	SetWindowText(UI.win, STR_START(name));
 	return 0;
 }
 
@@ -611,13 +611,13 @@ int fun_clipboardCopy(Thread* th)
 	LINT len;
 	HANDLE hdata;
 	char* lpdata;
-	LB* data = STACKPNT(th, 0);
+	LB* data = STACK_PNT(th, 0);
 	if (!data) return 0;
-	len = STRLEN(data);
+	len = STR_LENGTH(data);
 	if ((hdata = GlobalAlloc(GMEM_DDESHARE, sizeof(char) * (len + 1))) &&
 		(lpdata = (char*)GlobalLock(hdata)))
 	{
-		memcpy(lpdata, STRSTART(data), sizeof(char) * (len + 1));
+		memcpy(lpdata, STR_START(data), sizeof(char) * (len + 1));
 		GlobalUnlock(hdata);
 
 		if (OpenClipboard(NULL))
@@ -667,7 +667,7 @@ int fun_uiDrop(Thread* th)
 
 		int len = DragQueryFile(UI.hdrop, i, NULL, 0);
 		FUN_PUSH_STR( NULL, len + 1);
-		fileName = STRSTART(STACKPNT(th, 0));
+		fileName = STR_START(STACK_PNT(th, 0));
 
 		DragQueryFile(UI.hdrop, i, fileName + 1, len + 1);
 		h = _findfirst(fileName+1, &fileinfo);
@@ -678,10 +678,10 @@ int fun_uiDrop(Thread* th)
 			nbReturnedFiles++;
 			_findclose(h);
 		}
-		else STACKDROP(th);
+		else STACK_DROP(th);
 	}
 	FUN_PUSH_NIL;
-	while ((nbReturnedFiles--) > 0) FUN_MAKE_TABLE( LIST_LENGTH, DBG_LIST);
+	while ((nbReturnedFiles--) > 0) FUN_MAKE_ARRAY( LIST_LENGTH, DBG_LIST);
 	DragFinish(UI.hdrop);
 	UI.hdrop = NULL;
 	return 0;
@@ -708,7 +708,7 @@ int fun_cursorSize(Thread* th)
 {
 	FUN_PUSH_INT(GetSystemMetrics(SM_CXCURSOR));
 	FUN_PUSH_INT(GetSystemMetrics(SM_CYCURSOR));
-	FUN_MAKE_TABLE( 2, DBG_TUPLE);
+	FUN_MAKE_ARRAY( 2, DBG_TUPLE);
 	return 0;
 }
 
@@ -721,9 +721,9 @@ int fun_cursorCreate(Thread* th)
 	char tand[32 * 4*4];	// up to 64x64
 	char txor[32 * 4*4];
 
-	LINT yhot = STACKINT(th, 0);
-	LINT xhot = STACKINT(th, 1);
-	LBitmap* bmp = (LBitmap*)STACKPNT(th, 2);
+	LINT yhot = STACK_INT(th, 0);
+	LINT xhot = STACK_INT(th, 1);
+	LBitmap* bmp = (LBitmap*)STACK_PNT(th, 2);
 	if ((!bmp)||(!UI.win)) FUN_RETURN_NIL;	// on X11 we need a window before creating the cursor
 
 	w = GetSystemMetrics(SM_CXCURSOR);
@@ -754,7 +754,7 @@ int fun_cursorShow(Thread* th)
 {
 	HCURSOR cursor = NULL;
 
-	Cursor* d = (Cursor*) STACKPNT(th, 0);
+	Cursor* d = (Cursor*) STACK_PNT(th, 0);
 	if (d) cursor = d->cursor;
 	if (!cursor) cursor = UI.defaultCursor;
 //	PRINTF(LOG_DEV,"fun_cursorShow %llx -> %llx %llx\n", UI.currentCursor, cursor, UI.defaultCursor);
@@ -807,9 +807,9 @@ int fun_fontFromHost(Thread* th)
 	Font* f;
 	LINT h;
 
-	LINT flags = STACKINT(th, 0);
-	LINT size = STACKINT(th, 1);
-	LB* name = STACKPNT(th, 2);
+	LINT flags = STACK_INT(th, 0);
+	LINT size = STACK_INT(th, 1);
+	LB* name = STACK_PNT(th, 2);
 	if (!name) FUN_RETURN_NIL;
 
 	h = size;
@@ -822,7 +822,7 @@ int fun_fontFromHost(Thread* th)
 
 	hfont = CreateFont((int)h, 0, 0, 0, (flags & FONT_BOLD) ? 700 : 0, (flags & FONT_ITALIC) ? 1 : 0,
 		(flags & FONT_UNDERLINE) ? 1 : 0, (flags & FONT_STRIKED) ? 1 : 0,
-		DEFAULT_CHARSET, 0, 0, 0, 0, STRSTART(name));
+		DEFAULT_CHARSET, 0, 0, 0, 0, STR_START(name));
 	if (!hfont) FUN_RETURN_NIL;
 	f = (Font*)memoryAllocExt(th, sizeof(Font), DBG_BIN, _fontForget, NULL);
 	if (!f) {
@@ -838,7 +838,7 @@ int fun_fontH(Thread* th)
 	HDC DC;
 	TEXTMETRIC tm;
 
-	Font* f= (Font*)STACKPNT(th, 0);
+	Font* f= (Font*)STACK_PNT(th, 0);
 	if (!f) FUN_RETURN_NIL;
 
 	DC = GetDC(NULL);
@@ -853,14 +853,14 @@ int _fontStringW(Thread* th,int u16)
 	LINT size;
 	HDC DC;
 
-	LB* str = STACKPNT(th, 0);
-	Font* f = (Font*)STACKPNT(th, 1);
+	LB* str = STACK_PNT(th, 0);
+	Font* f = (Font*)STACK_PNT(th, 1);
 	if ((!f) || (!str)) FUN_RETURN_NIL;
 	
 	DC = GetDC(NULL);
 	SelectFont(DC, f->hfont);
-	if (u16) size= LOWORD(GetTabbedTextExtentW(DC, (LPCWSTR)STRSTART(str), (int)STRLEN(str) >> 1, 0, NULL));
-	else size = LOWORD(GetTabbedTextExtentA(DC, STRSTART(str),(int) STRLEN(str), 0, NULL));
+	if (u16) size= LOWORD(GetTabbedTextExtentW(DC, (LPCWSTR)STR_START(str), (int)STR_LENGTH(str) >> 1, 0, NULL));
+	else size = LOWORD(GetTabbedTextExtentA(DC, STR_START(str),(int) STR_LENGTH(str), 0, NULL));
 	ReleaseDC(NULL, DC);
 	FUN_RETURN_INT(size);
 }
@@ -914,11 +914,11 @@ int _fontDraw(Thread* th, int u16)
 {
 	HDC dcb;
 
-	LB* str = STACKPNT(th, 0);
-	Font* f = (Font*)STACKPNT(th, 1);
-	LINT y = STACKINT(th, 2);
-	LINT x = STACKINT(th, 3);
-	LBitmap* b=(LBitmap*)STACKPNT(th, 4);
+	LB* str = STACK_PNT(th, 0);
+	Font* f = (Font*)STACK_PNT(th, 1);
+	LINT y = STACK_INT(th, 2);
+	LINT x = STACK_INT(th, 3);
+	LBitmap* b=(LBitmap*)STACK_PNT(th, 4);
 	if ((!f) || (!str) || (!b)) FUN_RETURN_NIL;
 
 	bitmapRequireDib(b);
@@ -928,8 +928,8 @@ int _fontDraw(Thread* th, int u16)
 	SetTextColor(dcb, 0xffffff);
 	SelectFont(dcb, f->hfont);
 	SetTextAlign(dcb, 0);
-	if (u16) TextOutW(dcb, (int)x, (int)y, (LPCWSTR)STRSTART(str), (int)STRLEN(str) >> 1);
-	else TextOutA(dcb, (int)x, (int)y, STRSTART(str), (int)STRLEN(str));
+	if (u16) TextOutW(dcb, (int)x, (int)y, (LPCWSTR)STR_START(str), (int)STR_LENGTH(str) >> 1);
+	else TextOutA(dcb, (int)x, (int)y, STR_START(str), (int)STR_LENGTH(str));
 	DeleteDC(dcb);
 	FUN_RETURN_PNT(MM._true);
 }
@@ -940,18 +940,18 @@ int coreUiHwInit(Thread* th, Pkg* system)
 {
 	Def* font = pkgAddType(th, system, "Font");
 
-	pkgAddConstInt(th, system, "FONT_BOLD", FONT_BOLD, MM.I);
-	pkgAddConstInt(th, system, "FONT_ITALIC", FONT_ITALIC, MM.I);
-	pkgAddConstInt(th, system, "FONT_UNDERLINE", FONT_UNDERLINE, MM.I);
-	pkgAddConstInt(th, system, "FONT_STRIKED", FONT_STRIKED, MM.I);
-	pkgAddConstInt(th, system, "FONT_PIXEL", FONT_PIXEL, MM.I);
+	pkgAddConstInt(th, system, "FONT_BOLD", FONT_BOLD, MM.Int);
+	pkgAddConstInt(th, system, "FONT_ITALIC", FONT_ITALIC, MM.Int);
+	pkgAddConstInt(th, system, "FONT_UNDERLINE", FONT_UNDERLINE, MM.Int);
+	pkgAddConstInt(th, system, "FONT_STRIKED", FONT_STRIKED, MM.Int);
+	pkgAddConstInt(th, system, "FONT_PIXEL", FONT_PIXEL, MM.Int);
 
-	pkgAddFun(th, system, "fontFromHost", fun_fontFromHost, typeAlloc(th, TYPECODE_FUN, NULL, 4, MM.S, MM.I, MM.I, font->type));
-	pkgAddFun(th, system, "fontH", fun_fontH, typeAlloc(th, TYPECODE_FUN, NULL, 2, font->type, MM.I));
-	pkgAddFun(th, system, "fontStringW", fun_fontStringW, typeAlloc(th, TYPECODE_FUN, NULL, 3, font->type, MM.S, MM.I));
-	pkgAddFun(th, system, "fontStringU16W", fun_fontStringU16W, typeAlloc(th, TYPECODE_FUN, NULL, 3, font->type, MM.S, MM.I));
-	pkgAddFun(th, system, "fontDraw", fun_fontDraw, typeAlloc(th, TYPECODE_FUN, NULL, 6, MM.Bitmap, MM.I, MM.I, font->type, MM.S, MM.Boolean));
-	pkgAddFun(th, system, "fontDrawU16", fun_fontDrawU16, typeAlloc(th, TYPECODE_FUN, NULL, 6, MM.Bitmap, MM.I, MM.I, font->type, MM.S, MM.Boolean));
+	pkgAddFun(th, system, "fontFromHost", fun_fontFromHost, typeAlloc(th, TYPECODE_FUN, NULL, 4, MM.Str, MM.Int, MM.Int, font->type));
+	pkgAddFun(th, system, "fontH", fun_fontH, typeAlloc(th, TYPECODE_FUN, NULL, 2, font->type, MM.Int));
+	pkgAddFun(th, system, "fontStringW", fun_fontStringW, typeAlloc(th, TYPECODE_FUN, NULL, 3, font->type, MM.Str, MM.Int));
+	pkgAddFun(th, system, "fontStringU16W", fun_fontStringU16W, typeAlloc(th, TYPECODE_FUN, NULL, 3, font->type, MM.Str, MM.Int));
+	pkgAddFun(th, system, "fontDraw", fun_fontDraw, typeAlloc(th, TYPECODE_FUN, NULL, 6, MM.Bitmap, MM.Int, MM.Int, font->type, MM.Str, MM.Boolean));
+	pkgAddFun(th, system, "fontDrawU16", fun_fontDrawU16, typeAlloc(th, TYPECODE_FUN, NULL, 6, MM.Bitmap, MM.Int, MM.Int, font->type, MM.Str, MM.Boolean));
 
 	UI.thisInstance = GetModuleHandle(NULL);
 	UI.classRegistered = 0;

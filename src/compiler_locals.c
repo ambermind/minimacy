@@ -19,9 +19,9 @@ LINT localsNb(Locals* locals)
 void localsMark(LB* user)
 {
 	Locals* l=(Locals*)user;
-	MEMORYMARK(user,l->name);
-	MEMORYMARK(user,(LB*)l->type);
-	MEMORYMARK(user,(LB*)l->next);
+	MEMORY_MARK(user,l->name);
+	MEMORY_MARK(user,(LB*)l->type);
+	MEMORY_MARK(user,(LB*)l->next);
 }
 
 Locals* localsCreate(Thread* th, char* name,LINT level, Type* type, Locals* next)
@@ -47,7 +47,7 @@ Locals* localsGet(Locals* locals,LINT level,char* name)
 	LINT len=strlen(name);
 	while(locals)
 	{
-		if (locals->name&&(STRLEN(locals->name)==len)&&(!memcmp(STRSTART(locals->name),name,len)))
+		if (locals->name&&(STR_LENGTH(locals->name)==len)&&(!memcmp(STR_START(locals->name),name,len)))
 		{
 			locals->level=level;
 			return locals;

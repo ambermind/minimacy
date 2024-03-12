@@ -52,10 +52,10 @@ void typeMark(LB* user)
 {
 	LINT i;
 	Type* type=(Type*)user;
-	MEMORYMARK((LB*)type,(LB*)type->actual);
-	MEMORYMARK((LB*)type,(LB*)type->copy);
-	MEMORYMARK((LB*)type,(LB*)type->def);
-	for(i=0;i<type->nb;i++) MEMORYMARK((LB*)type,(LB*)type->child[i]);
+	MEMORY_MARK((LB*)type,(LB*)type->actual);
+	MEMORY_MARK((LB*)type,(LB*)type->copy);
+	MEMORY_MARK((LB*)type,(LB*)type->def);
+	for(i=0;i<type->nb;i++) MEMORY_MARK((LB*)type,(LB*)type->child[i]);
 }
 
 Type* typeAllocEmpty(Thread* th, LINT code,Def* def,LINT nb)
@@ -97,9 +97,9 @@ Type* typeAllocFromStack(Thread* th, Def* def, LINT code, LINT nb)
 	Type* t = typeAllocEmpty(th, code, def, nb); if (!t) return NULL;
 	for(i=nb-1;i>=0;i--)
 	{
-		LB* p=STACKPULLPNT(th);
+		LB* p=STACK_PULL_PNT(th);
 		t->child[i]=(Type*)p;
-		MEMORYMARK((LB*)t, p);
+		MEMORY_MARK((LB*)t, p);
 	}
 	return t;
 }
@@ -143,18 +143,18 @@ Type* _compilerParseType(Compiler* c,int mono, int depth, Locals** labels, LINT*
 	Locals* lb;
 	Type* t;
 
-	if (!parserNext(c)) return compileError(c, "Compiler: uncomplete type reaches EOF\n");
+	if (!parserNext(c)) return compileError(c,"uncomplete type reaches EOF\n");
 	lb = localsGet(*labels, 0, c->parser->token);
 //	PRINTF(LOG_DEV,"search %s -> %llx\n", c->parser->token,lb);
 	if (lb)
 	{
-		if (!lb->type) return compileError(c, "Compiler: illegal use of label '%s'\n",STRSTART(lb->name));
+		if (!lb->type) return compileError(c,"illegal use of label '%s'\n",STR_START(lb->name));
 		if (lb->type->nb == TYPENB_DERIVATIVE)
 		{
-			if ((!parserNext(c))|| (strcmp(c->parser->token, "{"))) return compileError(c, "Compiler: missing '{' for derivative types, found '%s'\n", c->parser->token);
+			if ((!parserNext(c))|| (strcmp(c->parser->token, "{"))) return compileError(c,"missing '{' for derivative types, found '%s'\n", c->parser->token);
 			if (!(t = _compilerParseType(c, mono, depth + 1, labels, withRec))) return NULL;
-			if (t->code != TYPECODE_PRIMARY) return compileError(c, "Compiler: only primary types may be derivated\n");
-			if (t->nb!=lb->type->nb) return compileError(c, "Compiler: derivative type has a wrong number of parameters (%d instead of %d)\n",t->nb,lb->type->nb);
+			if (t->code != TYPECODE_PRIMARY) return compileError(c,"only primary types may be derivated\n");
+			if (t->nb!=lb->type->nb) return compileError(c,"derivative type has a wrong number of parameters (%d instead of %d)\n",t->nb,lb->type->nb);
 			if (parserAssume(c, "}")) return NULL;
 		}
 		return lb->type;
@@ -164,13 +164,13 @@ Type* _compilerParseType(Compiler* c,int mono, int depth, Locals** labels, LINT*
 	{
 		Locals* label = localsCreate(c->th, c->parser->token, 0, NULL, *labels); if (!(labels)) return NULL;
 		int weak = (c->parser->token[0] == 'w') ? 1 : 0;
-		if (mono && !weak) return compileError(c, "Compiler: polymorphism (%s) is not accepted here\n", c->parser->token);
+		if (mono && !weak) return compileError(c,"polymorphism (%s) is not accepted here\n", c->parser->token);
 		*labels = label;
 		if ((parserNext(c)) && (!strcmp(c->parser->token, "{")))
 		{
 			
 			if (!(t = _compilerParseType(c, mono, depth + 1, labels, withRec))) return NULL;
-			if (t->code != TYPECODE_PRIMARY) return compileError(c, "Compiler: only primary types may be derivated\n");
+			if (t->code != TYPECODE_PRIMARY) return compileError(c,"only primary types may be derivated\n");
 			if (parserAssume(c, "}")) return NULL;
 			label->type = typeDerivate(c->th, t, weak);
 			return label->type ;
@@ -182,14 +182,14 @@ Type* _compilerParseType(Compiler* c,int mono, int depth, Locals** labels, LINT*
 	if ((c->parser->token[0] == 'r') && (isdecimal(c->parser->token + 1)))
 	{
 		LINT i = ls_atoi(c->parser->token + 1,1);
-		if ((i < 0) || (i >= depth)) return compileError(c, "Compiler: recursivity out of range %d [0 %d[\n", i, depth);
+		if ((i < 0) || (i >= depth)) return compileError(c,"recursivity out of range %d [0 %d[\n", i, depth);
 		*withRec = 1;
 		return typeAllocRec(c->th,i);
 	}
 	if (!strcmp(c->parser->token, "array"))
 	{
 		Type* nt = typeAllocEmpty(c->th,TYPECODE_ARRAY, NULL, 1); if (!nt) return NULL;
-		if (!depth) return compileError(c, "Compiler: Types starting with 'array' must be enclosed in parentheses\n");
+		if (!depth) return compileError(c,"types starting with 'array' must be enclosed in parentheses\n");
 
 		if (!(t = _compilerParseType(c, mono, depth + 1, labels, withRec))) return NULL;
 		nt->child[0] = t;
@@ -198,7 +198,7 @@ Type* _compilerParseType(Compiler* c,int mono, int depth, Locals** labels, LINT*
 	if (!strcmp(c->parser->token, "list"))
 	{
 		Type* nt = typeAllocEmpty(c->th, TYPECODE_LIST, NULL, 1); if (!nt) return NULL;
-		if (!depth) return compileError(c, "Compiler: Types starting with 'list' must be enclosed in parentheses\n");
+		if (!depth) return compileError(c,"types starting with 'list' must be enclosed in parentheses\n");
 		if (!(t = _compilerParseType(c, mono, depth + 1, labels, withRec))) return NULL;
 		nt->child[0] = t;
 		return nt;
@@ -206,7 +206,7 @@ Type* _compilerParseType(Compiler* c,int mono, int depth, Locals** labels, LINT*
 	if (!strcmp(c->parser->token, "fifo"))
 	{
 		Type* nt = typeAllocEmpty(c->th, TYPECODE_FIFO, NULL, 1); if (!nt) return NULL;
-		if (!depth) return compileError(c, "Compiler: Types starting with 'fifo' must be enclosed in parentheses\n");
+		if (!depth) return compileError(c,"types starting with 'fifo' must be enclosed in parentheses\n");
 
 		if (!(t = _compilerParseType(c, mono, depth + 1, labels, withRec))) return NULL;
 		nt->child[0] = t;
@@ -215,7 +215,7 @@ Type* _compilerParseType(Compiler* c,int mono, int depth, Locals** labels, LINT*
 	if (!strcmp(c->parser->token, "hashmap"))
 	{
 		Type* nt = typeAllocEmpty(c->th, TYPECODE_HASHMAP, NULL, 2); if (!nt) return NULL;
-		if (!depth) return compileError(c, "Compiler: Types starting with 'hashmap' must be enclosed in parentheses\n");
+		if (!depth) return compileError(c,"types starting with 'hashmap' must be enclosed in parentheses\n");
 
 		if (!(t = _compilerParseType(c, mono, depth + 1, labels, withRec))) return NULL;
 		nt->child[0] = t;
@@ -227,7 +227,7 @@ Type* _compilerParseType(Compiler* c,int mono, int depth, Locals** labels, LINT*
 	if (!strcmp(c->parser->token, "hashset"))
 	{
 		Type* nt = typeAllocEmpty(c->th, TYPECODE_HASHSET, NULL, 1); if (!nt) return NULL;
-		if (!depth) return compileError(c, "Compiler: Types starting with 'hashset' must be enclosed in parentheses\n");
+		if (!depth) return compileError(c,"types starting with 'hashset' must be enclosed in parentheses\n");
 
 		if (!(t = _compilerParseType(c, mono, depth + 1, labels, withRec))) return NULL;
 		nt->child[0] = t;
@@ -235,22 +235,22 @@ Type* _compilerParseType(Compiler* c,int mono, int depth, Locals** labels, LINT*
 	}
 	if (!strcmp(c->parser->token, "fun"))
 	{
-		if (!depth) return compileError(c, "Compiler: Types starting with 'fun' must be enclosed in parentheses\n");
+		if (!depth) return compileError(c,"types starting with 'fun' must be enclosed in parentheses\n");
 
 		n = 0;
 		while (1)
 		{
-			if (!parserNext(c)) return compileError(c, "Compiler: uncomplete type reaches EOF\n");
+			if (!parserNext(c)) return compileError(c,"uncomplete type reaches EOF\n");
 			if (!strcmp(c->parser->token, "->"))
 			{
 				if (!(t = _compilerParseType(c, mono, depth + 1, labels, withRec))) return NULL;
-				TYPEPUSH_NULL(c, t);
+				TYPE_PUSH_NULL(c, t);
 				n++;
 				return typeAllocFromStack(c->th, NULL, TYPECODE_FUN, n);
 			}
 			parserGiveback(c);
 			if (!(t = _compilerParseType(c, mono, depth + 1, labels, withRec))) return NULL;
-			TYPEPUSH_NULL(c, t);
+			TYPE_PUSH_NULL(c, t);
 			n++;
 		}
 	}
@@ -259,14 +259,14 @@ Type* _compilerParseType(Compiler* c,int mono, int depth, Locals** labels, LINT*
 		n = 0;
 		while (1)
 		{
-			if (!parserNext(c)) return compileError(c, "Compiler: uncomplete type reaches EOF\n");
+			if (!parserNext(c)) return compileError(c,"uncomplete type reaches EOF\n");
 			if (!strcmp(c->parser->token, "]"))
 			{
 				return typeAllocFromStack(c->th, NULL, TYPECODE_TUPLE, n);
 			}
 			parserGiveback(c);
 			if (!(t = _compilerParseType(c, mono, depth + 1, labels, withRec))) return NULL;
-			TYPEPUSH_NULL(c, t);
+			TYPE_PUSH_NULL(c, t);
 			n++;
 		}
 	}
@@ -278,8 +278,8 @@ Type* _compilerParseType(Compiler* c,int mono, int depth, Locals** labels, LINT*
 		LINT code= TYPECODE_PRIMARY;
 		
 		def = compileGetDef(c);
-		if (!def) return compileError(c, "Compiler: unknown label '%s'\n", compileToken(c));
-		if ((def->code != DEF_CODE_TYPE) && (def->code != DEF_CODE_SUM) && (def->code != DEF_CODE_STRUCT)) return compileError(c, "Compiler: '%s' is not a type\n", compileToken(c));
+		if (!def) return compileError(c,"unknown label '%s'\n", compileToken(c));
+		if ((def->code != DEF_CODE_TYPE) && (def->code != DEF_CODE_SUM) && (def->code != DEF_CODE_STRUCT)) return compileError(c,"'%s' is not a type\n", compileToken(c));
 
 		if (parserNext(c))
 		{
@@ -289,10 +289,10 @@ Type* _compilerParseType(Compiler* c,int mono, int depth, Locals** labels, LINT*
 				{
 					Type* t;
 					if (!(t = _compilerParseType(c, mono, depth + 1, labels, withRec))) return NULL;
-					TYPEPUSH_NULL(c, t);
+					TYPE_PUSH_NULL(c, t);
 					n++;
 
-					if (!parserNext(c)) return compileError(c, "Compiler: type or '}' expected (found '%s')\n", compileToken(c));
+					if (!parserNext(c)) return compileError(c,"type or '}' expected (found '%s')\n", compileToken(c));
 
 					if (!strcmp(c->parser->token, "}")) break;
 					parserGiveback(c);
@@ -303,7 +303,7 @@ Type* _compilerParseType(Compiler* c,int mono, int depth, Locals** labels, LINT*
 		nt = typeAllocFromStack(c->th, def, code, n); if (!nt) return NULL;
 
 		t = def->type;
-		if (t->nb!=nt->nb) return compileError(c, "Compiler: wrong number of parameters for type '%s' %lld/%lld\n", defName(def),t->nb,nt->nb);
+		if (t->nb!=nt->nb) return compileError(c,"wrong number of parameters for type '%s' %lld/%lld\n", defName(def),t->nb,nt->nb);
 		if ((!t->nb)&& (code == TYPECODE_PRIMARY)) return t;
 		return nt;
 	}
@@ -311,10 +311,10 @@ Type* _compilerParseType(Compiler* c,int mono, int depth, Locals** labels, LINT*
 	{
 		if (!(t = _compilerParseType(c, mono, depth + 1, labels, withRec))) return NULL;
 		if (parserNext(c) && !strcmp(c->parser->token, ")")) return t;
-		return compileError(c, "Compiler: unbalanced '('\n");
+		return compileError(c,"unbalanced '('\n");
 	}
 
-	return compileError(c, "Compiler: unknown token %s\n", c->parser->token);
+	return compileError(c,"unknown token %s\n", c->parser->token);
 }
 
 Type* _compilerHandleRec(Compiler* c, Type* p)
@@ -322,14 +322,14 @@ Type* _compilerHandleRec(Compiler* c, Type* p)
 	if (p->code == TYPECODE_REC)
 	{
 		LINT rec = (LINT)p->actual;
-		p->actual = (Type*)STACKPNT(c->th, rec);
+		p->actual = (Type*)STACK_PNT(c->th, rec);
 	}
 	else if (p->nb>0)
 	{
 		LINT i;
-		TYPEPUSH_NULL(c, p);
+		TYPE_PUSH_NULL(c, p);
 		for (i = 0; i < p->nb; i++) if (!_compilerHandleRec(c, p->child[i])) return NULL;
-		STACKDROP(c->th);
+		STACK_DROP(c->th);
 	}
 	return p;
 }
@@ -343,14 +343,14 @@ Type* compilerParseTypeDef(Compiler* c, int mono, Locals** labels)
 int _compilerSkipTypeDef(Compiler* c, int depth)
 {
 	char* token;
-	if (!parserNext(c)) { compileError(c, "Compiler: uncomplete type reaches EOF\n"); return -1; }
+	if (!parserNext(c)) { compileError(c,"uncomplete type reaches EOF\n"); return -1; }
 	token = c->parser->token;
 	if ((!strcmp(token, "array")) ||
 		(!strcmp(token, "list")) ||
 		(!strcmp(token, "fifo")) ||
 		(!strcmp(token, "hashset"))) {
 		if (!depth) {
-			compileError(c, "Compiler: Types starting with '%s' must be enclosed in parentheses\n", token); return -1;
+			compileError(c,"types starting with '%s' must be enclosed in parentheses\n", token); return -1;
 		}
 		return _compilerSkipTypeDef(c, depth + 1);
 	}
@@ -358,23 +358,23 @@ int _compilerSkipTypeDef(Compiler* c, int depth)
 	if (!strcmp(token, "hashmap"))
 	{
 		if (!depth) {
-			compileError(c, "Compiler: Types starting with 'hashmap' must be enclosed in parentheses\n");
+			compileError(c,"types starting with 'hashmap' must be enclosed in parentheses\n");
 			return -1;
 		}
 		if (_compilerSkipTypeDef(c, depth+1)) return -1;
-		if (!parserNext(c)) { compileError(c, "Compiler: uncomplete type reaches EOF\n"); return -1; }
-		if (strcmp(c->parser->token, "->")) { compileError(c, "Compiler: -> expected, found '%s'\n",compileToken(c)); return -1; }
+		if (!parserNext(c)) { compileError(c,"uncomplete type reaches EOF\n"); return -1; }
+		if (strcmp(c->parser->token, "->")) { compileError(c,"-> expected, found '%s'\n",compileToken(c)); return -1; }
 		return _compilerSkipTypeDef(c, depth+1);
 	}
 	if (!strcmp(token, "fun"))
 	{
 		if (!depth) {
-			compileError(c, "Compiler: Types starting with 'fun' must be enclosed in parentheses\n");
+			compileError(c,"types starting with 'fun' must be enclosed in parentheses\n");
 			return -1;
 		}
 		while (1)
 		{
-			if (!parserNext(c)) { compileError(c, "Compiler: uncomplete type reaches EOF\n"); return -1; }
+			if (!parserNext(c)) { compileError(c,"uncomplete type reaches EOF\n"); return -1; }
 			if (!strcmp(c->parser->token, "->")) return _compilerSkipTypeDef(c, depth + 1);
 			parserGiveback(c);
 			if (_compilerSkipTypeDef(c, depth + 1)) return -1;
@@ -384,7 +384,7 @@ int _compilerSkipTypeDef(Compiler* c, int depth)
 	{
 		while (1)
 		{
-			if (!parserNext(c)) { compileError(c, "Compiler: uncomplete type reaches EOF\n"); return -1; }
+			if (!parserNext(c)) { compileError(c,"uncomplete type reaches EOF\n"); return -1; }
 			if (!strcmp(c->parser->token, "]")) return 0;
 			parserGiveback(c);
 			if (_compilerSkipTypeDef(c, depth+1)) return -1;
@@ -402,7 +402,7 @@ int _compilerSkipTypeDef(Compiler* c, int depth)
 		while (1)
 		{
 			if (_compilerSkipTypeDef(c, depth+1)) return -1;
-			if (!parserNext(c)) { compileError(c, "Compiler: uncomplete type reaches EOF\n"); return -1; }
+			if (!parserNext(c)) { compileError(c,"uncomplete type reaches EOF\n"); return -1; }
 			if (!strcmp(c->parser->token, "}")) return 0;
 			parserGiveback(c);
 		}
@@ -411,10 +411,10 @@ int _compilerSkipTypeDef(Compiler* c, int depth)
 	{
 		if (_compilerSkipTypeDef(c, depth+1)) return -1;
 		if (parserNext(c)&& !strcmp(c->parser->token, ")")) return 0;
-		compileError(c, "Compiler: unbalanced '('\n");
+		compileError(c,"unbalanced '('\n");
 		return -1;
 	}
-	compileError(c, "Compiler: unknown token %s\n", token);
+	compileError(c,"unknown token %s\n", token);
 	return -1;
 }
 int compilerSkipTypeDef(Compiler* c)
@@ -432,12 +432,12 @@ int _typePrintRec(Thread* th,Buffer* tmp, TypeLabel **h,Type* p,int depth)
 	if (!p) return 0;
 	while(p->actual) p=p->actual;
 	type=(LB*)p;
-	STACKPUSHPNT_ERR(MM.tmpStack,type,EXEC_OM);
+	STACK_PUSH_PNT_ERR(MM.tmpStack,type,EXEC_OM);
 
-	for(i=0;i<depth;i++) if (type==STACKPNT(MM.tmpStack,i+1))
+	for(i=0;i<depth;i++) if (type==STACK_PNT(MM.tmpStack,i+1))
 	{
 		bufferPrintf(th, tmp,"r%d",i);
-		STACKDROP(MM.tmpStack);
+		STACK_DROP(MM.tmpStack);
 		return 0;
 	}
 	if (p->code==TYPECODE_PRIMARY)
@@ -545,7 +545,7 @@ int _typePrintRec(Thread* th,Buffer* tmp, TypeLabel **h,Type* p,int depth)
 			}
 		}
 	}
-	STACKDROP(MM.tmpStack);
+	STACK_DROP(MM.tmpStack);
 	return 0;
 }
 
@@ -577,9 +577,9 @@ void typesInit(Thread* th, Pkg* system)
 	Def* Boolean;
 	Type* u0, * list_u0, * array_u0;
 
-	MM.I = pkgAddType(th,system, "Int")->type;
-	MM.F = pkgAddType(th,system, "Float")->type;
-	MM.S = pkgAddType(th,system, "Str")->type;
+	MM.Int = pkgAddType(th,system, "Int")->type;
+	MM.Float = pkgAddType(th,system, "Float")->type;
+	MM.Str = pkgAddType(th,system, "Str")->type;
 	MM.Bytes = pkgAddType(th,system, "Bytes")->type;
 	MM.BigNum = pkgAddType(th,system, "BigNum")->type;
 	MM.Bitmap = pkgAddType(th,system, "Bitmap")->type;
@@ -590,19 +590,19 @@ void typesInit(Thread* th, Pkg* system)
 	MM._true = (LB*)pkgAddCons0(th,system, "true", Boolean);
 	MM._false =(LB*)pkgAddCons0(th,system, "false", Boolean);
 
-	MM.Pkg = pkgAddType(th,system, "Package")->type;
+	MM.Package = pkgAddType(th,system, "Package")->type;
 	MM.Thread = pkgAddType(th,system, "_Thread")->type;
 	Exception = pkgAddSum(th,system, "Exception");
 	MM.Exception = Exception->type;
 	pkgAddCons0(th,system, "anyException", Exception);
-	MM.MemoryException =PNTTOVAL((LB*)pkgAddCons0(th,system, "memoryException", Exception));
+	MM.MemoryException =VAL_FROM_PNT((LB*)pkgAddCons0(th,system, "memoryException", Exception));
 
 	u0 = typeAllocUndef(th);
 	list_u0 = typeAlloc(th,TYPECODE_LIST, NULL, 1, u0);
 	array_u0 = typeAlloc(th,TYPECODE_ARRAY, NULL, 1, u0);
 
 	MM.fun_u0_list_u0_list_u0 = typeAlloc(th, TYPECODE_FUN, NULL, 3, u0, list_u0, list_u0);
-	MM.fun_array_u0_I_u0 = typeAlloc(th, TYPECODE_FUN, NULL, 3, array_u0, MM.I, u0);
+	MM.fun_array_u0_I_u0 = typeAlloc(th, TYPECODE_FUN, NULL, 3, array_u0, MM.Int, u0);
 }
 
 
@@ -809,7 +809,7 @@ int typeUnify(Compiler* c,Type* x,Type* y)
 //		PRINTF(LOG_DEV,"---> "); typePrint(-1, x); PRINTF(LOG_DEV,"\n");
 		return 0;
 	}
-	compileError(c, "Compiler: '");
+	compileError(c,"'");
 	typePrint(c->th, LOG_USER,x);
 	PRINTF(LOG_USER,"' does not match with '");
 	typePrint(c->th, LOG_USER,y);
@@ -824,7 +824,7 @@ int typeUnify(Compiler* c,Type* x,Type* y)
 		{
 			if (lb->name)
 			{
-				PRINTF(LOG_USER, "   local %s: ",STRSTART(lb->name));
+				PRINTF(LOG_USER, "   local %s: ",STR_START(lb->name));
 				typePrint(c->th, LOG_USER, lb->type);
 				PRINTF(LOG_USER, "\n");
 			}
@@ -837,7 +837,7 @@ int typeUnify(Compiler* c,Type* x,Type* y)
 				Def* def = (Def*)globals->data;
 				if (def->name)
 				{
-					PRINTF(LOG_USER, "   global %s: ", STRSTART(def->name));
+					PRINTF(LOG_USER, "   global %s: ", STR_START(def->name));
 					typePrint(c->th, LOG_USER, def->type);
 					PRINTF(LOG_USER, "\n");
 				}
@@ -854,6 +854,6 @@ Type* typeUnifyFromStack(Compiler* c,Type* fun)
 {
 	LINT i;
 	i= fun->nb - 2;
-	while(i>=0) if (typeUnify(c,(Type*)STACKPULLPNT(c->th),fun->child[i--])) return NULL;	// check and pull args
+	while(i>=0) if (typeUnify(c,(Type*)STACK_PULL_PNT(c->th),fun->child[i--])) return NULL;	// check and pull args
 	return fun->child[fun->nb-1];	// return unified function result
 }

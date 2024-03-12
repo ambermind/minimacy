@@ -47,7 +47,7 @@ int memForget(LB* p)
 void memMark(LB* user)
 {
 	Mem* mem = (Mem*)user;
-	MEMORYMARK(user, (LB*)mem->name);
+	MEMORY_MARK(user, (LB*)mem->name);
 }
 Mem* memCreate(Thread* th, Mem* parent,LINT maxBytes,LB* name)
 {
@@ -90,10 +90,10 @@ void threadMark(LB* user)
 
 	if (!p) return;
 	p->lifo=MM.USEFUL;
-	for(i=0;i<=th->pp;i++) if (TABISPNT(p,i)) MEMORYMARK(p, TABPNT(p,i));
+	for(i=0;i<=th->sp;i++) if (ARRAY_IS_PNT(p,i)) MEMORY_MARK(p, ARRAY_PNT(p,i));
 
-	MEMORYMARK(user, (LB*)th->memDelegate);
-	MEMORYMARK(user,th->user);
+	MEMORY_MARK(user, (LB*)th->memDelegate);
+	MEMORY_MARK(user,th->user);
 	// there is no need to mark any pending worker's result pointer, as these pointers are
 	// stored in the stack by workerAllocExt before they are declared as the worker's result
 }
@@ -131,10 +131,10 @@ Thread* threadCreate(Thread* th0, Mem* mem)
 	th->user = NULL;
 
 	th->atomic = 0;
-	th->pp=-1;
-	th->stack = NULL;	// actually useless due to the th->pp=-1, but meaningfull
+	th->sp=-1;
+	th->stack = NULL;	// actually useless due to the th->sp=-1, but meaningfull
 
-	th->stack= memoryAllocTable(th, THREAD_STACK_LENGTH0,DBG_STACK);
+	th->stack= memoryAllocArray(th, THREAD_STACK_LENGTH0,DBG_STACK);
 	if (!th->stack) return NULL;
 	th->listNext = NULL;
 	threadMark((LB*)th);
@@ -147,15 +147,15 @@ Thread* threadCreate(Thread* th0, Mem* mem)
 int threadBigger(Thread* th)
 {
 	LINT i;
-	LINT size= TABLEN(th->stack);
-	LB* newstack= memoryAllocTable(th, size+ THREAD_STACK_STEP,DBG_STACK);
+	LINT size= ARRAY_LENGTH(th->stack);
+	LB* newstack= memoryAllocArray(th, size+ THREAD_STACK_STEP,DBG_STACK);
 	LB* oldstack=th->stack;
 	if (!newstack) return EXEC_OM;
-//	for(i=1;i<=th->pp+1;i++) newstack->data[i]=oldstack->data[i];	//HACK : 1<=i<=pp+1 because data[0]=dbg and pp=0 means 1 element in the stack
-	for(i=0;i<=th->pp;i++) TABCOPY(newstack,i,oldstack,i);	// pp=0 means 1 element in the stack
+//	for(i=1;i<=th->sp+1;i++) newstack->data[i]=oldstack->data[i];	//HACK : 1<=i<=sp+1 because data[0]=dbg and sp=0 means 1 element in the stack
+	for(i=0;i<=th->sp;i++) ARRAY_COPY(newstack,i,oldstack,i);	// sp=0 means 1 element in the stack
 	th->stack=newstack;
 	threadMark((LB*)th);
-	if (MM.gcTrace) PRINTF(LOG_SYS, "## bigger stack " LSD " thread:" LSD "\n", TABLEN(th->stack), th->uid);
+	if (MM.gcTrace) PRINTF(LOG_SYS, "> bigger stack " LSD " thread:" LSD "\n", ARRAY_LENGTH(th->stack), th->uid);
 //	threadPrintCallstack(th);
 	//	PRINTF(LOG_DEV,"threadBigger %llx %llx\n",th,th->stack);
 	return 0;
@@ -163,26 +163,26 @@ int threadBigger(Thread* th)
 
 void stackReset(Thread* th)
 {
-	th->pp = -1;
+	th->sp = -1;
 }
 
-int stackPushTable(Thread* th,LINT size,LW dbg)
+int stackPushEmptyArray(Thread* th,LINT size,LW dbg)
 {
-	LB* p = memoryAllocTable(th, size, dbg); if (!p) return EXEC_OM;
+	LB* p = memoryAllocArray(th, size, dbg); if (!p) return EXEC_OM;
 	FUN_PUSH_PNT(p);
 	return 0;
 }
 
-int stackMakeTable(Thread* th,LINT size,LW dbg)
+int stackPushFilledArray(Thread* th,LINT size,LW dbg)
 {
 	LINT i,j;
 	LB* p;
-	STACKPUSHTABLE_ERR(th,size,dbg,EXEC_OM);
-	p=STACKPNT(th,0);
+	STACK_PUSH_EMPTY_ARRAY_ERR(th,size,dbg,EXEC_OM);
+	p=STACK_PNT(th,0);
 	j=1;
-	for(i=size-1;i>=0;i--) STACKSTORE(p,i,th,j++);
-	STACKSETPNT(th,size,p);
-	STACKDROPN(th,size);
+	for(i=size-1;i>=0;i--) STACK_STORE(p,i,th,j++);
+	STACK_SET_PNT(th,size,p);
+	STACK_DROPN(th,size);
 	return 0;
 }
 
@@ -196,14 +196,14 @@ int stackPushStr(Thread* th,char* src,LINT size)
 int stackSetStr(Thread* th, LINT i, char* src,LINT size)
 {
 	LB* p = memoryAllocStr(th, src, size); if (!p) return EXEC_OM;
-	STACKSETPNT(th,0, p);
+	STACK_SET_PNT(th,0, p);
 	return 0;
 }
 
 int stackSetBuffer(Thread* th, LINT i, Buffer* b)
 {
 	LB* p = memoryAllocFromBuffer(th, b); if (!p) return EXEC_OM;
-	STACKSETPNT(th, i, p);
+	STACK_SET_PNT(th, i, p);
 	return 0;
 }
 
@@ -221,59 +221,59 @@ void threadPrintCallstack(Thread* t)
 	if (!fun) return;
 	while (callstack >= 0)
 	{
-		char* name = TABPNT(fun, FUN_USER_NAME) ? STRSTART((TABPNT(fun, FUN_USER_NAME))) : "[NO NAME]";
+		char* name = ARRAY_PNT(fun, FUN_USER_NAME) ? STR_START((ARRAY_PNT(fun, FUN_USER_NAME))) : "[NO NAME]";
 		PRINTF(LOG_DEV,"%2d> %s: "LSD"\n", n, name, pc);
 		n++;
-		fun = STACKREFPNT(t, callstack, CALLSTACK_FUN);
-		pc = STACKREFINT(t, callstack, CALLSTACK_PC);
-		callstack = STACKREFINT(t, callstack, CALLSTACK_PREV);
+		fun = STACK_REF_PNT(t, callstack, CALLSTACK_FUN);
+		pc = STACK_REF_INT(t, callstack, CALLSTACK_PC);
+		callstack = STACK_REF_INT(t, callstack, CALLSTACK_PREV);
 	}
 }
 
 int fun_memCreate(Thread* th)
 {
-	LINT wMaxBytes = STACKINT(th, 0);
-	LB* name= STACKPNT(th, 1);
-	Mem *parent = (Mem*)STACKPNT(th, 2);
-	Mem *child = memCreate(th, parent, STACKISNIL(th, 0)?-1:wMaxBytes,name); if (!child) return EXEC_OM;
+	LINT wMaxBytes = STACK_INT(th, 0);
+	LB* name= STACK_PNT(th, 1);
+	Mem *parent = (Mem*)STACK_PNT(th, 2);
+	Mem *child = memCreate(th, parent, STACK_IS_NIL(th, 0)?-1:wMaxBytes,name); if (!child) return EXEC_OM;
 	FUN_RETURN_PNT((LB*)child);
 }
 int fun_memName(Thread* th)
 {
-	Mem* m = (Mem*)STACKPNT(th, 0);
-	if (m) STACKSETPNT(th, 0, m->name);
+	Mem* m = (Mem*)STACK_PNT(th, 0);
+	if (m) STACK_SET_PNT(th, 0, m->name);
 	return 0;
 }
 int fun_memMemory(Thread* th)
 {
-	Mem* m = (Mem*)STACKPNT(th, 0);
-	if (m) STACKSETINT(th, 0, m->bytes);
+	Mem* m = (Mem*)STACK_PNT(th, 0);
+	if (m) STACK_SET_INT(th, 0, m->bytes);
 	return 0;
 }
 
 int fun_memMaxMemory(Thread* th)
 {
-	Mem* m = (Mem*)STACKPNT(th, 0);
-	if (m) STACKSETINT(th, 0, m->maxBytes);
+	Mem* m = (Mem*)STACK_PNT(th, 0);
+	if (m) STACK_SET_INT(th, 0, m->maxBytes);
 	return 0;
 }
 int fun_memSetMaxMemory(Thread* th)
 {
-	LINT maxBytes = STACKPULLINT(th);
-	Mem* m = (Mem*)STACKPNT(th, 0);
+	LINT maxBytes = STACK_PULL_INT(th);
+	Mem* m = (Mem*)STACK_PNT(th, 0);
 	if (m && (maxBytes > 0)) m->maxBytes = maxBytes;
 	return 0;
 }
 int fun_memParent(Thread* th)
 {
-	Mem* m = (Mem*)STACKPNT(th, 0);
-	STACKSETPNT(th, 0, (LB*)(m?m->header.mem:NULL));
+	Mem* m = (Mem*)STACK_PNT(th, 0);
+	STACK_SET_PNT(th, 0, (LB*)(m?m->header.mem:NULL));
 	return 0;
 }
 int fun_memNext(Thread* th)
 {
-	Mem* m = (Mem*)STACKPNT(th, 0);
-	STACKSETPNT(th, 0, (LB*)(m?m->listNext:MM.listMems));
+	Mem* m = (Mem*)STACK_PNT(th, 0);
+	STACK_SET_PNT(th, 0, (LB*)(m?m->listNext:MM.listMems));
 	return 0;
 }
 
@@ -286,21 +286,21 @@ int fun_memoryAuthorize(Thread* th)
 int fun_memoryAssign(Thread* th)
 {
 	Mem* previous = th->memDelegate;
-	Mem* mem = (Mem*)STACKPNT(th, 0);
+	Mem* mem = (Mem*)STACK_PNT(th, 0);
 	if (!mem) mem = th->header.mem;
 	th->memDelegate = mem;
 	//	PRINTF(LOG_DEV,"*************_memoryAssign:\n");
 	//	PRINTF(LOG_DEV,"_memoryAssign "LSX": " LSD" delegate to "LSX" :" LSD"\n", th, th->uid, MM.thread, MM.thread->uid);
-	STACKSETPNT(th, 0, (LB*)previous);
+	STACK_SET_PNT(th, 0, (LB*)previous);
 	return 0;
 }
 
 int fun_memoryTake(Thread* th)
 {
-	LB* arg = STACKPNT(th, 0);
-	Mem* m = (Mem*)STACKPNT(th, 1);
-	if (m && STACKISPNT(th,0)) memoryTake(m, arg);
-	STACKSKIP(th, 1);
+	LB* arg = STACK_PNT(th, 0);
+	Mem* m = (Mem*)STACK_PNT(th, 1);
+	if (m && STACK_IS_PNT(th,0)) memoryTake(m, arg);
+	STACK_SKIP(th, 1);
 	return 0;
 }
 
@@ -312,7 +312,7 @@ int fun_threadCurrent(Thread* th)
 
 int fun_threadCreate(Thread* th)
 {
-	Mem* m = (Mem*)STACKPNT(th, 0);
+	Mem* m = (Mem*)STACK_PNT(th, 0);
 	Thread* t=threadCreate(th, m);
 	if (th->OM) return EXEC_OM;
 //interpreterTRON=1;
@@ -321,67 +321,67 @@ int fun_threadCreate(Thread* th)
 		t->listNext = MM.listThreads;
 		MM.listThreads = t;
 	}
-	STACKSETPNT(th,0, (LB*)t);
+	STACK_SET_PNT(th,0, (LB*)t);
 	return 0;
 }
 
 int fun_threadDump(Thread* th)
 {
-	Thread* t = (Thread*)STACKPNT(th, 0);
+	Thread* t = (Thread*)STACK_PNT(th, 0);
 	if (t) threadDump(LOG_USER,t,6);
 	return 0;
 }
 int fun_threadNext(Thread* th)
 {
-	Thread* t = (Thread*)STACKPNT(th, 0);
-	STACKSETPNT(th, 0, (LB*)(t?t->listNext:MM.listThreads));
+	Thread* t = (Thread*)STACK_PNT(th, 0);
+	STACK_SET_PNT(th, 0, (LB*)(t?t->listNext:MM.listThreads));
 	return 0;
 }
 int fun_threadUser(Thread* th)
 {
-	Thread* t = (Thread*)STACKPNT(th, 0);
-	if (t) STACKSETPNT(th, 0, t->user);
+	Thread* t = (Thread*)STACK_PNT(th, 0);
+	if (t) STACK_SET_PNT(th, 0, t->user);
 	return 0;
 }
 int fun_threadSetUser(Thread* th)
 {
-	LB* user = STACKPNT(th,0);
-	Thread* t = (Thread*)STACKPNT(th, 1);
-	if (t && STACKISPNT(th, 0)) {
+	LB* user = STACK_PNT(th,0);
+	Thread* t = (Thread*)STACK_PNT(th, 1);
+	if (t && STACK_IS_PNT(th, 0)) {
 		t->user = user;
-		MEMORYMARK((LB*)t,t->user);
+		MEMORY_MARK((LB*)t,t->user);
 	}
-	STACKDROP(th);
+	STACK_DROP(th);
 	return 0;
 }
 
 int fun_threadId(Thread* th)
 {
-	Thread* t = (Thread*)STACKPNT(th, 0);
-	if (t) STACKSETINT(th, 0, t->uid);
+	Thread* t = (Thread*)STACK_PNT(th, 0);
+	if (t) STACK_SET_INT(th, 0, t->uid);
 	return 0;
 }
 int fun_threadPP(Thread* th)
 {
-	Thread* t = (Thread*)STACKPNT(th, 0);
-	if (t) STACKSETINT(th, 0, t->pp);
+	Thread* t = (Thread*)STACK_PNT(th, 0);
+	if (t) STACK_SET_INT(th, 0, t->sp);
 	return 0;
 }
 int fun_threadOM(Thread* th)
 {
-	Thread* t = (Thread*)STACKPNT(th, 0);
-	if (t) STACKSETBOOL(th, 0, t->OM);
+	Thread* t = (Thread*)STACK_PNT(th, 0);
+	if (t) STACK_SET_BOOL(th, 0, t->OM);
 	return 0;
 }
 int fun_threadCount(Thread* th)
 {
-	Thread* t = (Thread*)STACKPNT(th, 0);
-	if (t) STACKSETINT(th, 0, t->count);
+	Thread* t = (Thread*)STACK_PNT(th, 0);
+	if (t) STACK_SET_INT(th, 0, t->count);
 	return 0;
 }
 int fun_threadClear(Thread* th)
 {
-	Thread* t = (Thread*)STACKPNT(th, 0);
+	Thread* t = (Thread*)STACK_PNT(th, 0);
 	if (!t) return 0;
 //	PRINTF(LOG_DEV,"_threadClear %d from %d\n", t->uid, th->uid);
 	if (t == th) return 0;	// should not happen
@@ -389,32 +389,32 @@ int fun_threadClear(Thread* th)
 	t->callstack = -1;	// this will prevent function callstack from failing
 	t->stack = NULL;
 	t->fun = NULL;
-	STACKSETINT(th, 0, 0);
+	STACK_SET_INT(th, 0, 0);
 	return 0;
 }
 int fun_threadMemory(Thread* th)
 {
-	Thread* t = (Thread*)(STACKPNT(th, 0));
-	if (t) STACKSETPNT(th, 0, (LB*)(t->header.mem));
+	Thread* t = (Thread*)(STACK_PNT(th, 0));
+	if (t) STACK_SET_PNT(th, 0, (LB*)(t->header.mem));
 	return 0;
 }
 
 int _printBuffer(Thread* th,Buffer* buffer)
 {
 	LB* p;
-	Thread* t = (Thread*)(STACKPNT(th, 0));
+	Thread* t = (Thread*)(STACK_PNT(th, 0));
 	Mem* current = th->memDelegate;
 	if (t) th->memDelegate = t->memDelegate;
 	p=memoryPrintBuffer(th, buffer);
 	th->memDelegate = current;
-	STACKSETPNT(th, 0, (p));
+	STACK_SET_PNT(th, 0, (p));
 	return 0;
 }
 
 int fun_threadRun(Thread* th)
 {
-	LINT maxCycles=STACKINT(th,0);
-	Thread* t=(Thread*)STACKPNT(th,1);
+	LINT maxCycles=STACK_INT(th,0);
+	Thread* t=(Thread*)STACK_PNT(th,1);
 
 	if (!t) FUN_RETURN_INT(-1);
 	FUN_RETURN_INT(interpreterRun(t, maxCycles));
@@ -423,23 +423,23 @@ int fun_threadRun(Thread* th)
 int fun_threadResume(Thread* th)
 {
 //	stack(th,0) contains the result of the function to resume
-	Thread* t=(Thread*)STACKPNT(th,1);
+	Thread* t=(Thread*)STACK_PNT(th,1);
 	if (!t) FUN_RETURN_INT(-1);
 //interpreterTRON=1;
-	STACKPUSHNIL_ERR(t,EXEC_OM);	// make space on the other thread
-	STACKCOPY(t,0,th,0);	// move onto the other thread
+	STACK_PUSH_NIL_ERR(t,EXEC_OM);	// make space on the other thread
+	STACK_COPY(t,0,th,0);	// move onto the other thread
 	FUN_RETURN_INT(0);
 }
 
 int fun_threadExec(Thread* th)
 {
 //	stack(th,0) contains the function to store on the thread t stack
-	Thread* t = (Thread*)STACKPNT(th, 1);
+	Thread* t = (Thread*)STACK_PNT(th, 1);
 
-	if (!STACKPNT(th,0) || (!t)) FUN_RETURN_INT(-1);
+	if (!STACK_PNT(th,0) || (!t)) FUN_RETURN_INT(-1);
 	//interpreterTRON=1;
-	STACKPUSHNIL_ERR(t,EXEC_OM);	// make space on the other thread
-	STACKCOPY(t,0,th,0);	// move onto the other thread
+	STACK_PUSH_NIL_ERR(t,EXEC_OM);	// make space on the other thread
+	STACK_COPY(t,0,th,0);	// move onto the other thread
 	interpreterExec(t, 0, 0);	// make it ready to go
 	FUN_RETURN_INT(0);
 }
@@ -450,26 +450,26 @@ int fun_callstack(Thread* th)
 	LINT callstack, pc;
 	LB* fun;
 
-	Thread* t = (Thread*)STACKPNT(th,0);
+	Thread* t = (Thread*)STACK_PNT(th,0);
 	if (!t) t = th;
 	callstack = t->callstack;
 	pc = t->pc;
 	fun = t->fun;
 	while (callstack >= 0)
 	{
-		FUN_PUSH_PNT( TABPNT(fun, FUN_USER_NAME));
+		FUN_PUSH_PNT( ARRAY_PNT(fun, FUN_USER_NAME));
 		FUN_PUSH_INT(pc);
-		FUN_PUSH_PNT( TABPNT(fun, FUN_USER_BC));
-		FUN_PUSH_PNT( TABPNT(fun, FUN_USER_PKG));
-		FUN_MAKE_TABLE( 4, DBG_TUPLE);
+		FUN_PUSH_PNT( ARRAY_PNT(fun, FUN_USER_BC));
+		FUN_PUSH_PNT( ARRAY_PNT(fun, FUN_USER_PKG));
+		FUN_MAKE_ARRAY( 4, DBG_TUPLE);
 		n++;
-		fun = STACKREFPNT(t, callstack, CALLSTACK_FUN);
-		pc = STACKREFINT(t, callstack, CALLSTACK_PC);
-		callstack = STACKREFINT(t, callstack, CALLSTACK_PREV);
+		fun = STACK_REF_PNT(t, callstack, CALLSTACK_FUN);
+		pc = STACK_REF_INT(t, callstack, CALLSTACK_PC);
+		callstack = STACK_REF_INT(t, callstack, CALLSTACK_PREV);
 	}
 	FUN_PUSH_NIL;
-	while ((n--) > 0) FUN_MAKE_TABLE( LIST_LENGTH, DBG_LIST);
-	STACKSKIP(th, 1);
+	while ((n--) > 0) FUN_MAKE_ARRAY( LIST_LENGTH, DBG_LIST);
+	STACK_SKIP(th, 1);
 	return 0;
 }
 int fun_caller(Thread* th)
@@ -480,15 +480,15 @@ int fun_caller(Thread* th)
 	Thread* t = th;
 	callstack = t->callstack;
 
-	fun = STACKREFPNT(t, callstack, CALLSTACK_FUN);
+	fun = STACK_REF_PNT(t, callstack, CALLSTACK_FUN);
 	if (!fun) FUN_RETURN_NIL;
-	pc = STACKREFINT(t, callstack, CALLSTACK_PC);
-	callstack = STACKREFINT(t, callstack, CALLSTACK_PREV);
-	FUN_PUSH_PNT( TABPNT(fun, FUN_USER_NAME));
+	pc = STACK_REF_INT(t, callstack, CALLSTACK_PC);
+	callstack = STACK_REF_INT(t, callstack, CALLSTACK_PREV);
+	FUN_PUSH_PNT( ARRAY_PNT(fun, FUN_USER_NAME));
 	FUN_PUSH_INT( pc);
-	FUN_PUSH_PNT( TABPNT(fun, FUN_USER_BC));
-	FUN_PUSH_PNT( TABPNT(fun, FUN_USER_PKG));
-	FUN_MAKE_TABLE( 4, DBG_TUPLE);
+	FUN_PUSH_PNT( ARRAY_PNT(fun, FUN_USER_BC));
+	FUN_PUSH_PNT( ARRAY_PNT(fun, FUN_USER_PKG));
+	FUN_MAKE_ARRAY( 4, DBG_TUPLE);
 	return 0;
 }
 
@@ -500,20 +500,20 @@ int coreThreadInit(Thread* th, Pkg *system)
 	Type* wUser = typeAllocWeak(th);
 	Type* fun_u0=typeAlloc(th,TYPECODE_FUN,NULL,1,u0);
 	Type* fun_Thread=typeAlloc(th,TYPECODE_FUN,NULL,1,MM.Thread);
-	Type* fun_Thread_I = typeAlloc(th,TYPECODE_FUN, NULL, 2, MM.Thread, MM.I);
-	Type* fun_Mem_I = typeAlloc(th,TYPECODE_FUN, NULL, 2, Mem->type, MM.I);
-	Type* fun_Mem_S = typeAlloc(th,TYPECODE_FUN, NULL, 2, Mem->type, MM.S);
+	Type* fun_Thread_I = typeAlloc(th,TYPECODE_FUN, NULL, 2, MM.Thread, MM.Int);
+	Type* fun_Mem_I = typeAlloc(th,TYPECODE_FUN, NULL, 2, Mem->type, MM.Int);
+	Type* fun_Mem_S = typeAlloc(th,TYPECODE_FUN, NULL, 2, Mem->type, MM.Str);
 	Type* fun_Mem_Mem = typeAlloc(th,TYPECODE_FUN, NULL, 2, Mem->type, Mem->type);
 	Type* fun_Thread_Mem = typeAlloc(th,TYPECODE_FUN, NULL, 2, MM.Thread,Mem->type);
 	Type* fun_Mem_Thread = typeAlloc(th,TYPECODE_FUN, NULL, 2, Mem->type,MM.Thread);
-	Type* fun_Mem_I_Mem = typeAlloc(th,TYPECODE_FUN, NULL, 3, Mem->type, MM.I, Mem->type);
-	Type* fun_Mem_S_I_Mem = typeAlloc(th,TYPECODE_FUN, NULL, 4, Mem->type, MM.S, MM.I, Mem->type);
+	Type* fun_Mem_I_Mem = typeAlloc(th,TYPECODE_FUN, NULL, 3, Mem->type, MM.Int, Mem->type);
+	Type* fun_Mem_S_I_Mem = typeAlloc(th,TYPECODE_FUN, NULL, 4, Mem->type, MM.Str, MM.Int, Mem->type);
 	Type* fun_Thread_B = typeAlloc(th,TYPECODE_FUN, NULL, 2, MM.Thread, MM.Boolean);
-	Type* fun_Thread_fun_u0_I=typeAlloc(th,TYPECODE_FUN,NULL,3,MM.Thread,fun_u0,MM.I);
-	Type* fun_Thread_I_I=typeAlloc(th,TYPECODE_FUN,NULL,3,MM.Thread,MM.I,MM.I);
-	Type* fun_Thread_u0_I=typeAlloc(th,TYPECODE_FUN,NULL,3,MM.Thread,u0,MM.I);
-	Type* fun_S_I_S_Pkg = typeAlloc(th,TYPECODE_FUN, NULL, 1, typeAlloc(th,TYPECODE_TUPLE, NULL, 4, MM.S, MM.I, MM.S, MM.Pkg));
-	Type* fun_Thread_list_S_I_S_Pkg = typeAlloc(th,TYPECODE_FUN, NULL, 2, MM.Thread, typeAlloc(th,TYPECODE_LIST, NULL, 1, typeAlloc(th,TYPECODE_TUPLE, NULL, 4, MM.S, MM.I, MM.S, MM.Pkg)));
+	Type* fun_Thread_fun_u0_I=typeAlloc(th,TYPECODE_FUN,NULL,3,MM.Thread,fun_u0,MM.Int);
+	Type* fun_Thread_I_I=typeAlloc(th,TYPECODE_FUN,NULL,3,MM.Thread,MM.Int,MM.Int);
+	Type* fun_Thread_u0_I=typeAlloc(th,TYPECODE_FUN,NULL,3,MM.Thread,u0,MM.Int);
+	Type* fun_S_I_S_Pkg = typeAlloc(th,TYPECODE_FUN, NULL, 1, typeAlloc(th,TYPECODE_TUPLE, NULL, 4, MM.Str, MM.Int, MM.Str, MM.Package));
+	Type* fun_Thread_list_S_I_S_Pkg = typeAlloc(th,TYPECODE_FUN, NULL, 2, MM.Thread, typeAlloc(th,TYPECODE_LIST, NULL, 1, typeAlloc(th,TYPECODE_TUPLE, NULL, 4, MM.Str, MM.Int, MM.Str, MM.Package)));
 
 
 	pkgAddFun(th, system,"_threadCurrent",fun_threadCurrent,fun_Thread);
@@ -521,11 +521,11 @@ int coreThreadInit(Thread* th, Pkg *system)
 	pkgAddFun(th, system, "_memoryAssign", fun_memoryAssign, typeAlloc(th,TYPECODE_FUN, NULL, 2, MemAuth->type, MemAuth->type));
 	pkgAddFun(th, system, "memoryTake", fun_memoryTake, typeAlloc(th,TYPECODE_FUN, NULL, 3, MemAuth->type, u0, u0));
 
-	pkgAddConstInt(th, system, "EXEC_IDLE", EXEC_IDLE, MM.I);
-	pkgAddConstInt(th, system, "EXEC_PREEMPTION", EXEC_PREEMPTION, MM.I);
-	pkgAddConstInt(th, system, "EXEC_WAIT", EXEC_WAIT, MM.I);
-	pkgAddConstInt(th, system, "EXEC_EXIT", EXEC_EXIT, MM.I);
-	pkgAddConstInt(th, system, "EXEC_OM", EXEC_OM, MM.I);
+	pkgAddConstInt(th, system, "EXEC_IDLE", EXEC_IDLE, MM.Int);
+	pkgAddConstInt(th, system, "EXEC_PREEMPTION", EXEC_PREEMPTION, MM.Int);
+	pkgAddConstInt(th, system, "EXEC_WAIT", EXEC_WAIT, MM.Int);
+	pkgAddConstInt(th, system, "EXEC_EXIT", EXEC_EXIT, MM.Int);
+	pkgAddConstInt(th, system, "EXEC_OM", EXEC_OM, MM.Int);
 
 	pkgAddFun(th, system, "_callstack", fun_callstack, fun_Thread_list_S_I_S_Pkg);
 	pkgAddFun(th, system, "caller", fun_caller, fun_S_I_S_Pkg);

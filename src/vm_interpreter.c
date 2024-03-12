@@ -55,20 +55,20 @@ int isHigherFun(LB* fun)
 {
 	LB* p;
 	if (!fun) return 0;
-	p=TABPNT(fun,FUN_USER_NAME);
-	if ((p)&&(HEADER_TYPE(p)==TYPE_TAB)) return 1;
+	p=ARRAY_PNT(fun,FUN_USER_NAME);
+	if ((p)&&(HEADER_TYPE(p)==TYPE_ARRAY)) return 1;
 	return 0;
 }
 LB* getFunStruct(LB* fun)
 {
-	if (isHigherFun(fun)) return TABPNT(fun,FUN_USER_NAME);
+	if (isHigherFun(fun)) return ARRAY_PNT(fun,FUN_USER_NAME);
 	return fun;
 }
 
 char* interpreterCurrentFun(Thread* th)
 {
-	LB* p=TABPNT(getFunStruct(th->fun),FUN_USER_NAME);
-	if (p) return STRSTART(p);
+	LB* p=ARRAY_PNT(getFunStruct(th->fun),FUN_USER_NAME);
+	if (p) return STR_START(p);
 	return "lambda function";
 }
 
@@ -85,81 +85,81 @@ LINT interpreterExec(Thread* th,LINT argc,LINT tfc)	// fun arg0 ... 0:argn-1
 	int k;
 	LINT i,nlocals;
 	LB* bytecode;
-	LB* fun=STACKPNT(th,argc);
+	LB* fun=STACK_PNT(th,argc);
 	th->forceOpcode=THREAD_OPCODE_NONE;
 	if (!fun)
 	{
-		STACKDROPN(th,argc);
+		STACK_DROPN(th,argc);
 		return 0;
 	}
 	if (tfc)
 	{
 //		threadDump(LOG_SYS,th,10); PRINTF(LOG_DEV,">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>before tfc\n"); getchar();
 
-		th->fun=STACKREFPNT(th,th->callstack,CALLSTACK_FUN);
-		th->pc=STACKREFINT(th,th->callstack,CALLSTACK_PC);
-		th->callstack=STACKREFINT(th,th->callstack,CALLSTACK_PREV);
-		for(i=-1;i<argc;i++) STACKCOPYTOREF(th,tfc,-i,argc-1-i);
+		th->fun=STACK_REF_PNT(th,th->callstack,CALLSTACK_FUN);
+		th->pc=STACK_REF_INT(th,th->callstack,CALLSTACK_PC);
+		th->callstack=STACK_REF_INT(th,th->callstack,CALLSTACK_PREV);
+		for(i=-1;i<argc;i++) STACK_COPY_TO_REF(th,tfc,-i,argc-1-i);
 
-		STACKDROPN(th,th->pp-(tfc+argc)+1);
+		STACK_DROPN(th,th->sp-(tfc+argc)+1);
 //		threadDump(LOG_SYS,th,10); PRINTF(LOG_DEV,">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>after tfc\n"); getchar();
 	}
 
 	if (isHigherFun(fun))
 	{
 		LINT i;
-		LINT binds=TABLEN(fun)-1;
+		LINT binds=ARRAY_LENGTH(fun)-1;
 
 //		threadDump(LOG_SYS,th,10); PRINTF(LOG_DEV,">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>start higherfun\n"); getchar();
 
 		for(i=0;i<binds;i++) FUN_PUSH_NIL;
-		for(i=0;i<argc;i++) STACKINTERNALCOPY(th,i,i+binds);
-		for(i=0;i<binds;i++) STACKLOAD(th,argc+i,fun,binds-i);
-		STACKLOAD(th,argc+binds,fun,FUN_USER_NAME);
-		fun=TABPNT(fun,FUN_USER_NAME);
+		for(i=0;i<argc;i++) STACK_INTERNAL_COPY(th,i,i+binds);
+		for(i=0;i<binds;i++) STACK_LOAD(th,argc+i,fun,binds-i);
+		STACK_LOAD(th,argc+binds,fun,FUN_USER_NAME);
+		fun=ARRAY_PNT(fun,FUN_USER_NAME);
 //		threadDump(LOG_SYS,th,10); PRINTF(LOG_DEV,">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>done higherfun\n"); getchar();
 //		interpreterTRON=1;
 
 	}
-	else if (TABLEN(fun)==FUN_NATIVE_LEN)
+	else if (ARRAY_LENGTH(fun)==FUN_NATIVE_LENGTH)
 	{
 		NATIVE native;
 		LINT fastAlloc= memoryGetFast();
-		LINT def=STACKREF(th)-argc;	// def is the position of the native function in the stack
+		LINT def=STACK_REF_(th)-argc;	// def is the position of the native function in the stack
 		LINT skip;
 
-		if (!TABISPNT(fun,FUN_NATIVE_POINTER))
+		if (!ARRAY_IS_PNT(fun,FUN_NATIVE_POINTER))
 		{
 			LINT i;
-			for(i=argc-1;i>=0;i--) STACKINTERNALCOPY(th,i+1,i);
-			STACKDROP(th);
-			th->forceOpcode=(char)TABINT(fun,FUN_NATIVE_POINTER);
+			for(i=argc-1;i>=0;i--) STACK_INTERNAL_COPY(th,i+1,i);
+			STACK_DROP(th);
+			th->forceOpcode=(char)ARRAY_INT(fun,FUN_NATIVE_POINTER);
 //			return tfc?-1:0;
 			return 0;
 		}
-//		if (MM.gcTrace) PRINTF(LOG_DEV,"%s",STRSTART((TABPNT(fun,FUN_NATIVE_NAME))));
-		native=(NATIVE)TABGET(TABPNT(fun,FUN_NATIVE_POINTER),0);
+//		if (MM.gcTrace) PRINTF(LOG_DEV,"%s",STR_START((ARRAY_PNT(fun,FUN_NATIVE_NAME))));
+		native=(NATIVE)ARRAY_GET(ARRAY_PNT(fun,FUN_NATIVE_POINTER),0);
 		k=(*native)(th);
 //		if (MM.gcTrace) PRINTF(LOG_DEV, "/");
 		while(memoryGetFast()>fastAlloc) memoryLeaveFast();	// this simplifies a lot how to write native functions which need "fastAlloc"
 //		if (k) {
-//			PRINTF(LOG_DEV,"native %s returns %d\n", STRSTART((TABPNT(fun, FUN_NATIVE_NAME))), k);
+//			PRINTF(LOG_DEV,"native %s returns %d\n", STR_START((ARRAY_PNT(fun, FUN_NATIVE_NAME))), k);
 //			threadDump(LOG_SYS, th, 3);
 //		}
 		if (k) return k;
-		skip = STACKREF(th) - def;
+		skip = STACK_REF_(th) - def;
 		if (skip<0)
 		{
-			PRINTF(LOG_SYS,"NATIVE pp=" LSD ", should be at least " LSD " in %s\n",STACKREF(th),def,STRSTART((TABPNT(fun,FUN_NATIVE_NAME))));
+			PRINTF(LOG_SYS,">Error: NATIVE sp=" LSD ", should be at least " LSD " in %s\n",STACK_REF_(th),def,STR_START((ARRAY_PNT(fun,FUN_NATIVE_NAME))));
 //			threadDump(LOG_SYS,th,5);
 			return -1;  // wrong implementation
 		}
-		else if (skip >0) STACKSKIP(th, skip);
+		else if (skip >0) STACK_SKIP(th, skip);
 		// now the returned value of the native function has replaced the native function in the stack
 		return tfc ? -1: 0;
 	}
 
-	bytecode=(TABPNT(fun,FUN_USER_BC));
+	bytecode=(ARRAY_PNT(fun,FUN_USER_BC));
 
 	nlocals=BC_LOCALS(bytecode);
 	for(i=0;i<nlocals;i++) FUN_PUSH_NIL;
@@ -167,7 +167,7 @@ LINT interpreterExec(Thread* th,LINT argc,LINT tfc)	// fun arg0 ... 0:argn-1
 	FUN_PUSH_PNT(th->fun);
 	FUN_PUSH_INT(th->pc);
 	FUN_PUSH_INT(th->callstack);
-	th->callstack=STACKREF(th);
+	th->callstack=STACK_REF_(th);
 	th->pc=0;
 	th->fun=fun;
 	return -1;
@@ -178,27 +178,27 @@ int interpreterBreakThrow(Thread* th,LINT type, LW data, int dataType)
 	while(th->callstack>=0)
 	{
 		LB* last=NULL;
-		LB* mark=STACKREFPNT(th,th->callstack,CALLSTACK_MARK);
+		LB* mark=STACK_REF_PNT(th,th->callstack,CALLSTACK_MARK);
 
 		while(mark)
 		{
-			if (TABINT(mark,MARK_TYPE)==type)
+			if (ARRAY_INT(mark,MARK_TYPE)==type)
 			{
-				if (last) TABSETPNT(last,MARK_NEXT,TABPNT(mark,MARK_NEXT))
-				else STACKREFSETPNT(th,th->callstack,CALLSTACK_MARK,TABPNT(mark,MARK_NEXT));	// pop the mark
-				th->pc=TABINT(mark,MARK_PC);
-				th->pp=TABINT(mark,MARK_PP);
+				if (last) ARRAY_SET_PNT(last,MARK_NEXT,ARRAY_PNT(mark,MARK_NEXT))
+				else STACK_REF_SET_PNT(th,th->callstack,CALLSTACK_MARK,ARRAY_PNT(mark,MARK_NEXT));	// pop the mark
+				th->pc=ARRAY_INT(mark,MARK_PC);
+				th->sp=ARRAY_INT(mark,MARK_SP);
 				FUN_PUSH_NIL;
-				STACKSETTYPE(th,0,data,dataType);
+				STACK_SET_TYPE(th,0,data,dataType);
 				return 0;
 			}
 			last=mark;
-			mark=TABPNT(mark,MARK_NEXT);
+			mark=ARRAY_PNT(mark,MARK_NEXT);
 		}
 
-		th->fun=STACKREFPNT(th,th->callstack,CALLSTACK_FUN);
-		th->pc=STACKREFINT(th,th->callstack,CALLSTACK_PC);
-		th->callstack=STACKREFINT(th,th->callstack,CALLSTACK_PREV);
+		th->fun=STACK_REF_PNT(th,th->callstack,CALLSTACK_FUN);
+		th->pc=STACK_REF_INT(th,th->callstack,CALLSTACK_PC);
+		th->callstack=STACK_REF_INT(th,th->callstack,CALLSTACK_PREV);
 	}
 	PRINTF(LOG_USER,"Uncaught exception!\n");
 	itemDump(th, LOG_USER,data, dataType);
@@ -208,7 +208,7 @@ LINT interpreterEnd(Thread* th,LINT count, LINT result)
 {
 	th->count += count;
 //	stackReset(th);
-	if (result == EXEC_IDLE) th->pp--;
+	if (result == EXEC_IDLE) th->sp--;
 //	if (result == EXEC_OM) PRINTF(LOG_DEV,"EXEC_OM "LSX":" LSD" / "LSX" :" LSD"\n", th,th->uid, MM.thread, MM.thread->uid);
 	if (result == EXEC_OM)
 	{
@@ -287,7 +287,7 @@ LINT interpreterRun(Thread* th,LINT maxCycles)
 			{
 				LINT pci=(LINT)(pc-1-BC_START(bytecode));
 				threadDump(LOG_USER,th,10);
-				PRINTF(LOG_USER,"#" LSD " (pp=" LSD " locals=" LSD " callstack=" LSD ") %s -> ",th->uid,th->pp, STACKREF(th)-locals,STACKREF(th)-th->callstack,interpreterCurrentFun(th));
+				PRINTF(LOG_USER,"#" LSD " (sp=" LSD " locals=" LSD " callstack=" LSD ") %s -> ",th->uid,th->sp, STACK_REF_(th)-locals,STACK_REF_(th)-th->callstack,interpreterCurrentFun(th));
 				PRINTF(LOG_USER,"count=" LSD "/" LSD " pc=" LSD " op=%2d:",th->count+nloop-count, maxCycles,pci,op);
 				opcodePrint(th, LOG_USER,op,pc,pci);
 //				if (1) PRINTF(LOG_DEV,"");
@@ -311,98 +311,98 @@ LINT interpreterRun(Thread* th,LINT maxCycles)
 				th->atomic = (*(pc++)) & 255;
 				break;
 			case OPbreak:
-				if (interpreterBreakThrow(th, MARK_TYPE_BREAK, STACKGET(th, 0), STACKTYPE(th, 0))) return INTERPRETER_OM;
+				if (interpreterBreakThrow(th, MARK_TYPE_BREAK, STACK_GET(th, 0), STACK_TYPE(th, 0))) return INTERPRETER_OM;
 				BC_PRECOMPUTE
 				break;
 			case OPcast:
-				if (STACKGET(th, 0) != STACKGET(th, 1)) STACKSETNIL(th, 2);
-				STACKDROPN(th, 2);
+				if (STACK_GET(th, 0) != STACK_GET(th, 1)) STACK_SET_NIL(th, 2);
+				STACK_DROPN(th, 2);
 				break;
 			case OPcastb:
 				i = (*(pc++)) & 255;
-				if (STACKGET(th, 0) != INTTOVAL(i)) STACKSETNIL(th, 1);
-				STACKDROP(th);
+				if (STACK_GET(th, 0) != VAL_FROM_INT(i)) STACK_SET_NIL(th, 1);
+				STACK_DROP(th);
 				break;
 			case OPceil: BCFLOAT1FUN(ceil)
 			case OPconst:
-				STACKLOAD(th, 0, globals, STACKINT(th, 0));
+				STACK_LOAD(th, 0, globals, STACK_INT(th, 0));
 				break;
 			case OPconstb:
 				i = (*(pc++)) & 255;
-				 STACKPUSHNIL_ERR(th, INTERPRETER_OM);
-				STACKLOAD(th, 0, globals, i);
+				 STACK_PUSH_NIL_ERR(th, INTERPRETER_OM);
+				STACK_LOAD(th, 0, globals, i);
 				break;
 			case OPcos: BCFLOAT1FUN(cos)
 			case OPcosh: BCFLOAT1FUN(cosh)
-			case OPdftab:
-				n = STACKPULLINT(th);
-				STACKPUSHTABLE_ERR(th, n, DBG_TUPLE, INTERPRETER_OM);
-				p = STACKPNT(th, 0);
+			case OPdftup:
+				n = STACK_PULL_INT(th);
+				STACK_PUSH_EMPTY_ARRAY_ERR(th, n, DBG_TUPLE, INTERPRETER_OM);
+				p = STACK_PNT(th, 0);
 				j = 1;
-				for (i = n - 1; i >= 0; i--) STACKSTORE(p, i, th, j++);
-				STACKSKIP(th, n);
+				for (i = n - 1; i >= 0; i--) STACK_STORE(p, i, th, j++);
+				STACK_SKIP(th, n);
 				break;
-			case OPdftabb:
+			case OPdftupb:
 				n = (*(pc++)) & 255;
-				STACKPUSHTABLE_ERR(th, n, DBG_TUPLE, INTERPRETER_OM);
-				p = STACKPNT(th, 0);
+				STACK_PUSH_EMPTY_ARRAY_ERR(th, n, DBG_TUPLE, INTERPRETER_OM);
+				p = STACK_PNT(th, 0);
 				j = 1;
-				for (i = n - 1; i >= 0; i--) STACKSTORE(p, i, th, j++);
-				STACKSKIP(th, n);
+				for (i = n - 1; i >= 0; i--) STACK_STORE(p, i, th, j++);
+				STACK_SKIP(th, n);
 				break;
 			case OPdfarray:
-				n = STACKPULLINT(th);
-				STACKPUSHTABLE_ERR(th, n, DBG_ARRAY, INTERPRETER_OM);
-				p = STACKPNT(th, 0);
+				n = STACK_PULL_INT(th);
+				STACK_PUSH_EMPTY_ARRAY_ERR(th, n, DBG_ARRAY, INTERPRETER_OM);
+				p = STACK_PNT(th, 0);
 				j = 1;
-				for (i = n - 1; i >= 0; i--) STACKSTORE(p, i, th, j++);
-				STACKSKIP(th, n);
+				for (i = n - 1; i >= 0; i--) STACK_STORE(p, i, th, j++);
+				STACK_SKIP(th, n);
 				break;
 			case OPdfarrayb:
 				n = (*(pc++)) & 255;
-				STACKPUSHTABLE_ERR(th, n, DBG_ARRAY, INTERPRETER_OM);
-				p = STACKPNT(th, 0);
+				STACK_PUSH_EMPTY_ARRAY_ERR(th, n, DBG_ARRAY, INTERPRETER_OM);
+				p = STACK_PNT(th, 0);
 				j = 1;
-				for (i = n - 1; i >= 0; i--) STACKSTORE(p, i, th, j++);
-				STACKSKIP(th, n);
+				for (i = n - 1; i >= 0; i--) STACK_STORE(p, i, th, j++);
+				STACK_SKIP(th, n);
 				break;
 			case OPdiv:
-				b = STACKINT(th, 0);
+				b = STACK_INT(th, 0);
 				if (!b)
 				{
-					PRINTF(LOG_SYS, "BCdiv: division by zero in function %s\n", interpreterCurrentFun(th));
-					STACKSETINT(th, 1, (0));
+					PRINTF(LOG_SYS, ">Error: BCdiv division by zero in function %s\n", interpreterCurrentFun(th));
+					STACK_SET_INT(th, 1, (0));
 				}
-				else STACKSETINT(th, 1, STACKINT(th, 1) / b);
-				STACKDROP(th);
+				else STACK_SET_INT(th, 1, STACK_INT(th, 1) / b);
+				STACK_DROP(th);
 				break;
 			case OPdivf: BCFLOAT2(/ )
 			case OPdrop:
-				STACKDROP(th);
+				STACK_DROP(th);
 				break;
 			case OPdump:
 				PRINTF(LOG_USER, "->");
-				itemDump(th, LOG_USER, STACKGET(th, 0), STACKTYPE(th, 0));
+				itemDump(th, LOG_USER, STACK_GET(th, 0), STACK_TYPE(th, 0));
 				break;
 			case OPdumpd:
 				//PRINTF(LOG_USER, "->");
-				itemDumpDirect(th, LOG_USER, STACKGET(th, 0), STACKTYPE(th, 0));
+				itemDumpDirect(th, LOG_USER, STACK_GET(th, 0), STACK_TYPE(th, 0));
 				break;
 			case OPdup:
-				 STACKPUSHNIL_ERR(th, INTERPRETER_OM);
-				STACKINTERNALCOPY(th, 0, 1);
+				 STACK_PUSH_NIL_ERR(th, INTERPRETER_OM);
+				STACK_INTERNAL_COPY(th, 0, 1);
 				break;
 			case OPelse:
-				if (STACKPULLPNT(th) != MM._true) pc += bytecodeGetJump(pc);
+				if (STACK_PULL_PNT(th) != MM._true) pc += bytecodeGetJump(pc);
 				else pc += BC_JUMP_SIZE;
 				break;
 			case OPeor: BCINT2(^)
 			case OPeq:
-				STACKSETBOOL(th, 1, lwEquals(STACKGET(th, 0), STACKTYPE(th, 0), STACKGET(th, 1), STACKTYPE(th, 1)));
-				STACKDROP(th);
+				STACK_SET_BOOL(th, 1, lwEquals(STACK_GET(th, 0), STACK_TYPE(th, 0), STACK_GET(th, 1), STACK_TYPE(th, 1)));
+				STACK_DROP(th);
 				break;
 			case OPexec:// [fonction, argn, ..., arg1]
-				n = STACKPULLINT(th);
+				n = STACK_PULL_INT(th);
 				EXEC_COMMON
 					break;
 			case OPexecb:
@@ -411,53 +411,53 @@ LINT interpreterRun(Thread* th,LINT maxCycles)
 					break;
 			case OPexp: BCFLOAT1FUN(exp)
 			case OPfalse:
-				STACKPUSHPNT_ERR(th, MM._false, INTERPRETER_OM);
+				STACK_PUSH_PNT_ERR(th, MM._false, INTERPRETER_OM);
 				break;
 			case OPfetch:
-				isNil = STACKISNIL(th, 0);
-				i = STACKPULLINT(th);
-				p = STACKPNT(th, 0);
+				isNil = STACK_IS_NIL(th, 0);
+				i = STACK_PULL_INT(th);
+				p = STACK_PNT(th, 0);
 				if ((!p) || isNil) {
-					STACKSETNIL(th, 0);
+					STACK_SET_NIL(th, 0);
 				}
 				else
 				{
-					if ((i < 0) || (i >= TABLEN(p))) {
-						STACKSETNIL(th, 0);
+					if ((i < 0) || (i >= ARRAY_LENGTH(p))) {
+						STACK_SET_NIL(th, 0);
 					}
-					else STACKLOAD(th, 0, p, i);
+					else STACK_LOAD(th, 0, p, i);
 				}
 				break;
 			case OPfetchb:
 				i = (*(pc++)) & 255;
-				p = STACKPNT(th, 0);
-				if (p) STACKLOAD(th, 0, p, i);
+				p = STACK_PNT(th, 0);
+				if (p) STACK_LOAD(th, 0, p, i);
 				break;
 			case OPfinal:
-				STACKCOPYTOREF(th, th->callstack, -1, 0);
-				th->pp = th->callstack + 1;
+				STACK_COPY_TO_REF(th, th->callstack, -1, 0);
+				th->sp = th->callstack + 1;
 				break;
 			case OPfirst:
-				STACKPUSHNIL_ERR(th, INTERPRETER_OM);
-				p = STACKPNT(th, 1);
-				if (p&&(HEADER_TYPE(p) == TYPE_TAB)) STACKLOAD(th, 0, p, 0);
+				STACK_PUSH_NIL_ERR(th, INTERPRETER_OM);
+				p = STACK_PNT(th, 1);
+				if (p&&(HEADER_TYPE(p) == TYPE_ARRAY)) STACK_LOAD(th, 0, p, 0);
 				break;
 			case OPfloat:
 				i = getLsbInt(pc);
 				pc += LWLEN;
-				STACKPUSHNIL_ERR(th, INTERPRETER_OM);
-				STACKSETFLOAT(th, 0, *(LFLOAT*)(&i));
+				STACK_PUSH_NIL_ERR(th, INTERPRETER_OM);
+				STACK_SET_FLOAT(th, 0, *(LFLOAT*)(&i));
 				break;
 			case OPfloor: BCFLOAT1FUN(floor)
 			case OPformat:
-				n = STACKPULLINT(th);
+				n = STACK_PULL_INT(th);
 				if (bufferFormat(MM.tmpBuffer, th, n)) return INTERPRETER_OM;
-				if (n > 0) STACKSKIP(th, n);
+				if (n > 0) STACK_SKIP(th, n);
 				break;
 			case OPformatb:
 				n = (*(pc++)) & 255;
 				if (bufferFormat(MM.tmpBuffer, th, n)) return INTERPRETER_OM;
-				if (n > 0) STACKSKIP(th, n);
+				if (n > 0) STACK_SKIP(th, n);
 				break;
 			case OPge: BCINT2BOOL(>= )
 			case OPgef: BCFLOAT2BOOL(>= )
@@ -467,7 +467,7 @@ LINT interpreterRun(Thread* th,LINT maxCycles)
 			case OPgt: BCINT2BOOL(> )
 			case OPgtf: BCFLOAT2BOOL(> )
 			case OPhd:
-				if (STACKPNT(th, 0)) STACKLOAD(th, 0, STACKPNT(th, 0), 0);
+				if (STACK_PNT(th, 0)) STACK_LOAD(th, 0, STACK_PNT(th, 0), 0);
 				break;
 			case OPholdon:
 				th->pc = pc - BC_START(bytecode);
@@ -476,36 +476,36 @@ LINT interpreterRun(Thread* th,LINT maxCycles)
 			case OPint:
 				i = getLsbInt(pc);
 				pc += LWLEN;
-				STACKPUSHINT_ERR(th,(i), INTERPRETER_OM);
+				STACK_PUSH_INT_ERR(th,i, INTERPRETER_OM);
 				break;
 			case OPintb:
 				i = pc[0] & 255;
 				pc++;
-				STACKPUSHINT_ERR(th,(i), INTERPRETER_OM);
+				STACK_PUSH_INT_ERR(th,i, INTERPRETER_OM);
 				break;
 			case OPisnan:
-				f = STACKFLOAT(th, 0);
-				STACKSETBOOL(th, 0, isnan(f));
+				f = STACK_FLOAT(th, 0);
+				STACK_SET_BOOL(th, 0, isnan(f));
 				break;
 			case OPisinf:
-				f = STACKFLOAT(th, 0);
-				STACKSETBOOL(th, 0, isinf(f));
+				f = STACK_FLOAT(th, 0);
+				STACK_SET_BOOL(th, 0, isinf(f));
 				break;
 			case OPlambda:
-				n = STACKPULLINT(th);
-				STACKPUSHTABLE_ERR(th, n, DBG_LAMBDA, INTERPRETER_OM);
-				p = STACKPNT(th, 0);
+				n = STACK_PULL_INT(th);
+				STACK_PUSH_EMPTY_ARRAY_ERR(th, n, DBG_LAMBDA, INTERPRETER_OM);
+				p = STACK_PNT(th, 0);
 				j = 1;
-				for (i = n - 1; i >= 0; i--) STACKSTORE(p, i, th, j++);
-				STACKSKIP(th, n);
+				for (i = n - 1; i >= 0; i--) STACK_STORE(p, i, th, j++);
+				STACK_SKIP(th, n);
 				break;
 			case OPlambdab:
 				n = (*(pc++)) & 255;
-				STACKPUSHTABLE_ERR(th, n, DBG_LAMBDA, INTERPRETER_OM);
-				p = STACKPNT(th, 0);
+				STACK_PUSH_EMPTY_ARRAY_ERR(th, n, DBG_LAMBDA, INTERPRETER_OM);
+				p = STACK_PNT(th, 0);
 				j = 1;
-				for (i = n - 1; i >= 0; i--) STACKSTORE(p, i, th, j++);
-				STACKSKIP(th, n);
+				for (i = n - 1; i >= 0; i--) STACK_STORE(p, i, th, j++);
+				STACK_SKIP(th, n);
 				break;
 			case OPle:	BCINT2BOOL(<= )
 			case OPlef: BCFLOAT2BOOL(<= )
@@ -514,13 +514,13 @@ LINT interpreterRun(Thread* th,LINT maxCycles)
 			case OPlt:	BCINT2BOOL(< )
 			case OPltf: BCFLOAT2BOOL(< )
 			case OPmark:
-				p = memoryAllocTable(th, MARK_LEN, DBG_TUPLE);
+				p = memoryAllocArray(th, MARK_LENGTH, DBG_TUPLE);
 				if (!p) return INTERPRETER_OM;
-				TABSETINT(p, MARK_TYPE, MARK_TYPE_BREAK);
-				TABSETINT(p, MARK_PC, (pc + bytecodeGetJump(pc) - BC_START(bytecode)));
-				TABSETINT(p, MARK_PP, (th->pp));
-				TABSETPNT(p, MARK_NEXT, STACKREFPNT(th, th->callstack, CALLSTACK_MARK));
-				STACKREFSETPNT(th, th->callstack, CALLSTACK_MARK, p);
+				ARRAY_SET_INT(p, MARK_TYPE, MARK_TYPE_BREAK);
+				ARRAY_SET_INT(p, MARK_PC, (pc + bytecodeGetJump(pc) - BC_START(bytecode)));
+				ARRAY_SET_INT(p, MARK_SP, (th->sp));
+				ARRAY_SET_PNT(p, MARK_NEXT, STACK_REF_PNT(th, th->callstack, CALLSTACK_MARK));
+				STACK_REF_SET_PNT(th, th->callstack, CALLSTACK_MARK, p);
 				pc += BC_JUMP_SIZE;
 				break;
 			case OPmax: BCINT2FUN(maxint)
@@ -528,65 +528,57 @@ LINT interpreterRun(Thread* th,LINT maxCycles)
 			case OPmin: BCINT2FUN(minint)
 			case OPminf: BCFLOAT2FUN(minf)
 			case OPmklist:
-				STACKMAKETABLE_ERR(th, LIST_LENGTH, DBG_LIST,INTERPRETER_OM);
-				break;
-			case OPmktab:
-				n = STACKPULLINT(th);
-				STACKPUSHTABLE_ERR(th, n, DBG_TUPLE, INTERPRETER_OM);
-				break;
-			case OPmktabb:
-				n = (*(pc++)) & 255;
-				STACKPUSHTABLE_ERR(th, n, DBG_TUPLE, INTERPRETER_OM);
+				STACK_PUSH_FILLED_ARRAY_ERR(th, LIST_LENGTH, DBG_LIST,INTERPRETER_OM);
 				break;
 			case OPmod:
-				b = STACKINT(th, 0);
+				b = STACK_INT(th, 0);
 				if (!b)
 				{
-					PRINTF(LOG_SYS, "BCmod: division by zero in function %s\n", interpreterCurrentFun(th));
-					STACKSETINT(th, 1, (0));
+					PRINTF(LOG_SYS, ">Error: BCmod division by zero in function %s\n", interpreterCurrentFun(th));
+					STACK_SET_INT(th, 1, (0));
 				}
-				else STACKSETINT(th, 1, STACKINT(th, 1) % b);
-				STACKDROP(th);
+				else STACK_SET_INT(th, 1, STACK_INT(th, 1) % b);
+				STACK_DROP(th);
 				break;
 			case OPmodf:BCFLOAT2FUN(fmod)
 			case OPmul: BCINT2(*)
 			case OPmulf: BCFLOAT2(*)
 			case OPne:
-				STACKSETBOOL(th, 1, !lwEquals(STACKGET(th, 0), STACKTYPE(th, 0), STACKGET(th, 1), STACKTYPE(th, 1)));
-				STACKDROP(th);
+				STACK_SET_BOOL(th, 1, !lwEquals(STACK_GET(th, 0), STACK_TYPE(th, 0), STACK_GET(th, 1), STACK_TYPE(th, 1)));
+				STACK_DROP(th);
 				break;
 			case OPneg: BCINT1(-)
 			case OPnegf: BCFLOAT1(-)
 			case OPnil:
-				 STACKPUSHNIL_ERR(th, INTERPRETER_OM);
+				 STACK_PUSH_NIL_ERR(th, INTERPRETER_OM);
 				break;
 			case OPnon:
-				STACKSETBOOL(th, 0, STACKPNT(th, 0) != MM._true);
+				STACK_SET_BOOL(th, 0, STACK_PNT(th, 0) != MM._true);
 				break;
 			case OPnop:
 				break;
 			case OPnot: BCINT1(~)
 			case OPor: BCINT2(| )
 			case OPpick:
-				wi = STACKGET(th,0);
-				p = STACKPNT(th, 1);
+				wi = STACK_GET(th,0);
+				p = STACK_PNT(th, 1);
 				if ((!p) || (wi == NIL)) {
-					STACKSETNIL(th, 0);
+					STACK_SET_NIL(th, 0);
 				}
 				else
 				{
-					i = VALTOINT(wi);
-					if ((i < 0) || (i >= TABLEN(p))) {
-						STACKSETNIL(th, 0);
+					i = INT_FROM_VAL(wi);
+					if ((i < 0) || (i >= ARRAY_LENGTH(p))) {
+						STACK_SET_NIL(th, 0);
 					}
-					else STACKLOAD(th, 0, p, i);
+					else STACK_LOAD(th, 0, p, i);
 				}
 				break;
 			case OPpickb:
 				i = (*(pc++)) & 255;
-				p = STACKPNT(th, 0);
-				 STACKPUSHNIL_ERR(th, INTERPRETER_OM);
-				if (p && (i >= 0) && (i < TABLEN(p))) STACKLOAD(th,0,p,i);
+				p = STACK_PNT(th, 0);
+				 STACK_PUSH_NIL_ERR(th, INTERPRETER_OM);
+				if (p && (i >= 0) && (i < ARRAY_LENGTH(p))) STACK_LOAD(th,0,p,i);
 				break;
 			case OPpow: BCFLOAT2FUN(pow)
 			case OPpowint: BCINT2FUN(powerInt)
@@ -594,162 +586,162 @@ LINT interpreterRun(Thread* th,LINT maxCycles)
 				if (promptOnThread(th)) return INTERPRETER_OM;
 				break;
 			case OPret:
-				if (STACKREF(th) - th->callstack != 1)
+				if (STACK_REF_(th) - th->callstack != 1)
 				{
-					PRINTF(LOG_SYS, "RET pp=" LSD ", should be " LSD " in %s\n", STACKREF(th), th->callstack + 1, interpreterCurrentFun(th));
+					PRINTF(LOG_SYS, ">Error: RET sp=" LSD ", should be " LSD " in %s\n", STACK_REF_(th), th->callstack + 1, interpreterCurrentFun(th));
 					threadDump(LOG_SYS, th, 6);
 					return EXEC_EXIT;  // wrong implementation
 				}
-				th->fun = STACKREFPNT(th, th->callstack, CALLSTACK_FUN);
-				th->pc = STACKREFINT(th, th->callstack, CALLSTACK_PC);
-				th->callstack = STACKREFINT(th, th->callstack, CALLSTACK_PREV);
-				STACKSKIP(th, BC_ARGS(bytecode) + BC_LOCALS(bytecode) + CALLSTACK_LENGTH + 1);
+				th->fun = STACK_REF_PNT(th, th->callstack, CALLSTACK_FUN);
+				th->pc = STACK_REF_INT(th, th->callstack, CALLSTACK_PC);
+				th->callstack = STACK_REF_INT(th, th->callstack, CALLSTACK_PREV);
+				STACK_SKIP(th, BC_ARGS(bytecode) + BC_LOCALS(bytecode) + CALLSTACK_LENGTH + 1);
 				if (th->callstack < 0) return INTERPRETER_END(EXEC_IDLE);  // successful end of bytecode execution
 
 				BC_PRECOMPUTE
 					break;
 			case OPrglob:
-				def = (Def*)TABPNT(globals, STACKINT(th, 0));
-				STACKSETTYPE(th, 0, def->val, def->valType);
+				def = (Def*)ARRAY_PNT(globals, STACK_INT(th, 0));
+				STACK_SET_TYPE(th, 0, def->val, def->valType);
 				break;
 			case OPrglobb:
 				n = (*(pc++)) & 255;
-				def = (Def*)TABPNT(globals, n);
-				 STACKPUSHNIL_ERR(th, INTERPRETER_OM);
-				STACKSETTYPE(th, 0, def->val, def->valType);
+				def = (Def*)ARRAY_PNT(globals, n);
+				 STACK_PUSH_NIL_ERR(th, INTERPRETER_OM);
+				STACK_SET_TYPE(th, 0, def->val, def->valType);
 				break;
 			case OPrloc:
-				STACKCOPYFROMREF(th, 0, locals, -STACKINT(th, 0));
+				STACK_COPY_FROM_REF(th, 0, locals, -STACK_INT(th, 0));
 				break;
 			case OPrlocb:
 				n = (*(pc++)) & 255;
-				 STACKPUSHNIL_ERR(th, INTERPRETER_OM);
-				STACKCOPYFROMREF(th, 0, locals, -n);
+				 STACK_PUSH_NIL_ERR(th, INTERPRETER_OM);
+				STACK_COPY_FROM_REF(th, 0, locals, -n);
 				break;
 			case OPround: BCFLOAT1FUN(roundls)
 			case OPsglobi:
-				def = (Def*)TABPNT(globals, STACKINT(th, 1));
-				defSet(def, STACKGET(th, 0),STACKTYPE(th, 0));
-				STACKSKIP(th, 1);
+				def = (Def*)ARRAY_PNT(globals, STACK_INT(th, 1));
+				defSet(def, STACK_GET(th, 0),STACK_TYPE(th, 0));
+				STACK_SKIP(th, 1);
 				break;
 			case OPshl: BCINT2(<< )
 			case OPshr: BCINT2(>> )
 			case OPsin: BCFLOAT1FUN(sin)
 			case OPsinh: BCFLOAT1FUN(sinh)
 			case OPskip:
-				i = STACKINT(th, 0);
-				STACKSKIP(th, i + 1);
+				i = STACK_INT(th, 0);
+				STACK_SKIP(th, i + 1);
 				break;
 			case OPskipb:
 				i = (*(pc++)) & 255;
-				STACKSKIP(th, i);
+				STACK_SKIP(th, i);
 				break;
 			case OPsloc: // [index val] -> 0
-				STACKCOPYTOREF(th, locals, -STACKINT(th, 0), 1);
-				STACKDROPN(th, 2);
+				STACK_COPY_TO_REF(th, locals, -STACK_INT(th, 0), 1);
+				STACK_DROPN(th, 2);
 				break;
 			case OPslocb: // [val] -> 0
 				n = (*(pc++)) & 255;
-				STACKCOPYTOREF(th, locals, -n, 0);
-				STACKDROP(th);
+				STACK_COPY_TO_REF(th, locals, -n, 0);
+				STACK_DROP(th);
 				break;
 			case OPsloci: // [val index] -> [val]
-				STACKCOPYTOREF(th, locals, -STACKINT(th, 1), 0);
-				STACKSKIP(th, 1);
+				STACK_COPY_TO_REF(th, locals, -STACK_INT(th, 1), 0);
+				STACK_SKIP(th, 1);
 				break;
 			case OPsqr: BCFLOAT1FUN(sqr)
 			case OPsqrt: BCFLOAT1FUN(sqrt)
 			case OPstore:	 // [val index table] -> [val]
-				isNil = STACKISNIL(th, 1);
-				p = STACKPNT(th, 2);
+				isNil = STACK_IS_NIL(th, 1);
+				p = STACK_PNT(th, 2);
 				if (p && !isNil)
 				{
-					i = STACKINT(th,1);
-					if ((i >= 0) && (i < TABLEN(p))) STACKSTORE(p, i, th, 0);
+					i = STACK_INT(th,1);
+					if ((i >= 0) && (i < ARRAY_LENGTH(p))) STACK_STORE(p, i, th, 0);
 				}
-				STACKSKIP(th, 2);
+				STACK_SKIP(th, 2);
 				break;
 			case OPstruct:
-				def = (Def*)TABPNT(globals, STACKINT(th, 0));
-				STACKDROP(th);
-				STACKPUSHTABLE_ERR(th, def->index, PNTTOVAL((LB*)def), INTERPRETER_OM);
+				def = (Def*)ARRAY_PNT(globals, STACK_INT(th, 0));
+				STACK_DROP(th);
+				STACK_PUSH_EMPTY_ARRAY_ERR(th, def->index, VAL_FROM_PNT((LB*)def), INTERPRETER_OM);
 				break;
 			case OPsub:BCINT2(-)
 			case OPsubf: BCFLOAT2(-)
 			case OPsum:
-				def = (Def*)TABPNT(globals, STACKINT(th, 0));
-				STACKDROP(th);
-				STACKMAKETABLE_ERR(th, def->type->nb, PNTTOVAL((LB*)def), INTERPRETER_OM);
+				def = (Def*)ARRAY_PNT(globals, STACK_INT(th, 0));
+				STACK_DROP(th);
+				STACK_PUSH_FILLED_ARRAY_ERR(th, def->type->nb, VAL_FROM_PNT((LB*)def), INTERPRETER_OM);
 				break;
 			case OPswap:
-				 STACKPUSHNIL_ERR(th, INTERPRETER_OM);
-				STACKINTERNALCOPY(th, 0, 1);
-				STACKINTERNALCOPY(th, 1, 2);
-				STACKINTERNALCOPY(th, 2, 0);
-				STACKDROP(th);
+				 STACK_PUSH_NIL_ERR(th, INTERPRETER_OM);
+				STACK_INTERNAL_COPY(th, 0, 1);
+				STACK_INTERNAL_COPY(th, 1, 2);
+				STACK_INTERNAL_COPY(th, 2, 0);
+				STACK_DROP(th);
 				break;
-			case OPtablen:
-				p = STACKPNT(th, 0);
-				if (p) STACKSETINT(th, 0, TABLEN(p));
+			case OParraylen:
+				p = STACK_PNT(th, 0);
+				if (p) STACK_SET_INT(th, 0, ARRAY_LENGTH(p));
 				break;
 			case OPtan: BCFLOAT1FUN(tan)
 			case OPtanh: BCFLOAT1FUN(tanh)
 			case OPtfc:// [fonction, argn, ..., arg1]
-				n = STACKPULLINT(th);
+				n = STACK_PULL_INT(th);
 				EXEC_COMMON_TFC
-					if (th->callstack < 0) return INTERPRETER_END(EXEC_IDLE);  // successful end of bytecode execution
+				if (th->callstack < 0) return INTERPRETER_END(EXEC_IDLE);  // successful end of bytecode execution
 				break;
 			case OPtfcb:
 				n = (*(pc++)) & 255;
 				EXEC_COMMON_TFC
-					if (th->callstack < 0) return INTERPRETER_END(EXEC_IDLE);  // successful end of bytecode execution
+				if (th->callstack < 0) return INTERPRETER_END(EXEC_IDLE);  // successful end of bytecode execution
 				break;
 			case OPthrow:
-				if (interpreterBreakThrow(th, MARK_TYPE_TRY, STACKGET(th, 0), STACKTYPE(th, 0))) return INTERPRETER_OM;
+				if (interpreterBreakThrow(th, MARK_TYPE_TRY, STACK_GET(th, 0), STACK_TYPE(th, 0))) return INTERPRETER_OM;
 				if (th->callstack < 0) return INTERPRETER_END(EXEC_EXIT);  // Exception uncaught
 				BC_PRECOMPUTE
 				break;
 			case OPtl:
-				if (STACKPNT(th, 0)) STACKLOAD(th, 0, STACKPNT(th, 0), 1);
+				if (STACK_PNT(th, 0)) STACK_LOAD(th, 0, STACK_PNT(th, 0), 1);
 				break;
 			case OPtron:
 				interpreterTRON = 1;
-				 STACKPUSHNIL_ERR(th, INTERPRETER_OM);
+				 STACK_PUSH_NIL_ERR(th, INTERPRETER_OM);
 				break;
 			case OPtroff:
 				interpreterTRON = 0;
-				 STACKPUSHNIL_ERR(th, INTERPRETER_OM);
+				 STACK_PUSH_NIL_ERR(th, INTERPRETER_OM);
 				break;
 			case OPtrue:
-				STACKPUSHPNT_ERR(th, MM._true, INTERPRETER_OM);
+				STACK_PUSH_PNT_ERR(th, MM._true, INTERPRETER_OM);
 				break;
 			case OPtry:
-				p = memoryAllocTable(th, MARK_LEN, DBG_TUPLE);
+				p = memoryAllocArray(th, MARK_LENGTH, DBG_TUPLE);
 				if (!p) return INTERPRETER_OM;
-				TABSETINT(p, MARK_TYPE, MARK_TYPE_TRY);
-				TABSETINT(p, MARK_PC, (pc + bytecodeGetJump(pc) - BC_START(bytecode)));
-				TABSETINT(p, MARK_PP, (th->pp));
-				TABSETPNT(p, MARK_NEXT, STACKREFPNT(th, th->callstack, CALLSTACK_MARK));
-				STACKREFSETPNT(th, th->callstack, CALLSTACK_MARK, p);
+				ARRAY_SET_INT(p, MARK_TYPE, MARK_TYPE_TRY);
+				ARRAY_SET_INT(p, MARK_PC, (pc + bytecodeGetJump(pc) - BC_START(bytecode)));
+				ARRAY_SET_INT(p, MARK_SP, (th->sp));
+				ARRAY_SET_PNT(p, MARK_NEXT, STACK_REF_PNT(th, th->callstack, CALLSTACK_MARK));
+				STACK_REF_SET_PNT(th, th->callstack, CALLSTACK_MARK, p);
 				pc += BC_JUMP_SIZE;
 				break;
 			case OPunmark:
-				p = STACKREFPNT(th, th->callstack, CALLSTACK_MARK);
-				STACKREFSETPNT(th, th->callstack, CALLSTACK_MARK, TABPNT(p, MARK_NEXT));
+				p = STACK_REF_PNT(th, th->callstack, CALLSTACK_MARK);
+				STACK_REF_SET_PNT(th, th->callstack, CALLSTACK_MARK, ARRAY_PNT(p, MARK_NEXT));
 				break;
 			case OPupdt: // [index val table] -> [table]
-				i = STACKPULLINT(th);
-				if (STACKPNT(th,1)) STACKSTORE(STACKPNT(th, 1), i, th, 0);
-				STACKDROP(th);
+				i = STACK_PULL_INT(th);
+				if (STACK_PNT(th,1)) STACK_STORE(STACK_PNT(th, 1), i, th, 0);
+				STACK_DROP(th);
 				break;
 			case OPupdtb: // [val table] -> [table]
 				i = (*(pc++)) & 255;
-				p = STACKPNT(th, 1);
-				if (p) STACKSTORE(p, i, th, 0);
-				STACKDROP(th);
+				p = STACK_PNT(th, 1);
+				if (p) STACK_STORE(p, i, th, 0);
+				STACK_DROP(th);
 				break;
 			default:
-				PRINTF(LOG_SYS, "\nInterpreter: RUNTIME ERROR = Illegal Opcode %d in %s\n", 255 & op, interpreterCurrentFun(th));
+				PRINTF(LOG_SYS, "\n>Error: Illegal Opcode %d in %s\n", 255 & op, interpreterCurrentFun(th));
 				//					memoryAbort(m,1);
 				return EXEC_EXIT;
 			}

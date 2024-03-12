@@ -11,11 +11,11 @@
 #ifndef _SYSTEM_
 #define _SYSTEM_
 
-#define FUN_NATIVE_LEN 2
+#define FUN_NATIVE_LENGTH 2
 #define FUN_NATIVE_NAME 0
 #define FUN_NATIVE_POINTER 1
 
-#define FUN_USER_LEN 4
+#define FUN_USER_LENGTH 4
 #define FUN_USER_NAME 0
 #define FUN_USER_BC 1
 #define FUN_USER_GLOBALS 2

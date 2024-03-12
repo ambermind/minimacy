@@ -113,8 +113,8 @@ AudioEngine* AE=NULL;
 void audioSampleMark(LB* user)
 {
 	AudioSound* as = (AudioSound*)user;
-	MEMORYMARK(user, (LB*)as->buffer);
-	MEMORYMARK(user, (LB*)as->next);
+	MEMORY_MARK(user, (LB*)as->buffer);
+	MEMORY_MARK(user, (LB*)as->next);
 }
 int audioSystemForget(LB* user)
 {
@@ -126,7 +126,7 @@ int audioSystemForget(LB* user)
 void audioSystemMark(LB* user)
 {
 	AudioEngine* as = (AudioEngine*)user;
-	MEMORYMARK(user, (LB*)as->sounds);
+	MEMORY_MARK(user, (LB*)as->sounds);
 }
 
 int haudioPlayStop(AudioEngine* t);
@@ -638,7 +638,7 @@ int haudioPlayNextBuffer(AudioEngine* t, char* output)
 		//		PRINTF(LOG_DEV,"sound %d ", snd->volume);
 		if (snd->i >= 0)
 		{
-			short* buffer = (short*)STRSTART(snd->buffer);
+			short* buffer = (short*)STR_START(snd->buffer);
 			int nbToPlay = (int)(snd->len - snd->i);
 			if (nbToPlay > AUDIO_SLICE) nbToPlay = AUDIO_SLICE;
 			//			printf("mix %llx %d %d %d\n", snd->buffer, snd->i, snd->len, nbToPlay);
@@ -688,12 +688,12 @@ int fun_soundStart(Thread* th)
 	AudioSound* as;
 	LINT len;
 
-	int loopIsNil = STACKISNIL(th,0);
-	LINT loop = STACKINT(th, 0);
-	LFLOAT volume = STACKFLOAT(th, 1);
-	LB* src = STACKPNT(th, 2);
+	int loopIsNil = STACK_IS_NIL(th,0);
+	LINT loop = STACK_INT(th, 0);
+	LFLOAT volume = STACK_FLOAT(th, 1);
+	LB* src = STACK_PNT(th, 2);
 	if (!src) FUN_RETURN_NIL;
-	len = STRLEN(src);
+	len = STR_LENGTH(src);
 	if (len & 3) FUN_RETURN_NIL;
 
 	volume *= 255;
@@ -706,10 +706,10 @@ int fun_soundStart(Thread* th)
 	as->i = 0;
 	as->loop = loopIsNil ? -1 : loop;
 	if (as->loop > as->len) as->loop = -1;
-	MEMORYMARK(NULL, (LB*)as->buffer);
+	MEMORY_MARK(NULL, (LB*)as->buffer);
 	lockEnter(&AE->lock);
     startNow = AE->playing?0:1;
-	MEMORYMARK(NULL, (LB*)AE->sounds);
+	MEMORY_MARK(NULL, (LB*)AE->sounds);
 	as->next = AE->sounds;
 	AE->sounds = as;
 	lockLeave(&AE->lock);
@@ -719,22 +719,22 @@ int fun_soundStart(Thread* th)
 }
 int fun_soundAbort(Thread* th)
 {
-	AudioSound* as= (AudioSound*)STACKPNT(th, 0);
+	AudioSound* as= (AudioSound*)STACK_PNT(th, 0);
 	if (as) as->i = -1;
 	return 0;
 }
 
 int fun_soundPosition(Thread* th)
 {
-	AudioSound* as = (AudioSound*)STACKPNT(th, 0);
+	AudioSound* as = (AudioSound*)STACK_PNT(th, 0);
 	if ((!as) || (as->i < 0)) FUN_RETURN_NIL;
 	FUN_RETURN_INT(as->i);
 }
 
 int fun_soundSetVolume(Thread* th)
 {
-	LFLOAT volume = STACKPULLFLOAT(th);
-	AudioSound* as = (AudioSound*)STACKPNT(th, 0);
+	LFLOAT volume = STACK_PULL_FLOAT(th);
+	AudioSound* as = (AudioSound*)STACK_PNT(th, 0);
 	if (!as) return 0;
 
 	volume *= 255;
@@ -759,11 +759,11 @@ int fun_soundPlaying(Thread* th) FUN_RETURN_NIL
 int coreAudioInit(Thread* th, Pkg *system)
 {
 	Def* Sample= pkgAddType(th, system, "Sample");
-	Type* fun_S_F_I_Sample = typeAlloc(th, TYPECODE_FUN, NULL, 4, MM.S, MM.F, MM.I, Sample->type);
+	Type* fun_S_F_I_Sample = typeAlloc(th, TYPECODE_FUN, NULL, 4, MM.Str, MM.Float, MM.Int, Sample->type);
 	Type* fun_Sample_Sample = typeAlloc(th, TYPECODE_FUN, NULL, 2, Sample->type, Sample->type);
 	Type* fun_Bool = typeAlloc(th, TYPECODE_FUN, NULL, 1, MM.Boolean);
-	Type* fun_Sample_I = typeAlloc(th, TYPECODE_FUN, NULL, 2, Sample->type, MM.I);
-	Type* fun_Sample_F_Sample = typeAlloc(th, TYPECODE_FUN, NULL, 3, Sample->type, MM.F, Sample->type);
+	Type* fun_Sample_I = typeAlloc(th, TYPECODE_FUN, NULL, 2, Sample->type, MM.Int);
+	Type* fun_Sample_F_Sample = typeAlloc(th, TYPECODE_FUN, NULL, 3, Sample->type, MM.Float, Sample->type);
 
 #ifdef WITH_AUDIO
 	AE= (AudioEngine*)memoryAllocExt(th, sizeof(AudioEngine), DBG_BIN, audioSystemForget, audioSystemMark);

@@ -28,7 +28,7 @@ int _workerProcessCommand(Thread* t)
 			LB* p = memoryAllocExt(t, t->worker.allocSize, t->worker.dbg, t->worker.forget, t->worker.mark);
 			if (!p) return _workerFailedOM(t);
 			memset(((char*)p) + sizeof(LB) + 2 * sizeof(void*), 0, t->worker.allocSize - sizeof(LB) - 2 * sizeof(void*));
-			STACKPUSHPNT_ERR(t,p,_workerFailedOM(t));
+			STACK_PUSH_PNT_ERR(t,p,_workerFailedOM(t));
 			break;
 		}
 		case WORKER_BIGGER_BUFFER:
@@ -49,15 +49,15 @@ int _workerProcessCommand(Thread* t)
 
 void _workerFinalize(Thread* t)
 {
-	t->pp = t->worker.pp; // th->worker.pp is the position of the native function in the stack
+	t->sp = t->worker.sp; // th->worker.sp is the position of the native function in the stack
 	if (t->worker.type == VAL_TYPE_INT) {
-		STACKSETINT(t, 0, VALTOINT(t->worker.result));
+		STACK_SET_INT(t, 0, INT_FROM_VAL(t->worker.result));
 	}
 	else if (t->worker.type == VAL_TYPE_PNT) {
-		STACKSETPNT(t, 0, VALTOPNT(t->worker.result));
+		STACK_SET_PNT(t, 0, PNT_FROM_VAL(t->worker.result));
 	}
 	else {
-		STACKSETNIL(t, 0);
+		STACK_SET_NIL(t, 0);
 	}
 	// now the returned value of the native function has replaced the native function in the stack
 	t->worker.state = WORKER_READY;
@@ -66,7 +66,7 @@ void _workerFinalize(Thread* t)
 int workerStart(Thread* th, int argc, void* start)
 {
 	th->worker.state = WORKER_RUN;
-	th->worker.pp = th->pp - argc;	// th->worker.pp is the position of the native function in the stack
+	th->worker.sp = th->sp - argc;	// th->worker.sp is the position of the native function in the stack
 #ifdef USE_WORKER_SYNC
 	(*(NATIVE)start)(th);
 	if (th->OM) return EXEC_OM;
@@ -93,7 +93,7 @@ MTHREAD_RETURN_TYPE workerDoneNil(Thread* th)
 }
 MTHREAD_RETURN_TYPE workerDonePnt(Thread* th, LB* result)
 {
-	th->worker.result = PNTTOVAL(result);
+	th->worker.result = VAL_FROM_PNT(result);
 	th->worker.type = VAL_TYPE_PNT;
 	th->worker.state = WORKER_DONE;
 #ifdef USE_WORKER_SYNC
@@ -106,7 +106,7 @@ MTHREAD_RETURN_TYPE workerDonePnt(Thread* th, LB* result)
 }
 MTHREAD_RETURN_TYPE workerDoneInt(Thread* th, LINT result)
 {
-	th->worker.result = INTTOVAL(result);
+	th->worker.result = VAL_FROM_INT(result);
 	th->worker.type = VAL_TYPE_INT;
 	th->worker.state = WORKER_DONE;
 #ifdef USE_WORKER_SYNC
@@ -150,7 +150,7 @@ LB* workerAllocExt(Thread* th, LINT sizeofExt, LW dbg, FORGET forget, MARK mark)
 	th->worker.mark = mark;
 	th->worker.state = WORKER_ALLOC_EXT;
     if (workerWait(th,WORKER_ALLOC_EXT)) return NULL;
-	return STACKPNT(th, 0);
+	return STACK_PNT(th, 0);
 }
 int workerBiggerBuffer(Thread* th, Buffer* buffer, LINT newSize)
 {
@@ -164,7 +164,7 @@ int workerBiggerBuffer(Thread* th, Buffer* buffer, LINT newSize)
 
 int fun_workerDone(Thread* th)
 {
-	Thread* t = (Thread*)(STACKPNT(th, 0));
+	Thread* t = (Thread*)(STACK_PNT(th, 0));
 	if (!t) return 0;
 	if (t->worker.state == WORKER_DONE) {
 		_workerFinalize(t);

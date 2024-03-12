@@ -1,5 +1,5 @@
 #----------------------DO NOT TOUCH BELOW
-export CC= gcc $(ARCH)
+export CC= gcc
 export AR= ar
 CCL=$(CC)
 
@@ -90,7 +90,7 @@ LIBS= -lm -lpthread
 
 TARGETX11GL= $(TARGET)X11GL
 LIBSX11GL  = $(LIBS) -lX11 -lXext -framework AudioToolbox -framework CoreFoundation -lGL -lGLU 
-CFLAGX11GL = $(CFLAG) -D WITH_UI -D WITH_AUDIO -D WITH_GL -D GL_GLEXT_PROTOTYPES
+CFLAGX11GL = -O3 -D ON_MACOS_X11GL
 LIBDIRX11GL= -L/usr/X11R6/lib
 INCX11GL   = -I/usr/X11R6/include
 

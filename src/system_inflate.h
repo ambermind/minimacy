@@ -13,7 +13,7 @@
 
 #define MAX_BITS 32
 
-#define MAX_LEN 19
+#define MAX_LENGTH 19
 #define MAX_CODE 288
 #define MAX_DIST 32
 

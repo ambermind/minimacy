@@ -54,7 +54,7 @@ int bignumToStr(Thread* th, bignum b, char* dest);
 LB* bigAlloc(Thread* th, bignum b0);
 //----------------------------------------
 
-#define _bignumGet(p,i) (bignum)STACKPNT(p,i)
+#define _bignumGet(p,i) (bignum)STACK_PNT(p,i)
 
 #define FUN_RETURN_BIG(bigSrc) \
 {	LINT bigLen; LB* bigResult; \
@@ -69,8 +69,8 @@ LB* bigAlloc(Thread* th, bignum b0);
 #define bigOpeI_B(name,ope)	\
 int name(Thread* th)	\
 {	\
-	int vIsNil=STACKISNIL(th,0); \
-	LINT v=STACKINT(th,0); \
+	int vIsNil=STACK_IS_NIL(th,0); \
+	LINT v=STACK_INT(th,0); \
 	if (vIsNil) FUN_RETURN_NIL;	\
 	FUN_RETURN_BIG(ope(v));	\
 }
@@ -78,9 +78,9 @@ int name(Thread* th)	\
 #define bigOpeIBool_B(name,ope)	\
 int name(Thread* th)	\
 {	\
-	LB* v=STACKPNT(th,0); \
-	int wIsNil=STACKISNIL(th,1); \
-	LINT w=STACKINT(th,1); \
+	LB* v=STACK_PNT(th,0); \
+	int wIsNil=STACK_IS_NIL(th,1); \
+	LINT w=STACK_INT(th,1); \
 	if ((!v)||wIsNil) FUN_RETURN_NIL;	\
 	FUN_RETURN_BIG(ope(w,v));	\
 }
@@ -112,8 +112,8 @@ int name(Thread* th)	\
 #define bigOpeBI_B(name,ope)	\
 int name(Thread* th)	\
 {	\
-	int vIsNil=STACKISNIL(th,0); \
-	LINT v=STACKINT(th,0); \
+	int vIsNil=STACK_IS_NIL(th,0); \
+	LINT v=STACK_INT(th,0); \
 	bignum a=_bignumGet(th,1);	\
 	if ((!a)||vIsNil) FUN_RETURN_NIL;	\
 	FUN_RETURN_BIG(ope(a,v));	\
@@ -149,8 +149,8 @@ int name(Thread* th)	\
 #define bigOpeBI_I(name,ope)	\
 int name(Thread* th)	\
 {	\
-	int vIsNil=STACKISNIL(th,0); \
-	LINT v=STACKINT(th,0); \
+	int vIsNil=STACK_IS_NIL(th,0); \
+	LINT v=STACK_INT(th,0); \
 	bignum a=_bignumGet(th,1);	\
 	if ((!a)||vIsNil) FUN_RETURN_NIL;	\
 	FUN_RETURN_INT(ope(a,v));	\
@@ -212,12 +212,12 @@ int name(Thread* th)	\
 	LINT len;	\
 	bignum mod=_bignumGet(th,0);	\
 	bignum exp=_bignumGet(th,1);	\
-	MBLOC* data=(STACKPNT(th,2));	\
+	MBLOC* data=(STACK_PNT(th,2));	\
 	if ((!mod)||(!exp)||(!data)) FUN_RETURN_NIL;	\
-	len=ope(mod,exp,STRSTART(data),STRLEN(data),NULL);	\
+	len=ope(mod,exp,STR_START(data),STR_LENGTH(data),NULL);	\
 	if (!len) FUN_RETURN_NIL;	\
 	p=memoryAllocStr(th, NULL,len); if(!p) return EXEC_OM;	\
-	len=ope(mod,exp,STRSTART(data),STRLEN(data),STRSTART(p));	\
+	len=ope(mod,exp,STR_START(data),STR_LENGTH(data),STR_START(p));	\
 	if (!len) FUN_RETURN_NIL;	\
 	FUN_RETURN_PNT(p);	\
 }

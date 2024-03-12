@@ -11,8 +11,6 @@
 #ifndef _CORE_MEMORY_
 #define _CORE_MEMORY_
 
-#define FULL64
-
 #ifdef USE_MEMORY_C
 void cMallocInit();
 void* bmmMalloc(long long size);
@@ -35,12 +33,7 @@ typedef float LFLOAT;
 #define LSD "%d"
 #else
 #define LSHIFT 3
-#ifdef DBG_MEM
-typedef char* LW;
-#else
 typedef long long LW;
-#endif
-//typedef long* LW;
 typedef long long LINT;
 typedef unsigned long long LUINT;
 typedef double LFLOAT;
@@ -87,7 +80,7 @@ typedef void (*MARK)(LB*);
 
 struct LB
 {
-	LINT sizetype;
+	LINT sizeAndType;
 	LB *lifo;
 	LB *nextBlock;
 	Mem* mem;
@@ -117,8 +110,8 @@ typedef struct {
 	LB* roots;
 
 	LINT fastAlloc;
-	LINT step;	// GC phasis (0/1/2)
-	LB *lifo;	// list of blocks to mark (phasis 0)
+	LINT step;	// GC step (0/1/2)
+	LB *lifo;	// list of blocks to mark (step 0)
 	LB *listBlocks;
 	LB *listCheck;
 	LB *listFast;
@@ -153,15 +146,15 @@ typedef struct {
 	Buffer* tmpBuffer;
 	LB* args;
 
-	Type* I;
-	Type* F;
-	Type* S;
+	Type* Int;
+	Type* Float;
+	Type* Str;
 	Type* Bytes;
 	Type* Boolean;
 	Type* BigNum;
 	Type* Bitmap;
 	Type* Buffer;
-	Type* Pkg;
+	Type* Package;
 	Type* Exception;
 	Type* Type;
 	Type* Thread;
@@ -215,14 +208,13 @@ typedef int (*NATIVE)(Thread*);
 #define GC_PERIOD 20
 
 #define TYPE_BINARY 0
-#define TYPE_TAB 1
+#define TYPE_ARRAY 1
 #define TYPE_NATIVE 2
-#define TYPE_STRING 3
 
 #define _USEFUL (LB*)(2)
 #define _USELESS (LB*)(3)
 
-#define MEMORYMARK(from,p) {if ((p) && ((p)->lifo==MM.USELESS)) {(p)->lifo=MM.lifo; MM.lifo=(p); } }
+#define MEMORY_MARK(from,p) {if ((p) && ((p)->lifo==MM.USELESS)) {(p)->lifo=MM.lifo; MM.lifo=(p); } }
 
 #define NATIVE_FORGET 0
 #define NATIVE_MARK 1
@@ -233,135 +225,89 @@ typedef int (*NATIVE)(Thread*);
 #define LIST_VAL 0
 #define LIST_NXT 1
 
-#define HEADER_TYPE(p) (((p)->sizetype)&3)
-#define HEADER_SIZE(p) (((p)->sizetype)>>2)
-#define HEADERSETSIZETYPE(p,size,type) ((p)->sizetype=((size<<2)+(type&3)))
+#define HEADER_TYPE(p) (((p)->sizeAndType)&3)
+#define HEADER_SIZE(p) (((p)->sizeAndType)>>2)
+#define HEADER_SET_SIZE_AND_TYPE(p,size,type) ((p)->sizeAndType=((size<<2)+(type&3)))
 #define HEADER_DBG(p) ((p)->data[0])
 
-#ifdef DBG_MEM
-int DBGISPNT(LW v);
-LW PNTTOVAL(LB* p);
-LW INTTOVAL(LINT i);
-LW FLOATTOVAL(LFLOAT v);
+#define DBG_IS_PNT(v) (!(((LINT)(v))&1))
 
-LB* VALTOPNT(LW v);
-LINT VALTOINT(LW v);
-LFLOAT VALTOFLOAT(LW v);
-#else
-#ifdef FULL64
-#define DBGISPNT(v) (!(((LINT)(v))&1))
+#define VAL_FROM_PNT(p) ((LW)(p))
+#define VAL_FROM_INT(i) ((LW)(i))
+#define VAL_FROM_FLOAT(v) ((LW)*(LINT*)(&(v)))
 
-#define PNTTOVAL(p) ((LW)(p))
-#define INTTOVAL(i) ((LW)(i))
-#define FLOATTOVAL(v) ((LW)*(LINT*)(&(v)))
+#define PNT_FROM_VAL(v) ((LB*)(v))
+#define INT_FROM_VAL(v) ((LINT)(v))
+#define FLOAT_FROM_VAL(v) (*((LFLOAT*)(&(v))))
 
-#define VALTOPNT(v) ((LB*)(v))
-#define VALTOINT(v) ((LINT)(v))
-#define VALTOFLOAT(v) (*((LFLOAT*)(&(v))))
-#else
-#define DBGISPNT(v) (((LINT)v)&1)
-
-#define PNTTOVAL(p) ((LW)((LINT)(1+((LINT)(p)))))
-#define INTTOVAL(i) ((LW)((LINT)(((i)<<2)|2)))
-#define FLOATTOVAL(v) ((LW)((LINT)(((~3)&(*(LINT*)(&(v)))))))
-
-#define VALTOPNT(v) ((LB*)(((LINT)v)-1))
-#define VALTOINT(v) (((LINT)((LINT)v))>>2)
-#define VALTOFLOAT(v) (*((LFLOAT*)(&(v))))
-#endif
-#endif
-
-#ifdef FULL64
 #define VAL_TYPE_PNT 0
 #define VAL_TYPE_INT 1
 #define VAL_TYPE_FLOAT 2
 
-#define DBGTOVAL(x) INTTOVAL((LINT)(2*(x)+1))
+#define VAL_FROM_DEBUG(x) VAL_FROM_INT((LINT)(2*(x)+1))
 #define NIL ((LW)0)	// nil
 
-#define TABTYPE(p,i) ((char*)p)[sizeof(LB)+HEADER_SIZE(p)+(i)]
-#define TABSETTYPE(p,i,v,type) \
+#define ARRAY_TYPE(p,i) ((char*)p)[sizeof(LB)+HEADER_SIZE(p)+(i)]
+#define ARRAY_SET_TYPE(p,i,v,type) \
 { \
 	LW memVal=(LW)v; \
 	LINT memI=i;	\
 	char memType=type;	\
 	((char*)p)[sizeof(LB)+HEADER_SIZE(p)+ memI]= memType; \
 	(p)->data[1+ memI]=memVal; \
- 	if (memType ==VAL_TYPE_PNT) MEMORYMARK(p,VALTOPNT(memVal)); \
+ 	if (memType ==VAL_TYPE_PNT) MEMORY_MARK(p,PNT_FROM_VAL(memVal)); \
 }
-#define TABSETTYPE_NOMARK(p,i,v,type) \
+#define ARRAY_SET_TYPE_NO_MARK(p,i,v,type) \
 { \
 	LINT memI=i;	\
 	((char*)p)[sizeof(LB)+HEADER_SIZE(p)+ memI]= type; \
 	(p)->data[1+ memI]=v; \
 }
-#else
-#define VAL_TYPE_FLOAT 0
-#define VAL_TYPE_PNT 1
-#define VAL_TYPE_INT 2
 
-#define DBGTOVAL(x) INTTOVAL(x)
-#define NIL ((LW)1)	// nil
+#define ARRAY_SET_PNT(dst,i,v) ARRAY_SET_TYPE(dst,i,VAL_FROM_PNT(v),VAL_TYPE_PNT)
+#define ARRAY_SET_NIL(dst,i) ARRAY_SET_TYPE_NO_MARK(dst,i,VAL_FROM_PNT(NULL),VAL_TYPE_PNT)
 
-#define TABTYPE(p,i) (((LINT)(p)->data[1+(i)])&3)
-#define TABSETTYPE(p,i,v,type) \
-{ \
-	LINT memVal=(LINT)v; \
-	int memType=type; \
-	memVal=(memVal&-4)|type;	\
-	(p)->data[1+(i)]=(LW)memVal; \
- 	if (memType==VAL_TYPE_PNT) MEMORYMARK(p,VALTOPNT((LW)memVal)); \
-}
-#define TABSETTYPE_NOMARK(p,i,v,type) \
-{ \
-	(p)->data[1+(i)]=v; \
-}
-#endif
+#define ARRAY_IS_PNT(p,i) (ARRAY_TYPE(p,i)==VAL_TYPE_PNT)
+#define ARRAY_IS_NIL(p,i) (ARRAY_IS_PNT(p,i) && !ARRAY_PNT(p,i))
+#define ARRAY_LENGTH(p) (HEADER_SIZE(p)>>LSHIFT)
+#define ARRAY_GET(p,i)	((p)->data[1+(i)])
+#define ARRAY_INT(p,i)	INT_FROM_VAL(ARRAY_GET(p,i))
+#define ARRAY_PNT(p,i)	PNT_FROM_VAL(ARRAY_GET(p,i))
+#define ARRAY_FLOAT(p,i) FLOAT_FROM_VAL(ARRAY_GET(p,i))
+#define ARRAY_SET_INT(p,i,val) ARRAY_SET_TYPE_NO_MARK(p,i,VAL_FROM_INT(val),VAL_TYPE_INT)
+#define ARRAY_SET_FLOAT(p,i,val) ARRAY_SET_TYPE_NO_MARK(p,i,VAL_FROM_FLOAT(val),VAL_TYPE_FLOAT)
+#define ARRAY_SET_BOOL(p,i,val) ARRAY_SET_TYPE_NO_MARK(p,i,VAL_FROM_PNT((val)?MM._true:MM._false),VAL_TYPE_PNT)
+#define ARRAY_COPY(p,i,q,j) {LINT memJ=j; ARRAY_SET_TYPE(p,i,ARRAY_GET(q,memJ),ARRAY_TYPE(q,memJ))}
+#define ARRAY_INTERNAL_COPY(p,i,j) {LINT memJ=j; ARRAY_SET_TYPE_NO_MARK(p,i,ARRAY_GET(p,memJ),ARRAY_TYPE(p,memJ))}
+#define BIN_START(p) ((char*)(&((p)->data[1])))
+#define BIN_LENGTH(p) HEADER_SIZE(p)
 
-#define TABSETPNT(dst,i,v) TABSETTYPE(dst,i,PNTTOVAL(v),VAL_TYPE_PNT)
-#define TABSETNIL(dst,i) TABSETTYPE_NOMARK(dst,i,PNTTOVAL(NULL),VAL_TYPE_PNT)
+#define STR_START(p) BIN_START(p)
+#define STR_LENGTH(p) (HEADER_SIZE(p)-1)
 
-#define TABISPNT(p,i) (TABTYPE(p,i)==VAL_TYPE_PNT)
-#define TABISNIL(p,i) (TABISPNT(p,i) && !TABPNT(p,i))
-#define TABLEN(p) (HEADER_SIZE(p)>>LSHIFT)
-#define TABGET(p,i)	((p)->data[1+(i)])
-#define TABINT(p,i)	VALTOINT(TABGET(p,i))
-#define TABPNT(p,i)	VALTOPNT(TABGET(p,i))
-#define TABFLOAT(p,i) VALTOFLOAT(TABGET(p,i))
-#define TABSETINT(p,i,val) TABSETTYPE_NOMARK(p,i,INTTOVAL(val),VAL_TYPE_INT)
-#define TABSETFLOAT(p,i,val) TABSETTYPE_NOMARK(p,i,FLOATTOVAL(val),VAL_TYPE_FLOAT)
-#define TABSETBOOL(p,i,val) TABSETTYPE_NOMARK(p,i,PNTTOVAL((val)?MM._true:MM._false),VAL_TYPE_PNT)
-#define TABCOPY(p,i,q,j) {LINT memJ=j; TABSETTYPE(p,i,TABGET(q,memJ),TABTYPE(q,memJ))}
-#define TABINTERNALCOPY(p,i,j) {LINT memJ=j; TABSETTYPE_NOMARK(p,i,TABGET(p,memJ),TABTYPE(p,memJ))}
-#define BINSTART(p) ((char*)(&((p)->data[1])))
-#define BINLEN(p) HEADER_SIZE(p)
-
-#define STRSTART(p) BINSTART(p)
-#define STRLEN(p) (HEADER_SIZE(p)-1)
-
-#define DBG_STACK DBGTOVAL(0)
-#define DBG_THREAD DBGTOVAL(1)
-#define DBG_LIST DBGTOVAL(2)
-#define DBG_TUPLE DBGTOVAL(3)
-#define DBG_S DBGTOVAL(4)
-#define DBG_BUFFER DBGTOVAL(5)
-#define DBG_BIN DBGTOVAL(6)
-#define DBG_HASHMAP DBGTOVAL(7)
-#define DBG_ARRAY DBGTOVAL(8)
-#define DBG_HASH_LIST_LIST DBGTOVAL(9)
-#define DBG_TYPE DBGTOVAL(10)
-#define DBG_DEF DBGTOVAL(11)
-#define DBG_PKG DBGTOVAL(12)
-#define DBG_LOCALS DBGTOVAL(13)
-#define DBG_BYTECODE DBGTOVAL(14)
-#define DBG_LAMBDA DBGTOVAL(15)
-#define DBG_IMPORTS DBGTOVAL(16)
-#define DBG_B DBGTOVAL(17)
-#define DBG_FIFO DBGTOVAL(18)
-#define DBG_FUN DBGTOVAL(19)
-#define DBG_SOCKET DBGTOVAL(20)
-#define DBG_MEMCOUNT DBGTOVAL(21)
-#define DBG_HASHSET DBGTOVAL(22)
+#define DBG_STACK VAL_FROM_DEBUG(0)
+#define DBG_THREAD VAL_FROM_DEBUG(1)
+#define DBG_LIST VAL_FROM_DEBUG(2)
+#define DBG_TUPLE VAL_FROM_DEBUG(3)
+#define DBG_S VAL_FROM_DEBUG(4)
+#define DBG_BUFFER VAL_FROM_DEBUG(5)
+#define DBG_BIN VAL_FROM_DEBUG(6)
+#define DBG_HASHMAP VAL_FROM_DEBUG(7)
+#define DBG_ARRAY VAL_FROM_DEBUG(8)
+#define DBG_HASH_LIST_LIST VAL_FROM_DEBUG(9)
+#define DBG_TYPE VAL_FROM_DEBUG(10)
+#define DBG_DEF VAL_FROM_DEBUG(11)
+#define DBG_PKG VAL_FROM_DEBUG(12)
+#define DBG_LOCALS VAL_FROM_DEBUG(13)
+#define DBG_BYTECODE VAL_FROM_DEBUG(14)
+#define DBG_LAMBDA VAL_FROM_DEBUG(15)
+#define DBG_IMPORTS VAL_FROM_DEBUG(16)
+#define DBG_B VAL_FROM_DEBUG(17)
+#define DBG_FIFO VAL_FROM_DEBUG(18)
+#define DBG_FUN VAL_FROM_DEBUG(19)
+#define DBG_SOCKET VAL_FROM_DEBUG(20)
+#define DBG_MEMCOUNT VAL_FROM_DEBUG(21)
+#define DBG_HASHSET VAL_FROM_DEBUG(22)
 
 void memoryInit(int argc, char** argv);
 int memoryEnd(void);
@@ -380,7 +326,7 @@ LINT memoryGetFast(void);
 
 int memoryAddRoot(LB * root);
 
-LB* memoryAllocTable(Thread * th, LINT size, LW dbg);
+LB* memoryAllocArray(Thread * th, LINT size, LW dbg);
 LB* memoryAllocExt(Thread * th, LINT sizeofExt,LW dbg,FORGET forget,MARK mark);
 LB* memoryAllocStr(Thread * th, char* src, LINT size);
 LB* memoryAllocBin(Thread * th, char* src, LINT size, LW dbg);

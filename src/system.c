@@ -15,15 +15,15 @@ LINT PkgCounter = 1;
 void defMark(LB* user)
 {
 	Def* def=(Def*)user;
-//	PRINTF(LOG_DEV,"\n---def %s %llx\n",STRSTART(def->name),def->val);
-	if (def->valType==VAL_TYPE_PNT) MEMORYMARK(user,VALTOPNT(def->val));
-	MEMORYMARK(user,(LB*)def->type);
-	MEMORYMARK(user,def->name);
-	MEMORYMARK(user,def->instances);
-	MEMORYMARK(user,(LB*)def->parent);
-	MEMORYMARK(user,(LB*)def->pkg);
-	MEMORYMARK(user,(LB*)def->parser);
-	MEMORYMARK(user,(LB*)def->next);
+//	PRINTF(LOG_DEV,"\n---def %s %llx\n",STR_START(def->name),def->val);
+	if (def->valType==VAL_TYPE_PNT) MEMORY_MARK(user,PNT_FROM_VAL(def->val));
+	MEMORY_MARK(user,(LB*)def->type);
+	MEMORY_MARK(user,def->name);
+	MEMORY_MARK(user,def->instances);
+	MEMORY_MARK(user,(LB*)def->parent);
+	MEMORY_MARK(user,(LB*)def->pkg);
+	MEMORY_MARK(user,(LB*)def->parser);
+	MEMORY_MARK(user,(LB*)def->next);
 }
 
 Def* defAlloc(Thread* th, LINT code,LINT index,LW val,int valType,Type* type)
@@ -56,29 +56,29 @@ void defSet(Def* def,LW val,int valType)
 {
 	def->val=val;
 	def->valType=valType;
-	if (valType==VAL_TYPE_PNT) MEMORYMARK((LB*)def,VALTOPNT(def->val));
+	if (valType==VAL_TYPE_PNT) MEMORY_MARK((LB*)def,PNT_FROM_VAL(def->val));
 }
 char* defName(Def* def)
 {
 	if (!def) return "[NULL]";
 	if (!def->name) return "[NO NAME]";
-	return STRSTART(def->name);
+	return STR_START(def->name);
 }
 char* defPkgName(Def* def)
 {
 	if (!def) return "[NULL]";
 	if (!def->pkg) return "[NO PKG]";
 	if (!def->pkg->name) return "[NO NAME]";
-	return STRSTART(def->pkg->name);
+	return STR_START(def->pkg->name);
 }
 void pkgMark(LB* user)
 {
 	Pkg* pkg=(Pkg*)user;
-	MEMORYMARK(user,pkg->name);
-	MEMORYMARK(user,(LB*)pkg->start);
-	MEMORYMARK(user,(LB*)pkg->defs);
-	MEMORYMARK(user,pkg->importList);
-//	PRINTF(LOG_DEV,"\n----pkg %s %llx\n",STRSTART(pkg->name),pkg);
+	MEMORY_MARK(user,pkg->name);
+	MEMORY_MARK(user,(LB*)pkg->start);
+	MEMORY_MARK(user,(LB*)pkg->defs);
+	MEMORY_MARK(user,pkg->importList);
+//	PRINTF(LOG_DEV,"\n----pkg %s %llx\n",STR_START(pkg->name),pkg);
 }
 
 Pkg* pkgAlloc(Thread* th, LB* name, int nbits, int type)
@@ -109,20 +109,20 @@ Pkg* pkgAlloc(Thread* th, LB* name, int nbits, int type)
 	pkgMark((LB*)pkg);
 	memoryLeaveFast();
 
-//	PRINTF(LOG_DEV,"\nalloc pkg %s %llx\n",STRSTART(pkg->name),pkg);
+//	PRINTF(LOG_DEV,"\nalloc pkg %s %llx\n",STR_START(pkg->name),pkg);
 	return pkg;
 }
 char* pkgName(Pkg* pkg)
 {
 	if (!pkg) return "[NULL]";
 	if (!pkg->name) return "[NO NAME]";
-	return STRSTART(pkg->name);
+	return STR_START(pkg->name);
 }
 /*
 void pkgSetStart(Pkg* pkg, LB* start)
 {
 	pkg->start=start;
-	MEMORYMARK(pkg,pkg->start);
+	MEMORY_MARK(pkg,pkg->start);
 }
 */
 int pkgAddDef(Thread* th,Pkg* pkg, LB* name, Def* def)
@@ -131,7 +131,7 @@ int pkgAddDef(Thread* th,Pkg* pkg, LB* name, Def* def)
 	def->name=name;
 	def->pkg = pkg;
 	if ((k = hashmapDictAdd(th, pkg->defs, name, (LB*)def))) return k;
-	if (name && compileFunctionIsPrivate(STRSTART(name))) def->public = DEF_HIDDEN;
+	if (name && compileFunctionIsPrivate(STR_START(name))) def->public = DEF_HIDDEN;
 	def->next = pkg->first;
 	pkg->first = def;
 	return 0;
@@ -141,10 +141,10 @@ int pkgAddImport(Compiler *c, Pkg* pkg, Pkg* pkgImport, LB* alias)
 	Thread* th=c->th;
 	FUN_PUSH_PNT((alias));
 	FUN_PUSH_PNT( (LB*)(pkgImport));
-	FUN_MAKE_TABLE( IMPORT_LENGTH, DBG_TUPLE);
+	FUN_MAKE_ARRAY( IMPORT_LENGTH, DBG_TUPLE);
 	FUN_PUSH_PNT((pkg->importList));
-	FUN_MAKE_TABLE( LIST_LENGTH, DBG_LIST);
-	pkg->importList = STACKPULLPNT(th);
+	FUN_MAKE_ARRAY( LIST_LENGTH, DBG_LIST);
+	pkg->importList = STACK_PULL_PNT(th);
 	return 0;
 }
 Pkg* pkgImportByAlias(Pkg* pkg, char* alias)
@@ -152,10 +152,10 @@ Pkg* pkgImportByAlias(Pkg* pkg, char* alias)
 	LB* p= pkg->importList;
 	while (p)
 	{
-		LB* i = (TABPNT(p, LIST_VAL));
-		LB* q = (TABPNT(i, IMPORT_ALIAS));
-		if (q && !strcmp(STRSTART(q), alias)) return (Pkg*)(TABPNT(i, IMPORT_PKG));
-		p = (TABPNT(p, LIST_NXT));
+		LB* i = (ARRAY_PNT(p, LIST_VAL));
+		LB* q = (ARRAY_PNT(i, IMPORT_ALIAS));
+		if (q && !strcmp(STR_START(q), alias)) return (Pkg*)(ARRAY_PNT(i, IMPORT_PKG));
+		p = (ARRAY_PNT(p, LIST_NXT));
 	}
 	return NULL;
 }
@@ -165,7 +165,7 @@ Pkg* pkgImportByName(char* name)
 	Pkg* p = MM.listPkgs;
 	while (p)
 	{
-		if (p->name && !strcmp(STRSTART(p->name), name)) return p;
+		if (p->name && !strcmp(STR_START(p->name), name)) return p;
 		p = p->listNext;
 	}
 	return NULL;
@@ -191,7 +191,7 @@ void pkgCleanCompileError(void)
 		if ((*q)->stage != PKG_STAGE_READY)
 		{
 			*q = (*q)->listNext;
-			MEMORYMARK((LB*)MM.system, (LB*)(*q));
+			MEMORY_MARK((LB*)MM.system, (LB*)(*q));
 		}
 		else q = &((*q)->listNext);
 	}
@@ -217,8 +217,8 @@ Def* pkgGet(Pkg* pkg, char* name, int followParent)
 //	if (tron) PRINTF(LOG_DEV,"entering imports\n");
 	while(1)
 	{
-		LB* i = list?(TABPNT(list, LIST_VAL)):NULL;
-		pkg = i? (Pkg*)(TABPNT(i, IMPORT_PKG)):MM.system;
+		LB* i = list?(ARRAY_PNT(list, LIST_VAL)):NULL;
+		pkg = i? (Pkg*)(ARRAY_PNT(i, IMPORT_PKG)):MM.system;
 		if (pkg)
 		{
 			if (pkg->defs->nbits != nbits)
@@ -233,14 +233,14 @@ Def* pkgGet(Pkg* pkg, char* name, int followParent)
 			}
 		}
 		if (!list) return NULL;
-		list= (TABPNT(list, LIST_NXT));
+		list= (ARRAY_PNT(list, LIST_NXT));
 	}
 }
 void pkgRemoveDef(Def* def)
 {
 	Def* d;
 	if ((!def)||(!def->pkg)) return;
-	hashmapAdd(NULL, 0, def->pkg->defs, PNTTOVAL(def->name), VAL_TYPE_PNT);
+	hashmapAdd(NULL, 0, def->pkg->defs, VAL_FROM_PNT(def->name), VAL_TYPE_PNT);
 	d = def->pkg->first;
 	if (d == def) def->pkg->first=def->next;
 	else while(d)
@@ -267,8 +267,8 @@ int pkgHasWeak(Compiler* c, Thread* th, Pkg* pkg, int showError)
 	{
 		if (typeHasWeak(def->type))
 		{
-			compileError(c, showError?"Compiler: weak type error\n\n": "Compiler: weak type warning\n\n");
-			PRINTF(LOG_SYS, "weak type %s.%s: ", pkgName(pkg),defName(def));
+			compileError(c, showError?"weak type error\n": "weak type warning\n");
+			PRINTF(LOG_SYS, ">   weak type %s.%s: ", pkgName(pkg),defName(def));
 			typePrint(th, LOG_SYS, def->type);
 			PRINTF(LOG_SYS, "\n");
 			flag++;
@@ -292,7 +292,7 @@ LINT _pkgDisplayLeftSize(Def* def)
 	max= _pkgDisplayLeftSize(def->next);
 	if (!def->name) return max;
 
-	len = STRLEN(def->name);
+	len = STR_LENGTH(def->name);
 	if (def->proto) len+=strlen("> proto ");
 	else len+=strlen("> ");
 
@@ -355,8 +355,8 @@ int _pkgDisplay(Thread* th, int mask, LINT padding, Def* def)
 	if ((k = _pkgDisplay(th, mask, padding,def->next))) return k;
 	if (!def->name) return 0;	// will happen only for the temporary extend declaration
 
-	name = STRSTART(def->name);
-	len = STRLEN(def->name);
+	name = STR_START(def->name);
+	len = STR_LENGTH(def->name);
 	if (def->proto) len += strlen("> proto ");
 	else len += strlen("> ");
 
@@ -391,11 +391,11 @@ int _pkgDisplay(Thread* th, int mask, LINT padding, Def* def)
 			PRINTF(mask, " + ");
 		}
 		PRINTF(mask, "[ ");
-		p = (Def*)VALTOPNT(def->val);
+		p = (Def*)PNT_FROM_VAL(def->val);
 		while (p)
 		{
-			PRINTF(mask, "%s ", STRSTART(p->name));
-			p = (Def*)VALTOPNT(p->val);
+			PRINTF(mask, "%s ", STR_START(p->name));
+			p = (Def*)PNT_FROM_VAL(p->val);
 		}
 		PRINTF(mask,"]");
 	}
@@ -407,7 +407,7 @@ int _pkgDisplay(Thread* th, int mask, LINT padding, Def* def)
 	else if (def->code == DEF_CODE_SUM)
 	{
 		int first = 1;
-		Def* p = (Def*)VALTOPNT(def->val);
+		Def* p = (Def*)PNT_FROM_VAL(def->val);
 		PRINTF(mask, "sum ");
 		if ((k=typePrint(th, mask, def->type))) return k;
 		PRINTF(mask, "%s%s", _padding(padding - (len + strlen("sum ") + _pkgParamLength(def))), sep);
@@ -415,8 +415,8 @@ int _pkgDisplay(Thread* th, int mask, LINT padding, Def* def)
 		{
 			if (!first) PRINTF(mask, ", ");
 			first = 0;
-			PRINTF(mask, "%s", STRSTART(p->name));
-			p = (Def*)VALTOPNT(p->val);
+			PRINTF(mask, "%s", STR_START(p->name));
+			p = (Def*)PNT_FROM_VAL(p->val);
 		}
 	}
 	else if (def->code==DEF_CODE_CONS)
@@ -445,10 +445,10 @@ void pkgDisplayImports(Thread* th, int mask, LINT padding, LB* list)
 	Pkg* pkg;
 	if (!list) return;
 	
-	pkgDisplayImports(th, mask,padding,(TABPNT(list, LIST_NXT)));
+	pkgDisplayImports(th, mask,padding,(ARRAY_PNT(list, LIST_NXT)));
 
-	i = (TABPNT(list, LIST_VAL));
-	pkg = (Pkg*)(TABPNT(i, IMPORT_PKG));
+	i = (ARRAY_PNT(list, LIST_VAL));
+	pkg = (Pkg*)(ARRAY_PNT(i, IMPORT_PKG));
 	PRINTF(mask, "> import%s: %s\n", _padding(padding +1 - (strlen("> import"))), pkgName(pkg));
 }
 int pkgDisplay(Thread* th, int mask, Pkg* pkg)
@@ -482,14 +482,14 @@ int pkgAddFun(Thread* th, Pkg *pkg,char* name,NATIVE fun,Type* type)
 	LB* pfun;
 	Def* def;
 	LB* pname;
-	LB* value= memoryAllocTable(th, FUN_NATIVE_LEN,DBG_TUPLE);
+	LB* value= memoryAllocArray(th, FUN_NATIVE_LENGTH,DBG_TUPLE);
 	if (!value) return EXEC_OM;
 	pname=memoryAllocStr(th, name,-1); if (!pname) return EXEC_OM;
-	TABSETPNT(value,FUN_NATIVE_NAME,pname);
+	ARRAY_SET_PNT(value,FUN_NATIVE_NAME,pname);
 	pfun = memoryAllocBin(th, (char*)&fun, sizeof(NATIVE), DBG_BIN);
 	if (!pfun) return EXEC_OM;
-	TABSETPNT(value,FUN_NATIVE_POINTER,pfun);
-	def = defAlloc(th, type->nb - 1, DEF_INDEX_NATIVE, PNTTOVAL(value),VAL_TYPE_PNT,  type); if (!def) return EXEC_OM;
+	ARRAY_SET_PNT(value,FUN_NATIVE_POINTER,pfun);
+	def = defAlloc(th, type->nb - 1, DEF_INDEX_NATIVE, VAL_FROM_PNT(value),VAL_TYPE_PNT,  type); if (!def) return EXEC_OM;
 	return pkgAddDef(th, pkg, pname, def);
 }
 
@@ -497,14 +497,14 @@ int pkgAddOpcode(Thread* th, Pkg *pkg,char* name,LINT opcode,Type* type)
 {
 	Def* def;
 	LB* pname;
-	LB* value= memoryAllocTable(th, FUN_NATIVE_LEN,DBG_TUPLE);
+	LB* value= memoryAllocArray(th, FUN_NATIVE_LENGTH,DBG_TUPLE);
 	if (!value) return EXEC_OM;
 	pname = memoryAllocStr(th, name, -1); if (!pname) return EXEC_OM;
 
-	TABSETPNT(value,FUN_NATIVE_NAME,pname);
-	TABSETINT(value,FUN_NATIVE_POINTER,opcode);
+	ARRAY_SET_PNT(value,FUN_NATIVE_NAME,pname);
+	ARRAY_SET_INT(value,FUN_NATIVE_POINTER,opcode);
 
-	def = defAlloc(th, type->nb - 1, DEF_INDEX_OPCODE, PNTTOVAL(value), VAL_TYPE_PNT, type); if (!def) return EXEC_OM;
+	def = defAlloc(th, type->nb - 1, DEF_INDEX_OPCODE, VAL_FROM_PNT(value), VAL_TYPE_PNT, type); if (!def) return EXEC_OM;
 	return pkgAddDef(th, pkg, pname, def);
 }
 
@@ -516,9 +516,9 @@ Def* pkgAddConst(Thread* th, Pkg *pkg,char* name,LW value,int valType, Type* typ
 	if (pkgAddDef(th, pkg, pname, def)) return NULL;
 	return def;
 }
-Def* pkgAddConstInt(Thread* th, Pkg* pkg, char* name, LINT value, Type* type) { return pkgAddConst(th, pkg, name, INTTOVAL(value), VAL_TYPE_INT, type); }
-Def* pkgAddConstFloat(Thread* th, Pkg* pkg, char* name, LFLOAT value, Type* type) { return pkgAddConst(th, pkg, name, FLOATTOVAL(value), VAL_TYPE_FLOAT, type); }
-Def* pkgAddConstPnt(Thread* th, Pkg* pkg, char* name, LB* value, Type* type) { return pkgAddConst(th, pkg, name, PNTTOVAL(value), VAL_TYPE_PNT, type); }
+Def* pkgAddConstInt(Thread* th, Pkg* pkg, char* name, LINT value, Type* type) { return pkgAddConst(th, pkg, name, VAL_FROM_INT(value), VAL_TYPE_INT, type); }
+Def* pkgAddConstFloat(Thread* th, Pkg* pkg, char* name, LFLOAT value, Type* type) { return pkgAddConst(th, pkg, name, VAL_FROM_FLOAT(value), VAL_TYPE_FLOAT, type); }
+Def* pkgAddConstPnt(Thread* th, Pkg* pkg, char* name, LB* value, Type* type) { return pkgAddConst(th, pkg, name, VAL_FROM_PNT(value), VAL_TYPE_PNT, type); }
 
 Def* pkgAddSum(Thread* th, Pkg *pkg,char* name)
 {
@@ -539,7 +539,7 @@ Def* pkgAddCons(Thread* th, Pkg *pkg,char* name,Def* defType,Type* consType)
 	LB* pname=memoryAllocStr(th, name,-1); if (!pname) return NULL;
 	defCons=defAlloc(th, DEF_CODE_CONS,defType->index++,defType->val,defType->valType, consType); if (!defCons) return NULL;
 
-	defSet(defType,PNTTOVAL((LB*)defCons),VAL_TYPE_PNT);
+	defSet(defType,VAL_FROM_PNT((LB*)defCons),VAL_TYPE_PNT);
 	defCons->parent = defType;
 
 	if (pkgAddDef(th, pkg, pname, defCons)) return NULL;	// this will also set defType->name
@@ -552,7 +552,7 @@ Def* pkgAddCons0(Thread* th, Pkg* pkg, char* name, Def* defType)
 	LB* pname = memoryAllocStr(th, name, -1); if (!pname) return NULL;
 	defCons = defAlloc(th, DEF_CODE_CONS0, defType->index++, defType->val, defType->valType, defType->type); if (!defCons) return NULL;
 
-	defSet(defType,PNTTOVAL((LB*)defCons),VAL_TYPE_PNT);
+	defSet(defType,VAL_FROM_PNT((LB*)defCons),VAL_TYPE_PNT);
 	defCons->parent = defType;
 
 	if (pkgAddDef(th, pkg, pname, defCons)) return NULL;	// this will also set defType->name
@@ -567,7 +567,7 @@ void systemKeywords(Thread* th)
 		char* p = defName(d);
 		if (p[0] != '_')
 		{
-			PRINTF(LOG_USER, "%s:%d:%s: ", p, d->code,d->parser&&d->parser->name?STRSTART(d->parser->name):"");
+			PRINTF(LOG_USER, "%s:%d:%s: ", p, d->code,d->parser&&d->parser->name?STR_START(d->parser->name):"");
 			typePrint(th, LOG_USER, d->type);
 			PRINTF(LOG_USER, "\n");
 		}
@@ -602,7 +602,7 @@ void systemInit(Thread* th, Pkg *system)
 	coreLzwInit(th, system);
 	coreInflateInit(th, system);
 
-//	itemDump(LOG_SYS,PNTTOVAL(th, system),VAL_TYPE_PNT);
+//	itemDump(LOG_SYS,VAL_FROM_PNT(th, system),VAL_TYPE_PNT);
 
 	memoryLeaveFast();
 }

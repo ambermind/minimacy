@@ -225,7 +225,7 @@ int parserAssume(Compiler* c,char* keyword)
 {
 	if ((!parserNext(c))||strcmp(c->parser->token,keyword))
 	{
-		compileError(c,"Compiler: '%s' expected (found %s)\n",keyword,compileToken(c));
+		compileError(c,"'%s' expected (found %s)\n",keyword,compileToken(c));
 		return COMPILER_ERR_SN;
 	}
 	return 0;
@@ -237,7 +237,7 @@ int parserUntil(Compiler* c, char* keyword)
 	{
 		if (!strcmp(c->parser->token, keyword)) return 0;
 	}
-	compileError(c, "Compiler: '%s' expected\n", keyword);
+	compileError(c,"'%s' expected\n", keyword);
 	return COMPILER_ERR_SN;
 }
 
@@ -284,8 +284,8 @@ int parserNextchar(Compiler* p)
 void parserMark(LB* user)
 {
 	Parser* parser = (Parser*)user;
-	MEMORYMARK(user, (LB*)parser->name);
-	MEMORYMARK(user, (LB*)parser->block);
+	MEMORY_MARK(user, (LB*)parser->name);
+	MEMORY_MARK(user, (LB*)parser->block);
 }
 // Warning: we assume that the parser is used under memoryEnterFast
 int parserFromData(Compiler* c, char* name, char* data)
@@ -305,7 +305,7 @@ int parserFromData(Compiler* c, char* name, char* data)
 	c->parser->src = NULL;
 	c->parser->indexsavedchar = -1;
 	parser->block = memoryAllocStr(c->th, data, -1); if (!parser->block) return EXEC_OM;
-	c->parser->src = STRSTART(parser->block);	// under memoryEnterFast, there is no need to keep an eye on the corresponding LB*
+	c->parser->src = STR_START(parser->block);	// under memoryEnterFast, there is no need to keep an eye on the corresponding LB*
 	parserReset(c);
 	return 0;
 }
@@ -316,19 +316,19 @@ Type* parserFromIncludes(Compiler* c,char* name)
 	Parser* parser = c->parserLib;
 	while (parser)
 	{
-		if (!strcmp(STRSTART(parser->name), name))
+		if (!strcmp(STR_START(parser->name), name))
 		{
 			parser->parent = c->parser;
 			parser->mayGetBackToParent = 0;
 
 			c->parser = parser;
 			parserReset(c);
-			return MM.S;
+			return MM.Str;
 		}
 		parser = parser->nextLib;
 	}
 	src = fsReadPackage(c->th, name, NULL, 0);
-	if (!src) return compileError(c, "Compiler: file not found ('%s')\n", name);
-	if (parserFromData(c, name, STRSTART(src))) return NULL;
-	return MM.S;
+	if (!src) return compileError(c,"file not found ('%s')\n", name);
+	if (parserFromData(c, name, STR_START(src))) return NULL;
+	return MM.Str;
 }

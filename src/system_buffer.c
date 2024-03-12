@@ -17,68 +17,68 @@ int fun_bufferCreate(Thread* th)
 }
 int fun_bufferCreateWithSize(Thread* th)
 {
-	Buffer* p= bufferCreateWithSize(th,STACKINT(th,0)); if (!p) return EXEC_OM;
+	Buffer* p= bufferCreateWithSize(th,STACK_INT(th,0)); if (!p) return EXEC_OM;
 	FUN_RETURN_PNT((LB*)p);
 }
 int fun_strFromBuffer(Thread* th)
 {
-	Buffer* b = (Buffer*)STACKPNT(th, 0);
+	Buffer* b = (Buffer*)STACK_PNT(th, 0);
 	if (!b) FUN_RETURN_NIL;
 	FUN_RETURN_BUFFER(b);
 }
 int fun_bufferLength(Thread* th)
 {
-	Buffer* b = (Buffer*)STACKPNT(th, 0);
+	Buffer* b = (Buffer*)STACK_PNT(th, 0);
 	if (!b) FUN_RETURN_NIL;
 	FUN_RETURN_INT(bufferSize(b));
 }
 int fun_bufferReset(Thread* th)
 {
-	Buffer* b = (Buffer*)STACKPNT(th, 0);
+	Buffer* b = (Buffer*)STACK_PNT(th, 0);
 	if (b) bufferReinit(b);
 	return 0;
 }
 int fun_bufferGet(Thread* th)
 {
-	LINT index = STACKPULLINT(th);
-	Buffer* b = (Buffer*)STACKPNT(th, 0);
+	LINT index = STACK_PULL_INT(th);
+	Buffer* b = (Buffer*)STACK_PNT(th, 0);
 	FUN_CHECK_CONTAINS(b,index,1,bufferSize(b));
 	FUN_RETURN_INT(255& bufferGetChar(b,index));
 }
 int fun_bufferAppendChar(Thread* th)
 {
-	LINT c = STACKPULLINT(th);
-	Buffer* b = (Buffer*)STACKPNT(th, 0);
+	LINT c = STACK_PULL_INT(th);
+	Buffer* b = (Buffer*)STACK_PNT(th, 0);
 	if (b&&bufferAddChar(th,b,(char)c)) return EXEC_OM;
 	return 0;
 }
 int fun_bufferSliceOfStr(Thread* th)
 {
-	int lenIsNil = STACKISNIL(th,0);
-	LINT len = STACKINT(th, 0);
-	LINT start = STACKINT(th,1);
-	Buffer* b = (Buffer*)STACKPNT(th, 2);
+	int lenIsNil = STACK_IS_NIL(th,0);
+	LINT len = STACK_INT(th, 0);
+	LINT start = STACK_INT(th,1);
+	Buffer* b = (Buffer*)STACK_PNT(th, 2);
 	FUN_SUBSTR(b,start,len,lenIsNil,bufferSize(b));
 
 	FUN_RETURN_STR(bufferStart(b)+start, len);
 }
 int fun_bufferAppend(Thread* th)
 {
-	Buffer* b = (Buffer*)STACKPNT(th, 1);
-	if (STACKISNIL(th, 0) || !b) FUN_RETURN_NIL;
+	Buffer* b = (Buffer*)STACK_PNT(th, 1);
+	if (STACK_IS_NIL(th, 0) || !b) FUN_RETURN_NIL;
 
-	if (bufferItem(th,b,STACKGET(th, 0),STACKTYPE(th, 0),NULL)) return EXEC_OM;
-	STACKDROP(th);
+	if (bufferItem(th,b,STACK_GET(th, 0),STACK_TYPE(th, 0),NULL)) return EXEC_OM;
+	STACK_DROP(th);
 	return 0;
 }
 int fun_bufferAppendJoin(Thread* th)
 {
-	LB* join = STACKPNT(th, 1);
-	Buffer* b = (Buffer*)STACKPNT(th, 2);
-	if (STACKISNIL(th, 0) || !b ||!join) FUN_RETURN_NIL;
+	LB* join = STACK_PNT(th, 1);
+	Buffer* b = (Buffer*)STACK_PNT(th, 2);
+	if (STACK_IS_NIL(th, 0) || !b ||!join) FUN_RETURN_NIL;
 
-	if (bufferItem(th, b, STACKGET(th, 0), STACKTYPE(th, 0), join)) return EXEC_OM;
-	STACKDROPN(th,2);
+	if (bufferItem(th, b, STACK_GET(th, 0), STACK_TYPE(th, 0), join)) return EXEC_OM;
+	STACK_DROPN(th,2);
 	return 0;
 }
 
@@ -87,17 +87,17 @@ int coreBufferInit(Thread* th, Pkg *system)
 	Type* u0 = typeAllocUndef(th);
 
 	pkgAddFun(th, system,"bufferCreate",fun_bufferCreate,typeAlloc(th,TYPECODE_FUN,NULL,1,MM.Buffer));
-	pkgAddFun(th, system,"bufferCreateWithSize",fun_bufferCreateWithSize,typeAlloc(th,TYPECODE_FUN,NULL,2,MM.I,MM.Buffer));
+	pkgAddFun(th, system,"bufferCreateWithSize",fun_bufferCreateWithSize,typeAlloc(th,TYPECODE_FUN,NULL,2,MM.Int,MM.Buffer));
 	pkgAddFun(th, system,"bufferAppend", fun_bufferAppend,typeAlloc(th,TYPECODE_FUN,NULL,3, MM.Buffer,u0, MM.Buffer));
-	pkgAddFun(th, system,"bufferAppendJoin", fun_bufferAppendJoin,typeAlloc(th,TYPECODE_FUN,NULL,4, MM.Buffer,MM.S,u0, MM.Buffer));
-	pkgAddFun(th, system,"bufferLength", fun_bufferLength, typeAlloc(th,TYPECODE_FUN, NULL, 2, MM.Buffer, MM.I));
-	pkgAddFun(th, system,"strFromBuffer", fun_strFromBuffer, typeAlloc(th,TYPECODE_FUN, NULL, 2, MM.Buffer, MM.S));
+	pkgAddFun(th, system,"bufferAppendJoin", fun_bufferAppendJoin,typeAlloc(th,TYPECODE_FUN,NULL,4, MM.Buffer,MM.Str,u0, MM.Buffer));
+	pkgAddFun(th, system,"bufferLength", fun_bufferLength, typeAlloc(th,TYPECODE_FUN, NULL, 2, MM.Buffer, MM.Int));
+	pkgAddFun(th, system,"strFromBuffer", fun_strFromBuffer, typeAlloc(th,TYPECODE_FUN, NULL, 2, MM.Buffer, MM.Str));
 	pkgAddFun(th, system,"bytesFromBuffer", fun_strFromBuffer, typeAlloc(th,TYPECODE_FUN, NULL, 2, MM.Buffer, MM.Bytes));
 	pkgAddFun(th, system,"bufferReset", fun_bufferReset, typeAlloc(th,TYPECODE_FUN, NULL, 2, MM.Buffer, MM.Buffer));
-	pkgAddFun(th, system, "bufferGet", fun_bufferGet, typeAlloc(th, TYPECODE_FUN, NULL, 3, MM.Buffer, MM.I, MM.I));
-	pkgAddFun(th, system, "bufferAppendChar", fun_bufferAppendChar, typeAlloc(th, TYPECODE_FUN, NULL, 3, MM.Buffer, MM.I, MM.Buffer));
-	pkgAddFun(th, system, "bufferSliceOfStr", fun_bufferSliceOfStr, typeAlloc(th, TYPECODE_FUN, NULL, 4, MM.Buffer, MM.I, MM.I, MM.S));
-	pkgAddFun(th, system, "bufferSliceOfBytes", fun_bufferSliceOfStr, typeAlloc(th, TYPECODE_FUN, NULL, 4, MM.Buffer, MM.I, MM.I, MM.Bytes));
+	pkgAddFun(th, system, "bufferGet", fun_bufferGet, typeAlloc(th, TYPECODE_FUN, NULL, 3, MM.Buffer, MM.Int, MM.Int));
+	pkgAddFun(th, system, "bufferAppendChar", fun_bufferAppendChar, typeAlloc(th, TYPECODE_FUN, NULL, 3, MM.Buffer, MM.Int, MM.Buffer));
+	pkgAddFun(th, system, "bufferSliceOfStr", fun_bufferSliceOfStr, typeAlloc(th, TYPECODE_FUN, NULL, 4, MM.Buffer, MM.Int, MM.Int, MM.Str));
+	pkgAddFun(th, system, "bufferSliceOfBytes", fun_bufferSliceOfStr, typeAlloc(th, TYPECODE_FUN, NULL, 4, MM.Buffer, MM.Int, MM.Int, MM.Bytes));
 
 	return 0;
 }

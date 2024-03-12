@@ -1,5 +1,5 @@
 #----------------------DO NOT TOUCH BELOW
-export CC= gcc $(ARCH)
+export CC= gcc
 export AR= ar
 CCL=$(CC)
 
@@ -90,7 +90,7 @@ LIBS= -lm -lpthread
 
 TARGETX11GL= $(TARGET)X11GL
 LIBSX11GL  = $(LIBS) -lX11 -lXext -lasound -lGL -lGLU 
-CFLAGX11GL = $(CFLAG) -D WITH_UI -D WITH_AUDIO -D WITH_GL -D GL_GLEXT_PROTOTYPES
+CFLAGX11GL = -O3 -D ON_UNIX_X11GL
 LIBDIRX11GL= -L/usr/X11R6/lib
 INCX11GL   = -I/usr/X11R6/include
 
@@ -121,7 +121,7 @@ all:
 	make clean-x11gl
 	make x11gl
 
-pi: CFLAG:= -O3 -D ON_RPIOS -D GL_GLEXT_PROTOTYPES
+pi: CFLAG:= -O3 -D ON_RPIOS
 pi: INC:= $(INCX11GL)
 pi: $(TARGETRPIOS)
 

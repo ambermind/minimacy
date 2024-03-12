@@ -112,7 +112,7 @@ int _glMakeGLcontextInitGL()
 	if (!vInfo) vInfo = glXChooseVisual(UI.displayGl, DefaultScreen(UI.displayGl), testAttributesB);
 	if (!vInfo) vInfo = glXChooseVisual(UI.displayGl, DefaultScreen(UI.displayGl), testAttributesC);
 	if (!vInfo) {
-		PRINTF(LOG_SYS,"OpenGL: glXChooseVisual failed\n");
+		PRINTF(LOG_SYS,">Error: glXChooseVisual failed\n");
 		return -1;
 	}
 	UI.contextGl = glXCreateContext(UI.displayGl, vInfo, NULL, True);
@@ -158,7 +158,7 @@ int hwindowStartX(char* station)
 	UI.display=XOpenDisplay(station);
 	if (!UI.display)
 	{
-		PRINTF(LOG_SYS,"X11: cannot open display\n");
+		PRINTF(LOG_SYS,">Error: cannot open X11 display\n");
 		return -1;
 	}
 	UI.screen=DefaultScreen(UI.display);
@@ -418,17 +418,17 @@ MTHREAD_START _uiStart(Thread* th)
 	int typeStyle;
 	char* name;
 
-	LB* p = STACKPNT(th, 0);
-	LINT type = STACKINT(th, 1);
-	LINT h=STACKINT(th,2);
-	LINT w=STACKINT(th,3);
-	y = STACKINT(th, 4);
-	x = STACKINT(th, 5);
+	LB* p = STACK_PNT(th, 0);
+	LINT type = STACK_INT(th, 1);
+	LINT h=STACK_INT(th,2);
+	LINT w=STACK_INT(th,3);
+	y = STACK_INT(th, 4);
+	x = STACK_INT(th, 5);
 
 	if (hwindowStartX(NULL)) workerDoneNil(th);
 
 	if (!p) name = "Minimacy";
-	else name = STRSTART(p);
+	else name = STR_START(p);
 
 	UI.type=(int)type;
 	typeStyle= UI.type & UI_TYPE_MASK;
@@ -466,8 +466,8 @@ int fun_uiStart(Thread* th) { return workerStart(th, 6, _uiStart); }
 
 int fun_uiResize(Thread* th)
 {
-	LINT h=STACKINT(th, 0);
-	LINT w=STACKINT(th, 1);
+	LINT h=STACK_INT(th, 0);
+	LINT w=STACK_INT(th, 1);
 	if (!UI.win) FUN_RETURN_NIL;
 	
 	_uiApplyHints(w,h);
@@ -512,9 +512,9 @@ int fun_screenH(Thread* th)
 
 int fun_uiSetTitle(Thread* th)
 {
-	LB* name = STACKPNT(th, 0);
+	LB* name = STACK_PNT(th, 0);
 	if ((!name) || (!UI.win)) FUN_RETURN_NIL;
-	XSetStandardProperties(UI.display, UI.win, STRSTART(name),STRSTART(name),0,NULL,0,NULL);
+	XSetStandardProperties(UI.display, UI.win, STR_START(name),STR_START(name),0,NULL,0,NULL);
 	return 0;
 }
 
@@ -533,11 +533,11 @@ int fun_keyboardState(Thread* th)
 
 int fun_clipboardCopy(Thread* th)
 {
-	LB* data = STACKPNT(th, 0);
+	LB* data = STACK_PNT(th, 0);
 	if (!data) return 0;
 
 	if (hwindowStartX(NULL)) FUN_RETURN_NIL;
-	XStoreBytes(UI.display,STRSTART(data),STRLEN(data));
+	XStoreBytes(UI.display,STR_START(data),STR_LENGTH(data));
 	return 0;
 }
 int fun_clipboardPaste(Thread* th)
@@ -563,7 +563,7 @@ int fun_cursorSize(Thread* th)
 {
 	FUN_PUSH_INT(32);
 	FUN_PUSH_INT(32);
-	FUN_MAKE_TABLE( 2, DBG_TUPLE);
+	FUN_MAKE_ARRAY( 2, DBG_TUPLE);
 	return 0;
 }
 int fun_cursorCreate(Thread* th)
@@ -576,9 +576,9 @@ int fun_cursorCreate(Thread* th)
 	Pixmap back,fore;
 	XColor white,black;
 
-	LINT yhot = STACKINT(th, 0);
-	LINT xhot = STACKINT(th, 1);
-	LBitmap* bmp = (LBitmap*)STACKPNT(th, 2);
+	LINT yhot = STACK_INT(th, 0);
+	LINT xhot = STACK_INT(th, 1);
+	LBitmap* bmp = (LBitmap*)STACK_PNT(th, 2);
 	if ((!bmp)||(!UI.win)) FUN_RETURN_NIL;	// we need a window before creating the cursor
 
 //printf("alloc cursor %d\n",sizeof(LCursor));
@@ -615,7 +615,7 @@ int fun_cursorCreate(Thread* th)
 }
 int fun_cursorShow(Thread* th)
 {
-	LCursor* d = (LCursor*) STACKPNT(th, 0);
+	LCursor* d = (LCursor*) STACK_PNT(th, 0);
 
 	if (!d) XUndefineCursor(UI.display,UI.win);
 	else XDefineCursor(UI.display,UI.win, d->cursor);

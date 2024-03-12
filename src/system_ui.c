@@ -54,18 +54,18 @@ int fun_glRefreshContext(Thread* th) FUN_RETURN_NIL
 #endif
 int coreUiInit(Thread* th, Pkg *system)
 {
-	Type* fun_I_I_I_I_I_S_B = typeAlloc(th, TYPECODE_FUN, NULL, 7, MM.I, MM.I, MM.I, MM.I, MM.I, MM.S, MM.Boolean);
-	Type* fun_I_I_B = typeAlloc(th, TYPECODE_FUN, NULL, 3, MM.I, MM.I, MM.Boolean);
+	Type* fun_I_I_I_I_I_S_B = typeAlloc(th, TYPECODE_FUN, NULL, 7, MM.Int, MM.Int, MM.Int, MM.Int, MM.Int, MM.Str, MM.Boolean);
+	Type* fun_I_I_B = typeAlloc(th, TYPECODE_FUN, NULL, 3, MM.Int, MM.Int, MM.Boolean);
 	Type* fun_B = typeAlloc(th, TYPECODE_FUN, NULL, 1, MM.Boolean);
-	Type* fun_F = typeAlloc(th, TYPECODE_FUN, NULL, 1, MM.F);
-    Type* fun_F_F = typeAlloc(th, TYPECODE_FUN, NULL, 2, MM.F, MM.F);
-	Type* fun_S = typeAlloc(th, TYPECODE_FUN, NULL, 1, MM.S);
-	Type* fun_S_S = typeAlloc(th, TYPECODE_FUN, NULL, 2, MM.S, MM.S);
-	Type* fun_I = typeAlloc(th, TYPECODE_FUN, NULL, 1, MM.I);
-	Type* fun_list_S = typeAlloc(th, TYPECODE_FUN, NULL, 1, typeAlloc(th, TYPECODE_LIST, NULL, 1, MM.S));
+	Type* fun_F = typeAlloc(th, TYPECODE_FUN, NULL, 1, MM.Float);
+    Type* fun_F_F = typeAlloc(th, TYPECODE_FUN, NULL, 2, MM.Float, MM.Float);
+	Type* fun_S = typeAlloc(th, TYPECODE_FUN, NULL, 1, MM.Str);
+	Type* fun_S_S = typeAlloc(th, TYPECODE_FUN, NULL, 2, MM.Str, MM.Str);
+	Type* fun_I = typeAlloc(th, TYPECODE_FUN, NULL, 1, MM.Int);
+	Type* fun_list_S = typeAlloc(th, TYPECODE_FUN, NULL, 1, typeAlloc(th, TYPECODE_LIST, NULL, 1, MM.Str));
 	Def* Cursor= pkgAddType(th, system, "Cursor");
-	Type* fun_II = typeAlloc(th, TYPECODE_FUN, NULL, 1, typeAlloc(th, TYPECODE_TUPLE, NULL, 2, MM.I, MM.I));
-	Type* fun_Bmp_I_I_Cursor = typeAlloc(th, TYPECODE_FUN, NULL, 4, MM.Bitmap, MM.I, MM.I, Cursor->type);
+	Type* fun_II = typeAlloc(th, TYPECODE_FUN, NULL, 1, typeAlloc(th, TYPECODE_TUPLE, NULL, 2, MM.Int, MM.Int));
+	Type* fun_Bmp_I_I_Cursor = typeAlloc(th, TYPECODE_FUN, NULL, 4, MM.Bitmap, MM.Int, MM.Int, Cursor->type);
 	Type* fun_Cursor_Cursor = typeAlloc(th, TYPECODE_FUN, NULL, 2, Cursor->type, Cursor->type);
 
 	coreUiHwInit(th,system);
@@ -75,10 +75,10 @@ int coreUiInit(Thread* th, Pkg *system)
 	pkgAddFun(th, system, "_glMakeContext", fun_glMakeContext, fun_I);
 	pkgAddFun(th, system, "_glRefreshContext", fun_glRefreshContext, fun_I);
 #endif
-	pkgAddConstInt(th, system, "UI_NORMAL", UI_NORMAL, MM.I);
-	pkgAddConstInt(th, system, "UI_RESIZE", UI_RESIZE, MM.I);
-	pkgAddConstInt(th, system, "UI_FULLSCREEN", UI_FULLSCREEN, MM.I);
-	pkgAddConstInt(th, system, "UI_GL", UI_GL, MM.I);
+	pkgAddConstInt(th, system, "UI_NORMAL", UI_NORMAL, MM.Int);
+	pkgAddConstInt(th, system, "UI_RESIZE", UI_RESIZE, MM.Int);
+	pkgAddConstInt(th, system, "UI_FULLSCREEN", UI_FULLSCREEN, MM.Int);
+	pkgAddConstInt(th, system, "UI_GL", UI_GL, MM.Int);
 
 	pkgAddFun(th, system, "_uiStart", fun_uiStart, fun_I_I_I_I_I_S_B);
 	pkgAddFun(th, system, "_uiStop", fun_uiStop, fun_B);
@@ -113,39 +113,39 @@ int coreUiInit(Thread* th, Pkg *system)
     pkgAddFun(th, system, "accelerometerInit", fun_accelerometerInit, fun_F_F);
 
     
-	pkgAddConstInt(th, system, "Key_Pause", XKey_Pause, MM.I);
-	pkgAddConstInt(th, system, "Key_Scroll_Lock", XKey_Scroll_Lock, MM.I);
-	pkgAddConstInt(th, system, "Key_Sys_Req", XKey_Sys_Req, MM.I);
-	pkgAddConstInt(th, system, "Key_Delete", XKey_Delete, MM.I);
-	pkgAddConstInt(th, system, "Key_Home", XKey_Home, MM.I);
-	pkgAddConstInt(th, system, "Key_Left", XKey_Left, MM.I);
-	pkgAddConstInt(th, system, "Key_Up", XKey_Up, MM.I);
-	pkgAddConstInt(th, system, "Key_Right", XKey_Right, MM.I);
-	pkgAddConstInt(th, system, "Key_Down", XKey_Down, MM.I);
-	pkgAddConstInt(th, system, "Key_Prior", XKey_Prior, MM.I);
-	pkgAddConstInt(th, system, "Key_Page_Up", XKey_Page_Up, MM.I);
-	pkgAddConstInt(th, system, "Key_Next", XKey_Next, MM.I);
-	pkgAddConstInt(th, system, "Key_Page_Down", XKey_Page_Down, MM.I);
-	pkgAddConstInt(th, system, "Key_End", XKey_End, MM.I);
-	pkgAddConstInt(th, system, "Key_Insert", XKey_Insert, MM.I);
-	pkgAddConstInt(th, system, "Key_Num_Lock", XKey_Num_Lock, MM.I);
-	pkgAddConstInt(th, system, "Key_F1", XKey_F1, MM.I);
-	pkgAddConstInt(th, system, "Key_F2", XKey_F2, MM.I);
-	pkgAddConstInt(th, system, "Key_F3", XKey_F3, MM.I);
-	pkgAddConstInt(th, system, "Key_F4", XKey_F4, MM.I);
-	pkgAddConstInt(th, system, "Key_F5", XKey_F5, MM.I);
-	pkgAddConstInt(th, system, "Key_F6", XKey_F6, MM.I);
-	pkgAddConstInt(th, system, "Key_F7", XKey_F7, MM.I);
-	pkgAddConstInt(th, system, "Key_F8", XKey_F8, MM.I);
-	pkgAddConstInt(th, system, "Key_F9", XKey_F9, MM.I);
-	pkgAddConstInt(th, system, "Key_F10", XKey_F10, MM.I);
-	pkgAddConstInt(th, system, "Key_F11", XKey_F11, MM.I);
-	pkgAddConstInt(th, system, "Key_F12", XKey_F12, MM.I);
-	pkgAddConstInt(th, system, "Key_Caps_Lock", XKey_Caps_Lock, MM.I);
-	pkgAddConstInt(th, system, "KeyMask_Shift", KeyMask_Shift, MM.I);
-	pkgAddConstInt(th, system, "KeyMask_Alt", KeyMask_Alt, MM.I);
-	pkgAddConstInt(th, system, "KeyMask_Control", KeyMask_Control, MM.I);
-	pkgAddConstInt(th, system, "KeyMask_Meta", KeyMask_Meta, MM.I);
+	pkgAddConstInt(th, system, "Key_Pause", XKey_Pause, MM.Int);
+	pkgAddConstInt(th, system, "Key_Scroll_Lock", XKey_Scroll_Lock, MM.Int);
+	pkgAddConstInt(th, system, "Key_Sys_Req", XKey_Sys_Req, MM.Int);
+	pkgAddConstInt(th, system, "Key_Delete", XKey_Delete, MM.Int);
+	pkgAddConstInt(th, system, "Key_Home", XKey_Home, MM.Int);
+	pkgAddConstInt(th, system, "Key_Left", XKey_Left, MM.Int);
+	pkgAddConstInt(th, system, "Key_Up", XKey_Up, MM.Int);
+	pkgAddConstInt(th, system, "Key_Right", XKey_Right, MM.Int);
+	pkgAddConstInt(th, system, "Key_Down", XKey_Down, MM.Int);
+	pkgAddConstInt(th, system, "Key_Prior", XKey_Prior, MM.Int);
+	pkgAddConstInt(th, system, "Key_Page_Up", XKey_Page_Up, MM.Int);
+	pkgAddConstInt(th, system, "Key_Next", XKey_Next, MM.Int);
+	pkgAddConstInt(th, system, "Key_Page_Down", XKey_Page_Down, MM.Int);
+	pkgAddConstInt(th, system, "Key_End", XKey_End, MM.Int);
+	pkgAddConstInt(th, system, "Key_Insert", XKey_Insert, MM.Int);
+	pkgAddConstInt(th, system, "Key_Num_Lock", XKey_Num_Lock, MM.Int);
+	pkgAddConstInt(th, system, "Key_F1", XKey_F1, MM.Int);
+	pkgAddConstInt(th, system, "Key_F2", XKey_F2, MM.Int);
+	pkgAddConstInt(th, system, "Key_F3", XKey_F3, MM.Int);
+	pkgAddConstInt(th, system, "Key_F4", XKey_F4, MM.Int);
+	pkgAddConstInt(th, system, "Key_F5", XKey_F5, MM.Int);
+	pkgAddConstInt(th, system, "Key_F6", XKey_F6, MM.Int);
+	pkgAddConstInt(th, system, "Key_F7", XKey_F7, MM.Int);
+	pkgAddConstInt(th, system, "Key_F8", XKey_F8, MM.Int);
+	pkgAddConstInt(th, system, "Key_F9", XKey_F9, MM.Int);
+	pkgAddConstInt(th, system, "Key_F10", XKey_F10, MM.Int);
+	pkgAddConstInt(th, system, "Key_F11", XKey_F11, MM.Int);
+	pkgAddConstInt(th, system, "Key_F12", XKey_F12, MM.Int);
+	pkgAddConstInt(th, system, "Key_Caps_Lock", XKey_Caps_Lock, MM.Int);
+	pkgAddConstInt(th, system, "KeyMask_Shift", KeyMask_Shift, MM.Int);
+	pkgAddConstInt(th, system, "KeyMask_Alt", KeyMask_Alt, MM.Int);
+	pkgAddConstInt(th, system, "KeyMask_Control", KeyMask_Control, MM.Int);
+	pkgAddConstInt(th, system, "KeyMask_Meta", KeyMask_Meta, MM.Int);
 
 	return 0;
 }

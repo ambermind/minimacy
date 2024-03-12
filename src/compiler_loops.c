@@ -13,7 +13,7 @@
 Type* compileBreak(Compiler* c)
 {
 	Type* t;
-	if (!c->fmk->breakType) return compileError(c,"Compiler: nothing to break!\n");
+	if (!c->fmk->breakType) return compileError(c,"nothing to break!\n");
 	if (!(t=compileExpression(c))) return NULL;
 	if (typeUnify(c,t,c->fmk->breakType)) return NULL;
 	if (bufferAddChar(c->th, c->bytecode,OPbreak)) return NULL;
@@ -115,15 +115,15 @@ Type* compileFor(Compiler* c)
 	bufferCut(c->bytecode, bc_locals);
 
 	if ((!parserNext(c))||( strcmp(c->parser->token,"in") && strcmp(c->parser->token,"=") && strcmp(c->parser->token, "of") && strcmp(c->parser->token, ",")))
-		return compileError(c,"Compiler: 'in' or 'of' or '=' expected (found '%s')\n",compileToken(c));
+		return compileError(c,"'in' or 'of' or '=' expected (found '%s')\n",compileToken(c));
 
 	if (!strcmp(c->parser->token, ","))
 	{
 		if ((!parserNext(c)) || (!islabel(c->parser->token)))
-			return compileError(c, "Compiler: label expected (found '%s')\n", compileToken(c));
+			return compileError(c,"label expected (found '%s')\n", compileToken(c));
 		iterator = funMakerAddLocal(c, c->parser->token); if (!iterator) return NULL;	// this one for the list iterator (type list u0), we need to keep it
 		if ((!parserNext(c)) || (strcmp(c->parser->token, "in") && strcmp(c->parser->token, "=") && strcmp(c->parser->token, "of")))
-			return compileError(c, "Compiler: 'in' or 'of' or '=' expected (found '%s')\n", compileToken(c));
+			return compileError(c,"'in' or 'of' or '=' expected (found '%s')\n", compileToken(c));
 
 	}
 	if (!strcmp(c->parser->token,"in"))
@@ -156,7 +156,7 @@ Type* compileFor(Compiler* c)
 
 		if (bc_byte_or_int(c, iterator->index, OPrlocb, OPrloc)) return NULL;
 		if (bufferAddChar(c->th, c->bytecode, OPhd)) return NULL;
-		if (bufferAddBin(c->th, c->bytecode, BINSTART(localsBytecode),BINLEN(localsBytecode))) return NULL;
+		if (bufferAddBin(c->th, c->bytecode, BIN_START(localsBytecode),BIN_LENGTH(localsBytecode))) return NULL;
 
 		if (!(t=compileExpression(c))) return NULL;
 		if (typeUnify(c,t,tresult)) return NULL;
@@ -175,11 +175,11 @@ Type* compileFor(Compiler* c)
 		if (!iterator) {
 			iterator = funMakerAddLocal(c, ""); if (!iterator) return NULL;	// this one for the list iterator (type list u0), we need to keep it
 		}
-		iterator->type = MM.I;
+		iterator->type = MM.Int;
 		array = funMakerAddLocal(c, ""); if (!array) return NULL;
 		arrayLen = funMakerAddLocal(c, ""); if (!arrayLen) return NULL;
 		array->type = tarray;
-		arrayLen->type = MM.I;
+		arrayLen->type = MM.Int;
 
 		localsAfter = c->fmk->locals;
 		c->fmk->locals = localsBefore;
@@ -190,7 +190,7 @@ Type* compileFor(Compiler* c)
 
 		if (bufferAddChar(c->th, c->bytecode, OPdup)) return NULL;	// so that we can chain sloc and len
 		if (bc_byte_or_int(c, array->index, OPslocb, OPsloc)) return NULL;	// set array iterator
-		if (bufferAddChar(c->th, c->bytecode, OPtablen)) return NULL;
+		if (bufferAddChar(c->th, c->bytecode, OParraylen)) return NULL;
 		if (bc_byte_or_int(c, arrayLen->index, OPslocb, OPsloc)) return NULL;	// set array len
 
 		if (bcint_byte_or_int(c, 0)) return NULL;	// set array index
@@ -211,7 +211,7 @@ Type* compileFor(Compiler* c)
 		if (bc_byte_or_int(c, iterator->index, OPrlocb, OPrloc)) return NULL;
 		if (bufferAddChar(c->th, c->bytecode, OPfetch)) return NULL;
 
-		if (bufferAddBin(c->th, c->bytecode, BINSTART(localsBytecode), BINLEN(localsBytecode))) return NULL;
+		if (bufferAddBin(c->th, c->bytecode, BIN_START(localsBytecode), BIN_LENGTH(localsBytecode))) return NULL;
 		
 		if (!(t = compileExpression(c))) return NULL;
 		if (typeUnify(c, t, tresult)) return NULL;
@@ -226,7 +226,7 @@ Type* compileFor(Compiler* c)
 	}
 	else
 	{
-		if (iterator) return compileError(c, "Compiler: simple loops don't accept a second iterator\n");
+		if (iterator) return compileError(c,"simple loops don't accept a second iterator\n");
 		
 		// case for x= ...
 		iterator = c->fmk->locals;
@@ -236,11 +236,11 @@ Type* compileFor(Compiler* c)
 		if (typeUnify(c, tlb, localsType)) return NULL;
 		c->fmk->locals = localsAfter;
 
-		if (bufferAddBin(c->th, c->bytecode, BINSTART(localsBytecode), BINLEN(localsBytecode))) return NULL;
+		if (bufferAddBin(c->th, c->bytecode, BIN_START(localsBytecode), BIN_LENGTH(localsBytecode))) return NULL;
 
 		if (bufferAddChar(c->th, c->bytecode, OPnil)) return NULL;
 		bc_cond = bytecodePin(c);
-		if ((!parserNext(c)) || strcmp(c->parser->token, ";")) return compileError(c, "Compiler: ';' expected (found %s)\n", compileToken(c));
+		if ((!parserNext(c)) || strcmp(c->parser->token, ";")) return compileError(c,"';' expected (found %s)\n", compileToken(c));
 
 		if (!(t = compileExpression(c))) return NULL;
 		if (typeUnify(c, t, MM.Boolean)) return NULL;
@@ -249,7 +249,7 @@ Type* compileFor(Compiler* c)
 		bc_end = bytecodeAddEmptyJump(c);
 		if (bc_end < 0) return NULL;
 
-		if (!parserNext(c)) return compileError(c, "Compiler: ';'  or 'do' expected (found %s)\n", compileToken(c));
+		if (!parserNext(c)) return compileError(c,"';'  or 'do' expected (found %s)\n", compileToken(c));
 
 		if (!strcmp(c->parser->token, ";"))	// with a "next" expression: for i=v0; cond; next do ...
 		{
@@ -263,7 +263,7 @@ Type* compileFor(Compiler* c)
 			if (!(tinc = compileExpression(c))) return NULL;
 
 			if (typeUnify(c, localsType, tinc)) return NULL;
-			if (bufferAddBin(c->th, c->bytecode, BINSTART(localsBytecode), BINLEN(localsBytecode))) return NULL;
+			if (bufferAddBin(c->th, c->bytecode, BIN_START(localsBytecode), BIN_LENGTH(localsBytecode))) return NULL;
 
 			if (bufferAddChar(c->th, c->bytecode, OPgoto)) return NULL;
 			if (bytecodeAddJump(c, bc_cond)) return NULL;
@@ -281,9 +281,9 @@ Type* compileFor(Compiler* c)
 		}
 		else	// without "next" expression: for i=v0; cond do ...
 		{
-			if (!oneLabelOnly) return compileError(c, "Compiler: simple loops don't accept a composite iterator\n");
+			if (!oneLabelOnly) return compileError(c,"simple loops don't accept a composite iterator\n");
 			parserGiveback(c);
-			if (typeUnify(c, localsType, MM.I)) return NULL;
+			if (typeUnify(c, localsType, MM.Int)) return NULL;
 			if (parserAssume(c, "do")) return NULL;
 			if (bufferAddChar(c->th, c->bytecode, OPdrop)) return NULL;
 

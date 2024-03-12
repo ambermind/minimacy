@@ -220,7 +220,7 @@ int romdiskImport(char* src, LINT len)
 	if (romdiskAdd(NULL,"USER",0)<0) return -1;
 
 	if (!romdiskCheck(src, (unsigned int)len)) {
-		PRINTF(LOG_SYS,"romdiskCheck failed\n");
+		PRINTF(LOG_SYS,">Error: romdiskCheck failed\n");
 		return -1;
 	}
 	romdisk = VM_MALLOC(len+1); if (!romdisk) return -1;

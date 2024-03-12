@@ -24,21 +24,21 @@ Type* compileA6(Compiler* c)
 			LFLOAT i=-ls_atof(c->parser->token);
 			if (bufferAddChar(c->th, c->bytecode,OPfloat)) return NULL;
 			if (bufferAddInt(c->th, c->bytecode,*(LINT*)&i)) return NULL;
-			return MM.F;
+			return MM.Float;
 		}
 		else if ((c->parser->token[0] == '0') && (c->parser->token[1] == 'd')
 			&& (isdecimal(c->parser->token + 2)))
 		{
 			LINT i = -ls_atoi(c->parser->token + 2, 0);
 			if (bcint_byte_or_int(c, i)) return NULL;
-			return MM.I;
+			return MM.Int;
 		}
 		else if ((c->parser->token[0] == '0') && (c->parser->token[1] == 'x')
 			&& (ishexadecimal(c->parser->token + 2)))
 		{
 			LINT i = -ls_htoi(c->parser->token + 2);
 			if (bcint_byte_or_int(c, i)) return NULL;
-			return MM.I;
+			return MM.Int;
 		}
 		else if (isdecimal(c->parser->token))
 		{
@@ -60,10 +60,10 @@ Type* compileA6(Compiler* c)
 				LFLOAT f=(LFLOAT)i;
 				if (bufferAddChar(c->th, c->bytecode,OPfloat)) return NULL;
 				if (bufferAddInt(c->th, c->bytecode,*(LINT*)&f)) return NULL;
-				return MM.F;
+				return MM.Float;
 			}
 			if (bcint_byte_or_int(c,i)) return NULL;
-			return MM.I;
+			return MM.Int;
 		}
 		parserGiveback(c);
 		if (c->fmk->forceNumbers == FORCE_NUMBER_BIGNUM) 
@@ -90,35 +90,35 @@ Type* compileA6(Compiler* c)
 		if (c->fmk->forceNumbers == FORCE_NUMBER_FLOAT)
 		{
 			if (!(t = compileA6(c))) return NULL;
-			if (typeUnify(c, t, MM.F)) return NULL;
+			if (typeUnify(c, t, MM.Float)) return NULL;
 			if (bufferAddChar(c->th, c->bytecode, OPnegf)) return NULL;
-			return MM.F;
+			return MM.Float;
 		}
 		if (!(t=compileA6(c))) return NULL;
-		if (typeUnify(c,t,MM.I)) return NULL;
+		if (typeUnify(c,t,MM.Int)) return NULL;
 		if (bufferAddChar(c->th, c->bytecode,OPneg)) return NULL;
-		return MM.I;
+		return MM.Int;
 	}
 	else if (!strcmp(c->parser->token,"~"))
 	{
 		if (!(t=compileA6(c))) return NULL;
 		if (bufferAddChar(c->th, c->bytecode,OPnot)) return NULL;
-		if (typeUnify(c,t,MM.I)) return NULL;
-		return MM.I;
+		if (typeUnify(c,t,MM.Int)) return NULL;
+		return MM.Int;
 	}
 	else if (!strcmp(c->parser->token,"-."))
 	{
 		if (!(t=compileA6(c))) return NULL;
-		if (typeUnify(c,t,MM.F)) return NULL;
+		if (typeUnify(c,t,MM.Float)) return NULL;
 		if (bufferAddChar(c->th, c->bytecode,OPnegf)) return NULL;
-		return MM.F;
+		return MM.Float;
 	}
 	else if (isfloat(c->parser->token))
 	{
 		LFLOAT i=ls_atof(c->parser->token);
 		if (bufferAddChar(c->th, c->bytecode,OPfloat)) return NULL;
 		if (bufferAddInt(c->th, c->bytecode,*(LINT*)&i)) return NULL;
-		return MM.F;
+		return MM.Float;
 	}
 	parserGiveback(c);
 	return compileTerm(c,0);
@@ -145,9 +145,9 @@ Type* compileA5(Compiler* c)
 			parserGiveback(c);
 			return t;
 		}
-		if (typeUnify(c,t,MM.I)) return NULL;
+		if (typeUnify(c,t,MM.Int)) return NULL;
 		if (!(t=compileA6(c))) return NULL;
-		if (typeUnify(c,t,MM.I)) return NULL;
+		if (typeUnify(c,t,MM.Int)) return NULL;
 		if (bufferAddChar(c->th, c->bytecode,op)) return NULL;
     }
 }
@@ -163,14 +163,14 @@ Type* compileA4(Compiler* c)
 	while(1)
     {
 		if (!parserNext(c)) return NULL;
-		if (!strcmp(c->parser->token,"*")) { op=OPmul; typ=MM.I;}
-		else if (!strcmp(c->parser->token, "**")) { op = OPpowint; typ = MM.I; }
-		else if (!strcmp(c->parser->token,"/")) { op=OPdiv; typ=MM.I;}
-		else if (!strcmp(c->parser->token,"%")) { op=OPmod; typ=MM.I;}
-		else if (!strcmp(c->parser->token,"*.")) { op=OPmulf; typ=MM.F;}
-		else if (!strcmp(c->parser->token,"**.")) { op=OPpow; typ=MM.F;}
-		else if (!strcmp(c->parser->token,"/.")) { op=OPdivf; typ=MM.F;}
-		else if (!strcmp(c->parser->token,"%.")) { op=OPmodf; typ=MM.F;}
+		if (!strcmp(c->parser->token,"*")) { op=OPmul; typ=MM.Int;}
+		else if (!strcmp(c->parser->token, "**")) { op = OPpowint; typ = MM.Int; }
+		else if (!strcmp(c->parser->token,"/")) { op=OPdiv; typ=MM.Int;}
+		else if (!strcmp(c->parser->token,"%")) { op=OPmod; typ=MM.Int;}
+		else if (!strcmp(c->parser->token,"*.")) { op=OPmulf; typ=MM.Float;}
+		else if (!strcmp(c->parser->token,"**.")) { op=OPpow; typ=MM.Float;}
+		else if (!strcmp(c->parser->token,"/.")) { op=OPdivf; typ=MM.Float;}
+		else if (!strcmp(c->parser->token,"%.")) { op=OPmodf; typ=MM.Float;}
 		else
 		{
 			parserGiveback(c);
@@ -178,10 +178,10 @@ Type* compileA4(Compiler* c)
 		}
 		if (c->fmk->forceNumbers==FORCE_NUMBER_FLOAT)
 		{
-			if (op==OPmul) { op=OPmulf; typ=MM.F;}
-			if (op == OPpowint) { op = OPpow; typ = MM.F; }
-			if (op==OPdiv) { op=OPdivf; typ=MM.F;}
-			if (op==OPmod) { op=OPmodf; typ=MM.F;}
+			if (op==OPmul) { op=OPmulf; typ=MM.Float;}
+			if (op == OPpowint) { op = OPpow; typ = MM.Float; }
+			if (op==OPdiv) { op=OPdivf; typ=MM.Float;}
+			if (op==OPmod) { op=OPmodf; typ=MM.Float;}
 		}
 		if (c->fmk->forceNumbers == FORCE_NUMBER_BIGNUM)
 		{
@@ -264,10 +264,10 @@ Type* compileA3(Compiler* c)
 	while(1)
     {
 		if (!parserNext(c)) return NULL;
-		if (!strcmp(c->parser->token,"+")) { op=OPadd; typ=MM.I;}
-		else if (!strcmp(c->parser->token,"-")) { op=OPsub; typ=MM.I;}
-		else if (!strcmp(c->parser->token,"+.")) { op=OPaddf; typ=MM.F;}
-		else if (!strcmp(c->parser->token,"-.")) { op=OPsubf; typ=MM.F;}
+		if (!strcmp(c->parser->token,"+")) { op=OPadd; typ=MM.Int;}
+		else if (!strcmp(c->parser->token,"-")) { op=OPsub; typ=MM.Int;}
+		else if (!strcmp(c->parser->token,"+.")) { op=OPaddf; typ=MM.Float;}
+		else if (!strcmp(c->parser->token,"-.")) { op=OPsubf; typ=MM.Float;}
 		else
 		{
 			parserGiveback(c);
@@ -275,8 +275,8 @@ Type* compileA3(Compiler* c)
 		}
 		if (c->fmk->forceNumbers==FORCE_NUMBER_FLOAT)
 		{
-			if (op==OPadd) { op=OPaddf; typ=MM.F;}
-			if (op==OPsub) { op=OPsubf; typ=MM.F;}
+			if (op==OPadd) { op=OPaddf; typ=MM.Float;}
+			if (op==OPsub) { op=OPsubf; typ=MM.Float;}
 		}
 		if (c->fmk->forceNumbers == FORCE_NUMBER_BIGNUM)
 		{
@@ -332,14 +332,14 @@ Type* compileA2(Compiler* c)
 		if (!strcmp(c->parser->token,"==")) { op=OPeq; typ=NULL;}
 		else if (!strcmp(c->parser->token,"!=")) { op=OPne; typ=NULL;}
 		else if (!strcmp(c->parser->token,"<>")) { op=OPne; typ=NULL;}
-		else if (!strcmp(c->parser->token,"<")) { op=OPlt; typ=MM.I;}
-		else if (!strcmp(c->parser->token,">")) { op=OPgt; typ=MM.I;}
-		else if (!strcmp(c->parser->token,"<=")) { op=OPle; typ=MM.I;}
-		else if (!strcmp(c->parser->token,">=")) { op=OPge; typ=MM.I;}
-		else if (!strcmp(c->parser->token,"<.")) { op=OPltf; typ=MM.F;}
-		else if (!strcmp(c->parser->token,">.")) { op=OPgtf; typ=MM.F;}
-		else if (!strcmp(c->parser->token,"<=.")) { op=OPlef; typ=MM.F;}
-		else if (!strcmp(c->parser->token,">=.")) { op=OPgef; typ=MM.F;}
+		else if (!strcmp(c->parser->token,"<")) { op=OPlt; typ=MM.Int;}
+		else if (!strcmp(c->parser->token,">")) { op=OPgt; typ=MM.Int;}
+		else if (!strcmp(c->parser->token,"<=")) { op=OPle; typ=MM.Int;}
+		else if (!strcmp(c->parser->token,">=")) { op=OPge; typ=MM.Int;}
+		else if (!strcmp(c->parser->token,"<.")) { op=OPltf; typ=MM.Float;}
+		else if (!strcmp(c->parser->token,">.")) { op=OPgtf; typ=MM.Float;}
+		else if (!strcmp(c->parser->token,"<=.")) { op=OPlef; typ=MM.Float;}
+		else if (!strcmp(c->parser->token,">=.")) { op=OPgef; typ=MM.Float;}
 		else
 		{
 			parserGiveback(c);
@@ -347,10 +347,10 @@ Type* compileA2(Compiler* c)
 		}
 		if (c->fmk->forceNumbers==FORCE_NUMBER_FLOAT)
 		{
-			if (op==OPlt) { op=OPltf; typ=MM.F;}
-			if (op==OPgt) { op=OPgtf; typ=MM.F;}
-			if (op==OPle) { op=OPlef; typ=MM.F;}
-			if (op==OPge) { op=OPgef; typ=MM.F;}
+			if (op==OPlt) { op=OPltf; typ=MM.Float;}
+			if (op==OPgt) { op=OPgtf; typ=MM.Float;}
+			if (op==OPle) { op=OPlef; typ=MM.Float;}
+			if (op==OPge) { op=OPgef; typ=MM.Float;}
 		}
 		if ((c->fmk->forceNumbers == FORCE_NUMBER_BIGNUM) || (c->fmk->forceNumbers == FORCE_NUMBER_MOD) || (c->fmk->forceNumbers == FORCE_NUMBER_MODOPTI))
 		{
@@ -438,9 +438,9 @@ Type* compileList(Compiler* c)
 		parserGiveback(c);
 		return t;
     }
-	TYPEPUSH_NULL(c,t);
+	TYPE_PUSH_NULL(c,t);
 	if (!(t=compileExpression(c))) return NULL;
-	TYPEPUSH_NULL(c,t);
+	TYPE_PUSH_NULL(c,t);
 	u = typeCopy(c->th, MM.fun_u0_list_u0_list_u0); if (!u) return NULL;
 	if (!(t=typeUnifyFromStack(c,u))) return NULL;
 
@@ -453,7 +453,7 @@ Type* compileExpression(Compiler* c)
 {
 	Type* definedType = NULL;
 	Type* result;
-	if (!parserNext(c)) return compileError(c, "Compiler: unexpected end of file\n");
+	if (!parserNext(c)) return compileError(c,"unexpected end of file\n");
 	if (!strcmp(c->parser->token, "@")) {
 		definedType = compilerParseTypeDef(c, 0, &c->fmk->typeLabels);
 		if (!definedType) return NULL;

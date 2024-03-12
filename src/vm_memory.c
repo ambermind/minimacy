@@ -15,32 +15,6 @@ Memory MM;
 int gcTRON = 0;
 extern Mem* MemCheck;
 
-#ifdef DBG_MEM
-#ifdef FULL64
-int DBGISPNT(LW v) {
-	return !(((LINT)v) & 1);
-}
-LW PNTTOVAL(LB* p) { return (LW)p; }
-LW INTTOVAL(LINT i) { return (LW)i; }
-LW FLOATTOVAL(LFLOAT v) { return (LW)*(LINT*)(&(v)); }
-
-LB* VALTOPNT(LW v) { return (LB*)v; }
-LINT VALTOINT(LW v) { return (LINT)v; }
-LFLOAT VALTOFLOAT(LW v) { return *((LFLOAT*)(&(v))); }
-#else
-int DBGISPNT(LW v) {
-	return (((LINT)v) & 1);
-}
-LW PNTTOVAL(LB* p) { return ((LW)((LINT)(1 + ((LINT)(p))))); }
-LW INTTOVAL(LINT i) { return ((LW)((LINT)(((i) << 2) | 2))); }
-LW FLOATTOVAL(LFLOAT v) { return ((LW)((LINT)(((~3) & (*(LINT*)(&(v))))))); }
-
-LB* VALTOPNT(LW v) { return ((LB*)(((LINT)v) - 1)); }
-LINT VALTOINT(LW v) { return (((LINT)((LINT)v)) >> 2); }
-LFLOAT VALTOFLOAT(LW v) { return (*((LFLOAT*)(&(v)))); }
-#endif
-#endif
-
 int memoryChainTest(Mem* mem, LINT total)
 {
 	while (mem)
@@ -56,22 +30,19 @@ LB* memoryAlloc(Thread* th, LINT size,LINT type,LW dbg)
 	LB *p=NULL;
 	Mem* mem = th?th->memDelegate:MM.mem;
 	LINT total = sizeof(LB) + (((size+ LWLEN - 1)>>LSHIFT)<<LSHIFT);
-#ifdef FULL64
-	if (type == TYPE_TAB) total += (((size >> LSHIFT) + LWLEN - 1) >> LSHIFT) << LSHIFT;
-#endif
-//	lockEnter(&MM.lock);
+	if (type == TYPE_ARRAY) total += (((size >> LSHIFT) + LWLEN - 1) >> LSHIFT) << LSHIFT;
 	if (mem)
 	{
 		if (!memoryChainTest(mem, total))
 		{
-//			PRINTF(LOG_SYS, "Force gc for thread " LSD /*" current0=" LSX*/ "\n", th->uid);// , mem);
+//			PRINTF(LOG_DEV, "Force gc for thread " LSD /*" current0=" LSX*/ "\n", th->uid);// , mem);
 			memoryFullGC();
 			if (!memoryChainTest(mem, total))
 			{
 				memoryFullGC();
 				if (!memoryChainTest(mem, total))
 				{
-					PRINTF(LOG_SYS, "Out of memory\n");
+					PRINTF(LOG_SYS, ">Error: Out of memory\n");
 					MM.OM = 1;
 					if (th) th->OM=1;
 					goto cleanup;	// no more memory for this thread
@@ -80,7 +51,7 @@ LB* memoryAlloc(Thread* th, LINT size,LINT type,LW dbg)
 		}
 		else if ((MM.blocs_length > 16*1024 * 1024) && (MM.blocs_nb > (MM.gc_nb0 << 1)))
 		{
-//			PRINTF(LOG_SYS, "==========>force gc\n");
+//			PRINTF(LOG_DEV, "==========>force gc\n");
 			memoryFullGC();
 			memoryFullGC();
 		}
@@ -90,21 +61,21 @@ LB* memoryAlloc(Thread* th, LINT size,LINT type,LW dbg)
 	if (!p) 
 	{
 //		PRINTF(LOG_DEV,"x");
-		PRINTF(LOG_SYS,"malloc " LSD " returns null\n",size);
+		PRINTF(LOG_SYS,">Error: malloc " LSD " returns null\n",size);
 //		threadDump(LOG_SYS, th, 10);
 		goto cleanup;
 	}
-	HEADERSETSIZETYPE(p,size,type);
+	HEADER_SET_SIZE_AND_TYPE(p,size,type);
 	p->mem = mem;
 	p->data[0]=dbg;
 
 /*	if ((!th) && (dbg == DBG_MEMCOUNT))
 	{
 		MemoryCheck = p;
-//		PRINTF(LOG_DEV,"ALLOC " LSX " / " LSD " (type " LSD ")(size " LSD ")(total " LSD ")\n", p, VALTOINT(HEADER_DBG(p)), type, size, total);
+//		PRINTF(LOG_DEV,"ALLOC " LSX " / " LSD " (type " LSD ")(size " LSD ")(total " LSD ")\n", p, INT_FROM_VAL(HEADER_DBG(p)), type, size, total);
 	}
-	if (!th) PRINTF(LOG_DEV,"ALLOC " LSX " / " LSD " (type " LSD ")(size " LSD ")(total " LSD ")\n", p, VALTOINT(HEADER_DBG(p)), type, size, total);
-	if ((total==72)&& (p->mem == MemoryCheck)) PRINTF(LOG_DEV,"MemoryCheck (%lld) %llx +=%lld\n", VALTOINT(dbg), p, 72);
+	if (!th) PRINTF(LOG_DEV,"ALLOC " LSX " / " LSD " (type " LSD ")(size " LSD ")(total " LSD ")\n", p, INT_FROM_VAL(HEADER_DBG(p)), type, size, total);
+	if ((total==72)&& (p->mem == MemoryCheck)) PRINTF(LOG_DEV,"MemoryCheck (%lld) %llx +=%lld\n", INT_FROM_VAL(dbg), p, 72);
 */	p->lifo = MM.USEFUL;
 
 	if (MM.fastAlloc>0)
@@ -128,22 +99,14 @@ LB* memoryAlloc(Thread* th, LINT size,LINT type,LW dbg)
 		mem = mem->header.mem;
 	}
 cleanup:
-//	lockLeave(&MM.lock);
 	return p;
 }
 
-LB* memoryAllocTable(Thread* th, LINT size, LW dbg)
+LB* memoryAllocArray(Thread* th, LINT size, LW dbg)
 {
-	LB* p=memoryAlloc(th, size<< LSHIFT, TYPE_TAB, dbg);
+	LB* p=memoryAlloc(th, size<< LSHIFT, TYPE_ARRAY, dbg);
 	if (!p) return NULL;
-#ifdef FULL64
-	memset(BINSTART(p), 0, size + (size << LSHIFT));
-#else
-	{
-		LINT i;
-		for (i = 0; i < size; i++) TABSETNIL(p,i);
-	}
-#endif
+	memset(BIN_START(p), 0, size + (size << LSHIFT));
 	return p;
 }
 
@@ -168,10 +131,10 @@ LB* memoryAllocStr(Thread* th, char* src, LINT size)
 		size = strlen(src);
 	}
 	
-	p=memoryAlloc(th,size+1,TYPE_STRING,DBG_S);
+	p=memoryAlloc(th,size+1,TYPE_BINARY,DBG_S);
 	if (!p) return NULL;
-	if (src) memcpy(STRSTART(p),src,size);
-	STRSTART(p)[size]=0;
+	if (src) memcpy(STR_START(p),src,size);
+	STR_START(p)[size]=0;
 	return p;
 }
 
@@ -179,7 +142,7 @@ LB* memoryAllocBin(Thread* th, char* src, LINT size,LW dbg)
 {
 	LB* p=memoryAlloc(th,size,TYPE_BINARY,dbg);
 	if (!p) return NULL;
-	if (src) memcpy(BINSTART(p),src,size);
+	if (src) memcpy(BIN_START(p),src,size);
 	return p;
 }
 
@@ -229,12 +192,9 @@ void memoryDesalloc(LB* p)
 	LINT type = HEADER_TYPE(p);
 	LINT total = sizeof(LB) + (((size + LWLEN - 1) >> LSHIFT) << LSHIFT);
 	Mem* mem = p->mem;
-#ifdef FULL64
-	if (type == TYPE_TAB) total += (((size >> LSHIFT) + LWLEN - 1) >> LSHIFT) << LSHIFT;
-#endif
+	if (type == TYPE_ARRAY) total += (((size >> LSHIFT) + LWLEN - 1) >> LSHIFT) << LSHIFT;
 //	if (MemoryCheck == p) PRINTF(LOG_DEV,"try desalloc MemoryCheck\n");
-//	if ((total == 72) && (p->mem == MemoryCheck)) PRINTF(LOG_DEV,"MemoryCheck (%lld) %llx -=%lld\n", VALTOINT(HEADER_DBG(p)), p, 72);
-//	lockEnter(&MM.lock);
+//	if ((total == 72) && (p->mem == MemoryCheck)) PRINTF(LOG_DEV,"MemoryCheck (%lld) %llx -=%lld\n", INT_FROM_VAL(HEADER_DBG(p)), p, 72);
 	while (mem)
 	{
 //		if (MemCheck && mem == MemCheck) PRINTF(LOG_DEV,"memBytesDecrement from memoryDesalloc "LSX" by "LSX"\n", mem, p);
@@ -263,13 +223,11 @@ void memoryDesalloc(LB* p)
 	MM.blocs_nb--;
 	MM.blocs_length-=total;
 	
-//	PRINTF(LOG_SYS, "free %llx\n", p);
 //	PRINTF(LOG_DEV,"free %llx\n", p);
 	VM_FREE((void*)p);
 cleanup:
 	return;
-//	lockLeave(&MM.lock);
-//	PRINTF(LOG_SYS,"DONE\n");
+//	PRINTF(LOG_DEV,"DONE\n");
 }
 
 void memoryGCinit(void)
@@ -287,20 +245,20 @@ void memoryGCinit(void)
 //	lockEnter(&MM.lock);
 	p = MM.USEFUL; MM.USEFUL = MM.USELESS; MM.USELESS = p;
 
-	MEMORYMARK(NULL, (LB*)MM.system);
-	MEMORYMARK(NULL, (LB*)MM.scheduler);
-	MEMORYMARK(NULL, (LB*)MM.tmpStack);
-	MEMORYMARK(NULL, (LB*)MM.tmpBuffer);
-	MEMORYMARK(NULL, MM.args);
-	MEMORYMARK(NULL, (LB*)MM.fun_u0_list_u0_list_u0);
-	MEMORYMARK(NULL, (LB*)MM.fun_array_u0_I_u0);
-	MEMORYMARK(NULL, MM.funStart);
-	MEMORYMARK(NULL, MM.roots);
-	MEMORYMARK(NULL, MM.partitionsFS);
+	MEMORY_MARK(NULL, (LB*)MM.system);
+	MEMORY_MARK(NULL, (LB*)MM.scheduler);
+	MEMORY_MARK(NULL, (LB*)MM.tmpStack);
+	MEMORY_MARK(NULL, (LB*)MM.tmpBuffer);
+	MEMORY_MARK(NULL, MM.args);
+	MEMORY_MARK(NULL, (LB*)MM.fun_u0_list_u0_list_u0);
+	MEMORY_MARK(NULL, (LB*)MM.fun_array_u0_I_u0);
+	MEMORY_MARK(NULL, MM.funStart);
+	MEMORY_MARK(NULL, MM.roots);
+	MEMORY_MARK(NULL, MM.partitionsFS);
 	p = MM.listFast;
 	while (p)
 	{
-		if (HEADER_DBG(p) != DBG_STACK) MEMORYMARK(NULL, p);
+		if (HEADER_DBG(p) != DBG_STACK) MEMORY_MARK(NULL, p);
 		p = p->nextBlock;
 	}
 //	lockLeave(&MM.lock);
@@ -366,12 +324,12 @@ void memoryGC(LINT period)
 			LB* p=MM.lifo; MM.lifo=p->lifo;
 			p->lifo=MM.USEFUL;
 
-			MEMORYMARK((LB*)p,(LB*)p->mem);
-			if (HEADER_TYPE(p)==TYPE_TAB)
+			MEMORY_MARK((LB*)p,(LB*)p->mem);
+			if (HEADER_TYPE(p)==TYPE_ARRAY)
 			{
 				LINT i,l;
-				l=TABLEN(p);
-				for(i=0;i<l;i++) if (TABISPNT(p,i)) MEMORYMARK(p, TABPNT(p,i));
+				l=ARRAY_LENGTH(p);
+				for(i=0;i<l;i++) if (ARRAY_IS_PNT(p,i)) MEMORY_MARK(p, ARRAY_PNT(p,i));
 			}
 			else if (HEADER_TYPE(p)==TYPE_NATIVE)
 			{
@@ -387,7 +345,6 @@ void memoryGC(LINT period)
 			memoryCleanListMems();
 			memoryCleanPkgs();
 //			threadDumpLoop("go step 2");
-			//			PRINTF(LOG_SYS,"#GC: go step2\n");
 			MM.step=2;
 		}
 	}
@@ -436,9 +393,9 @@ void memoryGC(LINT period)
 			if (MM.gcTrace)
 			{
 				if (MM.blocs_length >= 1024 * 1024 * 10)
-					PRINTF(LOG_SYS, "#GC:"LSD" (" LSD ") free " LSD " of " LSD " ->" LSD " (" LSD "%c) " LSD "M\n", MM.gc_totalCount, MM.gc_time, MM.gc_free, MM.gc_nb0, MM.gc_period, (LINT)f, '%', MM.blocs_length >> 20);
+					PRINTF(LOG_SYS, "> GC:"LSD" (" LSD ") free " LSD " of " LSD " ->" LSD " (" LSD "%c) " LSD "M\n", MM.gc_totalCount, MM.gc_time, MM.gc_free, MM.gc_nb0, MM.gc_period, (LINT)f, '%', MM.blocs_length >> 20);
 				else
-					PRINTF(LOG_SYS, "#GC:"LSD" (" LSD ") free " LSD " of " LSD " ->" LSD " (" LSD "%c) " LSD "k\n", MM.gc_totalCount, MM.gc_time, MM.gc_free, MM.gc_nb0, MM.gc_period, (LINT)f, '%', MM.blocs_length >> 10);
+					PRINTF(LOG_SYS, "> GC:"LSD" (" LSD ") free " LSD " of " LSD " ->" LSD " (" LSD "%c) " LSD "k\n", MM.gc_totalCount, MM.gc_time, MM.gc_free, MM.gc_nb0, MM.gc_period, (LINT)f, '%', MM.blocs_length >> 10);
 			}
 			memoryGCinit();
 		}
@@ -469,10 +426,10 @@ int memoryIsMainThread(void)
 }
 int memoryAddRoot(LB* root)
 {
-	STACKPUSHPNT_ERR(MM.tmpStack, root, EXEC_OM);
-	STACKPUSHPNT_ERR(MM.tmpStack, MM.roots, EXEC_OM);
-	STACKMAKETABLE_ERR(MM.tmpStack, 2, DBG_LIST,EXEC_OM);
-	MM.roots = STACKPULLPNT(MM.tmpStack);
+	STACK_PUSH_PNT_ERR(MM.tmpStack, root, EXEC_OM);
+	STACK_PUSH_PNT_ERR(MM.tmpStack, MM.roots, EXEC_OM);
+	STACK_PUSH_FILLED_ARRAY_ERR(MM.tmpStack, 2, DBG_LIST,EXEC_OM);
+	MM.roots = STACK_PULL_PNT(MM.tmpStack);
 	return 0;
 }
 void memoryInit(int argc, char** argv)
@@ -531,10 +488,10 @@ void memoryInit(int argc, char** argv)
 	MM.tmpStack= threadCreate(MM.scheduler, NULL);
 	MM.system=pkgAlloc(MM.scheduler, biosName,8, PKG_FROM_IMPORT);
 
-	for (i = 1; i < argc; i++) STACKPUSHSTR_ERR(MM.tmpStack, argv[i], strlen(argv[i]),/*NOTHING*/);
-	STACKPUSHNIL_ERR(MM.tmpStack,/*NOTHING*/);
-	for (i = 1; i < argc; i++) STACKMAKETABLE_ERR(MM.tmpStack, 2, DBG_LIST,/*NOTHING*/);
-	MM.args = (STACKPULLPNT(MM.tmpStack));
+	for (i = 1; i < argc; i++) STACK_PUSH_STR_ERR(MM.tmpStack, argv[i], strlen(argv[i]),/*NOTHING*/);
+	STACK_PUSH_NIL_ERR(MM.tmpStack,/*NOTHING*/);
+	for (i = 1; i < argc; i++) STACK_PUSH_FILLED_ARRAY_ERR(MM.tmpStack, 2, DBG_LIST,/*NOTHING*/);
+	MM.args = (STACK_PULL_PNT(MM.tmpStack));
 
 	typesInit(MM.scheduler, MM.system);
 	systemInit(MM.scheduler, MM.system);
@@ -587,7 +544,7 @@ int memoryEnd(void)
 	memoryFullGC();
 //	memoryFullGC();
 //	PRINTF(LOG_DEV,"MemoryCheck %lld %lld\n", ((Mem*)MemoryCheck)->bytes, ((Mem*)MemoryCheck)->parentMem);
-	if (MM.gcTrace) PRINTF(LOG_SYS, LSD " blocks, " LSD " bytes, fast=" LSD "\n",MM.blocs_nb,MM.blocs_length,MM.fastAlloc);
+	if (MM.gcTrace) PRINTF(LOG_SYS, "> " LSD " blocks, " LSD " bytes, fast=" LSD "\n",MM.blocs_nb,MM.blocs_length,MM.fastAlloc);
 	systemTerminate();
 	lockDelete(&MM.lock);
 

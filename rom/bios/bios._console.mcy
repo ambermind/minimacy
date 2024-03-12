@@ -11,7 +11,7 @@
 
 struct Console=[_inputC _pkgC _escC _nameC /*_prevHistoryC _nextHistoryC*/ ];;
 
-fun _promptEcho csl = echo strConcat csl._nameC "> ";;
+fun _promptEcho csl = echo strConcat csl._nameC "] ";;
 
 fun _promptRun csl input=
 	if input=="new" then set csl._pkgC=pkgCreate nil nil

@@ -22,7 +22,7 @@ typedef struct
 	int done;
 
 	HuffNode* lenDecoder;
-	HuffNode lenSet[MAX_LEN *2];
+	HuffNode lenSet[MAX_LENGTH *2];
 	HuffNode* codeDecoder;
 	HuffNode codeSet[MAX_CODE *2];
 	HuffNode* distDecoder;
@@ -209,17 +209,17 @@ int _inflateData(Inflate* z)
 int _inflateLenLens(Inflate* z)
 {
 	int i;
-	int lenLengths[MAX_LEN];
+	int lenLengths[MAX_LENGTH];
 	int nbLen = brBitsLsb(z, 4); if (nbLen < 0) return -1;
 	nbLen += 4;
-	for (i = 0; i < MAX_LEN; i++) lenLengths[i] = 0;
+	for (i = 0; i < MAX_LENGTH; i++) lenLengths[i] = 0;
 	for (i = 0; i < nbLen; i++) {
 		int len = brBitsLsb(z, 3); if (len < 0) return -1;
 		lenLengths[LEN_ORDER[i]] = len;
 	}
 //	for (i = 0; i < nbLen; i++) PRINTF(LOG_DEV,"%d, ", lenLengths[i]);
 
-	z->lenDecoder = _huffmanBuildDecoder(z->lenSet, lenLengths, MAX_LEN);
+	z->lenDecoder = _huffmanBuildDecoder(z->lenSet, lenLengths, MAX_LENGTH);
 //	huffmanDump(z->lenDecoder);
 	if (!z->lenDecoder) return -1;
 	return 0;
@@ -340,8 +340,8 @@ void inflateInit(Inflate* z,Thread* th, LB* src, Buffer* out)
 	z->th = th;
 	z->out = out;
 
-	z->src = STRSTART(src);
-	z->srcLen = ((int)STRLEN(src))<<3;
+	z->src = STR_START(src);
+	z->srcLen = ((int)STR_LENGTH(src))<<3;
 	z->bit = 0;
 
 	z->done = 0;
@@ -351,8 +351,8 @@ MTHREAD_START _inflate(Thread* th)
 {
 	Inflate z;
 
-	LB* src= STACKPNT(th, 0);
-	Buffer* out = (Buffer*)STACKPNT(th, 1);
+	LB* src= STACK_PNT(th, 0);
+	Buffer* out = (Buffer*)STACK_PNT(th, 1);
 	if ((!src)||(!out)) return workerDonePnt(th,MM._false);
 
 	inflateInit(&z, th, src, out);
@@ -364,7 +364,7 @@ int fun_inflate(Thread* th) { return workerStart(th, 2, _inflate); }
 
 int coreInflateInit(Thread* th, Pkg* system)
 {
-	Type* fun_B_S_Bool = typeAlloc(th, TYPECODE_FUN, NULL, 3, MM.Buffer, MM.S, MM.Boolean);
+	Type* fun_B_S_Bool = typeAlloc(th, TYPECODE_FUN, NULL, 3, MM.Buffer, MM.Str, MM.Boolean);
 	Type* fun_B_Bytes_Bool = typeAlloc(th, TYPECODE_FUN, NULL, 3, MM.Buffer, MM.Bytes, MM.Boolean);
 
 	pkgAddFun(th, system, "_deflate", fun_deflate, fun_B_S_Bool);

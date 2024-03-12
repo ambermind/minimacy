@@ -21,7 +21,7 @@ Type* compileSetPoint(Compiler* c, Type* t0, int* opstore)
 	while (1)
 	{
 		Def* def;
-		if (!parserNext(c)) return compileError(c, "Compiler: expression or field name expected (found '%s')\n", compileToken(c));
+		if (!parserNext(c)) return compileError(c,"expression or field name expected (found '%s')\n", compileToken(c));
 
 		index = -1;
 		if ((islabel(c->parser->token))
@@ -40,8 +40,8 @@ Type* compileSetPoint(Compiler* c, Type* t0, int* opstore)
 			parserGiveback(c);
 
 			if (!(t = compileTerm(c, 1))) return NULL;
-			TYPEPUSH_NULL(c, t0);
-			TYPEPUSH_NULL(c, t);
+			TYPE_PUSH_NULL(c, t0);
+			TYPE_PUSH_NULL(c, t);
 			u = typeCopy(c->th, MM.fun_array_u0_I_u0); if (!u) return NULL;
 			if (!(t0 = typeUnifyFromStack(c, u))) return NULL;
 		}
@@ -88,7 +88,7 @@ Type* compileSet(Compiler* c)
 	Locals* lb;
 	int opstore=-1;
 
-	if (!parserNext(c)) return compileError(c,"Compiler: definition name expected (found '%s')\n",compileToken(c));
+	if (!parserNext(c)) return compileError(c,"definition name expected (found '%s')\n",compileToken(c));
 	if (!strcmp(c->parser->token,"("))
 	{
 		if (!(t = compileTerm(c, 0))) return NULL;
@@ -109,7 +109,7 @@ Type* compileSet(Compiler* c)
 			if (def)
 			{
 				LINT code = def->code;
-				if (code == DEF_CODE_CONST) return compileError(c, "Compiler: constant '%s' cannot be modified\n", compileToken(c));
+				if (code == DEF_CODE_CONST) return compileError(c,"constant '%s' cannot be modified\n", compileToken(c));
 
 				if (code == DEF_CODE_VAR)	// variable
 				{
@@ -120,7 +120,7 @@ Type* compileSet(Compiler* c)
 			}
 		}
 	}
-	if (opstore==-1) return compileError(c,"Compiler: variable expected (found '%s')\n",compileToken(c));
+	if (opstore==-1) return compileError(c,"variable expected (found '%s')\n",compileToken(c));
 
 	if (parserAssume(c,"=")) return NULL;
 	if (!(tsrc=compileExpression(c))) return NULL;
@@ -135,7 +135,7 @@ Type* compileSkipLocal(Compiler* c);
 Type* compileSkipLocalsTerm(Compiler* c)
 {
 	Type* t;
-	if (!parserNext(c)) return compileError(c, "Compiler: term expected (found '%s')\n", compileToken(c));
+	if (!parserNext(c)) return compileError(c,"term expected (found '%s')\n", compileToken(c));
 //	PRINTF(LOG_DEV,"------compileSkipLocalsTerm %s\n", compileToken(c));
 	if (!strcmp(c->parser->token, "("))
 	{
@@ -147,7 +147,7 @@ Type* compileSkipLocalsTerm(Compiler* c)
 	{
 		while (1)
 		{
-			if (!parserNext(c)) return compileError(c, "Compiler: ']' expected (found '%s')\n", compileToken(c));
+			if (!parserNext(c)) return compileError(c,"']' expected (found '%s')\n", compileToken(c));
 
 			if (!strcmp(c->parser->token, "]")) return MM.Boolean;
 			if (!strcmp(c->parser->token, "_"))
@@ -162,14 +162,14 @@ Type* compileSkipLocalsTerm(Compiler* c)
 	}
 	if (!strcmp(c->parser->token, "_")) return MM.Boolean;
 	if (islabel(c->parser->token)) {
-		if (!parserNext(c)) return compileError(c, "Compiler: unexpected end of file\n");
+		if (!parserNext(c)) return compileError(c,"unexpected end of file\n");
 		if (!strcmp(c->parser->token, "@")) {
 			if (compilerSkipTypeDef(c)) return NULL;
 		}
 		else parserGiveback(c);
 		return MM.Boolean;
 	}
-	return compileError(c, "Compiler: unexpected term '%s'\n", compileToken(c));
+	return compileError(c,"unexpected term '%s'\n", compileToken(c));
 }
 
 Type* compileSkipLocal(Compiler* c)
@@ -190,7 +190,7 @@ Type* compileLocals(Compiler* c, int* simple);
 Type* compileLocalsTerm(Compiler* c, int* simple)
 {
 	Type* t;
-	if (!parserNext(c)) return compileError(c, "Compiler: term expected (found '%s')\n", compileToken(c));
+	if (!parserNext(c)) return compileError(c,"term expected (found '%s')\n", compileToken(c));
 //	PRINTF(LOG_DEV,"------compileLocalsTerm %s\n", compileToken(c));
 
 	if (!strcmp(c->parser->token, "("))
@@ -205,7 +205,7 @@ Type* compileLocalsTerm(Compiler* c, int* simple)
 		if (simple) *simple = 0;
 		while (1)
 		{
-			if (!parserNext(c)) return compileError(c, "Compiler: ']' expected (found '%s')\n", compileToken(c));
+			if (!parserNext(c)) return compileError(c,"']' expected (found '%s')\n", compileToken(c));
 
 			if (!strcmp(c->parser->token, "]"))
 			{
@@ -215,7 +215,7 @@ Type* compileLocalsTerm(Compiler* c, int* simple)
 			else if (!strcmp(c->parser->token, "_"))
 			{
 				Type* u = typeAllocUndef(c->th); if (!u) return NULL;
-				TYPEPUSH_NULL(c, u);
+				TYPE_PUSH_NULL(c, u);
 				n++;
 			}
 			else
@@ -224,7 +224,7 @@ Type* compileLocalsTerm(Compiler* c, int* simple)
 				if (bufferAddChar(c->th, c->bytecode, OPdup)) return NULL;
 				if (bc_byte_or_int(c, n, OPfetchb, OPfetch)) return NULL;
 				if (!(t = compileLocals(c, simple))) return NULL;
-				TYPEPUSH_NULL(c, t);
+				TYPE_PUSH_NULL(c, t);
 				n++;
 			}
 		}
@@ -237,7 +237,7 @@ Type* compileLocalsTerm(Compiler* c, int* simple)
 	if (islabel(c->parser->token))
 	{
 		Locals* l = funMakerAddLocal(c, c->parser->token); if (!l) return NULL;
-		if (!parserNext(c)) return compileError(c, "Compiler: unexpected end of file\n");
+		if (!parserNext(c)) return compileError(c,"unexpected end of file\n");
 		if (!strcmp(c->parser->token, "@")) {
 			Type* t = compilerParseTypeDef(c, 0, &c->fmk->typeLabels);
 			if (!t) return NULL;
@@ -248,7 +248,7 @@ Type* compileLocalsTerm(Compiler* c, int* simple)
 		if (bc_byte_or_int(c, l->index, OPslocb, OPsloc)) return NULL;
 		return l->type;
 	}
-	return compileError(c, "Compiler: unexpected term '%s'\n", compileToken(c));
+	return compileError(c,"unexpected term '%s'\n", compileToken(c));
 }
 
 Type* compileLocals(Compiler* c, int* simple)
@@ -319,7 +319,7 @@ Type* compileGetPoint(Compiler* c,Type* t0)
 			parserGiveback(c);
 			return t0;
 		}
-		if (!parserNext(c)) return compileError(c,"Compiler: expression or field name expected (found '%s')\n",compileToken(c));
+		if (!parserNext(c)) return compileError(c,"expression or field name expected (found '%s')\n",compileToken(c));
 
 		if ((islabel(c->parser->token))
 			&&(def=compileGetDef(c))
@@ -337,8 +337,8 @@ Type* compileGetPoint(Compiler* c,Type* t0)
 			parserGiveback(c);
 
 			if (!(t=compileTerm(c,1))) return NULL;
-			TYPEPUSH_NULL(c,t0);
-			TYPEPUSH_NULL(c,t);
+			TYPE_PUSH_NULL(c,t0);
+			TYPE_PUSH_NULL(c,t);
 			u = typeCopy(c->th,MM.fun_array_u0_I_u0); if (!u) return NULL;
 			if (!(t0=typeUnifyFromStack(c,u))) return NULL;
 			if (bufferAddChar(c->th, c->bytecode,OPfetch)) return NULL;
@@ -362,10 +362,10 @@ Type* compileDownCast(Compiler* c, Def* from, Def* to)
 	int i;
 	Type* t;
 	Type* u;
-	if (!typePrimaryIsChild(to, from)) return compileError(c, "Compiler: no downcast from %s to %s\n", defName(from), defName(to));
+	if (!typePrimaryIsChild(to, from)) return compileError(c,"no downcast from %s to %s\n", defName(from), defName(to));
 
 	// we need the following condition, else there are typechecking traps
-	if (from->type->nb != to->type->nb) return compileError(c, "Compiler: no downcast from %s to %s (different number of parameters)\n", defName(from), defName(to));
+	if (from->type->nb != to->type->nb) return compileError(c,"no downcast from %s to %s (different number of parameters)\n", defName(from), defName(to));
 	if (!(t = compileExpression(c))) return NULL;
 	u = typeCopy(c->th, from->type); if (!u) return NULL;
 	if (typeUnify(c, t, u)) return NULL;
@@ -387,7 +387,7 @@ Type* compileCast(Compiler* c, Def* to)
 /*	// this block would allow to force the type of an expression
 *	// imagined for core.db.inMemory to force the type of [db][Table]Id 
 *	// eventually not used because this could be achieved by (_[db][Table]< row)
-	if (!parserNext(c)) return compileError(c, "Compiler: unexpected end of file\n");
+	if (!parserNext(c)) return compileError(c,"unexpected end of file\n");
 	if (strcmp(c->parser->token, "<")) {
 		Type* t;
 		Type* u;
@@ -401,7 +401,7 @@ Type* compileCast(Compiler* c, Def* to)
 */
 	if (parserAssume(c, "<")) return NULL;
 
-	if (!parserNext(c)) return compileError(c, "Compiler: unexpected end of file\n");
+	if (!parserNext(c)) return compileError(c,"unexpected end of file\n");
 	if (islabel(c->parser->token))
 	{
 		Def*  from = compileGetDef(c);
@@ -428,10 +428,10 @@ Type* compileDef(Compiler* c,int noPoint)
 		LINT global;
 		if (funMakerAddGlobal(c->fmk, (LB*)c->pkg,&global)) return NULL;
 		if (bc_byte_or_int(c, global, OPconstb, OPconst)) return NULL;
-		return MM.Pkg;
+		return MM.Package;
 	}
 	def=compileGetDef(c);
-	if (!def) return compileError(c,"Compiler: unknown label '%s'\n",compileToken(c));
+	if (!def) return compileError(c,"unknown label '%s'\n",compileToken(c));
 
 	code=def->code;
 	if (code == DEF_CODE_STRUCT) return compileCast(c, def);
@@ -451,18 +451,18 @@ Type* compileDef(Compiler* c,int noPoint)
 		for(i=0;i<code;i++)
 		{
 			if (!(t=compileExpression(c))) return NULL;
-			TYPEPUSH_NULL(c,t);
+			TYPE_PUSH_NULL(c,t);
 		}
 
 		if (code) {
-			if (!parserNext(c)) return compileError(c, "Compiler: unexpected end of file\n");
-			if (!parserIsFinal(c)) return compileError(c, "Compiler: too many argument(s) for function '%s' (should be "LSD")\n", defName(def),code);
+			if (!parserNext(c)) return compileError(c,"unexpected end of file\n");
+			if (!parserIsFinal(c)) return compileError(c,"too many argument(s) for function '%s' (should be "LSD")\n", defName(def),code);
 			parserGiveback(c);		
 		}
 		if (def->index != DEF_INDEX_OPCODE) {
 			if (bc_byte_or_int(c, code, OPexecb, OPexec)) return NULL;
 		}
-		else if (bufferAddChar(c->th, c->bytecode,(char)(TABINT(VALTOPNT(def->val),FUN_NATIVE_POINTER)))) return NULL;
+		else if (bufferAddChar(c->th, c->bytecode,(char)(ARRAY_INT(PNT_FROM_VAL(def->val),FUN_NATIVE_POINTER)))) return NULL;
 
 		q=(def!=c->fmk->def)?typeInstance(c,def):def->type; if (!q) return NULL;
 //		PRINTF(LOG_DEV,"def=%s\n", defName(def));
@@ -476,6 +476,6 @@ Type* compileDef(Compiler* c,int noPoint)
 		if (noPoint) return def->type;
 		return compileGetPoint(c,def->type);
 	}
-	return compileError(c,"Compiler: impossible def '%s')\n",compileToken(c));
+	return compileError(c,"impossible def '%s')\n",compileToken(c));
 }
 

@@ -42,14 +42,14 @@ bignum bignumCreate(LINT nword)
 	bignum b;
 	if (!BigList)
 	{
-//		PRINTF(LOG_SYS, "Out of bignum registers\n");
+		PRINTF(LOG_SYS, ">Error: Out of bignum registers\n");
 		return NULL;
 	}
 	
 	if (nword<1) nword=1;
 	if (nword > BIGNUM_MAXWORDS)
 	{
-//		PRINTF(LOG_SYS, "Bignum too long (" LSD " bits, max is " LSD ")\n",nword*sizeof(uint), BIGNUM_MAXWORDS *sizeof(uint));
+		PRINTF(LOG_SYS, ">Error: Bignum too long (" LSD " bits, max is " LSD ")\n",nword*sizeof(uint), BIGNUM_MAXWORDS *sizeof(uint));
 		return NULL;
 	}
 	b = BigList;
@@ -287,8 +287,8 @@ LB* bignumStringDec(Thread* th,bignum b)
 	LINT len=bignumLen(b)*10;
 	LB* p_buf = bignumStringAlloc(th, NULL, len); if (!p_buf) return NULL;
 	p_dst = bignumStringAlloc(th, NULL, len + 2); if (!p_dst) return NULL;
-	buf=STRSTART(p_buf);
-	dst=STRSTART(p_dst);
+	buf=STR_START(p_buf);
+	dst=STR_START(p_dst);
 	result=dst;
 	if (bignumSign(b)) *(dst++)='-';
 	for(i=0;i<len;i++)buf[i]=0;
@@ -335,7 +335,7 @@ bignum bignumFromHex(Thread* th, char* src)
 	}
 	start = len & 1;
 	p = bignumStringAlloc(th, NULL, (len + 1) / 2); if (!p) return NULL;
-	bin = STRSTART(p);
+	bin = STR_START(p);
 	for(i=start;i<len+start;i++)
 	{
 		LINT c=_bignumhtoc(*(src++));
@@ -380,7 +380,7 @@ int bignumToStr(Thread* th, bignum b, char* dest)
 	LINT len = bignumLen(b) * 10;
 	LB* p_buf = bignumStringAlloc(th, NULL, len); if (!p_buf) return 0;
 
-	buf = STRSTART(p_buf);
+	buf = STR_START(p_buf);
 	if (bignumSign(b))
 	{
 		lenResult = 1;
@@ -414,7 +414,7 @@ int bignumToBuffer(Thread* th, bignum b, Buffer* buffer)
 	LINT len = bignumLen(b) * 10;
 	LB* p_buf = bignumStringAlloc(th, NULL, len); if (!p_buf) return EXEC_OM;
 
-	buf = STRSTART(p_buf);
+	buf = STR_START(p_buf);
 	if (bignumSign(b))
 	{
 		if ((k = bufferAddChar(th, buffer, '-'))) return k;
@@ -1186,30 +1186,30 @@ int bigPush(Thread* th, bignum b0)
 
 int fun_bigFromStr(Thread* th)
 {
-	LB* p=STACKPNT(th,0);
+	LB* p=STACK_PNT(th,0);
 	if (!p) FUN_RETURN_NIL;
-	FUN_RETURN_BIG(bignumFromBin(STRSTART(p),STRLEN(p)));
+	FUN_RETURN_BIG(bignumFromBin(STR_START(p),STR_LENGTH(p)));
 }
 int fun_strFromBig(Thread* th)
 {
 	LB* p;
 	LINT size;
 
-	LINT len=STACKINT(th,0);
+	LINT len=STACK_INT(th,0);
 	bignum b=_bignumGet(th,1);
 	if (!b) FUN_RETURN_NIL;
 
 	size=bignumStringBin(b,len,NULL);
 	if (size<0) FUN_RETURN_NIL;
 	p = bignumStringAlloc(th, NULL, size); if (!p) return EXEC_OM;
-	bignumStringBin(b,len, STRSTART(p));
+	bignumStringBin(b,len, STR_START(p));
 	FUN_RETURN_PNT(p);
 }
 int fun_bigFromSignedStr(Thread* th)
 {
-	LB* p = STACKPNT(th, 0);
+	LB* p = STACK_PNT(th, 0);
 	if (!p) FUN_RETURN_NIL;
-	FUN_RETURN_BIG(bignumFromSignedBin(STRSTART(p), STRLEN(p)));
+	FUN_RETURN_BIG(bignumFromSignedBin(STR_START(p), STR_LENGTH(p)));
 }
 int fun_signedStrFromBig(Thread* th)
 {
@@ -1222,14 +1222,14 @@ int fun_signedStrFromBig(Thread* th)
 	size = bignumStringSignedBin(b, NULL);
 	if (size < 0) FUN_RETURN_NIL;
 	p = bignumStringAlloc(th, NULL, size); if (!p) return EXEC_OM;
-	bignumStringSignedBin(b, STRSTART(p));
+	bignumStringSignedBin(b, STR_START(p));
 	FUN_RETURN_PNT(p);
 }
 int fun_bigFromDec(Thread* th)
 {
-	LB* p=STACKPNT(th,0);
+	LB* p=STACK_PNT(th,0);
 	if (!p) FUN_RETURN_NIL;
-	FUN_RETURN_BIG(bignumFromDec(STRSTART(p)));
+	FUN_RETURN_BIG(bignumFromDec(STR_START(p)));
 }
 
 int fun_decFromBig(Thread* th)
@@ -1245,9 +1245,9 @@ int fun_decFromBig(Thread* th)
 
 int fun_bigFromHex(Thread* th)
 {
-	LB* p=STACKPNT(th,0);
+	LB* p=STACK_PNT(th,0);
 	if (!p) FUN_RETURN_NIL;
-	FUN_RETURN_BIG(bignumFromHex(th, STRSTART(p)));
+	FUN_RETURN_BIG(bignumFromHex(th, STR_START(p)));
 }
 int fun_hexFromBig(Thread* th)
 {
@@ -1259,7 +1259,7 @@ int fun_hexFromBig(Thread* th)
 	size=bignumStringHex(b,NULL);
 	if (size<0) FUN_RETURN_NIL;
 	p = bignumStringAlloc(th, NULL, size); if (!p) return EXEC_OM;
-	bignumStringHex(b, STRSTART(p));
+	bignumStringHex(b, STR_START(p));
 	FUN_RETURN_PNT(p);
 }
 
@@ -1274,7 +1274,7 @@ int fun_bigDivRemainder(Thread* th)
 	if (!q) FUN_RETURN_NIL;
 	if (bigPush(th,q)) return EXEC_OM;
 	if (bigPush(th,r)) return EXEC_OM;
-	FUN_MAKE_TABLE(2,DBG_TUPLE);
+	FUN_MAKE_ARRAY(2,DBG_TUPLE);
 	return 0;
 }
 int fun_bigEuclid(Thread* th)
@@ -1291,7 +1291,7 @@ int fun_bigEuclid(Thread* th)
 	if (bigPush(th,u)) return EXEC_OM;
 	if (bigPush(th,v)) return EXEC_OM;
 	if (bigPush(th,pgcd)) return EXEC_OM;
-	FUN_MAKE_TABLE(3,DBG_TUPLE);
+	FUN_MAKE_ARRAY(3,DBG_TUPLE);
 	return 0;
 }
 
@@ -1357,7 +1357,7 @@ void coreBignumReset(void)
 {
 	int i;
 	if (BigCount>= BIGREGISTERS) return;
-//	PRINTF(LOG_SYS, "Reset bignum registers\n");
+//	PRINTF(LOG_DEV, "Reset bignum registers\n");
 	BigList = NULL;
 	for (i = 0; i < BIGREGISTERS; i++)
 	{
@@ -1377,17 +1377,17 @@ int coreBignumInit(Thread* th, Pkg *system)
 	Type* fun_B_B_B_B_B=typeAlloc(th, TYPECODE_FUN,NULL,5,B,B,B,B,B);
 	Type* fun_B_B_B_B_B_B_B=typeAlloc(th, TYPECODE_FUN,NULL,7,B,B,B,B,B,B,B);
 	Type* fun_B_B_B_B_B_B_B_B_B = typeAlloc(th, TYPECODE_FUN, NULL, 9, B, B, B, B, B, B, B, B, B);
-	Type* fun_B_B_I=typeAlloc(th, TYPECODE_FUN,NULL,3,B,B,MM.I);
+	Type* fun_B_B_I=typeAlloc(th, TYPECODE_FUN,NULL,3,B,B,MM.Int);
 	Type* fun_B_B_Bool = typeAlloc(th, TYPECODE_FUN, NULL, 3, B, B, MM.Boolean);
-	Type* fun_B_I=typeAlloc(th, TYPECODE_FUN,NULL,2,B,MM.I);
+	Type* fun_B_I=typeAlloc(th, TYPECODE_FUN,NULL,2,B,MM.Int);
 	Type* fun_B_Bool = typeAlloc(th, TYPECODE_FUN, NULL, 2, B, MM.Boolean);
-	Type* fun_B_I_B=typeAlloc(th, TYPECODE_FUN,NULL,3,B,MM.I,B);
-	Type* fun_B_I_I=typeAlloc(th, TYPECODE_FUN,NULL,3,B,MM.I,MM.I);
-	Type* fun_B_I_S=typeAlloc(th, TYPECODE_FUN,NULL,3,B,MM.I,MM.S);
-	Type* fun_B_S=typeAlloc(th, TYPECODE_FUN,NULL,2,B,MM.S);
-	Type* fun_I_B=typeAlloc(th, TYPECODE_FUN,NULL,2,MM.I,B);
-	Type* fun_I_Bool_B=typeAlloc(th, TYPECODE_FUN,NULL,3,MM.I,MM.Boolean,B);
-	Type* fun_S_B=typeAlloc(th, TYPECODE_FUN,NULL,2,MM.S,B);
+	Type* fun_B_I_B=typeAlloc(th, TYPECODE_FUN,NULL,3,B,MM.Int,B);
+	Type* fun_B_I_I=typeAlloc(th, TYPECODE_FUN,NULL,3,B,MM.Int,MM.Int);
+	Type* fun_B_I_S=typeAlloc(th, TYPECODE_FUN,NULL,3,B,MM.Int,MM.Str);
+	Type* fun_B_S=typeAlloc(th, TYPECODE_FUN,NULL,2,B,MM.Str);
+	Type* fun_I_B=typeAlloc(th, TYPECODE_FUN,NULL,2,MM.Int,B);
+	Type* fun_I_Bool_B=typeAlloc(th, TYPECODE_FUN,NULL,3,MM.Int,MM.Boolean,B);
+	Type* fun_S_B=typeAlloc(th, TYPECODE_FUN,NULL,2,MM.Str,B);
 	Type* fun_Bytes_B=typeAlloc(th, TYPECODE_FUN,NULL,2,MM.Bytes,B);
 
 	pkgAddFun(th, system,"bigAbs", fun_bigAbs,fun_B_B);

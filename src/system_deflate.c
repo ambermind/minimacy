@@ -14,7 +14,7 @@
 // this is a basic implementation of deflate, without LZ77,
 // and always with dynamic huffman blocks (others are implemented but never called)
 
-#define BLOCK_MAX_LEN 16384
+#define BLOCK_MAX_LENGTH 16384
 
 typedef struct
 {
@@ -232,29 +232,29 @@ void huffmanComputeLenLengths(int* lenCounts, int n, int* lenLengths)
 	{
 		int i;
 		huffmanComputeCodeLengths(lenCounts, n, lenLengths);
-		if (_checkLengths(lenLengths, MAX_LEN, 7)) return;
+		if (_checkLengths(lenLengths, MAX_LENGTH, 7)) return;
 		for (i = 0; i < n; i++) if (lenCounts[i] > 1) lenCounts[i] >>= 1;
 	}
 }
 int _deflateLengths(Deflate* z, int* codeLengths, int nbCodes, int* distLengths, int nbDist)
 {
 	int i;
-	int lenCounts[MAX_LEN];
-	int lenLengths[MAX_LEN];
-	int lenValues[MAX_LEN];
+	int lenCounts[MAX_LENGTH];
+	int lenLengths[MAX_LENGTH];
+	int lenValues[MAX_LENGTH];
 	if (bwBitsLsb(z, nbCodes-257, 5)) return -1;
 	if (bwBitsLsb(z, nbDist-1, 5)) return -1;
-	if (bwBitsLsb(z, MAX_LEN -4, 4)) return -1;
+	if (bwBitsLsb(z, MAX_LENGTH -4, 4)) return -1;
 
-	for (i = 0; i < MAX_LEN; i++) lenCounts[i] = lenValues[i]= 0;
+	for (i = 0; i < MAX_LENGTH; i++) lenCounts[i] = lenValues[i]= 0;
 
 	for (i = 0; i < nbCodes; i++) lenCounts[codeLengths[i]]++;
 	for (i = 0; i < nbDist; i++) lenCounts[distLengths[i]]++;
 
-	huffmanComputeLenLengths(lenCounts, MAX_LEN, lenLengths);	
+	huffmanComputeLenLengths(lenCounts, MAX_LENGTH, lenLengths);	
 
-	huffmanBuildEncoder(lenLengths, MAX_LEN, lenValues);
-	for (i = 0; i < MAX_LEN; i++) {
+	huffmanBuildEncoder(lenLengths, MAX_LENGTH, lenValues);
+	for (i = 0; i < MAX_LENGTH; i++) {
 //		PRINTF(LOG_DEV,"write %d\n", lenLengths[LEN_ORDER[i]]);
 		if (bwBitsLsb(z, lenLengths[LEN_ORDER[i]], 3)) return -1;
 	}
@@ -337,11 +337,11 @@ void deflateInit(Deflate* z,Thread* th, Buffer* out)
 int deflateLoop(Deflate* z, char* src, int srcLen)
 {
 	int i;
-	for (i = 0; i < srcLen; i += BLOCK_MAX_LEN)
+	for (i = 0; i < srcLen; i += BLOCK_MAX_LENGTH)
 	{
-		int final = (i + BLOCK_MAX_LEN >= srcLen) ? 1 : 0;
+		int final = (i + BLOCK_MAX_LENGTH >= srcLen) ? 1 : 0;
 		int toCompress = srcLen - i;
-		if (toCompress > BLOCK_MAX_LEN) toCompress = BLOCK_MAX_LEN;
+		if (toCompress > BLOCK_MAX_LENGTH) toCompress = BLOCK_MAX_LENGTH;
 		if (bwBitsLsb(z, final, 1)) return -1;
 //		if (deflateBlockNoCompression(z, src + i, toCompress)) return -1;
 //		if (deflateBlockFixed(z, src + i, toCompress)) return -1;
@@ -355,12 +355,12 @@ MTHREAD_START _deflate(Thread* th)
 {
 	Deflate z;
 
-	LB* src= STACKPNT(th, 0);
-	Buffer* out = (Buffer*)STACKPNT(th, 1);
+	LB* src= STACK_PNT(th, 0);
+	Buffer* out = (Buffer*)STACK_PNT(th, 1);
 	if ((!src)||(!out)) return workerDonePnt(th,MM._false);
 
 	deflateInit(&z, th, out);
-	if (deflateLoop(&z, STRSTART(src),(int)STRLEN(src))) return workerDonePnt(th,MM._false);
+	if (deflateLoop(&z, STR_START(src),(int)STR_LENGTH(src))) return workerDonePnt(th,MM._false);
 	return workerDonePnt(th,MM._true);
 }
 int fun_deflate(Thread* th) { return workerStart(th, 2, _deflate); }

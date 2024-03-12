@@ -15,9 +15,9 @@ Type* compilePrompt(Compiler* c)
 	LINT global;
 	Type* t;
 	if (!(t = compileExpression(c))) return NULL;	// get source code
-	if (typeUnify(c, t, MM.S)) return NULL;
+	if (typeUnify(c, t, MM.Str)) return NULL;
 	if (!(t = compileExpression(c))) return NULL;	// get pkg
-	if (typeUnify(c, t, MM.Pkg)) return NULL;
+	if (typeUnify(c, t, MM.Package)) return NULL;
 	t = typeAllocUndef(c->th); if (!t) return NULL;
 	if (funMakerAddGlobal(c->fmk, (LB*)t,&global)) return NULL;
 	if (bc_byte_or_int(c, global, OPconstb, OPconst)) return NULL;
@@ -27,7 +27,7 @@ Type* compilePrompt(Compiler* c)
 //	if (bufferAddChar(c->th, c->bytecode, OPdump)) return NULL;
 
 	if (bc_byte_or_int(c, 0, OPexecb, OPexec)) return NULL;
-	if (bc_byte_or_int(c, 2, OPdftabb, OPdftab)) return NULL;
+	if (bc_byte_or_int(c, 2, OPdftupb, OPdftup)) return NULL;
 	return typeAlloc(c->th,TYPECODE_TUPLE, NULL, 2, MM.Type, t);
 }
 
@@ -36,9 +36,9 @@ Type* compileCompile(Compiler* c)
 	LINT global;
 	Type* t;
 	if (!(t = compileExpression(c))) return NULL;	// get source code
-	if (typeUnify(c, t, MM.S)) return NULL;
+	if (typeUnify(c, t, MM.Str)) return NULL;
 	if (!(t = compileExpression(c))) return NULL;	// get pkg
-	if (typeUnify(c, t, MM.Pkg)) return NULL;
+	if (typeUnify(c, t, MM.Package)) return NULL;
 	t = typeAllocUndef(c->th); if (!t) return NULL;
 	if (funMakerAddGlobal(c->fmk, (LB*)t, &global)) return NULL;
 	if (bc_byte_or_int(c, global, OPconstb, OPconst)) return NULL;
@@ -95,11 +95,11 @@ Type* compileReturn(Compiler* c)
 Type* compileSpecial(Compiler* c)
 {
 	Type* t;
-	if ((!parserNext(c)) || (!islabel(c->parser->token))) return compileError(c, "Compiler: label expected (found '%s')\n", compileToken(c));
+	if ((!parserNext(c)) || (!islabel(c->parser->token))) return compileError(c,"label expected (found '%s')\n", compileToken(c));
 
 	if (!strcmp(c->parser->token, "atomic"))
 	{
-		if (c->pkg != MM.system) return compileError(c, "Compiler: atomic is not allowed to simple users\n");
+		if (c->pkg != MM.system) return compileError(c,"atomic is not allowed to simple users\n");
 		if (bufferAddChar(c->th, c->bytecode, OPatomic)) return NULL;
 		if (bufferAddChar(c->th, c->bytecode, 1)) return NULL;
 		if (!(t = compileExpression(c))) return NULL;
@@ -182,13 +182,13 @@ Type* compileSpecial(Compiler* c)
 		c->fmk->locals = localsBefore;
 		return t;
 	}
-	return compileError(c, "Compiler: unknown special (found '%s')\n", compileToken(c));
+	return compileError(c,"unknown special (found '%s')\n", compileToken(c));
 }
 
 Type* compileTerm(Compiler* c,int noPoint)
 {
 	Type* t;
-	if (!parserNext(c)) return compileError(c,"Compiler: term expected (found '%s')\n",compileToken(c));
+	if (!parserNext(c)) return compileError(c,"term expected (found '%s')\n",compileToken(c));
 
 	if (!strcmp(c->parser->token,"("))
 	{
@@ -212,16 +212,16 @@ Type* compileTerm(Compiler* c,int noPoint)
 		}
 		while(1)
 		{
-			if (!parserNext(c)) return compileError(c,"Compiler: ']' expected (found '%s')\n",compileToken(c));
+			if (!parserNext(c)) return compileError(c,"']' expected (found '%s')\n",compileToken(c));
 
 			if (!strcmp(c->parser->token,"]"))
 			{
-				if (bc_byte_or_int(c,nval,OPdftabb,OPdftab)) return NULL;
+				if (bc_byte_or_int(c,nval,OPdftupb,OPdftup)) return NULL;
 				return typeAllocFromStack(c->th, NULL, TYPECODE_TUPLE, nval);
 			}
 			parserGiveback(c);
 			if (!(t=compileExpression(c))) return NULL;
-			TYPEPUSH_NULL(c,t);
+			TYPE_PUSH_NULL(c,t);
 			nval++;
 		}
 	}
@@ -233,7 +233,7 @@ Type* compileTerm(Compiler* c,int noPoint)
 		type=typeAlloc(c->th,TYPECODE_ARRAY,NULL,1,u); if (!type) return NULL;
 		while(1)
 		{
-			if (!parserNext(c)) return compileError(c,"Compiler: '}' expected (found '%s')\n",compileToken(c));
+			if (!parserNext(c)) return compileError(c,"'}' expected (found '%s')\n",compileToken(c));
 
 			if (!strcmp(c->parser->token,"}"))
 			{
@@ -263,7 +263,7 @@ Type* compileTerm(Compiler* c,int noPoint)
 	else if (!strcmp(c->parser->token,"call"))
 		return compileCall(c);
 	else if (!strcmp(c->parser->token, "strFormat"))
-		return compileFormat(c,MM.S);
+		return compileFormat(c,MM.Str);
 	else if (!strcmp(c->parser->token, "bytesFormat"))
 		return compileFormat(c,MM.Bytes);
 	else if ((!strcmp(c->parser->token,"return"))&&(!funMakerIsForVar(c)))
@@ -295,11 +295,11 @@ Type* compileTerm(Compiler* c,int noPoint)
 	}
 	else if (!strcmp(c->parser->token,"'"))
 	{
-		if (!parserNext(c)) return compileError(c,"Compiler: 'char expected (found '%s')\n",compileToken(c));
+		if (!parserNext(c)) return compileError(c,"'char expected (found '%s')\n",compileToken(c));
 
 		if (bcint_byte_or_int(c,c->parser->token[0]&255)) return NULL;
 		if (parserAssume(c,"'")) return NULL;
-		return MM.I;
+		return MM.Int;
 	}
 	else if (!strcmp(c->parser->token, "\\")) return compileSpecial(c);
 	else if (islabel(c->parser->token))
@@ -322,17 +322,17 @@ Type* compileTerm(Compiler* c,int noPoint)
 			LFLOAT f=(LFLOAT)i;
 			if (bufferAddChar(c->th, c->bytecode,OPfloat)) return NULL;
 			if (bufferAddInt(c->th, c->bytecode,*(LINT*)&f)) return NULL;
-			return MM.F;
+			return MM.Float;
 		}
 		if (bcint_byte_or_int(c,i)) return NULL;
-		return MM.I;
+		return MM.Int;
 	}
 	else if ((c->parser->token[0] == '0') && (c->parser->token[1] == 'd')
 	&& (isdecimal(c->parser->token + 2)))
 	{
 		LINT i = ls_atoi(c->parser->token+2, 0);
 		if (bcint_byte_or_int(c, i)) return NULL;
-		return MM.I;
+		return MM.Int;
 	}
 	else if ((c->parser->token[0]=='0')&&(c->parser->token[1]=='x')
 		&&(ishexadecimal(c->parser->token+2)))
@@ -349,22 +349,22 @@ Type* compileTerm(Compiler* c,int noPoint)
 		}
 		i=ls_htoi(c->parser->token+2);
 		if (bcint_byte_or_int(c,i)) return NULL;
-		return MM.I;
+		return MM.Int;
 	}
 	else if (c->parser->token[0]=='"')	// parse string constants
 	{
 		LINT global;
 		LB *data;
 		if (parserGetstring(c,MM.tmpBuffer)) // this function starts to reset the Buffer
-			return compileError(c,"Compiler: string has no ending\n");
+			return compileError(c,"string has no ending\n");
 		
 		data=memoryAllocFromBuffer(c->th,MM.tmpBuffer); if (!data) return NULL;
 		if (funMakerAddGlobal(c->fmk,data, &global)) return NULL;
 		if (bc_byte_or_int(c,global,OPconstb,OPconst)) return NULL;
-		return MM.S;
+		return MM.Str;
 	}
 	else if (!strcmp(c->parser->token,"#"))
 		return compilePointer(c);
 
-	return compileError(c,"Compiler: unexpected term '%s'\n",compileToken(c));
+	return compileError(c,"unexpected term '%s'\n",compileToken(c));
 }	

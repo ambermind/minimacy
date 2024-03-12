@@ -11,7 +11,7 @@
 #include"minimacy.h"
 
 #ifdef WITH_GL
-
+#define GL_GLEXT_PROTOTYPES
 #ifdef USE_COCOA
 #import <OpenGL/gl.h>
 #import <OpenGL/glext.h>
@@ -172,7 +172,7 @@ int name(Thread* th) \
 #define GLI(name,fun)	\
 int name(Thread* th) \
 {	\
-	int v0=(int)STACKPULLINT(th);	\
+	int v0=(int)STACK_PULL_INT(th);	\
 	GLcheck fun(v0);	\
 	FUN_RETURN_INT(0);	\
 }
@@ -180,14 +180,14 @@ int name(Thread* th) \
 #define GLIi(name,fun)	\
 int name(Thread* th) \
 {	\
-	int v0=(int)STACKPULLINT(th);	\
+	int v0=(int)STACK_PULL_INT(th);	\
 	int i=GLdefault(fun(v0),-1);	\
 	FUN_RETURN_INT(i);	\
 }
 #define GLIs(name,fun)	\
 int name(Thread* th) \
 {	\
-	int v0=(int)STACKPULLINT(th);	\
+	int v0=(int)STACK_PULL_INT(th);	\
 	char* p=(char*)(GLdefault(fun(v0),NULL));	\
 	if (!p) FUN_RETURN_NIL;	\
 	FUN_RETURN_STR(p,-1); \
@@ -195,8 +195,8 @@ int name(Thread* th) \
 #define GLII(name,fun)	\
 int name(Thread* th) \
 {	\
-	int v1=(int)STACKPULLINT(th);	\
-	int v0=(int)STACKPULLINT(th);	\
+	int v1=(int)STACK_PULL_INT(th);	\
+	int v0=(int)STACK_PULL_INT(th);	\
 	GLcheck fun(v0,v1);	\
 	FUN_RETURN_INT(0);	\
 }
@@ -204,9 +204,9 @@ int name(Thread* th) \
 #define GLIII(name,fun)	\
 int name(Thread* th) \
 {	\
-	int v2=(int)STACKPULLINT(th);	\
-	int v1=(int)STACKPULLINT(th);	\
-	int v0=(int)STACKPULLINT(th);	\
+	int v2=(int)STACK_PULL_INT(th);	\
+	int v1=(int)STACK_PULL_INT(th);	\
+	int v0=(int)STACK_PULL_INT(th);	\
 	GLcheck fun(v0,v1,v2);	\
 	FUN_RETURN_INT(0);	\
 }
@@ -215,10 +215,10 @@ int name(Thread* th) \
 #define GLIIII(name,fun)	\
 int name(Thread* th) \
 {	\
-	int v3=(int)STACKPULLINT(th);	\
-	int v2=(int)STACKPULLINT(th);	\
-	int v1=(int)STACKPULLINT(th);	\
-	int v0=(int)STACKPULLINT(th);	\
+	int v3=(int)STACK_PULL_INT(th);	\
+	int v2=(int)STACK_PULL_INT(th);	\
+	int v1=(int)STACK_PULL_INT(th);	\
+	int v0=(int)STACK_PULL_INT(th);	\
 	GLcheck fun(viewPortScale(v0),viewPortScale(v1),viewPortScale(v2),viewPortScale(v3));	\
 	FUN_RETURN_INT(0);	\
 }
@@ -226,14 +226,14 @@ int name(Thread* th) \
 #define GLIIIIIIII(name,fun)	\
 int name(Thread* th) \
 {	\
-	int v7=(int)STACKPULLINT(th);	\
-	int v6=(int)STACKPULLINT(th);	\
-	int v5=(int)STACKPULLINT(th);	\
-	int v4=(int)STACKPULLINT(th);	\
-	int v3=(int)STACKPULLINT(th);	\
-	int v2=(int)STACKPULLINT(th);	\
-	int v1=(int)STACKPULLINT(th);	\
-	int v0=(int)STACKPULLINT(th);	\
+	int v7=(int)STACK_PULL_INT(th);	\
+	int v6=(int)STACK_PULL_INT(th);	\
+	int v5=(int)STACK_PULL_INT(th);	\
+	int v4=(int)STACK_PULL_INT(th);	\
+	int v3=(int)STACK_PULL_INT(th);	\
+	int v2=(int)STACK_PULL_INT(th);	\
+	int v1=(int)STACK_PULL_INT(th);	\
+	int v0=(int)STACK_PULL_INT(th);	\
 	GLcheck fun(v0,v1,v2,v3,v4,v5,v6,v7);	\
 	FUN_RETURN_INT(0);	\
 }
@@ -241,7 +241,7 @@ int name(Thread* th) \
 #define GLF(name,fun)	\
 int name(Thread* th) \
 {	\
-	float v0=(float)STACKPULLFLOAT(th);	\
+	float v0=(float)STACK_PULL_FLOAT(th);	\
 	GLcheck fun(v0);	\
 	FUN_RETURN_INT(0);	\
 }
@@ -249,8 +249,8 @@ int name(Thread* th) \
 #define GLFF(name,fun)	\
 int name(Thread* th) \
 {	\
-	float v1=(float)STACKPULLFLOAT(th);	\
-	float v0=(float)STACKPULLFLOAT(th);	\
+	float v1=(float)STACK_PULL_FLOAT(th);	\
+	float v0=(float)STACK_PULL_FLOAT(th);	\
 	GLcheck fun(v0,v1);	\
 	FUN_RETURN_INT(0);	\
 }
@@ -258,31 +258,31 @@ int name(Thread* th) \
 #define GLFFF(name,fun)	\
 int name(Thread* th) \
 {	\
-	float v2=(float)STACKPULLFLOAT(th);	\
-	float v1=(float)STACKPULLFLOAT(th);	\
-	float v0=(float)STACKPULLFLOAT(th);	\
+	float v2=(float)STACK_PULL_FLOAT(th);	\
+	float v1=(float)STACK_PULL_FLOAT(th);	\
+	float v0=(float)STACK_PULL_FLOAT(th);	\
 	GLcheck fun(v0,v1,v2);	\
 	FUN_RETURN_INT(0);	\
 }
 #define GLFFFF(name,fun)	\
 int name(Thread* th) \
 {	\
-	float v3=(float)STACKPULLFLOAT(th);	\
-	float v2=(float)STACKPULLFLOAT(th);	\
-	float v1=(float)STACKPULLFLOAT(th);	\
-	float v0=(float)STACKPULLFLOAT(th);	\
+	float v3=(float)STACK_PULL_FLOAT(th);	\
+	float v2=(float)STACK_PULL_FLOAT(th);	\
+	float v1=(float)STACK_PULL_FLOAT(th);	\
+	float v0=(float)STACK_PULL_FLOAT(th);	\
 	GLcheck fun(v0,v1,v2,v3);	\
 	FUN_RETURN_INT(0);	\
 }
 #define GLFFFFFF(name,fun)	\
 int name(Thread* th) \
 {	\
-	float v5=(float)STACKPULLFLOAT(th);	\
-	float v4=(float)STACKPULLFLOAT(th);	\
-	float v3=(float)STACKPULLFLOAT(th);	\
-	float v2=(float)STACKPULLFLOAT(th);	\
-	float v1=(float)STACKPULLFLOAT(th);	\
-	float v0=(float)STACKPULLFLOAT(th);	\
+	float v5=(float)STACK_PULL_FLOAT(th);	\
+	float v4=(float)STACK_PULL_FLOAT(th);	\
+	float v3=(float)STACK_PULL_FLOAT(th);	\
+	float v2=(float)STACK_PULL_FLOAT(th);	\
+	float v1=(float)STACK_PULL_FLOAT(th);	\
+	float v0=(float)STACK_PULL_FLOAT(th);	\
 	GLcheck fun(v0,v1,v2,v3,v4,v5);	\
 	FUN_RETURN_INT(0);	\
 }
@@ -290,17 +290,17 @@ int name(Thread* th) \
 #define GLIF(name,fun)	\
 int name(Thread* th) \
 {	\
-	float v1=(float)STACKPULLFLOAT(th);	\
-	int v0=(int)STACKPULLINT(th);	\
+	float v1=(float)STACK_PULL_FLOAT(th);	\
+	int v0=(int)STACK_PULL_INT(th);	\
 	GLcheck fun(v0,v1);	\
 	FUN_RETURN_INT(0);	\
 }
 #define GLIFF(name,fun)	\
 int name(Thread* th) \
 {	\
-	float v2=(float)STACKPULLFLOAT(th);	\
-	float v1=(float)STACKPULLFLOAT(th);	\
-	int v0=(int)STACKPULLINT(th);	\
+	float v2=(float)STACK_PULL_FLOAT(th);	\
+	float v1=(float)STACK_PULL_FLOAT(th);	\
+	int v0=(int)STACK_PULL_INT(th);	\
 	GLcheck fun(v0,v1,v2);	\
 	FUN_RETURN_INT(0);	\
 }
@@ -310,20 +310,20 @@ int name(Thread* th) \
 {	\
 	int v0;	\
 	float vec[4];	\
-	vec[3]=(float)STACKPULLFLOAT(th);	\
-	vec[2]=(float)STACKPULLFLOAT(th);	\
-	vec[1]=(float)STACKPULLFLOAT(th);	\
-	vec[0]=(float)STACKPULLFLOAT(th);	\
-	v0=(int)STACKPULLINT(th);	\
+	vec[3]=(float)STACK_PULL_FLOAT(th);	\
+	vec[2]=(float)STACK_PULL_FLOAT(th);	\
+	vec[1]=(float)STACK_PULL_FLOAT(th);	\
+	vec[0]=(float)STACK_PULL_FLOAT(th);	\
+	v0=(int)STACK_PULL_INT(th);	\
 	GLcheck fun(v0,vec);	\
 	FUN_RETURN_INT(0);	\
 }
 #define GLIIF(name,fun)	\
 int name(Thread* th) \
 {	\
-	float v2=(float)STACKPULLFLOAT(th);	\
-	int v1=(int)STACKPULLINT(th);	\
-	int v0=(int)STACKPULLINT(th);	\
+	float v2=(float)STACK_PULL_FLOAT(th);	\
+	int v1=(int)STACK_PULL_INT(th);	\
+	int v0=(int)STACK_PULL_INT(th);	\
 	GLcheck fun(v0,v1,v2);	\
 	FUN_RETURN_INT(0);	\
 }
@@ -332,12 +332,12 @@ int name(Thread* th) \
 {	\
 	int v0,v1;	\
 	float vec[4];	\
-	vec[3]=(float)STACKPULLFLOAT(th);	\
-	vec[2]=(float)STACKPULLFLOAT(th);	\
-	vec[1]=(float)STACKPULLFLOAT(th);	\
-	vec[0]=(float)STACKPULLFLOAT(th);	\
-	v1=(int)STACKPULLINT(th);	\
-	v0=(int)STACKPULLINT(th);	\
+	vec[3]=(float)STACK_PULL_FLOAT(th);	\
+	vec[2]=(float)STACK_PULL_FLOAT(th);	\
+	vec[1]=(float)STACK_PULL_FLOAT(th);	\
+	vec[0]=(float)STACK_PULL_FLOAT(th);	\
+	v1=(int)STACK_PULL_INT(th);	\
+	v0=(int)STACK_PULL_INT(th);	\
 	GLcheck fun(v0,v1,vec);	\
 	FUN_RETURN_INT(0);	\
 }
@@ -345,7 +345,7 @@ int name(Thread* th) \
 #define GLP(name,fun)	\
 int name(Thread* th) \
 {	\
-	lglProgram* d=(lglProgram*)STACKPULLPNT(th);	\
+	lglProgram* d=(lglProgram*)STACK_PULL_PNT(th);	\
 	GLcheck fun(d?d->program:0);	\
 	FUN_RETURN_INT(0);	\
 }
@@ -353,31 +353,31 @@ int name(Thread* th) \
 #define GLPSi(name,fun)	\
 int name(Thread* th) \
 {	\
-	LB* src=STACKPNT(th,0);	\
-	lglProgram* p=(lglProgram*)STACKPNT(th,1);	\
+	LB* src=STACK_PNT(th,0);	\
+	lglProgram* p=(lglProgram*)STACK_PNT(th,1);	\
 	if ((!src)||(!p)) FUN_RETURN_NIL;	\
-	FUN_RETURN_INT(GLdefault(fun(p->program,STRSTART(src)),-1));	\
+	FUN_RETURN_INT(GLdefault(fun(p->program,STR_START(src)),-1));	\
 }
 
 #define GLIIFloats(name,fun)	\
 int name(Thread* th) \
 {	\
-	LB* floats=STACKPNT(th,0);	\
-	int count=(int)STACKINT(th,1); \
-	int location=(int)STACKINT(th,2); \
+	LB* floats=STACK_PNT(th,0);	\
+	int count=(int)STACK_INT(th,1); \
+	int location=(int)STACK_INT(th,2); \
 	if (!floats) FUN_RETURN_NIL;	\
-	GLcheck fun(location,count,(float*)BINSTART(floats));	\
+	GLcheck fun(location,count,(float*)BIN_START(floats));	\
 	FUN_RETURN_INT(0); \
 }
 #define GLIIIFloats(name,fun)	\
 int name(Thread* th) \
 {	\
-	LB* floats=STACKPNT(th,0);	\
-	int transpose=(int)STACKINT(th,1); \
-	int count=(int)STACKINT(th,2); \
-	int location=(int)STACKINT(th,3); \
+	LB* floats=STACK_PNT(th,0);	\
+	int transpose=(int)STACK_INT(th,1); \
+	int count=(int)STACK_INT(th,2); \
+	int location=(int)STACK_INT(th,3); \
 	if (!floats) FUN_RETURN_NIL;	\
-	GLcheck fun(location,count,transpose,(float*)BINSTART(floats));	\
+	GLcheck fun(location,count,transpose,(float*)BIN_START(floats));	\
 	FUN_RETURN_INT(0); \
 }
 #endif

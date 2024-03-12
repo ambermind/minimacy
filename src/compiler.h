@@ -89,12 +89,12 @@ struct Compiler
 #define FORCE_NUMBER_MOD 3
 #define FORCE_NUMBER_MODOPTI 4
 
-#define BC_ARGS(bc) (((LINT*)STRSTART(bc))[0])
-#define BC_LOCALS(bc) (((LINT*)STRSTART(bc))[1])
+#define BC_ARGS(bc) (((LINT*)STR_START(bc))[0])
+#define BC_LOCALS(bc) (((LINT*)STR_START(bc))[1])
 #define BC_OFFSET (LWLEN*2)
-#define BC_START(bc) (STRSTART(bc)+BC_OFFSET)
+#define BC_START(bc) (STR_START(bc)+BC_OFFSET)
 
-#define INSTANCE_LEN 5
+#define INSTANCE_LENGTH 5
 #define INSTANCE_DEF 0
 #define INSTANCE_TYPE 1
 #define INSTANCE_POSITION 2

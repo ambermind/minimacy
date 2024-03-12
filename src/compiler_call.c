@@ -14,7 +14,7 @@
 Type* compilePointer(Compiler* c)
 {
 	Def* def;
-	if (!parserNext(c)) return compileError(c,"Compiler: function name expected (found '%s')\n",compileToken(c));
+	if (!parserNext(c)) return compileError(c,"function name expected (found '%s')\n",compileToken(c));
 
 	def=compileGetDef(c);
 	if (def && def->code>=0)
@@ -26,7 +26,7 @@ Type* compilePointer(Compiler* c)
 //		return def->type;
 		return typeInstance(c,def);
 	}
-	return compileError(c,"Compiler: function not found or hidden ('%s')\n",compileToken(c));
+	return compileError(c,"function not found or hidden ('%s')\n",compileToken(c));
 }
 
 Type* compileCall(Compiler* c)
@@ -45,12 +45,12 @@ Type* compileCall(Compiler* c)
 	{
 		parserGiveback(c);
 		if (!(t=compileExpression(c))) return NULL;
-		TYPEPUSH_NULL(c,t);
+		TYPE_PUSH_NULL(c,t);
 		argc++;
 	}
 	parserGiveback(c);
 	result = typeAllocUndef(c->th); if (!result) return NULL;
-	TYPEPUSH_NULL(c,result);	// push the type of the result
+	TYPE_PUSH_NULL(c,result);	// push the type of the result
 	callType = typeAllocFromStack(c->th, NULL, TYPECODE_FUN, argc + 1); if (!callType) return NULL;
 
 	if (typeUnify(c,funType,callType)) return NULL;
@@ -63,7 +63,7 @@ int compileBindRec(Compiler* c, Locals* locals, LINT level)
 	int k;
 	if (!locals) return 0;
 	if ((k=compileBindRec(c, locals->next, level))) return k;
-//	PRINTF(LOG_DEV,"check %s %lld > %lld\n", STRSTART(locals->name),locals->level,level);
+//	PRINTF(LOG_DEV,"check %s %lld > %lld\n", STR_START(locals->name),locals->level,level);
 	if (locals->level > level)
 	{
 		locals->level=level;
@@ -115,7 +115,7 @@ Type* compileLambda(Compiler* c)
 			}
 			bufferCut(c->bytecode, firstOpcode);
 		}
-		STACKPUSHPNT_ERR(c->th, (LB*)(argType), NULL);
+		STACK_PUSH_PNT_ERR(c->th, (LB*)(argType), NULL);
 		i++;
 	}
 	parserGiveback(c);
@@ -123,7 +123,7 @@ Type* compileLambda(Compiler* c)
 
 	// prepare the type structure of the function (fun arg0 arg1 ... argn-1 result)
 	resultType=typeAllocUndef(c->th); if (!resultType) return NULL;
-	TYPEPUSH_NULL(c,resultType);	// push the type of the result
+	TYPE_PUSH_NULL(c,resultType);	// push the type of the result
 
 	type=typeAllocFromStack(c->th, NULL, TYPECODE_FUN, argc+1-argc0); if (!type) return NULL;
 
@@ -159,7 +159,7 @@ Type* compileFormat(Compiler* c, Type* returnedType)
 	LINT argc=0;
 	
 	if (!(format=compileExpression(c))) return NULL;	// lire le format
-	if (typeUnify(c, format, MM.S)) return NULL;
+	if (typeUnify(c, format, MM.Str)) return NULL;
 
 	while((parserNext(c))&&(!parserIsFinal(c)))
 	{

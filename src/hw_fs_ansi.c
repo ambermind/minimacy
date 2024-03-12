@@ -209,7 +209,7 @@ LB* ansiReadContent(Thread* th, char* path, int* size)
 	if (file == NULL) return NULL;
 	sz = ansiFileSize(file);
 	p = memoryAllocStr(th, NULL, sz); if (!p) return NULL;
-	data = STRSTART(p);
+	data = STR_START(p);
 	sz=(int)fread((void*)data, 1, sz, file);
 	data[sz] = 0;
 	fclose(file);
@@ -348,10 +348,10 @@ int ansiFsMount(Thread* th, int argc, char** argv, int standalone)
 
 	strcpy(MinimacyDir, "");
 	systemMainDir(MinimacyDir, MAX_PATH, argc, argv);
-	PRINTF(LOG_SYS, "Minimacy directory       : %s\n", MinimacyDir);
+	PRINTF(LOG_SYS, "> Minimacy directory       : %s\n", MinimacyDir);
 	snprintf(MinimacyDir+strlen(MinimacyDir), MAX_PATH-strlen(MinimacyDir), "rom/");
 	_partitionAdd(MM.ansiVolume, 0, MinimacyDir);
-	PRINTF(LOG_SYS, "Rom directory            : %s\n", MinimacyDir);
+	PRINTF(LOG_SYS, "> Rom directory            : %s\n", MinimacyDir);
 #endif
 	return 0;
 }

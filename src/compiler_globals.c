@@ -19,7 +19,7 @@ LINT globalsNb(Globals* globals)
 void globalsMark(LB* user)
 {
 	Globals* l=(Globals*)user;
-	MEMORYMARK(user,l->data);
+	MEMORY_MARK(user,l->data);
 }
 
 Globals* globalsCreate(Thread* th,LB* data, Globals* next)
@@ -53,12 +53,12 @@ int globalsExtract(Thread* th, Globals* globals, LB** result)
 	if (!globals) return 0;
 	
 	nb=globalsNb(globals);
-	p= memoryAllocTable(th, nb,DBG_TUPLE);
+	p= memoryAllocArray(th, nb,DBG_TUPLE);
 	if (!p) return EXEC_OM;
 	nb--;
 	while(nb>=0)
 	{
-		TABSETPNT(p,nb--,globals->data);
+		ARRAY_SET_PNT(p,nb--,globals->data);
 		globals=globals->next;
 	}
 	*result = p;

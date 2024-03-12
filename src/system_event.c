@@ -48,22 +48,22 @@ void internalPoke(void)
 
 int coreEventInit(Thread* th, Pkg* system)
 {
-	pkgAddConstInt(th, system, "_EVENT_POKE", EVENT_POKE, MM.I);
-	pkgAddConstInt(th, system, "_EVENT_PAINT", EVENT_PAINT, MM.I);
-	pkgAddConstInt(th, system, "_EVENT_MOUSEMOVE", EVENT_MOUSEMOVE, MM.I);
-	pkgAddConstInt(th, system, "_EVENT_CLICK", EVENT_CLICK, MM.I);
-	pkgAddConstInt(th, system, "_EVENT_UNCLICK", EVENT_UNCLICK, MM.I);
-	pkgAddConstInt(th, system, "_EVENT_VWHEEL", EVENT_VWHEEL, MM.I);
-	pkgAddConstInt(th, system, "_EVENT_HWHEEL", EVENT_HWHEEL, MM.I);
-	pkgAddConstInt(th, system, "_EVENT_KEYDOWN", EVENT_KEYDOWN, MM.I);
-	pkgAddConstInt(th, system, "_EVENT_KEYUP", EVENT_KEYUP, MM.I);
-	pkgAddConstInt(th, system, "_EVENT_SIZE", EVENT_SIZE, MM.I);
-	pkgAddConstInt(th, system, "_EVENT_CLOSE", EVENT_CLOSE, MM.I);
-    pkgAddConstInt(th, system, "_EVENT_WILL_RESIZE", EVENT_WILL_RESIZE, MM.I);
-    pkgAddConstInt(th, system, "_EVENT_SUSPEND", EVENT_SUSPEND, MM.I);
-    pkgAddConstInt(th, system, "_EVENT_RESUME", EVENT_RESUME, MM.I);
-    pkgAddConstInt(th, system, "_EVENT_MULTITOUCH", EVENT_MULTITOUCH, MM.I);
-    pkgAddConstInt(th, system, "_EVENT_DROPFILES", EVENT_DROPFILES, MM.I);
+	pkgAddConstInt(th, system, "_EVENT_POKE", EVENT_POKE, MM.Int);
+	pkgAddConstInt(th, system, "_EVENT_PAINT", EVENT_PAINT, MM.Int);
+	pkgAddConstInt(th, system, "_EVENT_MOUSEMOVE", EVENT_MOUSEMOVE, MM.Int);
+	pkgAddConstInt(th, system, "_EVENT_CLICK", EVENT_CLICK, MM.Int);
+	pkgAddConstInt(th, system, "_EVENT_UNCLICK", EVENT_UNCLICK, MM.Int);
+	pkgAddConstInt(th, system, "_EVENT_VWHEEL", EVENT_VWHEEL, MM.Int);
+	pkgAddConstInt(th, system, "_EVENT_HWHEEL", EVENT_HWHEEL, MM.Int);
+	pkgAddConstInt(th, system, "_EVENT_KEYDOWN", EVENT_KEYDOWN, MM.Int);
+	pkgAddConstInt(th, system, "_EVENT_KEYUP", EVENT_KEYUP, MM.Int);
+	pkgAddConstInt(th, system, "_EVENT_SIZE", EVENT_SIZE, MM.Int);
+	pkgAddConstInt(th, system, "_EVENT_CLOSE", EVENT_CLOSE, MM.Int);
+    pkgAddConstInt(th, system, "_EVENT_WILL_RESIZE", EVENT_WILL_RESIZE, MM.Int);
+    pkgAddConstInt(th, system, "_EVENT_SUSPEND", EVENT_SUSPEND, MM.Int);
+    pkgAddConstInt(th, system, "_EVENT_RESUME", EVENT_RESUME, MM.Int);
+    pkgAddConstInt(th, system, "_EVENT_MULTITOUCH", EVENT_MULTITOUCH, MM.Int);
+    pkgAddConstInt(th, system, "_EVENT_DROPFILES", EVENT_DROPFILES, MM.Int);
 
 	return 0;
 }
