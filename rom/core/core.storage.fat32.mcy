@@ -769,11 +769,13 @@ fun _mkPartition p name index writable mount root =
 
 fun storageMount volumeType fRead fWrite writable mount root=
 	let storageInit fRead fWrite -> partitions in
-	let 0->index in
-	for p in listReverse partitions do (
-		volumeCreate p.volumeLabelP volumeType index writable;
-		partitionAdd _mkPartition p p.volumeLabelP index writable mount root;
-		set index=index+1
+	let fifoCreate -> fifo in (
+		listReduce (listReverse partitions) 0 (lambda index p=
+			volumeCreate p.volumeLabelP volumeType index writable;
+			fifoIn fifo partitionAdd _mkPartition p p.volumeLabelP index writable mount root;
+			index+1
+		);
+		fifoList fifo
 	);;
 
 //------------------------------------------------------------------------------------

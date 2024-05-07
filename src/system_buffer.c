@@ -38,6 +38,13 @@ int fun_bufferReset(Thread* th)
 	if (b) bufferReinit(b);
 	return 0;
 }
+int fun_bufferRemove(Thread* th)
+{
+	LINT delta = STACK_PULL_INT(th);
+	Buffer* b = (Buffer*)STACK_PNT(th, 0);
+	if (b) bufferRemove(b,(int)delta);
+	return 0;
+}
 int fun_bufferGet(Thread* th)
 {
 	LINT index = STACK_PULL_INT(th);
@@ -94,6 +101,7 @@ int coreBufferInit(Thread* th, Pkg *system)
 	pkgAddFun(th, system,"strFromBuffer", fun_strFromBuffer, typeAlloc(th,TYPECODE_FUN, NULL, 2, MM.Buffer, MM.Str));
 	pkgAddFun(th, system,"bytesFromBuffer", fun_strFromBuffer, typeAlloc(th,TYPECODE_FUN, NULL, 2, MM.Buffer, MM.Bytes));
 	pkgAddFun(th, system,"bufferReset", fun_bufferReset, typeAlloc(th,TYPECODE_FUN, NULL, 2, MM.Buffer, MM.Buffer));
+	pkgAddFun(th, system, "bufferRemove", fun_bufferRemove, typeAlloc(th, TYPECODE_FUN, NULL, 3, MM.Buffer, MM.Int, MM.Buffer));
 	pkgAddFun(th, system, "bufferGet", fun_bufferGet, typeAlloc(th, TYPECODE_FUN, NULL, 3, MM.Buffer, MM.Int, MM.Int));
 	pkgAddFun(th, system, "bufferAppendChar", fun_bufferAppendChar, typeAlloc(th, TYPECODE_FUN, NULL, 3, MM.Buffer, MM.Int, MM.Buffer));
 	pkgAddFun(th, system, "bufferSliceOfStr", fun_bufferSliceOfStr, typeAlloc(th, TYPECODE_FUN, NULL, 4, MM.Buffer, MM.Int, MM.Int, MM.Str));

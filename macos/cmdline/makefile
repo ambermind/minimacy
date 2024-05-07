@@ -62,6 +62,7 @@ system_event.o \
 system_file.o \
 system_inflate.o \
 system_lzw.o \
+system_serial.o \
 system_socket.o \
 system_str.o \
 system_tmp.o \

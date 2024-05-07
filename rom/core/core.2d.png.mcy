@@ -162,11 +162,11 @@ fun _pngDecodeImageInterLaced png bmp data rowStart pass=
 	_pngDecodeImageInterLaced png bmp data rowStart pass+1;;
 
 fun _pngFinalize png=
-//echoLn "_pngFinalize";
 	if png<>nil then
 	let png.idatP -> input in
 	let strSlice input 2 ((strLength input)-6) -> input in
-	let bytesFromStr inflate input -> data in	// here we could check the trail (adler32)
+	let inflate input -> data in
+	let bytesFromStr data -> data in	// here we could check the trail (adler32)
 	let set png.bmpP=bitmapCreate png.wP png.hP 0 -> bmp in
 	(
 //	save input "bug.inflate.bin";
@@ -179,6 +179,7 @@ fun _pngFinalize png=
 	);;
 
 fun _pngChunkReader png src i inputs=
+//	echoLn "_pngChunkReader";
 	if i<strLength src then
 	let strRead32Msb src i -> len in
 	let strSlice src i+4 4 -> type in

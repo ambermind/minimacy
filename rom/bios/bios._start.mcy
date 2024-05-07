@@ -28,19 +28,19 @@ fun _systemDirFromFile file=
 	let _dirBestMatch dir (strConcat "/" strReplace pkg "." "/") 1 dir  -> dir in
 	[dir pkg];;
 
-fun _getBootPkg =
-	let listGet args (listLength args)-1 -> last in
-	if !strEndsWith last SOURCE_EXTENSION then
-		["boot" nil MAX_MEMORY_STANDALONE]
+fun _getBootPkg lArgs =
+	if lArgs==nil then ["boot" nil MAX_MEMORY_STANDALONE]
 	else
-	let _systemDirFromFile last -> [dir pkg] in
+	if !strEndsWith (head lArgs) SOURCE_EXTENSION then _getBootPkg tail lArgs
+	else
+	let _systemDirFromFile head lArgs -> [dir pkg] in
 	(
 		[pkg dir MAX_MEMORY_BOOT]
 	);;	
 
 fun _start compile=
 	echoEnable true;
-	let _getBootPkg ->[pkg programDir maxMemory] in
+	let _getBootPkg args ->[pkg programDir maxMemory] in
 	(
 		echoLn ["> current time: " fullDate time];
 		_fsInit programDir;

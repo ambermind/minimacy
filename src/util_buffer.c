@@ -68,6 +68,12 @@ void bufferReinit(Buffer* b)
 {
 	b->index=0;
 }
+void bufferRemove(Buffer* b, int delta)
+{
+	if (delta<=0) return;
+	b->index-=delta;
+	if (b->index<0) b->index=0;
+}
 int bufferAddChar(Thread* th, Buffer* b,char c)
 {
 	int k;

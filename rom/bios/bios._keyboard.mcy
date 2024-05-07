@@ -21,46 +21,68 @@ fun _keyboardSync=
 	for kb in tail _Keyboards do _streamRemoveFromList kb;
 	let head _Keyboards -> kb in
 	if kb<>nil then (
-		_sockSetSelectWrite kb._socketS true;
+		_socketSetSelectWrite kb._socketS true;
 		_streamAddToList kb
 	);;
 
 fun onInput cbRead cbWrite=
 	if cbRead<>nil then
 	\atomic	if _KeyboardSock==nil then set _KeyboardSock=_keyboardOpen;
-	_sockSetSelectRead _KeyboardSock true;
-	let [
-		_socketS=_KeyboardSock
-	] -> kb in
+	_socketSetSelectRead _KeyboardSock true;
+	let [_Keyboard] -> kb in
 	(
-		set kb._onSelectReadS = (lambda = 
-//			dump listLength _Keyboards;
-			threadPost kb._thS (lambda =
-				_sockSetSelectRead kb._socketS true;
-				let _keyboardRead kb._socketS -> data in
-				(
-					call kb._onReadS data;
-		//			if data==nil then set _Keyboard=nil;
-					nil
+		streamInit kb _KeyboardSock
+			(lambda =	// onSelectRead
+				streamOnSelectRead kb (lambda cbRead= 
+					let _keyboardRead kb._socketS -> data in
+					(
+	//					dump data;
+						call cbRead data;
+						nil
+					)
 				)
-			);
-			true
-		);
-		set kb._onSelectWriteS = (lambda = _streamOnSelectWrite kb);
-		set kb._showS=(lambda fEcho= call fEcho "keyboard" "-" kb._thS);
+			)
+			(lambda = streamOnSelectWrite kb)	// onSelectWrite
+			nil	// write
+			(lambda = _keyboardSync; true)	// close
+			(lambda fEcho= call fEcho "keyboard" "-");	// echo
 \atomic (
 		set _Keyboards= kb:_Keyboards;
 		_keyboardSync
 );
-		set kb._closeS=(lambda = _keyboardSync; true);
 		streamOnEvent kb cbRead cbWrite;
-		streamSelectWrite kb true;
 		true
 	);;
 
 fun inputClose =
-\atomic (
-	set _Keyboards=listFilter _Keyboards (lambda kb= _This<>kb._thS);
+\atomic
+	let head _Keyboards -> kb in
+	if _This==kb._thS then (
+	_streamRemoveFromList kb;
+	set _Keyboards=tail _Keyboards;
 	_keyboardSync;
 	true
 );;
+
+struct _Serial=Stream+[];;
+
+fun serialOpen port speed format parity stop=
+	let _serialOpen port speed format parity stop -> serial in
+	if serial<>nil then
+	let _serialSocket serial -> socket in
+	let [_Serial] -> stream in
+	streamInit stream socket
+		(lambda =	// onSelectRead
+			streamOnSelectRead stream (lambda cbRead= call cbRead _serialRead serial)
+		)
+		(lambda = streamOnSelectWrite stream)	// onSelectWrite
+		(lambda data start =	// write
+//			echo "_writeS "; echoLn
+			_serialWrite serial data start
+		)
+		(lambda = _serialClose serial; streamCommonClose stream)	// close
+		(lambda fEcho= call fEcho "serial" port);;
+
+fun serialOnEvent serial onRead onWrite= streamOnEvent serial onRead onWrite;;
+fun serialWrite serial data start= streamWrite serial data start;;
+fun serialClose serial = streamClose serial;;

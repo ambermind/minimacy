@@ -65,7 +65,7 @@ fun asn1Echo prefix a=
 			let strConcat prefix " ." -> prefix in for p in l do asn1Echo prefix p;
 			echo prefix; echoLn "}";
 		),
-		asn1ObjectIdentifier v -> echoLn strFormat "asn1ObjectIdentifier: * *" v nameByOID v,
+		asn1ObjectIdentifier v -> echoLn strFormat "asn1ObjectIdentifier: * *" v niceOID v,
 		asn1PrintableString v -> echoLn strFormat "asn1PrintableString: *" v,
 		asn1IA5String v -> echoLn strFormat "asn1IA5String: *" v,
 		asn1UtcTime v -> echoLn strFormat "asn1UtcTime: *" v,
@@ -221,7 +221,7 @@ fun listFromAsn1 a = match a with
 
 fun asn1ListOfStr l= if l<>nil then (strFromAsn1 head l):asn1ListOfStr tail l;;
 fun asn1ListOfHex l=listMap (asn1ListOfStr l) #hexFromStr;;
-fun asn1ListOfOid l=listMap (asn1ListOfStr l) #niceOID;;
+fun asn1ListOfNiceOid l=listMap (asn1ListOfStr l) #niceOID;;
 fun asn1ListOfBignum l=listMap (asn1ListOfStr l) #bigFromStr;;
 
 fun asn1ListOfRecStr l res=

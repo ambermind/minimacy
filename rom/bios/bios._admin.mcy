@@ -74,7 +74,7 @@ fun inputs=
 	-> echoFormat in
 	(
 		call echoFormat "Type" "Detail" nil;
-		for s in _Streams do call s._showS echoFormat;
+		for s in _Streams do call s._showS (lambda type detail=call echoFormat type detail s._thS);
 		true
 	);;
 

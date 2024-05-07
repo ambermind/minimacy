@@ -80,7 +80,7 @@ Type* compileMatchStruct(Compiler* c, Type* tval, Type* tresult, LINT* end, Def*
 	tchild = typeCopy(c->th, def->type); if (!tchild) return NULL;
 	for (i = 0; i < tchild->nb; i++) if (typeUnify(c, tchild->child[i], t0->child[i])) return NULL;
 
-	t0 = typeDerivate(c->th, t0, 0); if (!t0) return NULL;
+	t0 = typeDerivate(c->th, t0); if (!t0) return NULL;
 	if (typeUnify(c, t0, tval)) return NULL;
 
 	if (bufferAddChar(c->th, c->bytecode, OPdup)) return NULL;

@@ -35,6 +35,7 @@ LINT ls_htoi(char* src);
 LFLOAT ls_atof(char* src);
 LFLOAT ls_atofExt(char* src, char** dst);
 
+LINT signExtend(LINT val, LINT bit);
 LINT signExtend8(LINT val);
 LINT signExtend16(LINT val);
 LINT signExtend32(LINT val);
@@ -52,4 +53,6 @@ void pseudoRandomEntropy(LINT val);
 int lwEquals(LW a, int ta, LW b, int tb);
 
 int codeFromEntity(char* entity, LINT len);
+
+void _myHexDump(char* src, int len, int offsetDisplay);
 #endif

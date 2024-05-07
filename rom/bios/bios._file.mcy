@@ -160,7 +160,10 @@ fun _partitionUpdate=
 fun partitionAdd partition=
 	let _mkCheckPartition partition -> partition in
 	if partition<>nil then set _Partitions= partition:_Partitions;
-	_partitionUpdate;;
+	_partitionUpdate;
+	partition;;
+
+fun partitionIndex partition= listPosition _Partitions partition;;
 
 fun _fsInit programDir =
 	set _Partitions= nil;
@@ -289,7 +292,9 @@ fun fileInfoIsDir f=f._dirFI;;
 
 //----------- FILES
 
-fun fileOpen path mode= 
+fun fileOpen path mode=
+	if !strEmpty path then
+	if !strEndsWith path "/" then
 	for p in _Partitions do
 		let _partitionFilter p path -> path in
 		if path<>nil then

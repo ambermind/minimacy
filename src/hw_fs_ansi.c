@@ -173,7 +173,14 @@ void ansiFileClose(void* file)
 
 void* ansiFileOpen(char* path, char* mode)
 {
-	//	PRINTF(LOG_DEV,"ansiFileOpen %s\n", path);
+	//	PRINTF(LOG_DEV,"ansiFileOpen '%s'\n", path);
+#ifdef USE_FS_SYSTEMDIR_UNIX
+	{
+		struct stat statbuf;
+		stat(path, &statbuf);
+		if (S_ISDIR(statbuf.st_mode)) return NULL;
+}
+#endif
 	return (void*)fopen(path, mode);
 }
 LINT ansiFileSeek(void* file, LINT offset)

@@ -58,10 +58,14 @@
 #define closesocket(x)
 #endif
 
-typedef int (*SELECT_READABLE)(SOCKET socket);
-typedef int (*SELECT_WRITABLE)(SOCKET socket);
+#define PIPE_READ 0
+#define PIPE_WRITE 1
 
-typedef struct
+typedef struct Socket Socket;
+typedef int (*SELECT_READABLE)(Socket* socket);
+typedef int (*SELECT_WRITABLE)(Socket* socket);
+
+struct Socket
 {
 	LB header;
 	FORGET forget;
@@ -74,10 +78,20 @@ typedef struct
 	int selectWrite;
 	int readable;
 	int writable;
-}Socket;
+	LINT watchAddress;
+	LINT watchMask;
+	LINT watchValue;
+};
 
+void lambdaPipe(SOCKET fds[2]);
+void lambdaPipeClose(SOCKET fds[2]);
 Socket* _socketCreate(Thread* th, SOCKET sock);
 void internalSend(char* src, int len);
+
+int fun_socketRead(Thread* th);
+int fun_socketWrite(Thread* th);
+int fun_socketClose(Thread* th);
+
 int sysSocketInit(Thread* th, Pkg* system);
 void sysSocketClose(void);
 #endif

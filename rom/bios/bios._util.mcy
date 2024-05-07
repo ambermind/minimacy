@@ -17,6 +17,9 @@ fun listReverse p = _reverse p nil;;
 
 fun listContains l v= if l<>nil then (v==head l)||listContains (tail l) v;;
 
+fun _listPosition l v i= if l<>nil then if v==head l then i else _listPosition (tail l) v i+1;;
+fun listPosition l v= _listPosition l v 0;;
+
 fun listMap l f= if l<>nil then let (call f head l) -> p in if p==nil then listMap (tail l) f else p:listMap (tail l) f;;
 fun listFilter l f= listMap l (lambda p= if (call f p) then p);;
 fun listReduce l v0 f= if l==nil then v0 else listReduce (tail l) (call f v0 head l) f;;
@@ -183,7 +186,7 @@ fun hexDump s=
 		echo "  ";
 		for j=0;j<16 do let strGet s i+j -> a in echo match a with
 			nil -> " ",
-			a -> if a<32 then "." else strFromChar a;
+			a -> if a<32 || a>=0xc0 then "." else strFromChar a;
 		echoLn ""
 	);
 	s;;

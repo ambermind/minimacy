@@ -12,8 +12,9 @@
 
 void _socketClose(Socket* s)
 {
-	if (s->fd == INVALID_SOCKET) return;
 //	PRINTF(LOG_DEV,"close socket %lld\n", s->fd);
+	if (s->fd == INVALID_SOCKET) return;
+	if (s->fd==0) return;	// we don't close stdin
 	closesocket(s->fd);
 	s->fd = INVALID_SOCKET;
 }
@@ -43,14 +44,14 @@ int fun_socketEmpty(Thread* th)
 	FUN_RETURN_PNT((LB*)s);
 }
 
-int fun_sockSetSelectRead(Thread* th)
+int fun_socketSetSelectRead(Thread* th)
 {
 	LB* state = STACK_PULL_PNT(th);
 	Socket* s = (Socket*)STACK_PNT(th, 0);
 	if (s) s->selectRead = (state == MM._true) ? 1 : 0;
 	return 0;
 }
-int fun_sockSetSelectWrite(Thread* th)
+int fun_socketSetSelectWrite(Thread* th)
 {
 	LB* state = STACK_PULL_PNT(th);
 	Socket* s = (Socket*)STACK_PNT(th, 0);
@@ -58,40 +59,40 @@ int fun_sockSetSelectWrite(Thread* th)
 	return 0;
 }
 
-int fun_sockSelectRead(Thread* th)
+int fun_socketSelectRead(Thread* th)
 {
 	Socket* s = (Socket*)STACK_PNT(th, 0);
 	if (!s) FUN_RETURN_NIL;
 	FUN_RETURN_BOOL(s->selectRead);
 }
-int fun_sockSelectWrite(Thread* th)
+int fun_socketSelectWrite(Thread* th)
 {
 	Socket* s = (Socket*)STACK_PNT(th, 0);
 	if (!s) FUN_RETURN_NIL;
 	FUN_RETURN_BOOL(s->selectWrite);
 }
-int fun_sockReadable(Thread* th)
+int fun_socketReadable(Thread* th)
 {
 	Socket* s = (Socket*) STACK_PNT(th, 0);
 	if (!s) return 0;
 	STACK_SET_BOOL(th, 0, s->readable);
 	return 0;
 }
-int fun_sockWritable(Thread* th)
+int fun_socketWritable(Thread* th)
 {
 	Socket* s = (Socket*)STACK_PNT(th, 0);
 	if (!s) return 0;
 	STACK_SET_BOOL(th, 0, s->writable);
 	return 0;
 }
-int fun_sockSetReadable(Thread* th)
+int fun_socketSetReadable(Thread* th)
 {
 	LB* state = STACK_PULL_PNT(th);
 	Socket* s = (Socket*)STACK_PNT(th, 0);
 	if (s) s->readable = (state == MM._true) ? 1 : 0;
 	return 0;
 }
-int fun_sockSetWritable(Thread* th)
+int fun_socketSetWritable(Thread* th)
 {
 	LB* state = STACK_PULL_PNT(th);
 	Socket* s = (Socket*)STACK_PNT(th, 0);
@@ -99,7 +100,7 @@ int fun_sockSetWritable(Thread* th)
 	return 0;
 }
 
-int fun_sockClose(Thread* th)
+int fun_socketClose(Thread* th)
 {
 	Socket* s = (Socket*)STACK_PNT(th, 0);
 	if (!s) return 0;
@@ -112,8 +113,6 @@ int fun_sockClose(Thread* th)
 #define SOCKET_BUFFER_LENGTH (1024*32)
 char SocketBuffer[SOCKET_BUFFER_LENGTH];
 
-#define INTERNAL_READ 0
-#define INTERNAL_WRITE 1
 SOCKET InternalPipe[2];
 
 #ifdef USE_SOCKET_UNIX
@@ -132,6 +131,7 @@ void lambdaPipe(SOCKET fds[2])
 	struct sockaddr addr;
 	int yes = 1;
 	int len = sizeof(inaddr);
+	long argp = 1;
 
 	SOCKET lst = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
 	memset(&inaddr, 0, sizeof(inaddr));
@@ -147,6 +147,9 @@ void lambdaPipe(SOCKET fds[2])
 	connect(fds[1], &addr, len);
 	fds[0] = accept(lst, 0, 0);
 	closesocket(lst);
+	ioctlsocket(fds[0], FIONBIO, &argp);
+	ioctlsocket(fds[1], FIONBIO, &argp);
+
 }
 #endif
 
@@ -160,10 +163,10 @@ void internalSend(char* src, int len)
 {
 	int k = 0;
 #ifdef USE_SOCKET_UNIX
-	while (k < len) k += write(InternalPipe[INTERNAL_WRITE], src + k, len - k);
+	while (k < len) k += write(InternalPipe[PIPE_WRITE], src + k, len - k);
 #endif
 #ifdef USE_SOCKET_WIN
-	while (k < len) k += send(InternalPipe[INTERNAL_WRITE], src + k, len - k, 0);
+	while (k < len) k += send(InternalPipe[PIPE_WRITE], src + k, len - k, 0);
 #endif
 }
 
@@ -220,7 +223,7 @@ MTHREAD_START _nameByIp(Thread* th)
 int fun_nameByIp(Thread* th) { return workerStart(th, 2, _nameByIp); }
 
 
-int _sockWrite(Thread* th)
+int fun_socketWrite(Thread* th)
 {
 	LINT sent,len=0;
 
@@ -231,9 +234,9 @@ int _sockWrite(Thread* th)
 	FUN_SUBSTR(src, start, len, 1, STR_LENGTH(src));
 
 	if (len==0) FUN_RETURN_INT(start);
-
+//	if (len > 16384) len = 16384;
 	sent = send(s->fd, STR_START(src) + start, (int)len, 0);
-	if (SOCKETWOULDBLOCK) sent=0;
+	if (sent<0 && SOCKETWOULDBLOCK) sent=0;
 	if (sent >= 0) FUN_RETURN_INT(start + sent);
 	FUN_RETURN_NIL;
 }
@@ -242,7 +245,7 @@ int _sockWrite(Thread* th)
 // - non empty string : received data
 // - empty string : socket ok but no received data
 // - nil : closed or failed socket
-int _sockRead(Thread* th)
+int fun_socketRead(Thread* th)
 {
 	ssize_t len = -1;
 	Socket* s = (Socket*)STACK_PNT(th, 0);
@@ -271,9 +274,20 @@ int _sockRead(Thread* th)
 }
 
 #ifdef USE_CONSOLE_IN_ANSI
+#include<termios.h>
+struct termios Term0;
 int fun_keyboardOpen(Thread* th)
 {
+	struct termios term;
 	Socket* s = _socketCreate(th,0); if (!s) return EXEC_OM;
+
+	if (!tcgetattr(0, &term)) {
+		term.c_lflag &= ~(ICANON | ECHO);
+		term.c_cc[VMIN] = 0;
+		term.c_cc[VTIME] = 0;
+
+		tcsetattr(0, TCSANOW, &term);
+	}
 	FUN_RETURN_PNT((LB*)s);
 }
 #endif
@@ -283,31 +297,86 @@ SOCKET KeyboardPipe[2];
 MTHREAD KeyboardThread = NULL;
 int KeyboardAlive = 1;
 
+char* EscCodes[128] = {
+NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL, /*0.*/
+NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,
+NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,
+NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,
+NULL,"\033[5~","\033[6~","\033[F","\033[H","\033[D","\033[A","\033[C",
+"\033[B",NULL,NULL,NULL,NULL,"\033[2~","\033[3~",NULL,
+NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,
+NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,
+NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL, /*4.*/
+NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,
+NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,
+NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,
+NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,
+NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,
+"\033[OP","\033[OQ","\033[OR","\033[OS","\033[15~","\033[17~","\033[18~","\033[19~",
+"\033[20~", "\033[21~", "\033[23~","\033[24~",NULL,NULL,NULL,NULL,
+};
+
 MTHREAD_START keyboardThread(void* param)
 {
-	int k = 0;
-//	HANDLE hStdin = GetStdHandle(STD_INPUT_HANDLE);
-//	DWORD mode = 0;
-//	GetConsoleMode(hStdin, &mode);
-//	SetConsoleMode(hStdin, mode | (ENABLE_ECHO_INPUT));
-//	SetConsoleMode(hStdin, mode & (~ENABLE_ECHO_INPUT));
+//	CONSOLE_CURSOR_INFO cinfo;
+	DWORD mode = 0;
+	HANDLE hStdin = GetStdHandle(STD_INPUT_HANDLE);
+	GetConsoleMode(hStdin, &mode);
+	SetConsoleMode(hStdin, mode & (~ENABLE_ECHO_INPUT));
 
+//	cinfo.bVisible = TRUE;
+//	cinfo.dwSize = 1;
+//	SetConsoleCursorInfo(hStdin, &cinfo);
 //	SetConsoleCtrlHandler(NULL, TRUE);	// this disables Ctr-C default behavior and other like this
-	while (KeyboardAlive && (k >= 0))
+	while (KeyboardAlive)
 	{
-		char buf[1];
+		char buf[8];
+		INPUT_RECORD records;
+		DWORD count;
 		LINT val;
-		while (!kbhit()) Sleep(100);
-		val = getch();
-		if (val == 13) val = 10;
-		buf[0] = (char)val;
-		k = -1;
-		if (buf[0] == 0x04) closesocket(KeyboardPipe[INTERNAL_WRITE]);	//Ctr-D, aka EOT ascii code
-		else {
-			putchar((char)val);	// echo
-			k = send(KeyboardPipe[INTERNAL_WRITE], buf, 1, 0);
+		int len = 0;
+
+		PeekConsoleInput(hStdin, &records, 1, &count);
+		if (!count) {
+			Sleep(100);
+			continue;
 		}
-		//		PRINTF(LOG_DEV,"keyboardwrite %d: %d\n", k, val);
+		ReadConsoleInputW(hStdin, &records, 1, &count);
+		if ((records.EventType != KEY_EVENT) || !records.Event.KeyEvent.bKeyDown) continue;
+		val = records.Event.KeyEvent.uChar.UnicodeChar&0xfffff;
+		if (!val) {
+			char* code;
+			val = records.Event.KeyEvent.wVirtualKeyCode;
+//			printf("[%x].", val);
+			if (val < 0 || val >= 128) continue;
+			code = EscCodes[val];
+			if (!code) continue;
+			send(KeyboardPipe[PIPE_WRITE], code, (int)strlen(code), 0);
+			continue;
+		}
+//		printf("%x.", val);
+		if (val == 13) val = 10;
+		if (val == 8) val = 0x7f;	// backspace
+		if (val < 0x80) buf[len++] = (char)val;
+		else if (val < 0x7ff) {
+			buf[len++] = 0xc0 + (char)(val >> 6);
+			buf[len++] = 0x80 + (char)(val & 0x3f);
+		}
+		else if (val < 0xffff) {
+			buf[len++] = 0xe0 + (char)(val >> 12);
+			buf[len++] = 0x80 + (char)((val>>6) & 0x3f);
+			buf[len++] = 0x80 + (char)(val & 0x3f);
+		}
+		else if (val < 0x10ffff) {
+			buf[len++] = 0xf0 + (char)(val >> 18);
+			buf[len++] = 0x80 + (char)((val>>12) & 0x3f);
+			buf[len++] = 0x80 + (char)((val>>6) & 0x3f);
+			buf[len++] = 0x80 + (char)(val & 0x3f);
+		}
+		else continue;
+//		putchar((char)val);	// echo
+		len = send(KeyboardPipe[PIPE_WRITE], buf, len, 0);
+		if (len < 0) break;
 	}
 //	PRINTF(LOG_DEV,"keyboard close\n");
 	return MTHREAD_RETURN;
@@ -315,12 +384,12 @@ MTHREAD_START keyboardThread(void* param)
 
 int fun_keyboardOpen(Thread* th)
 {
-	Socket* s = _socketCreate(th,KeyboardPipe[INTERNAL_READ]); if (!s) return EXEC_OM;
+	Socket* s = _socketCreate(th,KeyboardPipe[PIPE_READ]); if (!s) return EXEC_OM;
 	if (!KeyboardThread)
 	{
 		long argp = 1;
 		KeyboardAlive = 1;
-		ioctlsocket(KeyboardPipe[INTERNAL_READ], FIONBIO, &argp);
+		ioctlsocket(KeyboardPipe[PIPE_READ], FIONBIO, &argp);
 
 		KeyboardThread = hwThreadCreate(keyboardThread, NULL);
 	}
@@ -329,16 +398,16 @@ int fun_keyboardOpen(Thread* th)
 #endif
 
 int fun_keyboardRead(Thread* th) {
-	return _sockRead(th);
+	return fun_socketRead(th);
 }
 
 int fun_internalOpen(Thread* th)
 {
-	Socket* s = _socketCreate(th,InternalPipe[INTERNAL_READ]); if (!s) return EXEC_OM;
+	Socket* s = _socketCreate(th,InternalPipe[PIPE_READ]); if (!s) return EXEC_OM;
 	FUN_RETURN_PNT((LB*)s);
 }
 int fun_internalRead(Thread* th) {
-	return _sockRead(th);
+	return fun_socketRead(th);
 }
 
 int fun_udpRead(Thread* th)
@@ -440,7 +509,7 @@ int fun_udpSend(Thread* th)
 	ina.sin_port = htons((unsigned short)distantPort);
 	ina.sin_addr.s_addr = ip;
 	sent = sendto(s->fd, STR_START(src), (int)len, 0, (struct sockaddr*)&ina, sizeof(ina));
-	if (SOCKETWOULDBLOCK) sent=0;
+	if (sent<0 && SOCKETWOULDBLOCK) sent=0;
 	if (sent >= 0) FUN_RETURN_INT(sent);
 	FUN_RETURN_NIL
 }
@@ -561,26 +630,28 @@ int fun_tcpNoDelay(Thread* th)
 	return 0;
 }
 int fun_tcpRead(Thread* th) {
-	return _sockRead(th);
+	return fun_socketRead(th);
 }
 int fun_tcpWrite(Thread* th) {
-	return _sockWrite(th);
+	return fun_socketWrite(th);
 }
 #else
-int  fun_tcpOpen(Thread* th) FUN_RETURN_NIL
-int  fun_tcpListen(Thread* th) FUN_RETURN_NIL
-int  fun_tcpAccept(Thread* th) FUN_RETURN_NIL
-int  fun_tcpRead(Thread* th) FUN_RETURN_NIL
-int  fun_tcpWrite(Thread* th) FUN_RETURN_NIL
-int  fun_tcpNoDelay(Thread* th) FUN_RETURN_NIL
-int  fun_udpCreate(Thread* th) FUN_RETURN_NIL
-int  fun_udpSend(Thread* th) FUN_RETURN_NIL
-int  fun_udpRead(Thread* th) FUN_RETURN_NIL
-int  fun_ipByName(Thread* th) FUN_RETURN_NIL
-int  fun_nameByIp(Thread* th) FUN_RETURN_NIL
-int  fun_hostName(Thread* th) FUN_RETURN_NIL
-int  fun_internalOpen(Thread* th) FUN_RETURN_NIL
-int  fun_internalRead(Thread* th) FUN_RETURN_NIL
+int fun_socketRead(Thread* th) FUN_RETURN_NIL
+int fun_socketWrite(Thread* th) FUN_RETURN_NIL
+int fun_tcpOpen(Thread* th) FUN_RETURN_NIL
+int fun_tcpListen(Thread* th) FUN_RETURN_NIL
+int fun_tcpAccept(Thread* th) FUN_RETURN_NIL
+int fun_tcpRead(Thread* th) FUN_RETURN_NIL
+int fun_tcpWrite(Thread* th) FUN_RETURN_NIL
+int fun_tcpNoDelay(Thread* th) FUN_RETURN_NIL
+int fun_udpCreate(Thread* th) FUN_RETURN_NIL
+int fun_udpSend(Thread* th) FUN_RETURN_NIL
+int fun_udpRead(Thread* th) FUN_RETURN_NIL
+int fun_ipByName(Thread* th) FUN_RETURN_NIL
+int fun_nameByIp(Thread* th) FUN_RETURN_NIL
+int fun_hostName(Thread* th) FUN_RETURN_NIL
+int fun_internalOpen(Thread* th) FUN_RETURN_NIL
+int fun_internalRead(Thread* th) FUN_RETURN_NIL
 void internalSend(char* src, int len) {}
 #endif
 
@@ -686,12 +757,12 @@ int fun_ethSend(Thread* th)
 	memcpy(socket_address.sll_addr,msg,6);
 	sent=sendto(s->fd, msg, len, 0, (struct sockaddr*)&socket_address, sizeof(struct sockaddr_ll));
 //	printf("write %d on %d result=%d\n",len,ifindex, k);
-	if (SOCKETWOULDBLOCK) sent=0;
+	if (sent<0 && SOCKETWOULDBLOCK) sent=0;
 	if (sent >= 0) FUN_RETURN_INT(sent);
 	FUN_RETURN_NIL;
 }
 int fun_ethRead(Thread* th) {
-	return _sockRead(th);
+	return fun_socketRead(th);
 }
 #endif
 #ifdef USE_SOCKET_UEFI
@@ -802,14 +873,16 @@ int fun_select(Thread* th)
 			if (s && s->fd != INVALID_SOCKET)
 			{
 				//if (s->selectRead)  
-				s->readable = (s->checkReadable && s->checkReadable(s->fd))?1:0;
-				if (s->selectWrite) s->writable = (s->checkWritable && s->checkWritable(s->fd))?1:0;
+				s->readable = (s->checkReadable && s->checkReadable(s))?1:0;
+				if (s->selectWrite) s->writable = (s->checkWritable && s->checkWritable(s))?1:0;
 				if ((s->selectRead&&s->readable)||(s->selectWrite&&s->writable)) k++;
 			}
 			p = ARRAY_PNT(p, LIST_NXT);
 		}
-		if ((!timeoutIsNil)&&(timeout-hwTimeMs()<0)) break;
+		if ((!timeoutIsNil)&&(timeout-hwTimeMs()<=0)) break;
+		
 	}
+
 	FUN_RETURN_INT(k);
 }
 #endif
@@ -832,11 +905,11 @@ int fun_keyboardRead(Thread* th) {
 	FUN_RETURN_STR(buffer, len);
 }
 
-int _keyboardCheckReadable(SOCKET s)
+int _keyboardCheckReadable(Socket* s)
 {
 	return uartReadable();
 }
-int _keyboardCheckWritable(SOCKET s)
+int _keyboardCheckWritable(Socket* s)
 {
 	return uartWritable();
 }
@@ -855,6 +928,39 @@ int fun_keyboardRead(Thread* th) FUN_RETURN_NIL
 int fun_keyboardOpen(Thread* th) FUN_RETURN_NIL
 #endif
 
+
+int _watcherCheckReadable(Socket* s)
+{
+	LINT val=0;
+	if (!(s->watchMask&~0xff)) val=*(char*)s->watchAddress;
+	else if (!(s->watchMask&~0xffff)) val=*(short*)s->watchAddress;
+	else if (!(s->watchMask&~0xffffffff)) val=*(int*)s->watchAddress;
+	if ((val & s->watchMask) != (s->watchValue& s->watchMask)) {
+//		PRINTF(LOG_DEV,"watcher %llx (%llx) %llx %llx\n",val,(LINT)s->watchAddress,s->watchMask,s->watchValue);
+		return 1;
+	}
+	return 0;
+}
+
+int fun_watcherOpen(Thread* th)
+{
+	Socket* s = _socketCreate(th, 0); if (!s) return EXEC_OM;
+	s->watchAddress = s->watchMask = s->watchValue = 0;
+	s->checkReadable = _watcherCheckReadable;
+	FUN_RETURN_PNT((LB*)s);
+}
+int fun_watcherUpdate(Thread* th)
+{
+	LINT val = STACK_INT(th, 0);
+	LINT mask = STACK_INT(th, 1);
+	LINT addr = STACK_INT(th, 2);
+	Socket* s = (Socket*)STACK_PNT(th,3);
+	if (!s) FUN_RETURN_NIL;
+	s->watchAddress = addr;
+	s->watchMask = mask;
+	s->watchValue = val;
+	FUN_RETURN_PNT((LB*)s);
+}
 int fun_ipChecksum(Thread* th)
 {
 	LINT i, len;
@@ -879,50 +985,53 @@ int fun_ipChecksumFinal(Thread* th)
 	FUN_RETURN_STR((char*)&checkSum, 2);
 }
 
-
 int sysSocketInit(Thread* th, Pkg* system)
 {
-	Def* socket = pkgAddType(th, system, "Socket");
-	Type* list_Sock = typeAlloc(th,TYPECODE_LIST, NULL, 1, socket->type);
+	Type* list_Sock = typeAlloc(th,TYPECODE_LIST, NULL, 1, MM.Socket);
 	Type* list_Eth = typeAlloc(th,TYPECODE_LIST, NULL, 1, typeAlloc(th,TYPECODE_TUPLE, NULL, 6, MM.Int, MM.Str, MM.Int, MM.Str, MM.Int, MM.Str));
 
-	pkgAddFun(th, system, "socketEmpty", fun_socketEmpty, typeAlloc(th, TYPECODE_FUN, NULL, 1, socket->type));
+	pkgAddFun(th, system, "socketEmpty", fun_socketEmpty, typeAlloc(th, TYPECODE_FUN, NULL, 1, MM.Socket));
 	
-	pkgAddFun(th, system, "_sockSetSelectRead", fun_sockSetSelectRead, typeAlloc(th,TYPECODE_FUN, NULL, 3, socket->type, MM.Boolean, socket->type));
-	pkgAddFun(th, system, "_sockSelectRead", fun_sockSelectRead, typeAlloc(th,TYPECODE_FUN, NULL, 2, socket->type, MM.Boolean));
-	pkgAddFun(th, system, "sockSetReadable", fun_sockSetReadable, typeAlloc(th,TYPECODE_FUN, NULL, 3, socket->type, MM.Boolean, socket->type));
-	pkgAddFun(th, system, "_sockReadable", fun_sockReadable, typeAlloc(th,TYPECODE_FUN, NULL, 2, socket->type, MM.Boolean));
+	pkgAddFun(th, system, "_socketSetSelectRead", fun_socketSetSelectRead, typeAlloc(th,TYPECODE_FUN, NULL, 3, MM.Socket, MM.Boolean, MM.Socket));
+	pkgAddFun(th, system, "_socketSelectRead", fun_socketSelectRead, typeAlloc(th,TYPECODE_FUN, NULL, 2, MM.Socket, MM.Boolean));
+	pkgAddFun(th, system, "socketSetReadable", fun_socketSetReadable, typeAlloc(th,TYPECODE_FUN, NULL, 3, MM.Socket, MM.Boolean, MM.Socket));
+	pkgAddFun(th, system, "_socketReadable", fun_socketReadable, typeAlloc(th,TYPECODE_FUN, NULL, 2, MM.Socket, MM.Boolean));
 
-	pkgAddFun(th, system, "_sockSetSelectWrite", fun_sockSetSelectWrite, typeAlloc(th,TYPECODE_FUN, NULL, 3, socket->type, MM.Boolean, socket->type));
-	pkgAddFun(th, system, "_sockSelectWrite", fun_sockSelectWrite, typeAlloc(th,TYPECODE_FUN, NULL, 2, socket->type, MM.Boolean));
-	pkgAddFun(th, system, "sockSetWritable", fun_sockSetWritable, typeAlloc(th,TYPECODE_FUN, NULL, 3, socket->type, MM.Boolean, socket->type));
-	pkgAddFun(th, system, "_sockWritable", fun_sockWritable, typeAlloc(th,TYPECODE_FUN, NULL, 2, socket->type, MM.Boolean));
+	pkgAddFun(th, system, "_socketSetSelectWrite", fun_socketSetSelectWrite, typeAlloc(th,TYPECODE_FUN, NULL, 3, MM.Socket, MM.Boolean, MM.Socket));
+	pkgAddFun(th, system, "_socketSelectWrite", fun_socketSelectWrite, typeAlloc(th,TYPECODE_FUN, NULL, 2, MM.Socket, MM.Boolean));
+	pkgAddFun(th, system, "socketSetWritable", fun_socketSetWritable, typeAlloc(th,TYPECODE_FUN, NULL, 3, MM.Socket, MM.Boolean, MM.Socket));
+	pkgAddFun(th, system, "_socketWritable", fun_socketWritable, typeAlloc(th,TYPECODE_FUN, NULL, 2, MM.Socket, MM.Boolean));
 
 	pkgAddFun(th, system, "_select", fun_select, typeAlloc(th, TYPECODE_FUN, NULL, 3, list_Sock, MM.Int, MM.Int));
 
-	pkgAddFun(th, system, "_keyboardOpen", fun_keyboardOpen, typeAlloc(th, TYPECODE_FUN, NULL, 1, socket->type));
-	pkgAddFun(th, system, "_keyboardRead", fun_keyboardRead, typeAlloc(th, TYPECODE_FUN, NULL, 2, socket->type, MM.Str));
+	pkgAddFun(th, system, "_keyboardOpen", fun_keyboardOpen, typeAlloc(th, TYPECODE_FUN, NULL, 1, MM.Socket));
+	pkgAddFun(th, system, "_keyboardRead", fun_keyboardRead, typeAlloc(th, TYPECODE_FUN, NULL, 2, MM.Socket, MM.Str));
 	
-	pkgAddFun(th, system, "_internalOpen", fun_internalOpen, typeAlloc(th, TYPECODE_FUN, NULL, 1, socket->type));
-	pkgAddFun(th, system, "_internalRead", fun_internalRead, typeAlloc(th, TYPECODE_FUN, NULL, 2, socket->type, MM.Str));
+	pkgAddFun(th, system, "_internalOpen", fun_internalOpen, typeAlloc(th, TYPECODE_FUN, NULL, 1, MM.Socket));
+	pkgAddFun(th, system, "_internalRead", fun_internalRead, typeAlloc(th, TYPECODE_FUN, NULL, 2, MM.Socket, MM.Str));
 
-	pkgAddFun(th, system, "_sockClose", fun_sockClose, typeAlloc(th,TYPECODE_FUN, NULL, 2, socket->type, MM.Int));
+	pkgAddFun(th, system, "_watcherOpen", fun_watcherOpen, typeAlloc(th, TYPECODE_FUN, NULL, 1, MM.Socket));
+	pkgAddFun(th, system, "_watcherUpdate", fun_watcherUpdate, typeAlloc(th, TYPECODE_FUN, NULL, 5, MM.Socket, MM.Int, MM.Int, MM.Int, MM.Socket));
 
-	pkgAddFun(th, system, "_tcpOpen", fun_tcpOpen, typeAlloc(th, TYPECODE_FUN, NULL, 3, MM.Str, MM.Int, socket->type));
-	pkgAddFun(th, system, "_tcpListen", fun_tcpListen, typeAlloc(th, TYPECODE_FUN, NULL, 3, MM.Str, MM.Int, socket->type));
-	pkgAddFun(th, system, "_tcpAccept", fun_tcpAccept, typeAlloc(th, TYPECODE_FUN, NULL, 2, socket->type, typeAlloc(th, TYPECODE_TUPLE, NULL, 3, socket->type, MM.Str, MM.Int)));
-	pkgAddFun(th, system, "_tcpNoDelay", fun_tcpNoDelay, typeAlloc(th, TYPECODE_FUN, NULL, 3, socket->type, MM.Boolean, socket->type));
-	pkgAddFun(th, system, "_tcpRead", fun_tcpRead, typeAlloc(th, TYPECODE_FUN, NULL, 2, socket->type, MM.Str));
-	pkgAddFun(th, system, "_tcpWrite", fun_tcpWrite, typeAlloc(th, TYPECODE_FUN, NULL, 4, socket->type, MM.Str, MM.Int, MM.Int));
+	pkgAddFun(th, system, "_socketClose", fun_socketClose, typeAlloc(th,TYPECODE_FUN, NULL, 2, MM.Socket, MM.Int));
+	pkgAddFun(th, system, "_socketRead", fun_socketRead, typeAlloc(th,TYPECODE_FUN, NULL, 2, MM.Socket, MM.Str));
+	pkgAddFun(th, system, "_socketWrite", fun_socketWrite, typeAlloc(th, TYPECODE_FUN, NULL, 4, MM.Socket, MM.Str, MM.Int, MM.Int));
+
+	pkgAddFun(th, system, "_tcpOpen", fun_tcpOpen, typeAlloc(th, TYPECODE_FUN, NULL, 3, MM.Str, MM.Int, MM.Socket));
+	pkgAddFun(th, system, "_tcpListen", fun_tcpListen, typeAlloc(th, TYPECODE_FUN, NULL, 3, MM.Str, MM.Int, MM.Socket));
+	pkgAddFun(th, system, "_tcpAccept", fun_tcpAccept, typeAlloc(th, TYPECODE_FUN, NULL, 2, MM.Socket, typeAlloc(th, TYPECODE_TUPLE, NULL, 3, MM.Socket, MM.Str, MM.Int)));
+	pkgAddFun(th, system, "_tcpNoDelay", fun_tcpNoDelay, typeAlloc(th, TYPECODE_FUN, NULL, 3, MM.Socket, MM.Boolean, MM.Socket));
+	pkgAddFun(th, system, "_tcpRead", fun_tcpRead, typeAlloc(th, TYPECODE_FUN, NULL, 2, MM.Socket, MM.Str));
+	pkgAddFun(th, system, "_tcpWrite", fun_tcpWrite, typeAlloc(th, TYPECODE_FUN, NULL, 4, MM.Socket, MM.Str, MM.Int, MM.Int));
 	
-	pkgAddFun(th, system, "_udpCreate", fun_udpCreate, typeAlloc(th,TYPECODE_FUN, NULL, 3, MM.Str, MM.Int, socket->type));
-	pkgAddFun(th, system, "_udpSend", fun_udpSend, typeAlloc(th,TYPECODE_FUN, NULL, 7, socket->type, MM.Str, MM.Int, MM.Str, MM.Int, MM.Str, MM.Int));
-	pkgAddFun(th, system, "_udpRead", fun_udpRead, typeAlloc(th, TYPECODE_FUN, NULL, 2, socket->type, typeAlloc(th, TYPECODE_TUPLE, NULL, 3, MM.Str, MM.Str, MM.Int)));
+	pkgAddFun(th, system, "_udpCreate", fun_udpCreate, typeAlloc(th,TYPECODE_FUN, NULL, 3, MM.Str, MM.Int, MM.Socket));
+	pkgAddFun(th, system, "_udpSend", fun_udpSend, typeAlloc(th,TYPECODE_FUN, NULL, 7, MM.Socket, MM.Str, MM.Int, MM.Str, MM.Int, MM.Str, MM.Int));
+	pkgAddFun(th, system, "_udpRead", fun_udpRead, typeAlloc(th, TYPECODE_FUN, NULL, 2, MM.Socket, typeAlloc(th, TYPECODE_TUPLE, NULL, 3, MM.Str, MM.Str, MM.Int)));
 	
 	pkgAddFun(th, system, "ethList", fun_ethList, typeAlloc(th,TYPECODE_FUN, NULL, 1, list_Eth));
-	pkgAddFun(th, system, "_ethCreate", fun_ethCreate, typeAlloc(th,TYPECODE_FUN, NULL, 2, MM.Int, socket->type));
-	pkgAddFun(th, system, "_ethSend", fun_ethSend, typeAlloc(th,TYPECODE_FUN, NULL, 4, socket->type, MM.Int, MM.Str, MM.Int));
-	pkgAddFun(th, system, "_ethRead", fun_ethRead, typeAlloc(th, TYPECODE_FUN, NULL, 2, socket->type, MM.Str));
+	pkgAddFun(th, system, "_ethCreate", fun_ethCreate, typeAlloc(th,TYPECODE_FUN, NULL, 2, MM.Int, MM.Socket));
+	pkgAddFun(th, system, "_ethSend", fun_ethSend, typeAlloc(th,TYPECODE_FUN, NULL, 4, MM.Socket, MM.Int, MM.Str, MM.Int));
+	pkgAddFun(th, system, "_ethRead", fun_ethRead, typeAlloc(th, TYPECODE_FUN, NULL, 2, MM.Socket, MM.Str));
 
 	pkgAddFun(th, system, "_ipByName", fun_ipByName, typeAlloc(th, TYPECODE_FUN, NULL, 3, MM.Buffer, MM.Str, MM.Int));
 	pkgAddFun(th, system, "_nameByIp", fun_nameByIp, typeAlloc(th, TYPECODE_FUN, NULL, 3, MM.Buffer, MM.Str, MM.Int));
@@ -946,6 +1055,9 @@ int sysSocketInit(Thread* th, Pkg* system)
 #ifdef USE_CONSOLE_IN_WIN
 	lambdaPipe(KeyboardPipe);
 #endif
+#ifdef USE_CONSOLE_IN_ANSI
+	tcgetattr(0, &Term0);
+#endif
 #endif
 	return 0;
 }
@@ -957,6 +1069,9 @@ void sysSocketClose(void)
 	KeyboardThread = NULL;
 	Sleep(200);
 	lambdaPipeClose(KeyboardPipe);
+#endif
+#ifdef USE_CONSOLE_IN_ANSI
+	tcsetattr(0, TCSANOW, &Term0);
 #endif
 #ifdef USE_SOCKET
 	lambdaPipeClose(InternalPipe);

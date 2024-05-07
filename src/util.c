@@ -239,6 +239,13 @@ LFLOAT ls_atof(char* p)
 {
 	return ls_atofExt(p, NULL);
 }
+LINT signExtend(LINT val, LINT bit)
+{
+	LINT signBit = ((LINT)1) << bit;
+	LINT mask = signBit -1; // bit=7 -> 0x7f
+	if (val& signBit) return val|~mask;
+	return val&mask;
+}
 LINT signExtend8(LINT val)
 {
 	val &= 0xff;
@@ -348,17 +355,13 @@ int lwEquals(LW a, int ta, LW b, int tb)
 void _myHexDump(char* src, int len, int offsetDisplay)
 {
 	int line;
-	int tmp = len + offsetDisplay;
-	char* format = "%04x ";
-	if (tmp > 0x1000000) format = "%08x ";
-	else if (tmp > 0x10000) format = "%06x ";
-
 	for (line = 0; line < len; line += 16)
 	{
 		int i;
-		PRINTF(LOG_DEV,format, line);
-		for (i = line; i < line + 16; i++) if (i < len) PRINTF(LOG_DEV,"%02x ", 255 & (src[i]));
+		PRINTF(LOG_DEV,"%08x", line+offsetDisplay);
+		for (i = line; i < line + 16; i++) if (i < len) PRINTF(LOG_DEV," %02x", 255 & (src[i]));
 		else PRINTF(LOG_DEV,"   ");
+		PRINTF(LOG_DEV,"  ");
 		for (i = line; i < line + 16; i++) if (i < len) PRINTF(LOG_DEV,"%c", src[i] < 32 ? '.' : src[i]);
 		PRINTF(LOG_DEV,"\n");
 	}

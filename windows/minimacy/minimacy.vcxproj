@@ -69,6 +69,7 @@
     <ClCompile Include="..\..\src\system_file.c" />
     <ClCompile Include="..\..\src\system_inflate.c" />
     <ClCompile Include="..\..\src\system_lzw.c" />
+    <ClCompile Include="..\..\src\system_serial.c" />
     <ClCompile Include="..\..\src\system_socket.c" />
     <ClCompile Include="..\..\src\system_str.c" />
     <ClCompile Include="..\..\src\system_tmp.c" />

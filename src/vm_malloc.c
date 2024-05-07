@@ -24,16 +24,27 @@ struct BMM {
 #define BMM_FREE 0
 #define BMM_USED 1
 
-#define BMM_HEADER(len,type) (((len)<<2)|(type))
-#define BMM_LENGTH(val) ((val)>>2)
+#define BMM_HEADER(len,type) ((len)|(type))
+#define BMM_LENGTH(val) ((val)&~3)
 #define BMM_TYPE(val) ((val)&3)
 
-char MemoryStrip[MEMORY_C_LENGTH];
+#ifdef MEMORY_C_START
+char* MemoryStrip=NULL;
+#else
+char MemoryStrip[MEMORY_C_SIZE];
+#endif
+
 BMM* BmmRoot;
 
 void cMallocInit() {
+#ifdef MEMORY_C_START
+	MemoryStrip=(char*)(MEMORY_C_START);
+	PRINTF(LOG_SYS,"> Memory strip : %llx\n",MemoryStrip);
+	PRINTF(LOG_SYS,"> Memory end   : %llx\n",MemoryStrip+MEMORY_C_SIZE);
+#endif
+	PRINTF(LOG_SYS,"> Memory length: %lld bytes\n",MEMORY_C_SIZE);
 	BmmRoot = (BMM*)MemoryStrip;
-	BmmRoot->header = BMM_HEADER(MEMORY_C_LENGTH, BMM_FREE);
+	BmmRoot->header = BMM_HEADER(MEMORY_C_SIZE, BMM_FREE);
 	BmmRoot->left = BmmRoot->right = BmmRoot->next = NULL;
 }
 
@@ -60,14 +71,15 @@ int _bmmAdd(BMM** parentLink, BMM* nodeToAdd)
 void bmmRebuildTree()
 {
 	long long index = 0;
+	if (MM.gcTrace) PRINTF(LOG_SYS,"> Malloc: rebuild\n");
 	BmmRoot = NULL;
-	while (index < MEMORY_C_LENGTH)
+	while (index < MEMORY_C_SIZE)
 	{
 		long long index0 = index;
 		BMM* node = (BMM*)&MemoryStrip[index];
 		index += BMM_LENGTH(node->header);
 		if (BMM_TYPE(node->header) == BMM_USED) continue;
-		while (index < MEMORY_C_LENGTH)
+		while (index < MEMORY_C_SIZE)
 		{
 			BMM* next = (BMM*)&MemoryStrip[index];
 			if (BMM_TYPE(next->header) == BMM_USED) break;

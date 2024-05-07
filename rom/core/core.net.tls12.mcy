@@ -19,9 +19,6 @@ export tlsStage tls;;
 export tlsClientHello tls ;;
 export tlsCreateCli serverName cipherSuites clientCertificate clientKey;;
 export tlsCreateSrv hosts ;;
-export tlsOnStage tls cb;;
-export tlsOnReceive tls cb;;
-export tlsOnAlert tls cb;;
 export tlsSetCipherSuites tls cipherSuites;;
 export tlsSetSignatureAlgorithms tls signatureAlgorithms;;
 export tlsSetSupportedGroups tls supportedGroups;;
@@ -32,9 +29,11 @@ export tlsClose tls;;
 export tlsAlert tls;;
 export tlsWho tls;;
 export tlsGetServerName tls ;;
-export tlsStartedAsTls13 tls random sentHello;;
 
-
+export tlsTcpOpenExt tcp serverName cipherSuites clientCertificate clientKey;;
+export tlsTcpOpen tcp serverName;;
+export tlsTcpAccept tcp hosts;;
+export tlsFromStream stream;;
 
 const _DEBUG=false;;
 use core.crypto.hash;;
@@ -64,7 +63,7 @@ struct TlsCipher=[
 	];;
 
 
-struct TLS12= [
+struct TLS12= Stream+ [
 	serverTLS hostsTLS
 	cipherSuitesTLS supportedGroupsTLS signatureAlgorithmsTLS
 	clientCertificateTLS clientKeyTLS
@@ -92,7 +91,10 @@ struct TLS12= [
 	clientSeqTLS serverSeqTLS
 
 	payloadTLS
-	onReceiveTLS onStageTLS onAlertTLS _bufferTLS
+	_bufferTLS
+
+	tcpTT sendTT iTT closeAfterTT fifoReadTT
+
 ];;
 
 fun _alive tls= let tls.stageTLS -> [stage _] in stage<>STAGE_ERROR;;
@@ -820,7 +822,7 @@ fun _parse tls data=
 //					hexDump data;
 					set tls.alertTLS=alert;
 					if 1<> (alert>>8) then _setError tls nil;
-					0+call tls.onAlertTLS tls.alertTLS;
+					if _DEBUG then echoLn [(tlsWho tls) "----------ONALERT " hexFromInt tls.alertTLS];
 					nil
 				)
 			),
@@ -951,6 +953,7 @@ fun tlsCreateCli serverName cipherSuites clientCertificate clientKey=
 		set tls.serverTLS=false;
 		set tls.serverNameTLS=serverName;
 		set tls.randomClientTLS=strRand 32;
+		set tls.sendTT=tlsClientHello tls;
 		tls
 	);;
 
@@ -963,15 +966,33 @@ fun tlsCreateSrv hosts =
 		tls
 	);;
 
-fun tlsOnStage tls cb= set tls.onStageTLS=cb; tls;;
-fun tlsOnReceive tls cb= set tls.onReceiveTLS=cb; tls;;
-fun tlsOnAlert tls cb= set tls.onAlertTLS=cb; tls;;
-
 fun tlsSetCipherSuites tls cipherSuites= set tls.cipherSuitesTLS= cipherSuites;;
 fun tlsSetSignatureAlgorithms tls signatureAlgorithms= set tls.signatureAlgorithmsTLS= signatureAlgorithms;;
 fun tlsSetSupportedGroups tls supportedGroups= set tls.supportedGroupsTLS= supportedGroups;;
 
-fun tlsGetClientCertificate tls= tls.siteCertificateTLS;;
+fun tlsGetClientCertificate tls= head tls.peerCertificatesTLS;;
+
+fun tlsStageNotify tls =
+	let tls.stageTLS -> [stage data] in (
+		if _DEBUG then echoLn [(tlsWho tls) "----------ONSTAGE " stage];
+		match stage with
+			STAGE_NEXT -> (
+				_tlsTcpSend tls data
+			),
+			STAGE_READY -> (
+	//					echoLn ">> send"; hexDump data;
+				_tlsTcpSend tls data;
+				streamSetWritable tls true;
+				nil
+			),
+			STAGE_ERROR -> (
+				if _DEBUG then echoLn strFormat "*----------ERROR *: *" (tlsWho tls) (hexFromInt tlsAlert tls) data;
+				streamClose tls.tcpTT;
+				_tlsTcpClosed tls;
+				nil
+			)
+	);;
+
 fun tlsReceive tls data=
 //echoLn ["tlsReceive " strLength data " bytes"];
 	let tls.stageTLS -> backup in
@@ -979,23 +1000,94 @@ fun tlsReceive tls data=
 	(
 		set tls.dataTLS=strConcat tls.dataTLS data;
 		set tls.dataTLS=_parse tls tls.dataTLS;
-		if tls.stageTLS<>backup then 0+call tls.onStageTLS tls.stageTLS;
+		if tls.stageTLS<>backup then tlsStageNotify tls;
 		if tls._bufferTLS<>nil then let strListConcat listReverse tls._bufferTLS -> msg in
 		(
 			set tls._bufferTLS=nil;
-			0+call tls.onReceiveTLS msg
+			if _DEBUG then echoLn "----------ONRECEIVE ";
+			fifoIn tls.fifoReadTT msg;
+			streamSetReadable tls true;
 		);
 		nil
 	);;
 
 fun tlsSend tls msg= _send tls TLS_APPLICATION_DATA msg;;
-fun tlsClose tls= _send tls TLS_ALERT_RECORD strConcat (strInt8 ALERT_LEVEL_WARNING) (strInt8 ALERT_TYPE_CLOSE_NOTIFY);;
 fun tlsAlert tls= tls.alertTLS;;
 fun tlsWho tls= if tls.serverTLS then "SERVER> " else "CLIENT> ";;
 
 fun tlsGetServerName tls = tls.serverNameTLS;;
 
-fun tlsStartedAsTls13 tls random sentHello=
-	_addPayload tls strSlice sentHello 5 nil;	// skip mkRecord header
-	set tls.randomClientTLS=random;;
+//fun tlsClose tls= _send tls TLS_ALERT_RECORD strConcat (strInt8 ALERT_LEVEL_WARNING) (strInt8 ALERT_TYPE_CLOSE_NOTIFY);;
+fun tlsClose tls= streamClose TLS12<tls;;
 
+fun _tlsTcpClosed tls=
+	fifoIn tls.fifoReadTT nil;
+	streamSetReadable tls true;
+	0;;
+
+fun _tlsTcpSend tls data=
+//hexDump 
+	set tls.sendTT=strConcat tls.sendTT data;
+//	echo "send "; echoLn 
+	set tls.iTT=streamWrite tls.tcpTT tls.sendTT tls.iTT;
+	if tls.iTT>=strLength tls.sendTT then (
+		if tls.closeAfterTT then streamClose tls.tcpTT;
+		set tls.sendTT=nil;
+		set tls.iTT=0;
+	);
+	strLength data;;
+
+fun tlsTcpManage tcp tls=
+	set tls.tcpTT=tcp;
+	set tls.iTT=0;
+	set tls.fifoReadTT=fifoCreate;
+	let socketEmpty -> socket in
+	streamInit tls socket
+		(lambda =	// onSelectRead
+			streamOnSelectRead tls (lambda cbRead=
+				let fifoOut tls.fifoReadTT -> data in (
+					streamSetReadable tls (fifoCount tls.fifoReadTT)>0;
+					if data==nil then streamClose tls;
+					call cbRead data
+				)
+		))
+		(lambda = streamOnSelectWrite tls)	// onSelectWrite
+		(lambda data start =	// write
+			let tls.stageTLS -> [stage _] in
+			let match stage with
+				STAGE_READY -> _tlsTcpSend tls (tlsSend tls strSlice data start nil),
+				_ -> 0
+			-> len in
+			if len<>nil then start+len
+		)
+		(lambda = streamClose tcp; streamCommonClose tls)	// close
+		(lambda fEcho=	// show
+			call fEcho "TLS1.2" (strBuild [(tcpRemoteIp tcp) ":" (tcpRemotePort tcp)])
+		);
+	streamOnEvent tcp
+		(lambda data=
+//				echoLn "<< receive"; hexDump data;
+//			echoLn hexFromStr data;
+			if data<>nil then tlsReceive tls data
+			else
+			(
+				if _DEBUG then echoLn "----------ONCLOSE";
+				_tlsTcpClosed tls;
+				nil
+			)
+		)
+		(lambda = _tlsTcpSend tls nil);
+	streamSetSelectWrite tls true;
+	tls;;
+
+fun tlsTcpOpenExt tcp serverName cipherSuites clientCertificate clientKey=
+	let tlsCreateCli serverName cipherSuites clientCertificate clientKey -> tls in
+	tlsTcpManage tcp tls;;
+
+fun tlsTcpOpen tcp serverName= tlsTcpOpenExt tcp serverName nil nil nil;;
+
+fun tlsTcpAccept tcp hosts =
+	let tlsCreateSrv hosts -> tls in
+	tlsTcpManage tcp tls;;
+
+fun tlsFromStream stream= match stream with TLS12 tls -> tls;;

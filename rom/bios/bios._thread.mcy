@@ -150,7 +150,7 @@ fun threadStop th=
 		_lockFreeThread th;
 		while nil<>fifoNext th._postingT do _threadUnblockPosting th;
 		_uiStopThread th;
-//		echoTime ["stop #" threadId th " " th._nameT];
+//		echoTime ["stop #" (threadId th) " " th._nameT];
 		set th._stateT=_THREAD_DONE;
 		true
 	);;

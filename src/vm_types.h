@@ -64,7 +64,7 @@ Type* typeAllocEmpty(Thread* th, LINT code,Def* def,LINT nb);
 Type* typeAlloc(Thread* th, LINT code, Def* def,LINT nb,...);
 Type* typeAllocWeak(Thread* th);
 Type* typeAllocUndef(Thread* th);
-Type* typeDerivate(Thread* th, Type* parent, int weak);
+Type* typeDerivate(Thread* th, Type* parent);
 Type* typeUnderivate(Compiler* c, Type* p);
 Type* typeAllocFromStack(Thread* th, Def* def, LINT code, LINT nb);
 int compilerSkipTypeDef(Compiler* c);

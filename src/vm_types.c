@@ -112,12 +112,12 @@ Type* typeAllocUndef(Thread* th)
 	return typeAlloc(th, TYPECODE_UNDEF, NULL, 0);
 }
 
-Type* typeDerivate(Thread* th, Type* p,int weak)
+Type* typeDerivate(Thread* th, Type* p)
 {
 	Type* d;
 
 	while (p->actual) p = p->actual;
-	d = typeAlloc(th, weak?TYPECODE_WEAK:TYPECODE_UNDEF, NULL, TYPENB_DERIVATIVE,p); if (!d) return d;
+	d = typeAlloc(th, TYPECODE_UNDEF, NULL, TYPENB_DERIVATIVE,p); if (!d) return d;
 	return d;
 }
 Type* typeUnderivate(Compiler* c,Type* p)
@@ -159,24 +159,22 @@ Type* _compilerParseType(Compiler* c,int mono, int depth, Locals** labels, LINT*
 		}
 		return lb->type;
 	}
-	if (!strcmp(c->parser->token, "_")) return typeAllocWeak(c->th);
-	if (((c->parser->token[0] == 'w')|| (c->parser->token[0] == 'a')) && (isdecimal(c->parser->token + 1)))
+	if ((c->parser->token[0] == 'a') && (isdecimal(c->parser->token + 1)))
 	{
 		Locals* label = localsCreate(c->th, c->parser->token, 0, NULL, *labels); if (!(labels)) return NULL;
-		int weak = (c->parser->token[0] == 'w') ? 1 : 0;
-		if (mono && !weak) return compileError(c,"polymorphism (%s) is not accepted here\n", c->parser->token);
+		if (mono) return compileError(c, "polymorphism (%s) is not accepted here\n", c->parser->token);
 		*labels = label;
 		if ((parserNext(c)) && (!strcmp(c->parser->token, "{")))
 		{
-			
+
 			if (!(t = _compilerParseType(c, mono, depth + 1, labels, withRec))) return NULL;
-			if (t->code != TYPECODE_PRIMARY) return compileError(c,"only primary types may be derivated\n");
+			if (t->code != TYPECODE_PRIMARY) return compileError(c, "only primary types may be derivated\n");
 			if (parserAssume(c, "}")) return NULL;
-			label->type = typeDerivate(c->th, t, weak);
-			return label->type ;
+			label->type = typeDerivate(c->th, t);
+			return label->type;
 		}
 		else parserGiveback(c);
-		label->type = weak?typeAllocWeak(c->th): typeAllocUndef(c->th);
+		label->type = typeAllocUndef(c->th);
 		return label->type;
 	}
 	if ((c->parser->token[0] == 'r') && (isdecimal(c->parser->token + 1)))
@@ -592,6 +590,8 @@ void typesInit(Thread* th, Pkg* system)
 
 	MM.Package = pkgAddType(th,system, "Package")->type;
 	MM.Thread = pkgAddType(th,system, "_Thread")->type;
+	MM.Socket= pkgAddType(th, system, "Socket")->type;
+
 	Exception = pkgAddSum(th,system, "Exception");
 	MM.Exception = Exception->type;
 	pkgAddCons0(th,system, "anyException", Exception);
@@ -680,11 +680,14 @@ void typeRecHasWeak(Type* p, int* flag)
 
 	if (p->code == TYPECODE_WEAK)
 	{
-		if ((p->nb != TYPENB_DERIVATIVE) || (p->child[0]->def->dCI > 0))
+		if (p->nb != TYPENB_DERIVATIVE)
 		{
 			*flag = 1;
 			return;
 		}
+		p->actual = p->child[0];
+		typeRecHasWeak(p->child[0], flag);
+		return;
 	}
 
 	if (!p->nb) return;

@@ -9,11 +9,82 @@
    You should have received a copy of the GNU General Public License along
    with this program. If not, see <https://www.gnu.org/licenses/>. */
 
-var _Uicb @(array fun Int Int Int -> Bool);;
+var _Uicb;;
 const _UI_DEBUG=false;;
+var _UiThread;;
+
+var _BackBuffer @Bitmap;;
+
+#ifdef useSoftCursor
+struct SoftCursor=[bmpC xC yC dxC dyC backC displayedC];;
+const Pointer={
+0x0 0x0 0x0 0x0 0x0 0x0 0x0 0x0
+0x0 0x1800000 0x800000 0x1c00000 0xc00000 0x1e00000 0xe00000 0x1f00000
+0xf00000 0x1f80000 0xf80000 0x1fc0000 0xfc0000 0x1fe0000 0xfe0000 0x1ff0000
+0xff0000 0x1ff8000 0xff8000 0x1ffc000 0xffc000 0x1ffe000 0xffe000 0x1fff000
+0xfff000 0x1fff800 0xfff800 0x1fffc00 0xfffc00 0x1fffe00 0xfffe00 0x1ffff00
+0xff8000 0x1ffff00 0xff8000 0x1ffc000 0xfbc000 0x1ffe000 0xe1c000 0x1fbe000
+0x81e000 0x1e3f000 0xe000 0x181f000 0xf000 0x1f800 0x7000 0xf800
+0x6000 0xf800 0x0 0x6000 0x0 0x0 0x0 0x0
+};;
+const _CursorPointer = let bitmapCreate 32 32 0 -> bmp in (
+	for y=0;y<32 do
+		let Pointer.(y*2) -> mono in
+		let Pointer.(y*2+1) -> alpha in
+		for x=0;x<32 do let 1<<(31-x) -> bit in bitmapSet bmp x y (if bitTest alpha bit then 0xff000000)|(if bitTest mono bit then 0xffffff);
+	bmp
+);;
+const _CursorDefault=[bmpC=_CursorPointer xC=-32 yC=-32 dxC=8 dyC=5 backC=(bitmapCreate 32 32 0)];;
+
+var _Cursor=_CursorDefault;;
+
+fun cursorCreate bitmap xhot yhot=
+	let bitmapCopy bitmap 0 0 nil nil -> bmp in (
+		bitmapComponents bmp COMP_B COMP_R COMP_R COMP_R;
+		[bmpC=bmp dxC=xhot dyC=yhot backC=(bitmapCreate 32 32 0)]
+	);;
+fun cursorShow cursor=
+	let if cursor==nil then _CursorDefault else cursor -> cursor in (
+		set cursor.xC=_Cursor.xC;
+		set cursor.yC=_Cursor.yC;
+		set _Cursor=cursor
+	);;
+fun _cursorAdd x y w h=
+	let _Cursor->c in
+	set c.displayedC=
+	if (c.xC+32 >=x)&&(c.xC< x+w) then
+	if (c.yC+32 >=y)&&(c.yC< y+h) then (
+		bitmapBlit c.backC 0 0 _BackBuffer c.xC c.yC 32 32 nil;
+		bitmapBlit _BackBuffer c.xC c.yC c.bmpC 0 0 32 32 BLEND_ALPHA;
+		true
+	);;
+fun _cursorRemove =
+	let _Cursor->c in
+	if c.displayedC then (
+		bitmapBlit _BackBuffer c.xC c.yC c.backC 0 0 32 32 nil;
+		0
+	);;
+fun _cursorUpdatePos x y=
+	let _Cursor->c in
+	let x-c.dxC -> x in
+	let y-c.dyC -> y in
+	if x<>c.xC || y<>c.yC then (
+		_uiUpdateRegion c.xC c.yC 32 32;
+		set c.xC=x; set c.yC=y;
+		_cursorAdd c.xC c.yC 32 32;
+		_uiUpdateRegion c.xC c.yC 32 32;
+		_cursorRemove;
+	);;
+#else
+var _CurrentCursor;;	// we need this to prevent the current cursor to be released by GC
+fun cursorCreate bitmap xhot yhot= _cursorCreate bitmap xhot yhot;;
+fun cursorShow cursor = _cursorShow set _CurrentCursor=cursor;;
+fun _cursorAdd x y w h=nil;;
+fun _cursorRemove=nil;;
+fun _cursorUpdatePos x y=nil;;
+#endif
 
 #ifdef glSwapBuffers
-var _UiThread;;
 var _UiFullGL;;
 
 const _UV = floatsFromArray \float{0 0  1 0  0 1  1 1};;
@@ -21,7 +92,6 @@ var _ProgramTexture;;
 var _AVertexPosition;;
 var _ATextureCoord;;
 var _VRT;;
-var _BackBuffer;;
 var _BackBytes;;
 var _Texture;;
 var _DstW;;
@@ -134,25 +204,164 @@ fun _uiRender =
 	_renderTexture;
 	glSwapBuffers;;
 
+//-----------------------------------
+fun _uiAlive= _UiThread<>nil;;
+fun _uiStopThread th= if th==_UiThread then uiStop;;
+
+fun uiW=if _UiFullGL then _uiW else bitmapW _BackBuffer;;
+fun uiH=if _UiFullGL then _uiH else bitmapH _BackBuffer;;
+
+fun uiStartDefault x y w h flag name=
+	set _BackBuffer=nil;
+	set _ProgramTexture=nil;
+	set _Texture=nil;
+	set _DstW= set _DstH=nil;
+	set _Ax= set _Ay = 1.;
+	set _Bx= set _By = 0.;
+	_workerEnter;
+	set _UiFullGL = bitTest flag UI_GL;
+	if _uiStart x y w h flag|UI_GL name then
+	(
+		_glMakeContext;
+		if !_UiFullGL then (
+			set _DstW=_uiW; set _DstH=_uiH;
+			_initShaders;
+			uiBufferSetSize w h true
+		);
+		true
+	);;
+
+fun uiBufferSetSize w h filter=
+	if _UiFullGL then return nil;
+	set _BackBuffer=bitmapCreate w h 0;
+	set _BackBytes =nil;
+	_uiVrtUpdate;
+	_textureCreate filter;;
+
+fun uiBuffer = _BackBuffer;;
+
+fun _uiUpdateRegion x y w h =
+	if _UiFullGL then return nil;
+//	echoLn strFormat "*,* *x*" x y w h;
+	_textureUpdateRegion _Texture x y w h;
+	_uiRender;;
+
+fun uiUpdateRegion x y w h =
+	if _UiFullGL then return nil;
+//	echoLn strFormat "*,* *x*" x y w h;
+	_cursorAdd x y w h;
+	_textureUpdateRegion _Texture x y w h;
+	_cursorRemove;
+	_uiRender;;
+
+fun uiUpdate =
+	if _UiFullGL then return nil;
+	_cursorAdd 0 0 uiW uiH;
+	_textureUpdate _Texture;
+	_cursorRemove;
+	_uiRender;;
+
+
+fun uiMultiTouch = _MultiTouch;;
+
+fun _uiOnPaintDefault =
+	_glRefreshContext; 
+	if _Uicb._EVENT_PAINT==nil then (if !_UiFullGL then uiUpdate;nil);;
+fun _uiOnSizeDefault x y= 
+	if _DstW<>x || _DstH<>y then (
+		set _DstW=x; set _DstH=y;
+		_uiVrtUpdate;
+		call _Uicb._EVENT_SIZE x y 0
+	);;
+#elifdef graphicBlit
+fun _uiOnPaintDefault= nil;;
+fun _uiOnSizeDefault x y= nil;;
+
+fun _uiAlive= true;;
+fun _uiStopThread th= nil;;
+var _OffX;;
+var _OffY;;
+fun uiW=bitmapW _BackBuffer;;
+fun uiH=bitmapH _BackBuffer;;
+fun _xConvert x= x;;
+fun _yConvert y= y;;
+
+fun graphicList =
+	for [i w h f] in graphicModes do
+		echoLn strFormat "*: * x * / *" (strLeftSpacePadding 3 strBuild i) w h f;
+	true;;
+
+fun _bestMode w h =
+	let listReduce graphicModes nil (lambda best [i ww hh _] =
+		let best -> [iBest uselessBest] in
+		if ww<w || hh<h then best
+		else
+		let ww*hh-w*h -> useless in
+		let best -> [iBest uselessBest] in
+		if best<>nil && useless>=uselessBest then best
+		else [i useless]
+	) -> [i _] in
+	i;;
+
+fun uiStartDefault x y w h flag name= 
+//	echoLn strFormat "uiStart * *" w h;
+	let _bestMode w h -> mode in (
+		graphicSetMode mode;
+		echoLn strFormat "> graphic mode * *x*" mode graphicW graphicH;
+		set _BackBuffer=bitmapCreate w h 0;
+		set _OffX= (graphicW-w)/2;
+		set _OffY= (graphicH-h)/2;
+		nil
+	);;
+fun uiBufferSetSize w h filter= uiStart 0 0 w h nil nil;;
+fun uiBuffer = _BackBuffer;;
+
+fun _uiUpdateRegion x y w h = graphicBlit _OffX+x _OffY+y _BackBuffer x y w h;;
+
+fun uiUpdateRegion x y w h =
+	_cursorAdd x y w h;
+	graphicBlit _OffX+x _OffY+y _BackBuffer x y w h;
+	_cursorRemove;;
+
+fun uiUpdate =
+	_cursorAdd 0 0 uiW uiH;
+	 graphicBlit _OffX _OffY _BackBuffer 0 0 nil nil;
+	_cursorRemove;;
+
+fun uiMultiTouch = nil;;
+#else
+fun _uiOnPaintDefault= nil;;
+fun _uiOnSizeDefault x y= nil;;
+
+fun _uiAlive= false;;
+fun _uiStopThread th= nil;;
+
+fun uiW=nil;;
+fun uiH=nil;;
+
+fun _xConvert x= x;;
+fun _yConvert y= y;;
+
+fun uiStartDefault x y w h flag name= nil;;
+fun uiBufferSetSize w h filter= nil;;
+fun uiBuffer = nil;;
+fun _uiUpdateRegion x y w h =nil;;
+fun uiUpdateRegion x y w h =nil;;
+fun uiUpdate =nil;;
+fun uiMultiTouch = nil;;
+#endif
+
 fun _uiOnPaint x y v=
 //	dump strFormat "paint *,* / *,*" x y _uiW _uiH;
 	if _UI_DEBUG then dump strFormat "paint *,* / *" x y v;
 	threadPost _UiThread (lambda=
-		_glRefreshContext; 
-		if _Uicb._EVENT_PAINT==nil then (if !_UiFullGL then uiUpdate;nil)
-		else call _Uicb._EVENT_PAINT x y v
+		_uiOnPaintDefault;
+		call _Uicb._EVENT_PAINT x y v
 	);;
 
 fun _uiOnSize x y v=
 	if _UI_DEBUG then dump strFormat "size *,* / *" x y v;
-	threadPost _UiThread (lambda=
-		 if _DstW<>x || _DstH<>y then (
-			set _DstW=x; set _DstH=y;					
-			_uiVrtUpdate;
-//			uiUpdate;
-			call _Uicb._EVENT_SIZE x y v
-		 )
-	);;
+	threadPost _UiThread (lambda= _uiOnSizeDefault x y );;
 
 var _MultiTouchTmp;;
 var _MultiTouch;;
@@ -182,6 +391,7 @@ fun _uiOnKeyUp x y v    =
 
 fun _uiCommonEvent x y v name index=
 	set x=_xConvert x; set y=_yConvert y;
+	_cursorUpdatePos x y; 
 	if _UI_DEBUG then dump strFormat "* *,* / *" name x y v; 
 	threadPost _UiThread (lambda= call _Uicb.index x y v);;
 
@@ -211,127 +421,12 @@ fun _uiInit=
 
 	set _Uicb=arrayCreate _INTERNAL_MAX_CODE nil;;
 
-//-----------------------------------
-fun _uiAlive= _UiThread<>nil;;
-fun _uiStopThread th= if th==_UiThread then uiStop;;
-
-fun uiW=if _UiFullGL then _uiW else bitmapW _BackBuffer;;
-fun uiH=if _UiFullGL then _uiH else bitmapH _BackBuffer;;
-
-fun uiStart x y w h flag name=
-	if _UiThread==nil then
-	(
-		_uiInit;
-		set _UiThread= _This;
-		set _BackBuffer=nil;
-		set _ProgramTexture=nil;
-		set _Texture=nil;
-		set _DstW= set _DstH=nil;
-		set _Ax= set _Ay = 1.;
-		set _Bx= set _By = 0.;
-		_workerEnter;
-		set _UiFullGL = bitTest flag UI_GL;
-		if _uiStart x y w h flag|UI_GL name then
-		(
-			_glMakeContext;
-			if !_UiFullGL then (
-				set _DstW=_uiW; set _DstH=_uiH;
-				_initShaders;
-				uiBufferSetSize w h true
-			);
-			true
-		)
-	);;
-fun uiStop =
-	if _UiThread<>nil then
-	(
-		set _UiThread= nil;
-		_uiStop
-	);;
-
-fun uiBufferSetSize w h filter=
-	if _UiFullGL then return nil;
-	set _BackBuffer=bitmapCreate w h 0;
-	set _BackBytes =nil;
-	_uiVrtUpdate;
-	_textureCreate filter;;
-
-fun uiBuffer = _BackBuffer;;
-
-fun uiUpdateRegion x y w h =
-	if _UiFullGL then return nil;
-//	echoLn strFormat "*,* *x*" x y w h;
-	_textureUpdateRegion _Texture x y w h;
-	_uiRender;;
-
-fun uiUpdate =
-	if _UiFullGL then return nil;
-	_textureUpdate _Texture;
-	_uiRender;;
-
-fun uiMultiTouch = _MultiTouch;;
-var _CurrentCursor;;	// we need this to prevent the current cursor to be released by GC
-fun cursorCreate bitmap xhot yhot=  _cursorCreate bitmap xhot yhot;;
-fun cursorShow cursor = _cursorShow set _CurrentCursor=cursor;;
-#elifdef uefiBlit
-var _BackBuffer;;
-fun _uiAlive= true;;
-fun _uiStopThread th= nil;;
-
-fun uiW=uefiW;;
-fun uiH=uefiH;;
-
-fun graphicList =
-	for [i w h f] in graphicModes do
-		echoLn strFormat "*: * x * / *" (strLeftSpacePadding 3 strBuild i) w h f;
-	true;;
-
-fun _bestMode w h =
-	let listReduce graphicModes nil (lambda best [i ww hh _] =
-		let best -> [iBest uselessBest] in
-		if ww<w || hh<h then best
-		else
-		let ww*hh-w*h -> useless in
-		let best -> [iBest uselessBest] in
-		if best<>nil && useless>=uselessBest then best
-		else [i useless]
-	) -> [i _] in
-	i;;
-
-fun uiStart x y w h flag name= 
-	echoLn strFormat "uiStart * *" w h;
-	let _bestMode w h -> mode in (
-		dump graphicSetMode mode;
-		echoLn strJoin " " [mode uiW uiH];
-		set _BackBuffer=bitmapCreate uiW uiH 0;
-		nil
-	);;
-fun uiStop = nil;;
-fun uiBufferSetSize w h filter= uiStart 0 0 w h nil nil;;
-fun uiBuffer = _BackBuffer;;
-fun uiUpdateRegion x y w h = uefiBlit x y _BackBuffer x y w h;;
-fun uiUpdate = uefiBlit 0 0 _BackBuffer 0 0 nil nil;;
-
-fun uiMultiTouch = nil;;
-fun cursorCreate bitmap xhot yhot=  nil;;
-fun cursorShow cursor = nil;;
-#else
-fun _uiAlive= false;;
-fun _uiStopThread th= nil;;
-
-fun uiW=nil;;
-fun uiH=nil;;
-
-fun uiStart x y w h flag name= nil;;
-fun uiStop = nil;;
-fun uiBufferSetSize w h filter= nil;;
-fun uiBuffer = nil;;
-fun uiUpdateRegion x y w h =nil;;
-fun uiUpdate =nil;;
-fun uiMultiTouch = nil;;
-fun cursorCreate bitmap xhot yhot=  nil;;
-fun cursorShow cursor = nil;;
-#endif
+fun uiPostKeyDown x  = _uiOnKeyDown x 0 0;;
+fun uiPostKeyUp x  = _uiOnKeyUp x 0 0;;
+fun uiPostMouseMove x y v = _uiOnMouseMove x y v;;
+fun uiPostClick x y v = _uiOnClick x y v;;
+fun uiPostUnclick x y v = _uiOnUnclick x y v;;
+fun uiPostVwheel x y v = _uiOnVwheel x y v;;
 
 fun uiOnPaint cb= set _Uicb._EVENT_PAINT=(lambda x y v = call cb; true);true;;
 fun uiOnMouseMove cb= set _Uicb._EVENT_MOUSEMOVE=(lambda x y v = call cb x y v; true);true;;
@@ -353,3 +448,16 @@ fun uiOnDropFiles cb= set _Uicb._EVENT_DROPFILES=(lambda x y v =
 	) -> dropList in
 	call cb x y dropList; true);true;;
 
+fun uiStart x y w h flag name=
+	if _UiThread==nil then
+	(
+		_uiInit;
+		set _UiThread= _This;
+		uiStartDefault x y w h flag name
+	);;
+fun uiStop =
+	if _UiThread<>nil then
+	(
+		set _UiThread= nil;
+		_uiStop
+	);;

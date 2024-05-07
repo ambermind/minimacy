@@ -15,6 +15,9 @@ struct Tcp=IP+[_incomingT];;
 struct Udp=IP+[_localAddrU _localPortU _nameU _linkU];;
 struct Eth=Stream+[_ifE];;
 
+struct EthInterface=[
+	ethCreateEI ethSendEI ethReadEI
+];;
 struct IpInterface=[
 	sockCloseII
 	udpCreateII udpSendII udpReadII
@@ -22,8 +25,17 @@ struct IpInterface=[
 	tcpListenII tcpAcceptII
 ];;
 
+var _ETH=[
+	ethCreateEI=#_ethCreate
+//	ethCloseEI=#_ethClose
+	ethSendEI=#_ethSend
+	ethReadEI=#_ethRead
+];;
+
+fun ethStackOverwrite interface= set _ETH=interface;;
+
 var _IP=[
-	sockCloseII=#_sockClose
+	sockCloseII=#_socketClose
 	udpCreateII=#_udpCreate
 	udpSendII=#_udpSend
 	udpReadII=#_udpRead
@@ -47,30 +59,31 @@ fun tcpSrvCreate addr port=
 	let call _IP.tcpListenII addr port -> socket in
 	if socket<>nil then
 	let [
-		_socketS=socket
 		_thS=_This
 		_nameTS=(strFormat "*:*" addr port)
-	] -> tcpSrv in (
-		set tcpSrv._onSelectReadS = (lambda =
-			_sockSetSelectRead tcpSrv._socketS true;
-			if _streamCheck tcpSrv then
+	] -> tcpSrv in
+	streamInit tcpSrv socket
+		(lambda =	// onSelectRead
+			_socketSetSelectRead socket true;
+			if streamCheck tcpSrv then
 			let call _IP.tcpAcceptII socket -> [socket addr port] in
 			threadPost tcpSrv._thS (lambda =
 				let _tcpCreate socket tcpSrv._thS addr port true -> tcp in 
 				call tcpSrv._onAcceptTS tcp
 			)
-		);
-		set tcpSrv._closeS=(lambda = _streamClose tcpSrv);
-		set tcpSrv._showS = (lambda fEcho= call fEcho "TCPsrv" tcpSrv._nameTS tcpSrv._thS);
-		_sockSetSelectRead tcpSrv._socketS true;
-		tcpSrv
-	);;
+		)
+		nil	// onSelectWrite
+		nil	// write
+		(lambda = call _IP.sockCloseII socket; streamCommonClose tcpSrv)	// close
+		(lambda fEcho=	// show
+			call fEcho "TCPsrv" tcpSrv._nameTS
+		);;
 
 fun tcpSrvOnAccept tcpSrv onAccept=
 	set tcpSrv._thS= _This;
 	set tcpSrv._onAcceptTS= if onAccept<>nil then (lambda tcp= call onAccept tcp; 0);
 	if onAccept<>nil then _streamAddToList tcpSrv;
-	_sockSetSelectRead tcpSrv._socketS onAccept<>nil;
+	_socketSetSelectRead (streamSocket tcpSrv) onAccept<>nil;
 	tcpSrv;;
 
 //-------------- Bsd TCP
@@ -78,35 +91,32 @@ fun tcpClose tcp= streamClose Tcp<tcp;;
 
 fun _tcpCreate socket th addr port incoming=
 	let [
-		_socketS=socket
 		_addrIP=addr
 		_portIP=port
 		_incomingT=incoming
-	] -> tcp in (
-		set tcp._onSelectWriteS =  (lambda = _streamOnSelectWrite tcp);
-		set tcp._onSelectReadS = (lambda =
-			if _streamCheck tcp then threadPost tcp._thS (lambda =
-				_sockSetSelectRead tcp._socketS true;
-				let call _IP.tcpReadII tcp._socketS -> data in
-				let tcp._onReadS -> cbRead in
+	] -> tcp in
+	streamInit tcp socket
+		(lambda =	// onSelectRead
+			streamOnSelectRead tcp (lambda cbRead=
+				let call _IP.tcpReadII socket -> data in
 				(
-//					echoLn ["]=== _sockRead " strLength data]; echoLn data;
+//					echoLn ["]=== _socketRead " strLength data]; echoLn data;
 					if data==nil then tcpClose tcp;
 					call cbRead data;
 				)
-			);
-			true
-		);
-		set tcp._writeS= (lambda data start =
+			)
+		)
+		(lambda = streamOnSelectWrite tcp)	// onSelectWrite
+		(lambda data start =	// write
 //			echo "_writeS "; echoLn
-			call _IP.tcpWriteII tcp._socketS data start
-		);
-		set tcp._closeS=(lambda = _streamClose tcp);
-		set tcp._showS = (lambda fEcho= call fEcho (if tcp._incomingT then "TCPin" else "TCPout") (strBuild [tcp._addrIP ":" tcp._portIP]) tcp._thS);
-		tcp
-	);;
+			call _IP.tcpWriteII socket data start
+		)
+		(lambda = call _IP.sockCloseII socket; streamCommonClose tcp)	// close
+		(lambda fEcho=	// show
+			call fEcho (if tcp._incomingT then "TCPin" else "TCPout") (strBuild [tcp._addrIP ":" tcp._portIP])
+		);;
 
-fun tcpOnEvent tcp onRead onWrite= streamOnEvent (Tcp<tcp) onRead onWrite; streamSelectWrite tcp true; tcp;;
+fun tcpOnEvent tcp onRead onWrite= streamOnEvent (Tcp<tcp) onRead onWrite;;
 
 fun tcpOpen addr port =
 	let call _IP.tcpOpenII addr port -> socket in
@@ -126,20 +136,19 @@ fun udpCreate remoteAddr remotePort localAddr localPort=
 	let remoteAddr<>nil && remotePort<>nil -> link in
 	if socket<>nil then
 	let [
-		_socketS=socket
 		_localAddrU=localAddr
 		_localPortU=localPort
 		_linkU= link
 		_nameU= (strFormat "*:*" localAddr localPort)
 		_addrIP=remoteAddr
 		_portIP=remotePort
-	] -> udp in (
-		set udp._onSelectWriteS = (lambda = _streamOnSelectWrite udp);
-		set udp._onSelectReadS = (lambda =
-			if _streamCheck udp then
+	] -> udp in
+	streamInit udp socket
+		(lambda =	// onSelectRead
+			if streamCheck udp then
 			threadPost udp._thS (lambda =
-				_sockSetSelectRead udp._socketS true;
-				let call _IP.udpReadII udp._socketS -> [data ip port] in
+				_socketSetSelectRead socket true;
+				let call _IP.udpReadII socket -> [data ip port] in
 				if port<>nil then
 				if udp._linkU then (
 					if udp._addrIP==ip && udp._portIP==port then call udp._onReadS data
@@ -151,14 +160,15 @@ fun udpCreate remoteAddr remotePort localAddr localPort=
 				)
 			);
 			true
-		);
-		set udp._writeS=(lambda msg start=
-			call _IP.udpSendII udp._socketS udp._localAddrU udp._localPortU udp._addrIP udp._portIP msg	// start is ignored
-		);
-		set udp._closeS=(lambda = _streamClose udp);
-		set udp._showS = (lambda fEcho= call fEcho (if udp._linkU then "UDPlink" else "UDPsrv") udp._nameU udp._thS);
-		udp
-	);;
+		)
+		(lambda = streamOnSelectWrite udp)	// onSelectWrite
+		(lambda data start =	// write
+			call _IP.udpSendII socket udp._localAddrU udp._localPortU udp._addrIP udp._portIP data	// start is ignored
+		)
+		(lambda = call _IP.sockCloseII socket; streamCommonClose udp)	// close
+		(lambda fEcho=	// show
+			call fEcho (if udp._linkU then "UDPlink" else "UDPsrv") udp._nameU
+		);;
 
 fun udpSend udp msg= streamWrite Udp<udp msg 0;;
 fun udpSendTo udp addr port msg=
@@ -175,30 +185,30 @@ fun udpOnEvent udp onRead onWrite= streamOnEvent (Udp < udp) onRead onWrite;;
 fun ethClose eth= streamClose eth;;
 
 fun ethCreate ifindex=
-	let _ethCreate ifindex -> socket in
+	let call _ETH.ethCreateEI ifindex -> socket in
 	if socket<>nil then
 	let [
-		_socketS=socket
 		_ifE=ifindex
-	] -> eth in (
-		set eth._onSelectWriteS = (lambda = _streamOnSelectWrite eth);
-		set eth._onSelectReadS = (lambda =
-			_sockSetSelectRead eth._socketS true;
-			if _streamCheck eth then
-			let _ethRead eth._socketS -> data in	// should attribute this memory to the appropriate thread
+	] -> eth in
+	streamInit eth socket
+		(lambda =	// onSelectRead
+			_socketSetSelectRead socket true;
+			if streamCheck eth then
+			let call _ETH.ethReadEI socket -> data in	// should attribute this memory to the appropriate thread
 //			if !bitTest 31 intRand then (echoLn "skip received frame"; nil) else
 			threadPost eth._thS (lambda = call eth._onReadS data)
-		);
-		set eth._writeS=(lambda msg start=
+		)
+		(lambda = streamOnSelectWrite eth)	// onSelectWrite
+		(lambda data start =	// write
 //			if !bitTest 31 intRand then (echoLn "skip sending frame"; nil) else
-			_ethSend eth._socketS eth._ifE msg
-		);	// we don't use start'
-		set eth._closeS=(lambda = _streamClose eth);
-		set eth._showS = (lambda fEcho= call fEcho "ethernet" (strFormat "if*" eth._ifE) eth._thS);
-		eth
-	);;
+			call _ETH.ethSendEI socket eth._ifE data
+		)
+		(lambda = streamCommonClose eth)	// close
+		(lambda fEcho=	// show
+			call fEcho "ethernet" (strFormat "if*" eth._ifE)
+		);;
 
-fun onEth eth onRead onWrite= streamOnEvent eth onRead onWrite;;
+fun ethOnEvent eth onRead onWrite= streamOnEvent (Eth<eth) onRead onWrite;;
 
 fun ethSend eth msg= streamWrite eth msg 0;;
 

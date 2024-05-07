@@ -27,8 +27,8 @@ const HTTP_CHUNKED="chunked";;
 const HTTP_URLENCODED="application/x-www-form-urlencoded";;
 const HTTP_MULTIPART="multipart/form-data";;
 
-const WS_KEY="Sec-WebSocket-Key";;
-const WS_ACCEPT="Sec-WebSocket-Accept";;
+const WS_KEY="sec-websocket-key";;
+const WS_ACCEPT="sec-websocket-accept";;
 
 const WS_UUID="258EAFA5-E914-47DA-95CA-C5AB0DC85B11";;
 

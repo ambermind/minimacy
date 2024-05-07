@@ -153,5 +153,5 @@ Def* pkgAddCons0(Thread* th, Pkg* pkg, char* name, Def* defType);
 void systemKeywords(Thread* th);
 void systemInit(Thread* th, Pkg *system);
 void systemTerminate(void);
-
+int sysSerialInit(Thread* th, Pkg* system);
 #endif

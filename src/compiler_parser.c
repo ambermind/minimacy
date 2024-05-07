@@ -35,7 +35,7 @@ void parserReset(Compiler* c)
 void parserJump(Compiler* c, int index)
 {
 	parserReset(c);
-	c->parser->index = index;
+	c->parser->index = c->parser->index0 = index;
 }
 int parserIndex(Compiler* c)
 {

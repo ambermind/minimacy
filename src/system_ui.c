@@ -100,6 +100,9 @@ int coreUiInit(Thread* th, Pkg *system)
 	pkgAddFun(th, system, "cursorSize", fun_cursorSize, fun_II);
 	pkgAddFun(th, system, "_cursorCreate", fun_cursorCreate, fun_Bmp_I_I_Cursor);
 	pkgAddFun(th, system, "_cursorShow", fun_cursorShow, fun_Cursor_Cursor);
+#ifdef USE_SOFT_CURSOR
+	pkgAddConstInt(th, system, "useSoftCursor", 1, MM.Int);
+#endif
 
 	
 	pkgAddFun(th, system, "keyboardShow", fun_keyboardShow, fun_B);
@@ -112,7 +115,6 @@ int coreUiInit(Thread* th, Pkg *system)
 	pkgAddFun(th, system, "accelerometerZ", fun_accelerometerZ, fun_F);
     pkgAddFun(th, system, "accelerometerInit", fun_accelerometerInit, fun_F_F);
 
-    
 	pkgAddConstInt(th, system, "Key_Pause", XKey_Pause, MM.Int);
 	pkgAddConstInt(th, system, "Key_Scroll_Lock", XKey_Scroll_Lock, MM.Int);
 	pkgAddConstInt(th, system, "Key_Sys_Req", XKey_Sys_Req, MM.Int);

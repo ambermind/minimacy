@@ -64,7 +64,7 @@ Type* compileStructure1(Compiler* c, Def* structDef)
 Type* compileStructure2(Compiler* c, Def* structDef, Locals* labels)
 {
 	Type* structType = structDef->type;
-	Type* derivative = typeDerivate(c->th, structDef->type,0); if (!derivative) return NULL;
+	Type* derivative = typeDerivate(c->th, structDef->type); if (!derivative) return NULL;
 
 	if ((!parserNext(c)) || ((!islabel(c->parser->token)) && strcmp(c->parser->token, "[")))
 		return compileError(c,"type name or '[' expected (found '%s')\n", compileToken(c));

@@ -11,7 +11,7 @@
 #ifndef _MINIMACY_
 #define _MINIMACY_
 
-#define VERSION_MINIMACY "1.3.2"
+#define VERSION_MINIMACY "1.3.3"
 
 
 #ifdef ON_WINDOWS
@@ -24,14 +24,16 @@
 #define WITH_UI
 #define WITH_GL
 #define WITH_AUDIO
-#define WITH_SERIAL
-#define WITH_DECODE_MP3
+//#define WITH_DECODE_MP3
 #define GROUP_COMMON_ANSI
 #define USE_CONSOLE_OUT_ANSI
 #define USE_CONSOLE_IN_WIN
 #define USE_TIME_MS_WIN
 #define USE_RANDOM_WIN
 #define USE_THREAD_WIN
+
+//#define MEMORY_C_SIZE (1024*1024*64)
+//#define USE_MEMORY_C
 //#define USE_WORKER_SYNC	// when USE_WORK_SYNC is set, no UI is possible as the event loop runs in a dedicated worker and never returns
 #define USE_WORKER_ASYNC
 #define USE_SOCKET_WIN
@@ -39,14 +41,14 @@
 #define USE_FS_SYSTEMDIR_WINDOWS
 #define USE_FS_ANSI_WIN
 #define USE_AUDIO_ENGINE
-#define USE_UART_WIN
+#define USE_SERIAL_WIN
 //#define USE_MATH_C
 #endif
 
 #ifdef ON_NOTHING
 #define DEVICE_MODE "BareMetal"
 #define GROUP_BAREMETAL
-#define MEMORY_C_LENGTH (1024*1024*128)
+#define MEMORY_C_SIZE (1024*1024*128)
 #define USE_STDARG_ANSI
 #define USE_RANDOM_C
 #define USE_TIME_STUB
@@ -54,6 +56,7 @@
 #define USE_ETH_STUB
 #define USE_FS_ROMDISK0 "nothing_romdisk0.h"
 #define USE_FS_SYSTEMDIR_STUB
+#define USE_SERIAL_STUB
 #ifdef WIN32
 #define USE_CONSOLE_OUT_ANSI
 #else
@@ -67,7 +70,7 @@
 #define WITH_UART
 #define USE_ETH_UEFI
 #define GROUP_BAREMETAL
-#define MEMORY_C_LENGTH (1024*1024*128)
+#define MEMORY_C_SIZE (1024*1024*128)
 #define USE_STDARG_ANSI
 #define USE_RANDOM_UEFI
 #define USE_TIME_UEFI
@@ -79,6 +82,7 @@
 //#define USE_FS_ROMDISK0 "../baremetal/uefi/uefi_romdisk0.h"
 //#define USE_UEFI_MANUAL_BLIT
 #define USE_FS_UEFI
+#define USE_SERIAL_STUB
 #endif
 
 #ifdef ON_STM32
@@ -86,7 +90,7 @@
 #define ATOMIC_32
 #define WITH_UART
 #define GROUP_BAREMETAL
-#define MEMORY_C_LENGTH (1024*1024*128)
+#define MEMORY_C_SIZE (1024*1024*128)
 #define USE_STDARG_ANSI
 #define USE_RANDOM_C
 #define USE_CONSOLE_OUT_UART
@@ -94,18 +98,32 @@
 #define USE_ETH_STUB
 #define USE_FS_SYSTEMDIR_STUB
 #define USE_FS_ROMDISK0 "../baremetal/stm32/stm32_romdisk0.h"
-
+#define USE_SERIAL_STUB
 #define USE_BOOTLOADER
 #endif
 
 #ifdef ON_RPI3
 #define DEVICE_MODE "RPi3"
+#define MEMORY_C_SIZE (1024*1024*920)
+extern volatile unsigned char _end;
+#define MEMORY_C_START ((char*)&_end)+4096*8
 #define GROUP_RPI
 #define USE_ETH_STUB
 #endif
 
 #ifdef ON_RPI4
 #define DEVICE_MODE "RPi4"
+
+// use this if your raspberry is less than 1GB:
+extern volatile unsigned char _end;
+#define MEMORY_C_SIZE (1024*1024*920)
+#define MEMORY_C_START ((char*)&_end)+4096*33
+
+//#define MEMORY_C_SIZE (1024*1024*1024)
+//#define MEMORY_C_START 0x40000000
+
+//#define MEMORY_C_SIZE (1024*1024*32)
+
 #define GROUP_RPI
 #define USE_ETH_RPI4
 #endif
@@ -114,7 +132,6 @@
 #define WITH_UART
 #define WITH_ACTIVITY_LED
 #define GROUP_BAREMETAL
-#define MEMORY_C_LENGTH (1024*1024*128)
 #define USE_STDARG_GCC
 #define USE_RANDOM_RPI
 #define USE_TIME_RPI
@@ -124,7 +141,9 @@
 #define USE_BOOTLOADER
 #define USE_FS_SYSTEMDIR_STUB
 #define USE_FS_ROMDISK0 "../baremetal/raspberry/pi_romdisk0.h"
-#define NEED_ALIGN
+#define USE_SERIAL_STUB
+#define USE_SOFT_CURSOR
+//#define NEED_ALIGN
 #endif
 
 #ifdef GROUP_BAREMETAL
@@ -238,6 +257,7 @@
 #define USE_MINMAX_C
 #define USE_RANDOM_UNIX
 #define USE_FS_ANSI_UNIX
+#define USE_SERIAL_UNIX
 int startInThread(int argc, char** argv);
 #endif
 

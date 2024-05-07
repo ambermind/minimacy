@@ -31,6 +31,7 @@ int _bufferBiggerFinalize(Thread* th, Buffer* b, LINT newsize);
 Buffer* bufferCreateWithSize(Thread* th, LINT size);
 Buffer* bufferCreate(Thread* th);
 void bufferReinit(Buffer* b);
+void bufferRemove(Buffer* b, int delta);
 int bufferAddChar(Thread* th, Buffer* b,char c);
 int bufferAddZero(Thread* th, Buffer* b,LINT n);
 int bufferAddInt(Thread* th, Buffer* b,LINT i);

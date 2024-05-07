@@ -9,20 +9,20 @@
    You should have received a copy of the GNU General Public License along
    with this program. If not, see <https://www.gnu.org/licenses/>. */
 
-#ifdef RPi4Device
-use baremetal.rpi4.eth;;
-#endif
+use core.net.dns;;
+
 const DEBUG=false;;
 
 const MAC_BROADCAST="\$ff\$ff\$ff\$ff\$ff\$ff";;
 const MAC_EMPTY="\0\0\0\0\0\0";;
 const IP_BROADCAST="\$ff\$ff\$ff\$ff";;
 const IP_EMPTY="\0\0\0\0";;
+const IP_LOOPBACK="\127\0\0\1";;
 
 const LockIp=lockCreate;;
 const SocketClose=hashmapCreate 8;;
 
-fun _sockClose socket = call (hashmapGet SocketClose socket); nil;;
+fun _socketClose socket = call (hashmapGet SocketClose socket); nil;;
 
 //-------------------- READABLE FORMAT
 fun _strFormatMac mac i= if i<strLength mac then (strSlice mac i 2):_strFormatMac mac i+2;;
@@ -40,13 +40,16 @@ struct IfStruct=[indexI nameI macI maxPacketI socketI ipI submaskI gatewayI dnsI
 var If;;
 
 fun ifSet index name mac maxPacket cbRead=
-	let onEth (ethCreate index) cbRead nil -> socket in
-	set If=[
-		indexI=index nameI=name macI=mac maxPacketI=maxPacket socketI=socket
-		ipI=IP_EMPTY submaskI=IP_EMPTY gatewayI=IP_EMPTY dnsI=IP_EMPTY
-	];;
+	appStart nil nil name nil (lambda=
+		let ethOnEvent (ethCreate index) cbRead nil -> socket in
+		set If=[
+			indexI=index nameI=name macI=mac maxPacketI=maxPacket socketI=socket
+			ipI=IP_EMPTY submaskI=IP_EMPTY gatewayI=IP_EMPTY dnsI=IP_EMPTY
+		]
+		);;
 
 fun ifSelect cbSelect cbRead=
+	ipOverEthSetup;
 	let ethList ->el in
 	let listFind el (lambda [index name family mac maxPacket ip]= call cbSelect index name family mac maxPacket ip) -> [index name family mac maxPacket ip] in
 	(
@@ -60,9 +63,11 @@ fun ifStatic ip mask gateway dns=
 	set If.submaskI=ipFromStr mask;
 	set If.gatewayI=ipFromStr gateway;
 	set If.dnsI=ipFromStr dns;
+	dnsSetServer dns;
 	true;;
 
-fun ifSetDefault = ifSelect (lambda index name family mac maxPacket ip= mac!=MAC_EMPTY) #ethHandle;;
+fun ifSetDefault =
+	ifSelect (lambda index name family mac maxPacket ip= mac!=MAC_EMPTY) #ethHandle;;
 
 //-------------------- ETHERNET
 const ETH_ARP="\$08\$06";;
@@ -99,7 +104,7 @@ fun ethSendFrame macDest protocol msg=
 //-------------------- ARP
 const ARP_REQUEST=1;;
 const ARP_ANSWER=2;;
-const ARP_RETRY=5;;
+const ARP_RETRY=20;;
 
 sum ArpEntry = macA _, pendingA _;;
 const ArpBase = hashmapCreate 8;;
@@ -145,7 +150,7 @@ fun _arpAddPending ip lPending cb=
 fun _arpRequest ip i nbRetry=
 	if DEBUG then echoLn strFormat ">ARP REQUEST * *" (strFromIp ip) if i<>0 then strFormat "#*/*" i nbRetry;
 	ethSendFrame MAC_BROADCAST ETH_ARP arpFrame ARP_REQUEST MAC_EMPTY ip;
-	if i<nbRetry then onTimeout 500 (lambda =
+	if i<nbRetry then onTimeout 1000 (lambda =
 		match hashmapGet ArpBase ip with pendingA _ -> _arpRequest ip i+1 nbRetry
 	);;
 fun arpRequest ip cb=
@@ -188,10 +193,11 @@ fun ipHandle incoming remoteMac msg i0=
 	let strRead8 msg i0+9 -> type in
 	let strSlice msg i0+12 4 -> remoteAddr in
 	let strSlice msg i0+16 4 -> localAddr in
+	if remoteAddr<>IP_LOOPBACK then	// LOOPBACK 127.0.0.1 cannot come from ethernet
 	(
 		if remoteAddr<>IP_BROADCAST && remoteAddr<>IP_EMPTY then
 			arpFeed remoteAddr remoteMac true;
-//		echoLn strFormat ">IP *: *->*" type (strFromIp remoteAddr) (strFromIp localAddr);
+//		echoLn strFormat ">IP *: * -> *" type (strFromIp remoteAddr) (strFromIp localAddr);
 //echoLn strFormat "* + *" ipLength (strLength msg)-ipLength;
 		let strSlice msg i0+20 ipLength-20 -> msg in
 		match type with
@@ -234,16 +240,16 @@ fun udpHandle incoming remoteAddr localAddr msg=
 	let strRead16Msb msg 2 -> localPort in
 	let strFromIp remoteAddr -> remoteAddr in
 	if incoming then (
-		if DEBUG then echoLn strFormat "<UDP *:*-> :* *" remoteAddr remotePort localPort (strLength msg)-8;
+		if DEBUG then echoLn strFormat "<UDP *:* -> :* *" remoteAddr remotePort localPort (strLength msg)-8;
 		let hashmapGet UdpListener localPort -> socket in
 		if socket<>nil then (
 			fifoIn (hashmapGet UdpFifo socket) [(strSlice msg 8 nil) remoteAddr remotePort];
-			sockSetReadable socket true;
+			socketSetReadable socket true;
 		)
 	);;
 
 fun _udpSend sock localAddr localPort remoteAddr remotePort msg=
-	if DEBUG then echoLn strFormat ">UDP :*-> *:* *" localPort remoteAddr remotePort (strLength msg);
+	if DEBUG then echoLn strFormat ">UDP :* -> *:* *" localPort remoteAddr remotePort (strLength msg);
 	let strInt16Msb 8+strLength msg -> udpLen in
 	let strBuild [
 		(strInt16Msb localPort)
@@ -285,7 +291,7 @@ fun _udpCreate localAddr localPort=
 
 fun _udpRead socket =
 	let hashmapGet UdpFifo socket -> fifo in (
-		sockSetReadable socket 1<fifoCount fifo;
+		socketSetReadable socket 1<fifoCount fifo;
 		fifoOut fifo
 	);;
 
@@ -357,6 +363,7 @@ fun dhcpHandle udp remoteAddr remotePort msg onReady=
 		set If.submaskI=submask;
 		set If.dnsI=dns;
 		set If.gatewayI=gateway;
+		dnsSetServer strFromIp If.dnsI;
 		echoLn ["ip      " strFromIp If.ipI];
 		echoLn ["mask    " strFromIp If.submaskI];
 		echoLn ["gateway " strFromIp If.gatewayI];
@@ -400,15 +407,15 @@ fun _tcpFlagName flag bit l=
 
 fun tcpFlagName flag= strJoin "|" _tcpFlagName flag 1 TCP_FLAGS;;
 
-const TCP_MAX_LEN=458;;
-//const TCP_MAX_LEN=0x600 - 54;;
+const TCP_SEND_MAX_LEN=458;;
+//const TCP_SEND_MAX_LEN=0x600 - 54;;
 
 const TCP_WINDOW=1024*8;;
 const TCP_WINDOW_MAX_LEN=1024*8;;
 
 struct TcpSrv=[socketS keyS portS fifoS];;
 
-struct Tcp=[socketT keyT remoteAddrT localPortT remotePortT
+struct Tcp=[socketT keyT localAddrT remoteAddrT localPortT remotePortT
 	seq0T
 	seqT	// sequence number of next sending
 	ackT	// sequence number acknowledged by peer
@@ -416,11 +423,14 @@ struct Tcp=[socketT keyT remoteAddrT localPortT remotePortT
 	peerT	// last acknowledged peer's sequence number
 	windowT
 	stateT
+	closedT
 	lockT
 	nextFramesT
+	bufferRxT
 	fifoRxT	// Rx fifo: messages to send to the onRead callback
 	fifoTxT	// Tx fifo: sent messages not yet acknowledged, may need to be resent
 	retryTimerT
+	localT
 ];;
 
 const TcpListener=hashmapCreate 8;;	// port -> sock
@@ -432,6 +442,9 @@ const TcpSrvInside=hashmapCreate 8;;	// sock -> tcp
 const TcpLock = lockCreate;;
 var TcpPortCounter = time+strRead16Msb (strRand 2) 0;;
 
+fun _tcpRoute t= strFormat "*:* -> *:*" (strFromIp t.localAddrT) t.localPortT (strFromIp t.remoteAddrT) t.remotePortT;;
+fun _tcpRouteReverse t= strFormat "*:* -> *:*" (strFromIp t.remoteAddrT) t.remotePortT (strFromIp t.localAddrT) t.localPortT ;;
+
 fun _tcpSrvKey ip port= decFromInt port;; //strConcat ip (strInt16Msb port);;
 
 fun _tcpKey remoteAddr localAddr remotePort localPort=
@@ -441,43 +454,62 @@ fun _seqIsBefore a b = ((signExtend32 a)-(signExtend32 b))<=0;;
 fun _seqIsBeforeStrict a b = ((signExtend32 a)-(signExtend32 b))<0;;
 fun _seqNext seq flag msg= 0xffffffff &(seq+(strLength msg)+(if bitTest flag TCP_SYN|TCP_FIN then 1 else 0));;
 
-sum TcpState= synSentTcp, establishedTcp, closingTcp, closedTcp;;
+sum TcpState= synSentTcp, establishedTcp, finishingTcp, forgottenTcp;;
 
 fun _tcpForget t=
-	if DEBUG then echoLn "===============_tcpForget"; //dumpCallstack nil;
+	if DEBUG then echoLn strFormat "===============_tcpForget *" (_tcpRoute t);
 	hashmapSet TcpListener t.keyT nil;
-	if 1>fifoCount t.fifoRxT then hashmapSet TcpInside t.socketT nil;
-	set t.stateT = closedTcp;;
+//	if 1>fifoCount t.fifoRxT then hashmapSet TcpInside t.socketT nil;
+	set t.stateT = forgottenTcp;;
 
-fun _tcpReceiveData t data=
-	if t.fifoRxT==nil then set t.fifoRxT=fifoCreate;
-	fifoIn t.fifoRxT data;
-	sockSetReadable t.socketT true;;
+fun _tcpClose t=
+	if DEBUG then echoLn strFormat "===============_tcpClose *" (_tcpRoute t);
+//	dumpCallstack nil;
+	set t.fifoRxT=nil;
+	set t.bufferRxT=nil;
+	hashmapSet TcpInside t.socketT nil;
+	set t.closedT = true;;
+
+fun _tcpReceiveData t data push=
+	if t.stateT==establishedTcp then (
+		if data==nil then (
+			fifoIn t.fifoRxT data;
+			nil
+		) else (
+			bufferAppend t.bufferRxT data;
+			if push then (
+				fifoIn t.fifoRxT strFromBuffer t.bufferRxT;
+				bufferReset t.bufferRxT
+			)
+		);
+		socketSetReadable t.socketT (fifoCount t.fifoRxT)>0;
+		strLength data
+	);;
 
 // this function is called only when a new packet is available with the correct sequence number
 fun _tcpStateMachine t flag data=
 	if bitTest flag TCP_RST|TCP_FIN then (
-		if t.stateT==closingTcp then (
-			_tcpSendFrame t TCP_ACK false "";
+		if t.stateT==finishingTcp then (
+			_tcpSendFrame t TCP_ACK "";
 			_tcpForget t;
 			nil
 		)
 		else (
-			_tcpSendFrame t TCP_ACK|TCP_FIN true "";
-			if t.stateT==establishedTcp && !strEmpty data then _tcpReceiveData t data;
-			_tcpReceiveData t nil;
-			set t.stateT=closingTcp
+			if !strEmpty data then _tcpReceiveData t data true;
+			_tcpReceiveData t nil true;
+			_tcpSendFrame t TCP_ACK|TCP_FIN "";
+			set t.stateT=finishingTcp
 		)
 	)
 	else match t.stateT with
 	synSentTcp -> if bitTest flag TCP_SYN then (
-		sockSetWritable t.socketT true;
+		socketSetWritable t.socketT true;
 		set t.stateT=establishedTcp
 	),
 	establishedTcp -> (
 //		echoLn strFormat "establishedTcp * bytes" strLength data;
-		if !strEmpty data then _tcpReceiveData t data;
-		sockSetWritable t.socketT t.windowT>((t.seqT-t.ackT)&0xffffffff);
+		if !strEmpty data then _tcpReceiveData t data bitTest flag TCP_PSH;
+		socketSetWritable t.socketT t.windowT>((t.seqT-t.ackT)&0xffffffff);
 		nil
 	);;
 
@@ -505,28 +537,28 @@ fun _tcpHandle t msg=
 			set t.peer0T=set t.peerT=seqPeer;
 			if t.ackT==0 then set t.ackT=ack
 		);
-		if DEBUG then echoLn strFormat "----------<TCP * ack=* seq=* len=* (w=*)" (tcpFlagName flag) (ack-t.seq0T)&0xffffffff (seqPeer-t.peer0T)&0xffffffff (strLength data) window;
+		if DEBUG then echoTime strFormat "----------<TCP * * ack=* seq=* len=* (w=*)" (tcpFlagName flag) (_tcpRoute t) (ack-t.seq0T)&0xffffffff (seqPeer-t.peer0T)&0xffffffff (strLength data) window;
 
-		if (bitTest flag TCP_ACK) then _tcpAckProcess t ack;
+		if bitTest flag TCP_ACK then _tcpAckProcess t ack;	// this does not send ack, it cleans the retry fifo
+		if t.stateT<>forgottenTcp then
 		let _seqNext t.peerT flag data -> seqNext in
 		let seqNext<>t.peerT -> ackToSend in
 		if t.peerT==seqPeer then	// we process only the next expected packet, else we stack it for further use
-		let t.peerT -> seqPeer0 in
-		(
-			set t.peerT=seqNext;
-			_tcpStateMachine t flag data;
+			let t.peerT -> seqPeer0 in (
+				set t.peerT=seqNext;
+				_tcpStateMachine t flag data;
 
-//			_dumpNextFrames t;
-//			echoLn strFormat "expect *" t.peerT-t.peer0T;
-			if (t.stateT <> closedTcp) && (t.stateT <> closingTcp) then
-			let head t.nextFramesT -> next in
-			let strRead32Msb next 4 -> seq in
-			if seq==t.peerT then (
-//				echoLn strFormat "use saved frame";
-				set t.nextFramesT=tail t.nextFramesT;
-				_tcpHandle t next
-			)
-			else if t.peerT<>seqPeer0 then _tcpSendFrame t TCP_ACK false ""
+	//			_dumpNextFrames t;
+	//			echoLn strFormat "expect *" t.peerT-t.peer0T;
+				if t.stateT <> forgottenTcp && t.stateT<>finishingTcp then
+				let head t.nextFramesT -> next in
+				let strRead32Msb next 4 -> seq in
+				if seq==t.peerT then (
+	//				echoLn strFormat "use saved frame";
+					set t.nextFramesT=tail t.nextFramesT;
+					_tcpHandle t next
+				)
+				else if t.peerT<>seqPeer0 then _tcpSendFrame t TCP_ACK ""
 		)
 		else (
 			if DEBUG then echoLn "==>wrong sequence, ignore TCP frame";
@@ -536,17 +568,17 @@ fun _tcpHandle t msg=
 					set t.nextFramesT = _insertNextFrame seqPeer msg t.nextFramesT;
 	//				_dumpNextFrames t
 				);
-				_tcpSendFrame t TCP_ACK false ""
+				_tcpSendFrame t TCP_ACK ""
 			)
 		)
 	);;
 
 fun _tcpHandlSyn remoteAddr localAddr remotePort localPort flag msg=
-	if DEBUG then echoLn strFormat "----------<TCP *" (tcpFlagName flag);
+	if DEBUG then echoLn strFormat "----------<TCP * *:* -> *:*" (tcpFlagName flag) (strFromIp remoteAddr) remotePort (strFromIp localAddr) localPort;
 	let hashmapGet TcpSrvListener (_tcpSrvKey localAddr localPort) -> srv in
 	let if srv<>nil then srv else hashmapGet TcpSrvListener (_tcpSrvKey nil localPort) -> srv in
 	if srv<>nil then
-	let _tcpCreate remoteAddr remotePort If.ipI localPort -> t in
+	let _tcpCreate remoteAddr remotePort localAddr localPort -> t in
 	if t<>nil then
 	let strRead16Msb msg 14 -> window in
 	let strRead32Msb msg 4 -> seqPeer in (
@@ -554,10 +586,10 @@ fun _tcpHandlSyn remoteAddr localAddr remotePort localPort flag msg=
 		set t.peer0T= seqPeer;
 		set t.peerT= seqPeer+1;
 		set t.windowT= window;
-		_tcpSendFrame t TCP_SYN|TCP_ACK true nil;
+		_tcpSendFrame t TCP_SYN|TCP_ACK nil;
 		fifoIn srv.fifoS [t.socketT (strFromIp remoteAddr) remotePort];
-		sockSetReadable srv.socketS true;
-		sockSetWritable t.socketT true;
+		socketSetReadable srv.socketS true;
+		socketSetWritable t.socketT true;
 		nil
 	);;
 
@@ -567,24 +599,50 @@ lockSync TcpLock lambda =
 	let strRead16Msb msg 2 -> localPort in
 	let strRead8 msg 13 -> flag in
 	(
-//		echo strFormat " :*->:* *" remotePort localPort tcpFlagName flag;
 		if incoming then
 		if flag==TCP_SYN then _tcpHandlSyn remoteAddr localAddr remotePort localPort flag msg
 		else
 		let _tcpKey remoteAddr localAddr remotePort localPort -> key in
 		let hashmapGet TcpListener key -> t in
 		if t<>nil then (_tcpHandle t msg)
-		else nil;	// TODO: here we should ack any TCP_FIN message
+		else
+		let strRead32Msb msg 4 -> seqPeer in
+		let strRead32Msb msg 8 -> ack in
+		if bitTest flag TCP_FIN then
+		(
+			_tcpAckAny flag remoteAddr localAddr remotePort localPort seqPeer+1 ack;
+			nil
+		)
+		else (
+			if DEBUG then echoLn strFormat "socket not found *" tcpFlagName flag;
+			nil
+		);
 		nil
 	);;
 
+fun _tcpAckAny flagIn remoteAddr localAddr remotePort localPort seqPeer ack =
+	let [
+		peerT=seqPeer
+		remoteAddrT=remoteAddr
+		localAddrT=localAddr
+		remotePortT=remotePort 
+		localPortT=localPort
+	] -> t in (
+		if DEBUG then echoLn strFormat "----------<TCP * * ack=* seq=* AUTO_ACK" (tcpFlagName flagIn) (_tcpRouteReverse t) ack&0xffffffff seqPeer&0xffffffff;
+		__tcpSendFrame t ack TCP_ACK ""
+	);;
+
 fun __tcpSendFrame t seq flag msg=
-	if DEBUG then echoLn strFormat "---------->TCP * seq=* ack=* len=* *"
-		(tcpFlagName flag)
+	if DEBUG then echoLn strFormat "---------->TCP * * seq=* ack=* len=* *"
+		(tcpFlagName flag) (_tcpRoute t)
 		(seq-t.seq0T)&0xffffffff
 		(t.peerT-t.peer0T)&0xffffffff
 		(strLength msg);
-	let if bitTest flag TCP_SYN then "\2\4\4\0" else ""-> options in	// Maximum segment size : 1024 (0x02=option id, 0x04=option length, 0x0400=1024)
+	let if bitTest flag TCP_SYN then 
+		// Maximum segment size : 1460 (0x02=option id, 0x04=option length, 0x05b4=1460).
+		// 1460 = 1500 - 20 - 20 (1500=eth mtu, 20=IP header, 20=TCP header)
+		"\2\4\5\$b4"
+		else ""-> options in
 	let 20+strLength options -> headerLength in
 	let strInt16Msb headerLength+(strLength msg) -> tcpLen in
 	let strBuild [
@@ -602,7 +660,7 @@ fun __tcpSendFrame t seq flag msg=
 			ipChecksum headerStart 
 			ipChecksum options 
 			ipChecksum msg 
-			ipChecksum If.ipI 
+			ipChecksum t.localAddrT
 			ipChecksum t.remoteAddrT 
 			ipChecksum "\0\6"
 			ipChecksum tcpLen
@@ -614,7 +672,7 @@ fun __tcpSendFrame t seq flag msg=
 	] -> frame in
 	ipSend t.remoteAddrT IP_TCP frame;;
 
-fun _tcpSendFrame t flag retry msg=
+fun _tcpSendFrame t flag msg=
 	lockSync t.lockT lambda =
 	let t.seqT -> seq in
 	(
@@ -647,11 +705,12 @@ fun _tcpAckProcess t ack=
 	lockSync t.lockT lambda =
 	(
 		set t.ackT=ack;
-		_tcpAckFifo t
+		_tcpAckFifo t;
+		if (0==fifoCount t.fifoTxT)&& t.stateT==finishingTcp then _tcpForget t
 	);;
 
 fun _tcpCheckRetry t=
-	if t.stateT <> closedTcp then
+	if t.stateT <> forgottenTcp then
 	lockSync t.lockT lambda =
 	let fifoNext t.fifoTxT -> [t0 seq flag msg] in
 	if t0==nil then	( // if fifo empty we stop the timer
@@ -675,6 +734,7 @@ fun _tcpCreate remoteAddr remotePort localAddr localPort=
 			socketT=socket
 			keyT=key
 			stateT=synSentTcp 
+			localAddrT=localAddr
 			remoteAddrT=remoteAddr
 			remotePortT=remotePort 
 			localPortT=localPort
@@ -684,19 +744,27 @@ fun _tcpCreate remoteAddr remotePort localAddr localPort=
 			peerT=0
 			windowT=1024	// this value will be updated at each received frame
 			fifoTxT=fifoCreate
+			fifoRxT=fifoCreate
+			bufferRxT=(bufferCreateWithSize 2048)
+			closedT=false
 			lockT=lockCreate
 		] -> t in (
 			hashmapSet TcpListener key t;
 			hashmapSet TcpInside socket t;
 			hashmapSet SocketClose socket (lambda = lockSync TcpLock lambda = (
 				hashmapSet SocketClose socket nil;
-				if t.stateT==synSentTcp then (
-					_tcpForget t;
-					0
-				)
-				else (
-					if t.stateT<>closingTcp && t.stateT<>closedTcp then _tcpSendFrame t TCP_ACK|TCP_FIN true "";
-					set t.stateT=closingTcp;
+				if !t.closedT then (
+					_tcpClose t;
+					if t.localT<>nil && !t.localT.closedT then (
+						_tcpForget t;
+						_tcpReceiveData t.localT nil true;
+						_tcpForget t.localT;
+					)
+				);
+				if t.localT==nil then
+				if t.stateT==synSentTcp || t.stateT==establishedTcp then (
+					_tcpSendFrame t TCP_ACK|TCP_FIN "";
+					set t.stateT=finishingTcp;
 					0
 				)
 			));
@@ -704,33 +772,61 @@ fun _tcpCreate remoteAddr remotePort localAddr localPort=
 		)
 	);;
 
+fun _tcpOpenLocal remoteAddr localPort remotePort=
+	let hashmapGet TcpSrvListener (_tcpSrvKey remoteAddr remotePort) -> srv in
+	let if srv<>nil then srv else hashmapGet TcpSrvListener (_tcpSrvKey nil remotePort) -> srv in
+	if srv<>nil then
+	let _tcpCreate remoteAddr localPort remoteAddr remotePort -> tSrv in
+	if tSrv<>nil then
+	let _tcpCreate remoteAddr remotePort remoteAddr localPort -> tCli in
+	if tCli<>nil then (
+		set tCli.localT=tSrv;
+		set tSrv.localT=tCli; 
+		set tCli.stateT=establishedTcp; 
+		set tSrv.stateT=establishedTcp; 
+		if DEBUG then echoLn strFormat "----------<>TCP LOOPBACK *" (_tcpRoute tCli);
+		socketSetWritable tSrv.socketT true;
+		fifoIn srv.fifoS [tSrv.socketT (strFromIp remoteAddr) localPort];
+		socketSetReadable srv.socketS true;
+		socketSetWritable tCli.socketT true;
+		tCli.socketT
+	);;
+
+
 fun _tcpOpen remoteAddr remotePort=
 lockSync TcpLock lambda =
 	let ipFromStr remoteAddr -> remoteAddr in
 	let 1024+set TcpPortCounter=(TcpPortCounter+1)&16383 -> localPort in
+	if remoteAddr==IP_LOOPBACK || remoteAddr==If.ipI then _tcpOpenLocal remoteAddr localPort remotePort
+	else 
 	let _tcpCreate remoteAddr remotePort If.ipI localPort -> t in
 	if t<>nil then (
-		if DEBUG then echoLn strFormat "---------->TCP *:*-> *:* *" (strFromIp If.ipI) localPort (strFromIp remoteAddr) remotePort (tcpFlagName TCP_SYN);
-		_tcpSendFrame t TCP_SYN true nil;
+		if DEBUG then echoLn strFormat "---------->TCP *" (_tcpRoute t) (tcpFlagName TCP_SYN);
+		_tcpSendFrame t TCP_SYN nil;
 		t.socketT
 	);;
 
 fun _tcpWriteLoop t data start lenToSend=
 	if lenToSend<=0 then start
 	else 
-	let min lenToSend TCP_MAX_LEN -> send in
+	let min lenToSend TCP_SEND_MAX_LEN -> send in
 	let if send==lenToSend then TCP_PSH else 0 -> psh in (
-		_tcpSendFrame t TCP_ACK|psh true (strSlice data start send);
+		_tcpSendFrame t TCP_ACK|psh (strSlice data start send);
 		// we don't use the result (_tcpSendFrame is asynchronous)
 		// => the network stack takes responsability of lenToSend bytes
 		_tcpWriteLoop t data start+send lenToSend-send
 	);;
 
 fun _tcpWrite socket data start=
-//	echoLn "_tcpWrite";
+	if data<>nil then
 lockSync TcpLock lambda =
 	let hashmapGet TcpInside socket -> t in
-	if (t.stateT== establishedTcp) then
+	if t.stateT==establishedTcp then
+	if t.localT<>nil then (
+		if DEBUG then echoLn strFormat "---------->TCP LOOPBACK * len=*" (_tcpRoute t) (strLength data)-start;
+		start+_tcpReceiveData t.localT (strSlice data start nil) true
+	)
+	else
 	let min (strLength data)-start
 			(t.windowT)-(((t.seqT)-(t.ackT))&0xffffffff)
 	-> lenToSend in
@@ -744,13 +840,14 @@ fun _tcpRead socket =
 lockSync TcpLock lambda =
 //echoLn "_tcpRead";
 	let hashmapGet TcpInside socket -> t in
-	if t.fifoRxT<>nil then	// fifo is created only when the first user data is received
+	if !t.closedT then
 	if 0==fifoCount t.fifoRxT then ""
-	else let fifoOut t.fifoRxT -> data in
+	else
+	let fifoOut t.fifoRxT -> data in
 	(
-		sockSetReadable socket (fifoCount t.fifoRxT)>0;
-		if data==nil then hashmapSet TcpInside t.socketT nil;
-//echoLn strFormat "-> tcpRead * bytes" strLength data;
+		socketSetReadable socket (fifoCount t.fifoRxT)>0;
+		if data==nil then _tcpClose t;
+//		echoLn strFormat "-> tcpRead * bytes" strLength data;
 		data
 	);;
 
@@ -758,7 +855,7 @@ fun _tcpAccept socket =
 lockSync TcpLock lambda =
 	let hashmapGet TcpSrvInside socket -> t in
 	let fifoOut t.fifoS -> tcp in (
-		sockSetReadable socket (fifoCount t.fifoS)>0;
+		socketSetReadable socket (fifoCount t.fifoS)>0;
 		tcp
 	);;
 
@@ -788,7 +885,7 @@ fun _tcpListen ip port=
 
 fun ipOverEthSetup =
 	ipStackOverwrite [
-		sockCloseII=#_sockClose
+		sockCloseII=#_socketClose
 
 		udpCreateII=#_udpCreate
 		udpSendII=#_udpSend

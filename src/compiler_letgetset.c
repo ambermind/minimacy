@@ -21,6 +21,7 @@ Type* compileSetPoint(Compiler* c, Type* t0, int* opstore)
 	while (1)
 	{
 		Def* def;
+		int parserSave = parserIndex(c);
 		if (!parserNext(c)) return compileError(c,"expression or field name expected (found '%s')\n", compileToken(c));
 
 		index = -1;
@@ -37,7 +38,7 @@ Type* compileSetPoint(Compiler* c, Type* t0, int* opstore)
 		else
 		{
 			Type* u;
-			parserGiveback(c);
+			parserJump(c, parserSave);
 
 			if (!(t = compileTerm(c, 1))) return NULL;
 			TYPE_PUSH_NULL(c, t0);
@@ -313,12 +314,14 @@ Type* compileGetPoint(Compiler* c,Type* t0)
 	while(1)
 	{
 		Def* def;
+		int parserSave;
 		if (!parserNext(c)) return 0;
 		if (strcmp(c->parser->token,"."))
 		{
 			parserGiveback(c);
 			return t0;
 		}
+		parserSave = parserIndex(c);
 		if (!parserNext(c)) return compileError(c,"expression or field name expected (found '%s')\n",compileToken(c));
 
 		if ((islabel(c->parser->token))
@@ -334,7 +337,7 @@ Type* compileGetPoint(Compiler* c,Type* t0)
 		else
 		{
 			Type* u;
-			parserGiveback(c);
+			parserJump(c,parserSave);
 
 			if (!(t=compileTerm(c,1))) return NULL;
 			TYPE_PUSH_NULL(c,t0);
@@ -353,7 +356,7 @@ Type* compileUpCast(Compiler* c, Def* to)
 	Type* u;
 	if (!(t = compileExpression(c))) return NULL;
 	u = typeCopy(c->th, to->type); if (!u) return NULL;
-	if (!(derivate = typeDerivate(c->th, u, 0))) return NULL;
+	if (!(derivate = typeDerivate(c->th, u))) return NULL;
 	if (typeUnify(c, t, derivate)) return NULL;
 	return u;
 }
@@ -384,30 +387,16 @@ Type* compileDownCast(Compiler* c, Def* from, Def* to)
 }
 Type* compileCast(Compiler* c, Def* to)
 {
-/*	// this block would allow to force the type of an expression
-*	// imagined for core.db.inMemory to force the type of [db][Table]Id 
-*	// eventually not used because this could be achieved by (_[db][Table]< row)
-	if (!parserNext(c)) return compileError(c,"unexpected end of file\n");
-	if (strcmp(c->parser->token, "<")) {
-		Type* t;
-		Type* u;
-		parserGiveback(c);
-
-		if (!(t = compileExpression(c))) return NULL;
-		u = typeCopy(c->th, to->type); if (!u) return NULL;
-		if (typeUnify(c, t, u)) return NULL;
-		return u;
-	}
-*/
+	int parserSave;
 	if (parserAssume(c, "<")) return NULL;
-
+	parserSave = parserIndex(c);
 	if (!parserNext(c)) return compileError(c,"unexpected end of file\n");
 	if (islabel(c->parser->token))
 	{
 		Def*  from = compileGetDef(c);
 		if ((from) && (from->code == DEF_CODE_STRUCT)) return compileDownCast(c, from, to);
 	}
-	parserGiveback(c);
+	parserJump(c, parserSave);
 	return compileUpCast(c, to);
 }
 Type* compileDef(Compiler* c,int noPoint)

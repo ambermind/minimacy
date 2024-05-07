@@ -30,7 +30,9 @@ LB* memoryAlloc(Thread* th, LINT size,LINT type,LW dbg)
 	LB *p=NULL;
 	Mem* mem = th?th->memDelegate:MM.mem;
 	LINT total = sizeof(LB) + (((size+ LWLEN - 1)>>LSHIFT)<<LSHIFT);
+#ifdef USE_ALL_BITS
 	if (type == TYPE_ARRAY) total += (((size >> LSHIFT) + LWLEN - 1) >> LSHIFT) << LSHIFT;
+#endif
 	if (mem)
 	{
 		if (!memoryChainTest(mem, total))
@@ -106,7 +108,14 @@ LB* memoryAllocArray(Thread* th, LINT size, LW dbg)
 {
 	LB* p=memoryAlloc(th, size<< LSHIFT, TYPE_ARRAY, dbg);
 	if (!p) return NULL;
+#ifdef USE_ALL_BITS
 	memset(BIN_START(p), 0, size + (size << LSHIFT));
+#else
+	{
+		LINT i;
+		for (i = 0; i < size; i++) ARRAY_SET_NIL(p, i);
+	}
+#endif
 	return p;
 }
 
@@ -192,8 +201,10 @@ void memoryDesalloc(LB* p)
 	LINT type = HEADER_TYPE(p);
 	LINT total = sizeof(LB) + (((size + LWLEN - 1) >> LSHIFT) << LSHIFT);
 	Mem* mem = p->mem;
+#ifdef USE_ALL_BITS
 	if (type == TYPE_ARRAY) total += (((size >> LSHIFT) + LWLEN - 1) >> LSHIFT) << LSHIFT;
-//	if (MemoryCheck == p) PRINTF(LOG_DEV,"try desalloc MemoryCheck\n");
+#endif
+	//	if (MemoryCheck == p) PRINTF(LOG_DEV,"try desalloc MemoryCheck\n");
 //	if ((total == 72) && (p->mem == MemoryCheck)) PRINTF(LOG_DEV,"MemoryCheck (%lld) %llx -=%lld\n", INT_FROM_VAL(HEADER_DBG(p)), p, 72);
 	while (mem)
 	{

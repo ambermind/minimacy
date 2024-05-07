@@ -17,7 +17,7 @@ export COOKIE_SAMESITE_STRICT;;
 export COOKIE_SAMESITE_NONE;;
 
 // as of 01 apr 2023, client certificate on tls12 server is not working with firefox, yet working with chrome
-export httpSrvStart12Ex hostList ip port onConnect;;
+//export httpSrvStart12Ex hostList ip port onConnect;;
 export httpSrvStartEx hostList ip port onConnect;;
 export httpSrvStart hostList ip port onRequest;;
 export httpSrvSetDefaultTimeout srv timeout ;;
@@ -51,17 +51,17 @@ use core.util.base64;;
 use core.crypto.hash;;
 use core.crypto.oid;;
 use core.crypto.pem;;
-use core.net.xtcp;;
+use core.net.tls13;;
 use core.net.http;;
 
 const HTTPSERVER_TIMEOUT=4000;;
 const HTTPSERVER_WS_TIMEOUT=5*60000;;
 
-struct HttpSrv=[fListenS tcpSrvS timeoutS onConnectS];;
+struct HttpSrv=[tcpSrvS timeoutS onConnectS];;
 
 struct HttpConnection=[
-	ttH sendH iH closeAfterH timeH timeoutH
-	tlsH serverH
+	tcpH ttH sendH iH closeAfterH timeH timeoutH
+	tlsH
 	requestH requestHeadersH cookiesH postDataH
 	statusH replyHeadersH
 	handleDataH
@@ -130,11 +130,11 @@ fun _parseMultipart contentType ds df data=
 fun _httpSend h data=
 	set h.sendH=strConcat h.sendH data;
 //	echo "_httpSend "; echoLn 
-	set h.iH=xTcpWrite h.ttH h.sendH h.iH;
+	set h.iH=streamWrite h.ttH h.sendH h.iH;
 	if h.iH>=strLength h.sendH then (
 		if h.closeAfterH then
 		(
-			xTcpClose h.ttH;
+			streamClose h.ttH;
 			set h.ttH=nil
 		);
 		set h.sendH=nil;
@@ -260,7 +260,7 @@ fun _wsCheckContent h data=
 	let firstByte&15 -> opcode in
 	if opcode==WS_OPCODE_CLOSE then
 	(
-		xTcpClose h.ttH;
+		streamClose h.ttH;
 		set h.ttH=nil;
 		call h.onMessageH WS_OPCODE_CLOSE nil;
 		nil
@@ -408,17 +408,18 @@ fun _httpTimer h=
 	if h.ttH<>nil then
 	if (timeMs - h.timeH)>=h.timeoutH then (
 //		echoTime "]close on timeout";
-		xTcpClose h.ttH;
+		streamClose h.ttH;
 		set h.ttH=nil;
 		nil
 	)
 	else onTimeout 1000 (lambda = _httpTimer h);;
 
-fun _httpFromServer tls tt timeout onConnect=
-	let xTcpGetServerName tt -> server in
-	let [ttH=tt tlsH=tls serverH=server] -> h in
+
+fun _httpFromServer tls tcp tt timeout onConnect=
+//echoLn "_httpFromServer";
+	let [tcpH=tcp ttH=tt tlsH=tls] -> h in
 	if !call onConnect h then (
-		xTcpClose h.ttH;
+		streamClose h.ttH;
 		set h.ttH=nil;
 		false
 	)
@@ -429,7 +430,7 @@ fun _httpFromServer tls tt timeout onConnect=
 		_serverReset h;
 		httpSrvSetTimeout h (if timeout<>nil then timeout else HTTPSERVER_TIMEOUT);
 		_httpTimer h;
-		xTcpOnEvent tt
+		streamOnEvent tt
 			(lambda data=
 //echoLn "receive"; hexDump data;
 				httpTouch h;
@@ -445,16 +446,13 @@ fun _httpFromServer tls tt timeout onConnect=
 
 fun httpSrvUpdateHostList srv hostList=
 	let hostList<>nil -> tls in
-	nil<>call srv.fListenS hostList srv.tcpSrvS (lambda tt=
+	let tlsMakeHosts hostList -> hosts in
+	nil<>tcpSrvOnAccept srv.tcpSrvS (lambda tcp= 
 		threadStart "httpd" (lambda =
-			_httpFromServer tls tt srv.timeoutS srv.onConnectS
+			let if tls then Stream<tlsTcpAccept tcp hosts else Stream<tcp -> tt in
+			_httpFromServer tls tcp tt srv.timeoutS srv.onConnectS
 		)
 	);;
-
-fun _httpSrvStartEx fListen hostList ip port onConnect=
-	let tcpSrvCreate ip port -> tcpSrv in
-	let [fListenS=fListen tcpSrvS=tcpSrv onConnectS=onConnect] -> srv in
-	if httpSrvUpdateHostList srv hostList then srv;;
 
 fun _addIfNotNil a l= if a==nil then l else a:l;;
 
@@ -466,9 +464,12 @@ const COOKIE_SAMESITE_STRICT=8;;
 const COOKIE_SAMESITE_NONE=16;;
 
 // as of 01 apr 2023, client certificate on tls12 server is not working with firefox, yet working with chrome
-fun httpSrvStart12Ex hostList ip port onConnect= _httpSrvStartEx #xTcpSrvOnAccept12 hostList ip port onConnect;;
+//fun httpSrvStart12Ex hostList ip port onConnect= _httpSrvStartEx hostList ip port onConnect;;
 
-fun httpSrvStartEx hostList ip port onConnect= _httpSrvStartEx #xTcpSrvOnAccept hostList ip port onConnect;;
+fun httpSrvStartEx hostList ip port onConnect=
+	let tcpSrvCreate ip port -> tcpSrv in
+	let [tcpSrvS=tcpSrv onConnectS=onConnect] -> srv in
+	if httpSrvUpdateHostList srv hostList then srv;;
 
 fun httpSrvStart hostList ip port onRequest=
 	httpSrvStartEx hostList ip port (lambda h=
@@ -490,19 +491,19 @@ fun httpSrvSetTimeout h timeout =
 	set h.timeH=timeMs;
 	set h.timeoutH=timeout;;
 
-fun httpSrvGetRemote h = [(xTcpRemoteIp h.ttH) (xTcpRemotePort h.ttH)];;	// returns [ip port]
+fun httpSrvGetRemote h = [(tcpRemoteIp h.tcpH) (tcpRemotePort h.tcpH)];;	// returns [ip port]
 
 fun httpSrvGetCookies h = h.cookiesH;;
 fun httpSrvGetCookie h cookie= hashmapGet h.cookiesH cookie;;
 
 fun httpSrvGetRequest h = h.requestH;;	// returns [verb uri version]
 fun httpSrvGetRequestHeaders h = h.requestHeadersH;;
-fun httpSrvGetServerName h = h.serverH;;
+fun httpSrvGetServerName h = tlsGetServerName (tlsFromStream h.ttH);;
 fun httpSrvGetPostData h = h.postDataH;;
 
-fun httpSrvGetClientCertificate h= xTcpGetClientCertificate h.ttH;;
+fun httpSrvGetClientCertificate h= tlsGetClientCertificate (tlsFromStream h.ttH);;
 fun httpSrvGetClientCertificateLogin h= 
-	let xTcpGetClientCertificate h.ttH -> cer in
+	let httpSrvGetClientCertificate h -> cer in
 	let strSplit OID_SEP oidHashmapSUBJECT cer -> subject in
 	strSlice (listFind subject lambda val= strStartsWith val "CN=") 3 nil;;
 

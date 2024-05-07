@@ -57,8 +57,8 @@ int start(int argc, char** argv)
 
 //	if (!standalone) termSetMask(LOG_USER);	// disable LOG_SYS
 
-	if ((LWLEN==8)&&(sizeof(LINT)==8)&&(sizeof(LFLOAT)==8)) PRINTF(LOG_SYS,"> 64 bits\n");
-	else if ((LWLEN==4)&&(sizeof(LINT)==4)&&(sizeof(LFLOAT)==4) && (sizeof(double) == 8)) PRINTF(LOG_SYS,"> 32 bits\n");
+	if ((LWLEN==8)&&(sizeof(LINT)==8)&&(sizeof(LFLOAT)==8)) PRINTF(LOG_SYS,"> %d bits\n",64-NUMBER_RESERVED_BITS);
+	else if ((LWLEN==4)&&(sizeof(LINT)==4)&&(sizeof(LFLOAT)==4) && (sizeof(double) == 8)) PRINTF(LOG_SYS,"> %d bits\n", 32 - NUMBER_RESERVED_BITS);
 	else
 	{
 		PRINTF(LOG_USER,"> wrong system [P:%d I:%d F:%d D:%d]\n",LWLEN,sizeof(LINT),sizeof(LFLOAT),sizeof(double));
@@ -82,7 +82,6 @@ int start(int argc, char** argv)
 		goto cleanup;
 	}
 #ifdef USE_MEMORY_C
-	PRINTF(LOG_SYS,"> Allocated memory: %lld bytes\n",MEMORY_C_LENGTH);
 	cMallocInit();
 #endif
 	fsInit();

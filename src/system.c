@@ -595,6 +595,7 @@ void systemInit(Thread* th, Pkg *system)
 	coreAudioInit(th, system);
 
 	sysSocketInit(th, system);
+	sysSerialInit(th, system);
 	tmpInit(th, system);
 	sysWorkerInit(th, system);
 	sysFileInit(th, system);

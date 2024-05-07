@@ -10,16 +10,10 @@
    with this program. If not, see <https://www.gnu.org/licenses/>. */
 #include "minimacy.h"
 #include "system_inflate.h"
-
 typedef struct
 {
 	Thread* th;
 	Buffer* out;
-
-	char* src;
-	int srcLen;
-	int bit;
-	int done;
 
 	HuffNode* lenDecoder;
 	HuffNode lenSet[MAX_LENGTH *2];
@@ -28,6 +22,10 @@ typedef struct
 	HuffNode* distDecoder;
 	HuffNode distSet[32*2];
 
+	char* src;
+	int srcLen;
+	int bit;
+	int done;
 } Inflate;
 int LEN_ORDER[] = {	//19
 	16, 17, 18, 0, 8, 7, 9, 6,
@@ -354,9 +352,10 @@ MTHREAD_START _inflate(Thread* th)
 	LB* src= STACK_PNT(th, 0);
 	Buffer* out = (Buffer*)STACK_PNT(th, 1);
 	if ((!src)||(!out)) return workerDonePnt(th,MM._false);
-
 	inflateInit(&z, th, src, out);
-	if (inflateLoop(&z) || !z.done) return workerDonePnt(th,MM._false);
+	if (inflateLoop(&z) || !z.done) {
+		return workerDonePnt(th,MM._false);
+	}
 	return workerDonePnt(th,MM._true);
 }
 

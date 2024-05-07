@@ -50,7 +50,6 @@ LINT compileInstanceDefSolver(Compiler* c,Def* def)
 		k = typeUnify(c, defType, t);
 		if (k)
 		{	
-			if (c->parser->name) PRINTF(LOG_USER, "> Compiler error: error in %s\n", c->parser->name);
 			PRINTF(LOG_USER, "> Compiler error: type error when '%s' calls '%s'\n", defName(def), defName(target));
 			return k;
 		}

@@ -31,7 +31,6 @@ export mysqlConvertColumns h l;;
 
 use core.util.base64;;
 use core.crypto.hash;;
-use core.net.xtcp;;
 use core.net.dns;;
 
 const COMMAND_QUIT="\1";;
@@ -114,11 +113,11 @@ fun _mysqlSend h data=
 //	echoTime "send"; hexDump data;
 	set h.sendC=strConcat h.sendC data;
 //	echo "send "; echoLn 
-	set h.iC=xTcpWrite h.ttC h.sendC h.iC;
+	set h.iC=streamWrite h.ttC h.sendC h.iC;
 	if h.iC>=strLength h.sendC then (
 		if h.closeAfterC then
 		(
-			xTcpClose h.ttC;
+			streamClose h.ttC;
 			set h.ttC=nil
 		);
 		set h.sendC=nil;
@@ -134,7 +133,7 @@ fun _mysqlCbLastCall h reply=
 		if h.stageC==ongoingS then set h.stageC=readyS
 		else
 		(
-			xTcpClose h.ttC;
+			streamClose h.ttC;
 			set h.stageC=terminatedS
 		);
 		call cb reply;
@@ -315,8 +314,8 @@ fun __mysqlConnect h ip cbConnect=
 	set h.cbQueryQ=
 		if th==h.thP then (lambda ok= call cbConnect h ok;nil)
 		else (lambda ok= threadPost th (lambda = call cbConnect h ok));
-	set h.ttC= xTcpOpen ip h.portP (if h.tlsP then h.serverP);
-	xTcpOnEvent h.ttC
+	set h.ttC= tcpOpen ip h.portP; //(if h.tlsP then h.serverP);
+	streamOnEvent h.ttC
 	(lambda data=
 //	echoLn "receive"; hexDump data; echoTime h.stageC;
 		if data==nil then let h.cbQueryQ -> cb in
@@ -334,7 +333,8 @@ fun __mysqlConnect h ip cbConnect=
 	(lambda = _mysqlSend h nil);;
 
 fun mysqlConnect server port login password database tls cbConnect=
-	if cbConnect<>nil then
+	if tls then (echoLn "> Mysql SSL not yet supported"; nil)
+	else if cbConnect<>nil then
 	let [
 		thP=thisThread
 		serverP=server portP=port tlsP=tls

@@ -91,6 +91,22 @@ char* romdiskLookup(char* romdisk, char* path, int* size)
 	return NULL;
 }
 
+void romdiskDump()
+{
+	int i;
+	for(i=0;i<NB_FILE_TABLE;i++) if (Romdisks[i].data) {
+		PRINTF(LOG_SYS,"> romdisk %d: %s (%d)\n",i,Romdisks[i].name,Romdisks[i].native);
+	
+		int j = 1;
+		int* table = (int*)Romdisks[i].data;
+		if (!table) return;
+		while (table[j]) {
+			PRINTF(LOG_SYS,"> ---- %s\n",&Romdisks[i].data[table[j]]);
+			j++;
+		}
+	}
+}
+
 LB* romdiskReadContent(Thread* th, int romdiskId, char* path, int* size)
 {
 	int len;
@@ -192,6 +208,7 @@ char* bootDiskLoader()
 	bufferBootLoader[len] = 0;
 	if (!romdiskCheck(bufferBootLoader, len)) {
 		uartPut("<WRONG_FORMAT_ERROR>\n", 21);
+//		_myHexDump(bufferBootLoader, len,0);
 		return NULL;
 	}
 	uartPut("<DONE>\n",7);
@@ -212,6 +229,7 @@ void romdiskInit()
 		if (RomdiskBootLoader) romdiskAdd(RomdiskBootLoader,"BOOTDISK",1);
 	}
 #endif
+//	romdiskDump();
 }
 
 int romdiskImport(char* src, LINT len)

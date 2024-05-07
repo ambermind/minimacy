@@ -8,6 +8,7 @@
    version 2.0, for more details.
    You should have received a copy of the GNU General Public License along
    with this program. If not, see <https://www.gnu.org/licenses/>. */
+use core.crypto.oid;;
 use core.crypto.hash;;
 use core.crypto.pkcs1;;
 use core.crypto.rsapss;;
@@ -27,15 +28,12 @@ const ANS1_SHA256_MAGIC="3031300d060960864801650304020105000420";;
 const ANS1_SHA384_MAGIC="3041300d060960864801650304020205000430";;
 const ANS1_SHA512_MAGIC="3051300d060960864801650304020305000440";;
 
-fun rsaSignAlgoByName algo=
+fun rsaSignAlgoByOID algo=
 	match algo with
-		"RSA_PSS_RSAE_SHA256"->RSA_PSS_RSAE_SHA256,
-		"RSA_PSS_RSAE_SHA384"->RSA_PSS_RSAE_SHA384,
-		"RSA_PSS_RSAE_SHA512"->RSA_PSS_RSAE_SHA512,
-		"RSA_PKCS1_SHA1"->RSA_PKCS1_SHA1,
-		"RSA_PKCS1_SHA256"->RSA_PKCS1_SHA256,
-		"RSA_PKCS1_SHA384"->RSA_PKCS1_SHA384,
-		"RSA_PKCS1_SHA512"->RSA_PKCS1_SHA512;;
+		OID_RSA_PKCS1_SHA1 -> RSA_PKCS1_SHA1,
+		OID_RSA_PKCS1_SHA256 -> RSA_PKCS1_SHA256,
+		OID_RSA_PKCS1_SHA384 -> RSA_PKCS1_SHA384,
+		OID_RSA_PKCS1_SHA512 -> RSA_PKCS1_SHA512;;
 
 // return :
 // - nil : unknown algorithm

@@ -60,15 +60,15 @@ fun _internalInit=
 		_socketS=_internalOpen
 		_thS=_This
 		_onSelectReadS = (lambda =
-			_sockSetSelectRead _InternalPipe._socketS true;
+			_socketSetSelectRead _InternalPipe._socketS true;
 			set _InternalBuffer=strConcat _InternalBuffer _internalRead _InternalPipe._socketS;
 			_handleInternal 0;
 			true
 		)
-		_showS=(lambda fEcho= call fEcho "internal" "-" _ThreadBios)
+		_showS=(lambda fEcho= call fEcho "internal" "-")
 	];
 	_streamAddToList _InternalPipe;
-	_sockSetSelectRead _InternalPipe._socketS true;;
+	_socketSetSelectRead _InternalPipe._socketS true;;
 
 var _Workers;;
 

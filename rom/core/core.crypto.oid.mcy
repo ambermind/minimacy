@@ -98,7 +98,7 @@ const OID_C=OID_2_5_4_6;;
 const OID_L=OID_2_5_4_7;;
 const OID_ST=OID_2_5_4_8;;
 
-const OIDs= hashmapInit 6
+const NiceOIDs= hashmapInit 6
 [OID_1_2_840_10045_2_1 "ecPublicKey"]:
 [OID_1_2_840_10045_3_1_7 "prime256v1"]:
 [OID_1_2_840_113549_1_1_1 "rsaEncryption"]:
@@ -108,11 +108,6 @@ const OIDs= hashmapInit 6
 [OID_1_2_840_113549_1_1_13 "RSA_PKCS1_SHA512"]:
 [OID_1_2_840_113549_1_9_1 "emailAddress"]:
 [OID_1_2_840_113549_1_9_14 "id_ExtensionReq"]:
-
-
-
-
-
 [OID_1_3_6_1_4_1_311_60_2_1_2 "jurisdictionOfIncorporationStateOrProvinceName"]:
 [OID_1_3_6_1_4_1_311_60_2_1_3 "jurisdictionOfIncorporationCountryName"]:
 [OID_1_3_6_1_5_5_7_1_1 "authorityInfoAccess"]:
@@ -121,8 +116,6 @@ const OIDs= hashmapInit 6
 [OID_1_3_6_1_5_5_7_3_2 "clientAuth"]:
 [OID_1_3_6_1_5_5_7_48_1 "id_ad_ocsp"]:
 [OID_1_3_6_1_5_5_7_48_2 "caIssuers"]:
-
-
 [OID_2_23_140_1_1 "ev_guidelines"]:
 [OID_2_23_140_1_2_1 "domain_validated"]:
 [OID_2_23_140_1_2_2 "organization_validated"]:
@@ -144,8 +137,7 @@ const OIDs= hashmapInit 6
 [OID_2_5_4_8 "ST"]:
 nil;;
 
-fun nameByOID code = hashmapGet OIDs code;;
-fun niceOID code= let nameByOID code -> name in if name<>nil then name else code;;
+fun niceOID code= let hashmapGet NiceOIDs code -> name in if name<>nil then name else code;;
 
 fun _oidVarUInt bin i=
 	if i<strLength bin then (strReadVarUInt bin i):_oidVarUInt bin strVarUIntNext bin i;;

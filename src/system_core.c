@@ -446,7 +446,7 @@ int fun_args(Thread* th)
 int fun_hostMemory(Thread* th)
 {
 #ifdef USE_MEMORY_C
-	FUN_RETURN_INT(MEMORY_C_LENGTH);
+	FUN_RETURN_INT(MEMORY_C_SIZE);
 #else
 	FUN_RETURN_NIL
 #endif
@@ -475,6 +475,13 @@ intOpeI_I(fun_signExtend32,signExtend32)
 intOpeI_I(fun_signExtend16,signExtend16)
 intOpeI_I(fun_signExtend8,signExtend8)
 
+int fun_signExtend(Thread* th)
+{
+	LINT bit=STACK_INT(th,0);
+	LINT val=STACK_INT(th,1);
+	val=signExtend(val,bit);
+	FUN_RETURN_INT(val);
+}
 int coreInit(Thread* th, Pkg *system)
 {
 	LFLOAT pi=3.14159265359;
@@ -601,6 +608,7 @@ int coreInit(Thread* th, Pkg *system)
 	pkgAddFun(th, system,"signExtend32",fun_signExtend32,fun_I_I);
 	pkgAddFun(th, system,"signExtend16",fun_signExtend16,fun_I_I);
 	pkgAddFun(th, system,"signExtend8",fun_signExtend8,fun_I_I);
+	pkgAddFun(th, system,"signExtend",fun_signExtend,fun_I_I_I);
 
 	pkgAddOpcode(th, system,"abs",OPabs,fun_I_I);
 	pkgAddOpcode(th, system,"min",OPmin,fun_I_I_I);

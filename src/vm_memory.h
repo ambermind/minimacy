@@ -11,6 +11,8 @@
 #ifndef _CORE_MEMORY_
 #define _CORE_MEMORY_
 
+#define USE_ALL_BITS
+
 #ifdef USE_MEMORY_C
 void cMallocInit();
 void* bmmMalloc(long long size);
@@ -158,6 +160,7 @@ typedef struct {
 	Type* Exception;
 	Type* Type;
 	Type* Thread;
+	Type* Socket;
 	Type* VolumeType;
 	LW MemoryException;
 	Type* fun_u0_list_u0_list_u0;
@@ -230,6 +233,9 @@ typedef int (*NATIVE)(Thread*);
 #define HEADER_SET_SIZE_AND_TYPE(p,size,type) ((p)->sizeAndType=((size<<2)+(type&3)))
 #define HEADER_DBG(p) ((p)->data[0])
 
+
+#ifdef USE_ALL_BITS
+#define NUMBER_RESERVED_BITS 0
 #define DBG_IS_PNT(v) (!(((LINT)(v))&1))
 
 #define VAL_FROM_PNT(p) ((LW)(p))
@@ -263,6 +269,41 @@ typedef int (*NATIVE)(Thread*);
 	((char*)p)[sizeof(LB)+HEADER_SIZE(p)+ memI]= type; \
 	(p)->data[1+ memI]=v; \
 }
+#else
+#define NUMBER_RESERVED_BITS 2
+#define DBG_IS_PNT(v) (((LINT)v)&1)
+
+#define VAL_FROM_PNT(p) ((LW)((LINT)(1+((LINT)(p)))))
+#define VAL_FROM_INT(i) ((LW)((LINT)(((i)<<2)|2)))
+#define VAL_FROM_FLOAT(v) ((LW)((LINT)(((~3)&(*(LINT*)(&(v)))))))
+
+#define PNT_FROM_VAL(v) ((LB*)(((LINT)v)-1))
+#define INT_FROM_VAL(v) (((LINT)((LINT)v))>>2)
+#define FLOAT_FROM_VAL(v) (*((LFLOAT*)(&(v))))
+
+#define VAL_TYPE_FLOAT 0
+#define VAL_TYPE_PNT 1
+#define VAL_TYPE_INT 2
+
+#define VAL_FROM_DEBUG(x) VAL_FROM_INT(x)
+#define NIL ((LW)1)	// nil
+
+#define ARRAY_TYPE(p,i) (((LINT)(p)->data[1+(i)])&3)
+#define ARRAY_SET_TYPE(p,i,v,type) \
+{ \
+	LINT memVal=(LINT)v; \
+	int memType=type; \
+	memVal=(memVal&-4)|type;	\
+	(p)->data[1+(i)]=(LW)memVal; \
+ 	if (memType==VAL_TYPE_PNT) MEMORY_MARK(p,PNT_FROM_VAL((LW)memVal)); \
+}
+#define ARRAY_SET_TYPE_NO_MARK(p,i,v,type) \
+{ \
+	(p)->data[1+(i)]=v; \
+}
+
+#endif
+
 
 #define ARRAY_SET_PNT(dst,i,v) ARRAY_SET_TYPE(dst,i,VAL_FROM_PNT(v),VAL_TYPE_PNT)
 #define ARRAY_SET_NIL(dst,i) ARRAY_SET_TYPE_NO_MARK(dst,i,VAL_FROM_PNT(NULL),VAL_TYPE_PNT)

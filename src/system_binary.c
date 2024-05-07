@@ -215,18 +215,6 @@ int name(Thread* th) {\
 	return 0; \
 }
 
-#define CORE_STRFROMINT16(name,convert) \
-int name(Thread* th) {\
-	char* str; \
-	LINT val = STACK_PULL_INT(th); \
-	FUN_PUSH_STR(NULL,2);\
-	str=STR_START(STACK_PNT(th,0)); \
-	val = convert(val); \
-	*(str++) = val&255; val>>=8; \
-	*(str++) = val&255; val>>=8; \
-	return 0;\
-}
-
 #define CORE_BYTESREAD24(name,convert) \
 int name(Thread* th) {\
 	unsigned char* str; LINT val; \
@@ -301,19 +289,6 @@ int name(Thread* th) {\
 	return 0; \
 }
 
-#define CORE_STRFROMINT32(name,convert) \
-int name(Thread* th) {\
-	char* str; \
-	LINT val = STACK_PULL_INT(th); \
-	FUN_PUSH_STR(NULL,4);\
-	str=STR_START(STACK_PNT(th,0)); \
-	val = convert(val); \
-	*(str++) = val&255; val>>=8; \
-	*(str++) = val&255; val>>=8; \
-	*(str++) = val&255; val>>=8; \
-	*(str++) = val&255; val>>=8; \
-	return 0;\
-}
 #ifdef NEED_ALIGN
 CORE_BYTESREAD16(fun_bytesRead16Lsb, LSBW)
 CORE_BYTESREAD16(fun_bytesRead16Msb, MSBW)
@@ -324,11 +299,6 @@ CORE_BYTESWRITE16(fun_bytesWrite16Lsb, LSBW)
 CORE_BYTESWRITE16(fun_bytesWrite16Msb, MSBW)
 CORE_BYTESWRITE32(fun_bytesWrite32Lsb, LSBL)
 CORE_BYTESWRITE32(fun_bytesWrite32Msb, MSBL)
-
-CORE_STRFROMINT16(fun_strInt16Lsb, LSBW)
-CORE_STRFROMINT16(fun_strInt16Msb, MSBW)
-CORE_STRFROMINT32(fun_strInt32Lsb, LSBL)
-CORE_STRFROMINT32(fun_strInt32Msb, MSBL)
 #else
 CORE_BYTESREAD(fun_bytesRead32Lsb, int, LSBL)
 CORE_BYTESREAD(fun_bytesRead32Msb, int, MSBL)
@@ -339,12 +309,12 @@ CORE_BYTESWRITE(fun_bytesWrite32Lsb, int, LSBL)
 CORE_BYTESWRITE(fun_bytesWrite32Msb, int, MSBL)
 CORE_BYTESWRITE(fun_bytesWrite16Lsb, short, LSBW)
 CORE_BYTESWRITE(fun_bytesWrite16Msb, short, MSBW)
+#endif
 
 CORE_STRFROMINT(fun_strInt32Lsb, int, LSBL)
 CORE_STRFROMINT(fun_strInt32Msb, int, MSBL)
 CORE_STRFROMINT(fun_strInt16Lsb, short, LSBW)
 CORE_STRFROMINT(fun_strInt16Msb, short, MSBW)
-#endif
 
 CORE_BYTESREAD24(fun_bytesRead24Lsb, LSB24)
 CORE_BYTESREAD24(fun_bytesRead24Msb, MSB24)

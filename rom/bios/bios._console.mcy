@@ -9,84 +9,156 @@
    You should have received a copy of the GNU General Public License along
    with this program. If not, see <https://www.gnu.org/licenses/>. */
 
-struct Console=[_inputC _pkgC _escC _nameC /*_prevHistoryC _nextHistoryC*/ ];;
+struct Console=[_pkgC];;
 
-fun _promptEcho csl = echo strConcat csl._nameC "] ";;
+var PromptBuffer;;
+var PromptIndex=0;;	// index in promptBuffer, always at the beginning of a utf8 char
+var PromptTmp;;
+var PromptHistoryPrev;;
+var PromptHistoryNext;;
 
-fun _promptRun csl input=
-	if input=="new" then set csl._pkgC=pkgCreate nil nil
-	else if input<>nil then
-	(
-//		if input<>head csl._prevHistoryC then set csl._prevHistoryC=input:csl._prevHistoryC;
-		_promptTry input csl._pkgC;
-		nil
-	);
-	_promptEcho csl;;
+fun _promptHome =
+	if PromptIndex>0 then echo strCreate (strLengthU8 strLeft PromptBuffer PromptIndex) 8;
+	set PromptIndex=0;;
 
-fun _clearPrompt csl=
-	let strLength trim csl._inputC -> n in
-	for i=0;i<n do echo "\8 \8";
-	set csl._inputC="";;
+fun _promptForward i n=
+	if n<=0 || i>=strLength PromptBuffer then i
+	else _promptForward (strU8Next PromptBuffer i) n-1;;
 
-fun _consoleInput csl c=
-	let strFromChar c -> str in
-	if csl._escC<>nil then
-	(
-/*		if c==0x48 then
-		(
-			let head csl._prevHistoryC -> cmd in
-			if cmd<>nil then
-			(
-				set csl._nextHistoryC=cmd:csl._nextHistoryC;
-				set csl._prevHistoryC=tail csl._prevHistoryC;
-				_clearPrompt csl;
-				echo set csl._inputC=cmd
-			)
-		)
-		else if c==0x50 then
-		(
-			let head csl._nextHistoryC -> cmd in
-			if cmd<>nil then
-			(
-				set csl._prevHistoryC=cmd:csl._prevHistoryC;
-				set csl._nextHistoryC=tail csl._nextHistoryC;
-				_clearPrompt csl;
-				echo set csl._inputC=cmd
-			)
-		);
-*/		set csl._escC=nil;
-		nil
-	)
-	else if c==8 then	// this will happen only on windows
-	(
-		set csl._inputC=strSlice csl._inputC 0 (strLength csl._inputC)-1;
-		echo " \8"
-	)
-	else if c==0xe0 then
-	(
-		set csl._escC=c;
-		nil
-	)
-	else
-	(
-		if c== 10 || c==13 then
-		(
-			_promptRun csl csl._inputC;
-			set csl._inputC=nil
-		)
-		else set csl._inputC=strConcat csl._inputC str;
-	);
+fun _promptEnd n =
+	let if n==nil then strLength PromptBuffer else n -> n in
+	let _promptForward PromptIndex n -> iNext in (
+		echo strSlice PromptBuffer PromptIndex iNext-PromptIndex;
+		set PromptIndex= iNext
+	);;
+
+fun _promptInsert str=
+	let strLeft PromptBuffer PromptIndex -> prefix in
+	let strSlice PromptBuffer PromptIndex nil -> suffix in (
+		echo {str suffix strCreate (strLengthU8 suffix) 8};
+		set PromptBuffer=strListConcat prefix:str:suffix:nil;
+		set PromptIndex=PromptIndex+strLength str;
+	);;
+
+fun _promptRemove=
+	if PromptIndex>0 then
+	let strU8Previous PromptBuffer PromptIndex -> iNext in
+	let strLeft PromptBuffer iNext -> prefix in
+	let strSlice PromptBuffer PromptIndex nil -> suffix in (
+		echo {"\8" suffix " " strCreate (strLengthU8 suffix)+1 8};
+		set PromptBuffer=strConcat prefix suffix;
+		set PromptIndex=iNext;
+	);;
+
+fun _promptClear cmd=
+	_promptHome;
+	set PromptBuffer= strCreate (strLengthU8 PromptBuffer) 32;
+	_promptEnd nil;
+	_promptHome;
+	set PromptBuffer="";
+	_promptInsert cmd;;
+
+fun _promptUp =
+	let head PromptHistoryPrev -> cmd in
+	if cmd<>nil then (
+		if !strEmpty PromptBuffer then set PromptHistoryNext=PromptBuffer:PromptHistoryNext;
+		set PromptHistoryPrev=tail PromptHistoryPrev;
+		_promptClear cmd;
+	);;
+
+fun _promptDown =
+	let head PromptHistoryNext -> cmd in (
+		if !strEmpty PromptBuffer then set PromptHistoryPrev=PromptBuffer:PromptHistoryPrev;
+		set PromptHistoryNext=tail PromptHistoryNext;
+		_promptClear cmd
+	);;
+
+fun _promptLeft =
+	if PromptIndex>0 then (
+		echo "\8";
+		set PromptIndex= strU8Previous PromptBuffer PromptIndex;
+	);;
+fun _promptRight = 
+	if PromptIndex< strLength PromptBuffer then _promptEnd 1;;
+
+fun _promptDelete=
+	_promptRight;
+	_promptRemove;;
+
+fun _utf8Complete c0 len= len>= if c0<0xdf then 2 else if c0<0xef then 3 else 4;;
+
+fun _escComplete str c=
+	if !strStartsWith str "^[[" then true
+	else if str=="^[[" then false
+	else if c=='~' then true
+	else if c==';' then false
+	else if str=="^[[O" then false
+	else if c>='0' && c<='9' then false
+	else true;;
+
+fun _tmpComplete str c=
+	let strGet str 0 -> c0 in
+	match c0 with
+		'^'->_escComplete str c,
+		_ -> _utf8Complete c0 strLength str;;
+
+fun _promptSend fOnInput str=
+	echo "\n";
+	if (!strEmpty str) && (str<>head PromptHistoryPrev) then set PromptHistoryPrev=str:PromptHistoryPrev;
+	set PromptBuffer="";
+	set PromptIndex=0;
+	call fOnInput str;
 	0;;
+
+fun _promptInput fOnInput c=
+	if PromptTmp<>nil then
+	(
+		set PromptTmp=strConcat PromptTmp strFromChar c;
+		if _tmpComplete PromptTmp c then (
+			match PromptTmp with
+				"^[[A" -> _promptUp,
+				"^[[B" -> _promptDown,
+				"^[[3~"-> _promptDelete,
+				"^[[5~"-> _promptUp,
+				"^[[6~"-> _promptDown,
+				"^[[D" -> _promptLeft,
+				"^[[C" -> _promptRight,
+				"^[[H" -> _promptHome,
+				"^[[F" -> _promptEnd nil,
+				_ -> _promptInsert PromptTmp;
+			set PromptTmp=nil;
+			nil
+		)
+	)
+	else if c==0x7f then _promptRemove
+	else if c==0x1b then (set PromptTmp="^["; nil)
+	else if c>=0xc2 && c<=0xf4 then (set PromptTmp=strFromChar c; nil)
+	else if c==10 then _promptSend fOnInput PromptBuffer
+	else if c==4 then _promptSend fOnInput nil	// ctrl-D
+	else if c>=32 then _promptInsert strFromChar c;;
+
+fun onPrompt name fOnInput=
+	let (lambda input=
+		if call fOnInput input then (echo name; echo "] ";nil)
+		else inputClose)
+	-> fOnInput in
+	onInput (lambda s=
+		for i=0;i<strLength s do _promptInput fOnInput (strGet s i)
+	) (lambda = echoLn ""; echo name; echo "] ");;
 
 fun consoleStart p0=
 	let if p0==_SystemPkg || p0==nil then (pkgCreate nil nil) else p0 -> p in
-	let [_pkgC=p _nameC=pkgName p0] -> csl in
+	let [_pkgC=p] -> csl in
 	_threadNew "console" MAX_MEMORY_CONSOLE caller (lambda =
-		echo "\n\nMinimacy Top-level\nReady\n\n";
-		onInput (lambda s=
-			if s==nil then exit;	// on unix
-			//hexDump s;
-			for i=0;i<strLength s do _consoleInput csl strGet s i
-		) (lambda = _promptEcho csl);
+		echo "\n\nMinimacy Top-level\nReady\n";
+		onPrompt (pkgName p0) (lambda input=
+			if input==nil then (exit; nil)
+			else (
+				if input=="new" then (set csl._pkgC=pkgCreate nil nil; nil)
+				else if !strEmpty input then _promptTry input csl._pkgC;
+				true
+			)
+		);
+		nil
 	);
 	true;;

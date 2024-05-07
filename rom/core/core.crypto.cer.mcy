@@ -62,7 +62,7 @@ fun _x509ExtExtract h ext=
 			asn1ListOfHex listFromAsn1 content,
 		OID_2_5_29_37->
 			let _x509subExtract data -> content in
-			asn1ListOfOid listFromAsn1 content,
+			asn1ListOfNiceOid listFromAsn1 content,
 		OID_2_5_29_14->
 			let _x509subExtract data -> content in
 			(hexFromStr strFromAsn1 content):nil,
@@ -152,9 +152,9 @@ fun cerMatchServerName certificate serverName=
 fun cerCheckByAuth certificate certAuth=
 //	dump certificate;
 //	dump certAuth;
-//	dump niceOID oidHashmapSIGNALGO certificate;
+//	dump oidHashmapSIGNALGO certificate;
 	if certAuth<>nil then
-	signatureCheck (rsaSignAlgoByName niceOID oidHashmapSIGNALGO certificate) certAuth (strFromHex oidHashmapINFO certificate) (strFromHex oidHashmapSIGNATURE certificate);;
+	signatureCheck (rsaSignAlgoByOID oidHashmapSIGNALGO certificate) certAuth (strFromHex oidHashmapINFO certificate) (strFromHex oidHashmapSIGNATURE certificate);;
 
 fun rootCertificateRegister cer=
 	if !cerCheckTime cer time then (

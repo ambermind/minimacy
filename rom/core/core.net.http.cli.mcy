@@ -28,7 +28,9 @@ export httpGet12 url;;
 
 
 use core.crypto.hash;;
-use core.net.xtcp;;
+use core.net.tls13 as tls13;;
+use core.net.tls12 as tls12;;
+
 use core.net.dns;;
 use core.net.http;;
 
@@ -36,7 +38,7 @@ const HTTP_1_0="HTTP/1.0";;
 const HTTP_1_1="HTTP/1.1";;
 
 struct Http=[
-	ttH sendH iH closeAfterH busyH forceTls12H 
+	tcpH ttH sendH iH closeAfterH busyH forceTls12H 
 	timeH timeoutH
 	tlsH serverH ipH portH cipherSuitesH clientCertificateH clientKeyH
 	requestH requestHeadersH postDataH thH
@@ -172,11 +174,11 @@ fun _httpBuildRequest h=
 fun _httpSend h data=
 	set h.sendH=strConcat h.sendH data;
 //	echo "send "; echoLn 
-	set h.iH=xTcpWrite h.ttH h.sendH h.iH;
+	set h.iH=streamWrite h.ttH h.sendH h.iH;
 	if h.iH>=strLength h.sendH then (
 		if h.closeAfterH then
 		(
-			xTcpClose h.ttH;
+			streamClose h.ttH;
 			set h.ttH=nil
 		);
 		set h.sendH=nil;
@@ -198,7 +200,7 @@ fun _httpReceiveFinal h endFromContent=
 		if (!endFromContent)||	// true if we need to close explicitly the socket if we decide not to keep it alive
 		   (!serverKeepsAlive) then	// client and server are both http1.0, we close the connection
 		(
-			xTcpClose h.ttH;
+			streamClose h.ttH;
 			set h.ttH=nil
 		);
 		set h.cbReplyH=nil;
@@ -221,9 +223,16 @@ fun _httpReceiveReply h data=
 	);;
 
 fun _httpConnect h=
-	let if h.forceTls12H then #xTcpOpenExt12 else #xTcpOpenExt-> tcpOpen in
-	set h.ttH=call tcpOpen h.ipH h.portH (if h.tlsH then h.serverH) h.cipherSuitesH h.clientCertificateH h.clientKeyH;
-	xTcpOnEvent h.ttH
+	set h.tcpH=tcpOpen h.ipH h.portH;
+	set h.ttH =
+		if h.tlsH then
+			if h.forceTls12H then
+				Stream<tls12.tlsTcpOpenExt h.tcpH h.serverH h.cipherSuitesH h.clientCertificateH h.clientKeyH
+			else
+				Stream<tls13.tlsTcpOpenExt h.tcpH h.serverH h.cipherSuitesH h.clientCertificateH h.clientKeyH
+		else
+			Stream<h.tcpH;
+	streamOnEvent h.ttH
 		(lambda data=
 //	echoLn ["receive " strLength data];
 //	echoLn "receive"; hexDump data;
@@ -237,6 +246,7 @@ fun _httpConnect h=
 			nil
 		)
 		(lambda = 
+//		echoLn "http writable";
 			httpTouch h;
 			_httpSend h nil
 		);
@@ -259,7 +269,7 @@ fun _httpRestart h=
 fun httpSetHeader h key val=
 	hashmapSet h.requestHeadersH key val;
 	h;;
-fun httpGetRemote h = [(xTcpRemoteIp h.ttH) (xTcpRemotePort h.ttH)];;	// returns [ip port]
+fun httpGetRemote h = [(tcpRemoteIp h.tcpH) (tcpRemotePort h.tcpH)];;	// returns [ip port]
 
 fun httpFormUrlEncodedFromList l= strJoin "&" listMap l (lambda p=let p->[key val] in strBuild {(urlFromStr key) "=" urlFromStr val});;
 
@@ -329,7 +339,7 @@ fun httpSetMultipart h l=
 fun _httpTimer h=
 	if h.busyH || h.ttH<>nil then
 	if (timeMs - h.timeH)>=h.timeoutH then (
-		xTcpClose h.ttH;
+		streamClose h.ttH;
 		set h.ttH=nil;
 		set h.busyH=false;
 		call h.cbReplyH nil nil nil;
@@ -366,3 +376,4 @@ fun httpGet12 url=
 	await (lambda join=
 		httpSend (httpForceTls12 httpCreate nil url HTTP_1_0) (lambda status headers data= joinSend join data)
 	);;
+

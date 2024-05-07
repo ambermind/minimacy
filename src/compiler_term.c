@@ -200,6 +200,7 @@ Type* compileTerm(Compiler* c,int noPoint)
 	else if (!strcmp(c->parser->token,"["))
 	{
 		int nval=0;
+		int parserSave = parserIndex(c);
 		if (parserNext(c))
 		{
 			if (islabel(c->parser->token))
@@ -208,7 +209,7 @@ Type* compileTerm(Compiler* c,int noPoint)
 				if ((p)&&(p->code==DEF_CODE_FIELD))	return compileFields(c,p);
 				if ((p) && (p->code == DEF_CODE_STRUCT))	return compileEmptyStruct(c, p);
 			}
-			parserGiveback(c);
+			parserJump(c,parserSave);
 		}
 		while(1)
 		{
