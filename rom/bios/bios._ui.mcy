@@ -211,7 +211,7 @@ fun _uiStopThread th= if th==_UiThread then uiStop;;
 fun uiW=if _UiFullGL then _uiW else bitmapW _BackBuffer;;
 fun uiH=if _UiFullGL then _uiH else bitmapH _BackBuffer;;
 
-fun uiStartDefault x y w h flag name=
+fun _uiStartDefault x y w h flag name=
 	set _BackBuffer=nil;
 	set _ProgramTexture=nil;
 	set _Texture=nil;
@@ -303,7 +303,7 @@ fun _bestMode w h =
 	) -> [i _] in
 	i;;
 
-fun uiStartDefault x y w h flag name= 
+fun _uiStartDefault x y w h flag name= 
 //	echoLn strFormat "uiStart * *" w h;
 	let _bestMode w h -> mode in (
 		graphicSetMode mode;
@@ -342,7 +342,7 @@ fun uiH=nil;;
 fun _xConvert x= x;;
 fun _yConvert y= y;;
 
-fun uiStartDefault x y w h flag name= nil;;
+fun _uiStartDefault x y w h flag name= nil;;
 fun uiBufferSetSize w h filter= nil;;
 fun uiBuffer = nil;;
 fun _uiUpdateRegion x y w h =nil;;
@@ -427,6 +427,7 @@ fun uiPostMouseMove x y v = _uiOnMouseMove x y v;;
 fun uiPostClick x y v = _uiOnClick x y v;;
 fun uiPostUnclick x y v = _uiOnUnclick x y v;;
 fun uiPostVwheel x y v = _uiOnVwheel x y v;;
+fun uiPostHwheel x y v = _uiOnHwheel x y v;;
 
 fun uiOnPaint cb= set _Uicb._EVENT_PAINT=(lambda x y v = call cb; true);true;;
 fun uiOnMouseMove cb= set _Uicb._EVENT_MOUSEMOVE=(lambda x y v = call cb x y v; true);true;;
@@ -453,7 +454,7 @@ fun uiStart x y w h flag name=
 	(
 		_uiInit;
 		set _UiThread= _This;
-		uiStartDefault x y w h flag name
+		_uiStartDefault x y w h flag name
 	);;
 fun uiStop =
 	if _UiThread<>nil then

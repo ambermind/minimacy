@@ -176,10 +176,18 @@ fun _bitmapText bmp x y flag lText lineSpacing f fg bg u8=
 fun bitmapText bmp x y flag text f fg bg=_bitmapText bmp x y flag text:nil 0 f fg bg false;;
 fun bitmapTextU8 bmp x y flag text f fg bg=_bitmapText bmp x y flag text:nil 0 f fg bg true;;
 
+fun _bitmapMultiLineText bmp x y w flag lText lineSpacing f fg bg u8=
+	let match ALIGN_HOR_MASK&flag with
+		ALIGN_CENTER -> x+(w>>1),
+		ALIGN_RIGHT -> x+w,
+		_-> x
+	-> x in
+	_bitmapText bmp x y flag lText lineSpacing f fg bg u8;;
+
 fun bitmapMultiLineText bmp x y w lineSpacing flag text f fg bg=
 	let fontStringMultiline f text w -> lText in
-	_bitmapText bmp x y flag lText lineSpacing f fg bg false;;
+	_bitmapMultiLineText bmp x y w flag lText lineSpacing f fg bg false;;
 
 fun bitmapMultiLineTextU8 bmp x y w lineSpacing flag text f fg bg=
 	let fontStringMultilineU8 f text w -> lText in
-	_bitmapText bmp x y flag lText lineSpacing f fg bg true;;
+	_bitmapMultiLineText bmp x y w flag lText lineSpacing f fg bg true;;

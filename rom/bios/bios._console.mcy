@@ -9,77 +9,77 @@
    You should have received a copy of the GNU General Public License along
    with this program. If not, see <https://www.gnu.org/licenses/>. */
 
-struct Console=[_pkgC];;
+struct _Console=[_pkgC];;
 
-var PromptBuffer;;
-var PromptIndex=0;;	// index in promptBuffer, always at the beginning of a utf8 char
-var PromptTmp;;
-var PromptHistoryPrev;;
-var PromptHistoryNext;;
+var _PromptBuffer;;
+var _PromptIndex=0;;	// index in promptBuffer, always at the beginning of a utf8 char
+var _PromptTmp;;
+var _PromptHistoryPrev;;
+var _PromptHistoryNext;;
 
 fun _promptHome =
-	if PromptIndex>0 then echo strCreate (strLengthU8 strLeft PromptBuffer PromptIndex) 8;
-	set PromptIndex=0;;
+	if _PromptIndex>0 then echo strCreate (strLengthU8 strLeft _PromptBuffer _PromptIndex) 8;
+	set _PromptIndex=0;;
 
 fun _promptForward i n=
-	if n<=0 || i>=strLength PromptBuffer then i
-	else _promptForward (strU8Next PromptBuffer i) n-1;;
+	if n<=0 || i>=strLength _PromptBuffer then i
+	else _promptForward (strU8Next _PromptBuffer i) n-1;;
 
 fun _promptEnd n =
-	let if n==nil then strLength PromptBuffer else n -> n in
-	let _promptForward PromptIndex n -> iNext in (
-		echo strSlice PromptBuffer PromptIndex iNext-PromptIndex;
-		set PromptIndex= iNext
+	let if n==nil then strLength _PromptBuffer else n -> n in
+	let _promptForward _PromptIndex n -> iNext in (
+		echo strSlice _PromptBuffer _PromptIndex iNext-_PromptIndex;
+		set _PromptIndex= iNext
 	);;
 
 fun _promptInsert str=
-	let strLeft PromptBuffer PromptIndex -> prefix in
-	let strSlice PromptBuffer PromptIndex nil -> suffix in (
+	let strLeft _PromptBuffer _PromptIndex -> prefix in
+	let strSlice _PromptBuffer _PromptIndex nil -> suffix in (
 		echo {str suffix strCreate (strLengthU8 suffix) 8};
-		set PromptBuffer=strListConcat prefix:str:suffix:nil;
-		set PromptIndex=PromptIndex+strLength str;
+		set _PromptBuffer=strListConcat prefix:str:suffix:nil;
+		set _PromptIndex=_PromptIndex+strLength str;
 	);;
 
 fun _promptRemove=
-	if PromptIndex>0 then
-	let strU8Previous PromptBuffer PromptIndex -> iNext in
-	let strLeft PromptBuffer iNext -> prefix in
-	let strSlice PromptBuffer PromptIndex nil -> suffix in (
+	if _PromptIndex>0 then
+	let strU8Previous _PromptBuffer _PromptIndex -> iNext in
+	let strLeft _PromptBuffer iNext -> prefix in
+	let strSlice _PromptBuffer _PromptIndex nil -> suffix in (
 		echo {"\8" suffix " " strCreate (strLengthU8 suffix)+1 8};
-		set PromptBuffer=strConcat prefix suffix;
-		set PromptIndex=iNext;
+		set _PromptBuffer=strConcat prefix suffix;
+		set _PromptIndex=iNext;
 	);;
 
 fun _promptClear cmd=
 	_promptHome;
-	set PromptBuffer= strCreate (strLengthU8 PromptBuffer) 32;
+	set _PromptBuffer= strCreate (strLengthU8 _PromptBuffer) 32;
 	_promptEnd nil;
 	_promptHome;
-	set PromptBuffer="";
+	set _PromptBuffer="";
 	_promptInsert cmd;;
 
 fun _promptUp =
-	let head PromptHistoryPrev -> cmd in
+	let head _PromptHistoryPrev -> cmd in
 	if cmd<>nil then (
-		if !strEmpty PromptBuffer then set PromptHistoryNext=PromptBuffer:PromptHistoryNext;
-		set PromptHistoryPrev=tail PromptHistoryPrev;
+		if !strEmpty _PromptBuffer then set _PromptHistoryNext=_PromptBuffer:_PromptHistoryNext;
+		set _PromptHistoryPrev=tail _PromptHistoryPrev;
 		_promptClear cmd;
 	);;
 
 fun _promptDown =
-	let head PromptHistoryNext -> cmd in (
-		if !strEmpty PromptBuffer then set PromptHistoryPrev=PromptBuffer:PromptHistoryPrev;
-		set PromptHistoryNext=tail PromptHistoryNext;
+	let head _PromptHistoryNext -> cmd in (
+		if !strEmpty _PromptBuffer then set _PromptHistoryPrev=_PromptBuffer:_PromptHistoryPrev;
+		set _PromptHistoryNext=tail _PromptHistoryNext;
 		_promptClear cmd
 	);;
 
 fun _promptLeft =
-	if PromptIndex>0 then (
+	if _PromptIndex>0 then (
 		echo "\8";
-		set PromptIndex= strU8Previous PromptBuffer PromptIndex;
+		set _PromptIndex= strU8Previous _PromptBuffer _PromptIndex;
 	);;
 fun _promptRight = 
-	if PromptIndex< strLength PromptBuffer then _promptEnd 1;;
+	if _PromptIndex< strLength _PromptBuffer then _promptEnd 1;;
 
 fun _promptDelete=
 	_promptRight;
@@ -104,18 +104,18 @@ fun _tmpComplete str c=
 
 fun _promptSend fOnInput str=
 	echo "\n";
-	if (!strEmpty str) && (str<>head PromptHistoryPrev) then set PromptHistoryPrev=str:PromptHistoryPrev;
-	set PromptBuffer="";
-	set PromptIndex=0;
+	if (!strEmpty str) && (str<>head _PromptHistoryPrev) then set _PromptHistoryPrev=str:_PromptHistoryPrev;
+	set _PromptBuffer="";
+	set _PromptIndex=0;
 	call fOnInput str;
 	0;;
 
 fun _promptInput fOnInput c=
-	if PromptTmp<>nil then
+	if _PromptTmp<>nil then
 	(
-		set PromptTmp=strConcat PromptTmp strFromChar c;
-		if _tmpComplete PromptTmp c then (
-			match PromptTmp with
+		set _PromptTmp=strConcat _PromptTmp strFromChar c;
+		if _tmpComplete _PromptTmp c then (
+			match _PromptTmp with
 				"^[[A" -> _promptUp,
 				"^[[B" -> _promptDown,
 				"^[[3~"-> _promptDelete,
@@ -125,15 +125,15 @@ fun _promptInput fOnInput c=
 				"^[[C" -> _promptRight,
 				"^[[H" -> _promptHome,
 				"^[[F" -> _promptEnd nil,
-				_ -> _promptInsert PromptTmp;
-			set PromptTmp=nil;
+				_ -> _promptInsert _PromptTmp;
+			set _PromptTmp=nil;
 			nil
 		)
 	)
 	else if c==0x7f then _promptRemove
-	else if c==0x1b then (set PromptTmp="^["; nil)
-	else if c>=0xc2 && c<=0xf4 then (set PromptTmp=strFromChar c; nil)
-	else if c==10 then _promptSend fOnInput PromptBuffer
+	else if c==0x1b then (set _PromptTmp="^["; nil)
+	else if c>=0xc2 && c<=0xf4 then (set _PromptTmp=strFromChar c; nil)
+	else if c==10 then _promptSend fOnInput _PromptBuffer
 	else if c==4 then _promptSend fOnInput nil	// ctrl-D
 	else if c>=32 then _promptInsert strFromChar c;;
 

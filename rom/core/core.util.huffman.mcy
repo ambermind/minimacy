@@ -11,100 +11,100 @@
 use core.util.quicksort;;
 
 //-------------------------	
-struct BitWriter=[bufferW iW valB];;
+struct BitWriter=[_bufferW _iW _valW];;
 
-fun bwCreate =[bufferW=bufferCreate iW=0 valB=0 ];;
+fun bwCreate =[_bufferW=bufferCreate _iW=0 _valW=0 ];;
 
 fun bwAlign bw=
-	if bw.iW<>0 then bufferAppendChar bw.bufferW bw.valB;
-	set bw.iW=set bw.valB=0;;
+	if bw._iW<>0 then bufferAppendChar bw._bufferW bw._valW;
+	set bw._iW=set bw._valW=0;;
 	
 fun bwFinal bw=
 	bwAlign bw;
-	bufferLength bw.bufferW;
-	strFromBuffer bw.bufferW;;
+	bufferLength bw._bufferW;
+	strFromBuffer bw._bufferW;;
 
 fun bwBytes bw str=
 	bwAlign bw;
-	bufferAppend bw.bufferW str;;
+	bufferAppend bw._bufferW str;;
 
 fun bwBitsLsb bw data nbits=
 	for i=0;i<nbits do (
-		set bw.valB= bw.valB|(((data>>i)&1)<<bw.iW);
-		set bw.iW=
-		if bw.iW>6 then (bufferAppendChar bw.bufferW bw.valB; set bw.valB=0)
-		else bw.iW+1
+		set bw._valW= bw._valW|(((data>>i)&1)<<bw._iW);
+		set bw._iW=
+		if bw._iW>6 then (bufferAppendChar bw._bufferW bw._valW; set bw._valW=0)
+		else bw._iW+1
 	);;
 
 fun bwBitsMsb bw data nbits=
 	for i=0;i<nbits do (
-		set bw.valB= bw.valB|(((data>>(nbits-1-i))&1)<<(7-bw.iW));
-		set bw.iW=
-		if bw.iW>6 then (bufferAppendChar bw.bufferW bw.valB; set bw.valB=0)
-		else bw.iW+1
+		set bw._valW= bw._valW|(((data>>(nbits-1-i))&1)<<(7-bw._iW));
+		set bw._iW=
+		if bw._iW>6 then (bufferAppendChar bw._bufferW bw._valW; set bw._valW=0)
+		else bw._iW+1
 	);;
 	
 fun bwBitsLsbInv bw data nbits=
 	for i=0;i<nbits do (
-		set bw.valB= bw.valB|(((data>>(nbits-i-1))&1)<<bw.iW);
-		set bw.iW=
-		if bw.iW>6 then (bufferAppendChar bw.bufferW bw.valB; set bw.valB=0)
-		else bw.iW+1
+		set bw._valW= bw._valW|(((data>>(nbits-i-1))&1)<<bw._iW);
+		set bw._iW=
+		if bw._iW>6 then (bufferAppendChar bw._bufferW bw._valW; set bw._valW=0)
+		else bw._iW+1
 	);;
 
 //-------------------------	
-struct BitReader=[srcR iR];;
+struct BitReader=[_srcR _iR];;
 
-fun brCreate src i=[srcR=src iR=i];;
+fun brCreate src i=[_srcR=src _iR=i];;
 
 fun brBitsLsb br n=
-	if br.iR<8*strLength br.srcR then
+	if br._iR<8*strLength br._srcR then
 	let 0->val in (
-		for j=br.iR+n-1; j>=br.iR; j-1 do 
-			let strGet br.srcR (j>>3) -> c in
+		for j=br._iR+n-1; j>=br._iR; j-1 do 
+			let strGet br._srcR (j>>3) -> c in
 			set val=(val<<1) + 1&(c>>(j&7));
-		set br.iR=br.iR+n;
+		set br._iR=br._iR+n;
 		val
 	);;
 
 fun brBitsMsb br n=
-	if br.iR<8*strLength br.srcR then
+	if br._iR<8*strLength br._srcR then
 	let 0->val in (
-		for j=br.iR; j<br.iR+n do 
-			let strGet br.srcR (j>>3) -> c in
+		for j=br._iR; j<br._iR+n do 
+			let strGet br._srcR (j>>3) -> c in
 			set val=(val<<1) + 1&(c>>(7- j&7));
-		set br.iR=br.iR+n;
+		set br._iR=br._iR+n;
 		val
 	);;
 
 fun brBit0To7 br=
-	if br.iR<8*strLength br.srcR then
-	let strGet br.srcR (br.iR>>3) -> c in
-	let 1&(c>>(br.iR&7)) -> bit in (
-		set br.iR=br.iR+1;
+	if br._iR<8*strLength br._srcR then
+	let strGet br._srcR (br._iR>>3) -> c in
+	let 1&(c>>(br._iR&7)) -> bit in (
+		set br._iR=br._iR+1;
 		bit
 	);;
 	
 fun brBit7To0 br=
-	if br.iR<8*strLength br.srcR then
-	let strGet br.srcR (br.iR>>3) -> c in
-	let 1&(c>>(7-(br.iR&7))) -> bit in (
-		set br.iR=br.iR+1;
+	if br._iR<8*strLength br._srcR then
+	let strGet br._srcR (br._iR>>3) -> c in
+	let 1&(c>>(7-(br._iR&7))) -> bit in (
+		set br._iR=br._iR+1;
 		bit
 	);;
 	
 fun brBytes br n=
-	set br.iR= (br.iR+7)&~7;
-	let strSlice br.srcR br.iR>>3 n -> val in
+	set br._iR= (br._iR+7)&~7;
+	let strSlice br._srcR br._iR>>3 n -> val in
 	(
-		set br.iR=br.iR+n*8;
+		set br._iR=br._iR+n*8;
 		val
 	);;
 
 //-------------------------	
 sum HuffmanTree= leafH _ _, nodeH _ _ _;;
 
-fun arrayMax src = arrayReduce src #max src.0;;
+fun _arrayMax src = arrayReduce src #max src.0;;
 
 fun _huffmanDumpEx t=
 	match t with
@@ -192,7 +192,7 @@ fun huffmanTreeFromFifos fifos depth =
 fun huffmanBuildDecoder codeLengths=
 	if 1==arrayLength codeLengths then leafH nil 0
 	else
-	let 1+arrayMax codeLengths -> MAX_BITS in
+	let 1+_arrayMax codeLengths -> MAX_BITS in
 	let arrayInit MAX_BITS (lambda i=fifoCreate) -> fifos in
 	(
 		for val,i of codeLengths do if val>0 then fifoIn fifos.val i;
@@ -201,7 +201,7 @@ fun huffmanBuildDecoder codeLengths=
 
 fun huffmanBuildEncoder codeLengths=
 	let arrayLength codeLengths -> n in
-	let 1+arrayMax codeLengths -> MAX_BITS in
+	let 1+_arrayMax codeLengths -> MAX_BITS in
 	let arrayCreate MAX_BITS 0 -> bl_count in
 	let arrayCreate MAX_BITS 0 -> next_code in
 	let arrayCreate n 0 -> codes in

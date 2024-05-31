@@ -17,6 +17,7 @@ use core.crypto.cer;;
 use core.crypto.curve25519;;
 use core.crypto.ec;;
 
+const HANDSHAKE_BLOCK_MAX = 65536;;
 
 const TLS_CLIENT_HELLO        = 1;;
 const TLS_SERVER_HELLO        = 2;;
@@ -75,8 +76,6 @@ const TLS_secp384r1 = 0x0018;;
 const TLS_secp521r1 = 0x0019;;
 const TLS_x25519    = 0x001d;;
 
-enum STAGE_NEXT STAGE_READY STAGE_ERROR;;
-
 // TLS1.2 ciphersuites
 const TLS_RSA_WITH_AES_128_CBC_SHA = 0x002f;;
 const TLS_RSA_WITH_AES_256_CBC_SHA = 0x0035;;
@@ -90,6 +89,9 @@ const TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256 = 0xc027;;
 const TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA384 = 0xc028;;
 const TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256 = 0xc02f;;
 const TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384 = 0xc030;;
+
+const TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256 = 0xc02b;;
+const TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384 = 0xc02c;;
 
 // TLS1.3 ciphersuites
 const TLS_AES_128_GCM_SHA256 = 0x1301;;

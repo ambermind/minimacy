@@ -32,10 +32,10 @@ fun queens size=
 	let _queens size -> result in
 	let timeMs - t0 -> dt in
 	(
-		echoLn result;
+		echoLn strJoin " " result;
 		showrows result size;
 		echo "dt=";echoLn dt
 	);
 	0;;
 
-fun run=queens 8;;
+fun run=queens 16;;

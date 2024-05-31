@@ -9,27 +9,21 @@
    You should have received a copy of the GNU General Public License along
    with this program. If not, see <https://www.gnu.org/licenses/>. */
 
-// hostList is a list of tuples [privateKey pwd certList] where
+// hostList is a list of tuples [privateKey pwd certList authForClientCert] where
 // - privateKey is the content of the PEM file
 // - pwd is the password for the privateKey data (nil if none)
 // - certList is a list of PEM certificate contents
-// this function returns the data you should pass to tlsServerCreate
+// - authForClientCert is a certificate for client authentication (nil if none)
+// tlsMakeHosts returns the data you should pass to tlsTcpAccept
 export tlsMakeHosts hostList;;
 export tlsStage tls;;
-export tlsClientHello tls ;;
-export tlsCreateCli serverName cipherSuites clientCertificate clientKey;;
-export tlsCreateSrv hosts ;;
 export tlsSetCipherSuites tls cipherSuites;;
 export tlsSetSignatureAlgorithms tls signatureAlgorithms;;
 export tlsSetSupportedGroups tls supportedGroups;;
 export tlsGetClientCertificate tls;;
-export tlsReceive tls data;;
-export tlsSend tls msg;;
-export tlsClose tls;;
 export tlsAlert tls;;
 export tlsWho tls;;
 export tlsGetServerName tls ;;
-
 export tlsTcpOpenExt tcp serverName cipherSuites clientCertificate clientKey;;
 export tlsTcpOpen tcp serverName;;
 export tlsTcpAccept tcp hosts;;
@@ -62,7 +56,6 @@ struct TlsCipher=[
 		macLengthC keyLengthC fixedIvLengthC recordIvLengthC
 	];;
 
-
 struct TLS12= Stream+ [
 	serverTLS hostsTLS
 	cipherSuitesTLS supportedGroupsTLS signatureAlgorithmsTLS
@@ -84,23 +77,41 @@ struct TLS12= Stream+ [
 
 	clientSignAlgoTLS
 
-	peerCertificatesTLS siteCertificateTLS
+	peerCertificatesTLS clientValidatedCertificateTLS siteCertificateTLS
 
 	preMasterKeyTLS masterSecretTLS
 	clientWriteMacKeyTLS serverWriteMacKeyTLS clientWriteKeyTLS serverWriteKeyTLS clientWriteIVTLS serverWriteIVTLS
 	clientSeqTLS serverSeqTLS
 
-	payloadTLS
-	_bufferTLS
+	payloadTLS _handshakeDataTLS
 
 	tcpTT sendTT iTT closeAfterTT fifoReadTT
 
 ];;
 
-fun _alive tls= let tls.stageTLS -> [stage _] in stage<>STAGE_ERROR;;
+sum Stages =
+	STAGE_CLI_START, STAGE_CLI_HELLO, STAGE_CLI_CERTIF_SENT, STAGE_CLI_CERTIF, STAGE_CLI_VERIFY, STAGE_CLI_DONE,
+	STAGE_SRV_START, STAGE_SRV_HELLO, STAGE_SRV_CERTIF, STAGE_SRV_DONE,
+	STAGE_READY, STAGE_ERROR;;
+
+fun _checkBlockOrder tls expected=
+	if tls.stageTLS==expected then true
+	else _setError tls strFormat "Block out of order *<>*" tls.stageTLS expected;;
+fun _checkBlockOrder2 tls expected1 expected2=
+	if tls.stageTLS==expected1 || tls.stageTLS==expected2 then true
+	else _setError tls strFormat "Block out of order *<>* or *" tls.stageTLS expected1 expected2;;
+fun _checkBlockOrderExclude tls exclude=
+	if tls.stageTLS<>exclude then true
+	else _setError tls strFormat "Block out of order *==*" tls.stageTLS exclude;;
+
+fun _alive tls= tls.stageTLS<>STAGE_ERROR;;
+
+fun tlsUpdateStage tls stage= if tls.stageTLS<>STAGE_ERROR then set tls.stageTLS=stage;;
 
 fun _setError tls txt=
-	set tls.stageTLS=[STAGE_ERROR echoLn strBuild txt];
+	if _DEBUG then echoLn strFormat "*----------ERROR *: *" (tlsWho tls) (hexFromInt tlsAlert tls) txt;
+	tlsUpdateStage tls STAGE_ERROR;
+	_tlsTcpClosed tls;
 	nil;;
 
 //----------------- Computation
@@ -127,14 +138,6 @@ fun _makeSignature tls=
 	let _signatureData tls -> data in
 	let _getServerKey tls -> rsa in
 	set tls.signatureSKE=signatureGenerate tls.signatureAlgoTLS rsa data;;
-
-fun _structFromEc ec =
-	let ecKeyPairStr ec nil -> privateKey in
-	[
-		privateKeyC=privateKey
-		publicKeyC=ecKeyPub privateKey
-		dhC= lambda priv pub= ecEcdhStr ec priv pub
-	];;
 
 fun _select prefered proposed=
 	if prefered<>nil then
@@ -206,7 +209,6 @@ fun _cbc1 c= _cbc c #hmacSha1 20;;
 fun _cbc256 c= _cbc c #hmacSha256 32;;
 fun _cbc384 c= _cbc c #hmacSha384 48;;
 
-
 fun _gcm c=
 	set c.encodeDataC=#_encodeGCM;
 	set c.decodeDataC=#_decodeGCM;
@@ -214,26 +216,23 @@ fun _gcm c=
 	set c.recordIvLengthC=8;
 	c;;
 
-
-
 fun _setCipherSuite tls cipherSuite=
 	set tls.cipherTLS= match cipherSuite with
-		TLS_RSA_WITH_AES_128_GCM_SHA256->        _gcm    _aes128 _sha256 _rsa,
-		TLS_RSA_WITH_AES_256_GCM_SHA384->        _gcm    _aes256 _sha256 _rsa,
-		TLS_RSA_WITH_AES_128_CBC_SHA256->        _cbc256 _aes128 _sha256 _rsa,
-		TLS_RSA_WITH_AES_256_CBC_SHA256->        _cbc256 _aes256 _sha256 _rsa,
-		TLS_RSA_WITH_AES_128_CBC_SHA->           _cbc1   _aes128 _sha256 _rsa,
-		TLS_RSA_WITH_AES_256_CBC_SHA->           _cbc1   _aes256 _sha256 _rsa,
-		TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA ->    _cbc1   _aes128 _sha256 _ecdhe,
-		TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA ->    _cbc1   _aes256 _sha256 _ecdhe,
-		TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256 -> _cbc256 _aes128 _sha256 _ecdhe,
-		TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256 -> _gcm    _aes128 _sha256 _ecdhe,
-		TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA384 -> _cbc384 _aes256 _sha384 _ecdhe,
-		TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384 -> _gcm    _aes256 _sha384 _ecdhe,
+		TLS_RSA_WITH_AES_128_GCM_SHA256->         _gcm    _aes128 _sha256 _rsa,
+		TLS_RSA_WITH_AES_256_GCM_SHA384->         _gcm    _aes256 _sha256 _rsa,
+		TLS_RSA_WITH_AES_128_CBC_SHA256->         _cbc256 _aes128 _sha256 _rsa,
+		TLS_RSA_WITH_AES_256_CBC_SHA256->         _cbc256 _aes256 _sha256 _rsa,
+		TLS_RSA_WITH_AES_128_CBC_SHA->            _cbc1   _aes128 _sha256 _rsa,
+		TLS_RSA_WITH_AES_256_CBC_SHA->            _cbc1   _aes256 _sha256 _rsa,
+		TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA ->     _cbc1   _aes128 _sha256 _ecdhe,
+		TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA ->     _cbc1   _aes256 _sha256 _ecdhe,
+		TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256 ->  _cbc256 _aes128 _sha256 _ecdhe,
+		TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256 ->  _gcm    _aes128 _sha256 _ecdhe,
+		TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA384 ->  _cbc384 _aes256 _sha384 _ecdhe,
+		TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384 ->  _gcm    _aes256 _sha384 _ecdhe,
+		TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256-> _gcm    _aes128 _sha256 _ecdhe,
+		TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384-> _gcm    _aes256 _sha384 _ecdhe,
 		_ -> _setError tls ["UNKNOWN CIPHERSUITE " hexFromInt cipherSuite];;
-
-fun _selectSignAlgo tls algos=
-	for a in algos do if listContains tls.signatureAlgorithmsTLS a then return a;;
 
 fun __makeMaterial hashFun key a seed len=
 	if len>0 then
@@ -522,13 +521,13 @@ fun _serverParseExtensions tls data i=
 	let strRead16Msb data i+2 -> length in
 	let strSlice data i+4 length -> content in
 	(
-//	echoLn ["extension " hexFromInt extension];
+//	echoLn strFormat "extension *" hexFromInt extension;
 		match extension with
 			EXT_SERVER_NAME -> _parseServerName tls content,
 			EXT_SUPPORTED_GROUPS -> _parseSupportedGroups tls content,
 			EXT_EC_POINT_FORMATS -> _parseEcPointsFormats tls content,
 			EXT_SIGNATURE_ALGORITHMS -> _parseSignatureAlgorithms tls content,
-			_ -> (if _DEBUG then echoLn ["unknown extension " hexFromInt extension]; nil);
+			_ -> (if _DEBUG then echoLn strFormat "unknown extension *" hexFromInt extension; nil);
 		_serverParseExtensions tls data i+4+length
 	);;
 
@@ -547,15 +546,15 @@ fun _serverParseClientHello tls data=
 	let i+1+compressionsLength -> i in
 	let strRead16Msb data i -> extLength in
 	let _select tls.cipherSuitesTLS cipherSuites -> cipherSuite in
-	let if _DEBUG then echoLn ["cipherSuite: " hexFromInt cipherSuite] ->_ in
+	let if _DEBUG then echoLn strFormat "cipherSuite: *" hexFromInt cipherSuite ->_ in
 	if cipherSuite<>nil then
 	let _serverParseExtensions tls data i+2 -> _ in
 	let tls.supportedGroupsCH -> supportedGroups in
 	let _select tls.supportedGroupsTLS supportedGroups -> curveInfo in
-	let if _DEBUG then echoLn ["curveInfo: " curveInfo] ->_ in
+	let if _DEBUG then echoLn strFormat "curveInfo: *" curveInfo ->_ in
 	if curveInfo<>nil then
 	let _select tls.signatureAlgorithmsTLS tls.signatureAlgorithmsCH -> signatureAlgo in
-	let if _DEBUG then echoLn ["signatureAlgo: " signatureAlgo] ->_ in
+	let if _DEBUG then echoLn strFormat "signatureAlgo: *" signatureAlgo ->_ in
 	if signatureAlgo<>nil then
 	let _getServerCertificate tls -> hostCertificate in
 	if hostCertificate==nil then _setError tls ["UNAVAILABLE SERVER " tls.serverNameTLS ]
@@ -575,13 +574,14 @@ fun _serverParseClientHello tls data=
 		set tls.peerPublicKeyTLS=tls.curveTLS.publicKeyC;
 		set tls.signatureAlgoTLS=signatureAlgo;
 		_makeSignature tls;
-		set tls.stageTLS=[STAGE_NEXT strBuild {
+		_tlsTcpSend tls strBuild {
 			(_serverHello tls)
 			(_serverCertificates tls certblockList)
 			(_serverKeyExchange tls)
 			(_serverCertificateRequest tls)
 			_serverDone tls
-		}];
+		};
+		tlsUpdateStage tls STAGE_SRV_HELLO;
 		nil
 	);;
 
@@ -593,7 +593,7 @@ fun _parseClientKeyExchangeRsa tls data=
 	(
 		set tls.premasterCKE=premaster;
 		_keyComputation tls;
-		nil
+		true
 	);;
 
 fun _parseClientKeyExchangeEcdhe tls data=
@@ -602,28 +602,31 @@ fun _parseClientKeyExchangeEcdhe tls data=
 	(
 		set tls.peerPublicKeyTLS=publickKey;
 		_keyComputation tls;
-		nil
+		true
 	);;
 
 fun _serverParseClientKeyExchange tls data=
-	call tls.cipherTLS.parseClientKeyExchangeC tls data;;
+	call tls.cipherTLS.parseClientKeyExchangeC tls data;
+	tlsUpdateStage tls STAGE_SRV_DONE;;
 
-fun _parseCertificateVerify tls data=
-	if !tls.serverTLS then _setError tls "SERVER SENT CERTIFICATE VERIFY ON TLS1.2"
-	else
-	let strRead16Msb data 0 -> algo in
+fun _serverParseCertificateVerify tls data=
+	let strRead16Msb data 0 -> signAlgo in
 	let strRead16Msb data 2 -> len in
 	let strSlice data 4 len -> sign in
 	let listLast tls.peerCertificatesTLS -> certificate in
 	let strListConcat listReverse (tail tls.payloadTLS) -> payload in	// the payload list is still complete as tlsFinished not yet called has not make it empty
-	let signatureCheck algo certificate payload sign -> result in
+	let signatureCheck signAlgo certificate payload sign -> result in
 	if !result then _setError tls "CLIENT CERTIFICATE NOT ACCEPTED"
 	else
-	let _getAuthForClientCert tls -> authForClientCert in		// always nil on client side
-	if authForClientCert<>nil && !cerCheckByAuth certificate authForClientCert then
-	(
+	let _getAuthForClientCert tls -> authForClientCert in
+	if authForClientCert<>nil && !cerCheckByAuth certificate authForClientCert then (
 		set tls.peerCertificatesTLS=nil;
 		_setError tls "INVALID AUTHORITY"
+	)
+	else (
+		set tls.clientValidatedCertificateTLS=certificate;
+		tlsUpdateStage tls STAGE_SRV_DONE;
+		nil
 	);;
 
 //-------------- PARSING BY CLIENT
@@ -644,11 +647,14 @@ fun _clientParseServerHello tls data=
 		set tls.sessionTLS=session;
 		set tls.randomServerTLS=random;
 		set tls.cipherSuiteTLS=cipherSuite;
+		if _DEBUG then echoTime ["CIPHERSUITE---> " hexFromInt cipherSuite];
 		_setCipherSuite tls cipherSuite;
+		tlsUpdateStage tls STAGE_CLI_HELLO;
 		nil
 	);;
 
-fun _parseCertificate tls data=
+fun _parsePeerCertificate tls nextStage data=
+	tlsUpdateStage tls nextStage;
 	if 0<strLength data then
 	let strRead24Msb data 0 -> certificateLength in
 	let strSlice data 3 certificateLength -> cer in
@@ -657,10 +663,10 @@ fun _parseCertificate tls data=
 //		binDump "cer" cer;
 //		cerEcho certificate;
 		set tls.peerCertificatesTLS = certificate:tls.peerCertificatesTLS;
-		_parseCertificate tls (strSlice data 3+certificateLength nil)
+		_parsePeerCertificate tls nextStage (strSlice data 3+certificateLength nil)
 	);;
 
-fun _clientParseCertificateVerify tls algo payload sign=
+fun _clientParseCertificateVerify tls signAlgo payload sign=
 //echoLn "\n\n\ncertifs"; 	for cer in tls.peerCertificatesTLS do (cerEcho cer; echoLn "\n---------\n");
 	let time->t0 in
 	let listReverse tls.peerCertificatesTLS -> lCertificates in
@@ -670,11 +676,13 @@ fun _clientParseCertificateVerify tls algo payload sign=
 	let cerCheckChain t0 siteCertificate lCertificates -> error in
 	if error<>nil then _setError tls error
 	else
-	let signatureCheck algo siteCertificate payload tls.signatureSKE -> result in
-	if result then result
-	else
+	let signatureCheck signAlgo siteCertificate payload tls.signatureSKE -> result in
+	if !result then
 		let if result==false then "WRONG SIGNATURE " else "UNKNOWN ALGO " -> txt in
-		_setError tls [txt hexFromInt algo];;
+		_setError tls [txt hexFromInt signAlgo]
+	else (
+		tlsUpdateStage tls STAGE_CLI_VERIFY
+	);;
 
 fun _clientParseServerKeyExchange tls data=
 	let strRead8 data 0-> curveType in
@@ -691,16 +699,20 @@ fun _clientParseServerKeyExchange tls data=
 		set tls.peerPublicKeyTLS=publickKey;
 		set tls.signatureAlgoTLS=signatureAlgo;
 		set tls.signatureSKE=signature;
+		if _DEBUG then echoTime ["SIGNATURE ALGO---> " hexFromInt signatureAlgo];
 		_setCurve tls curveInfo;
-		_clientParseCertificateVerify tls tls.signatureAlgoTLS (_signatureData tls) tls.signatureSKE;
-		nil
+		_clientParseCertificateVerify tls tls.signatureAlgoTLS (_signatureData tls) tls.signatureSKE
 	);;
 
 fun _tlsSelectClientSignHash tls signatureHashAlgos=
 	for a in RSA_PKCS1_SHA512:RSA_PKCS1_SHA384:RSA_PKCS1_SHA256:nil do
 		if listContains signatureHashAlgos a then return a;;
 
-fun _clientParseServerCertificateRequest tls data=
+fun _selectSignAlgo tls algos=
+	let listFilter algos #signatureForRsa -> algos in
+	for a in algos do if listContains tls.signatureAlgorithmsTLS a then return a;;
+
+fun _clientParseCertificateRequest tls data=
 	let strRead8 data 0-> certificateTypeCount in
 	let 1+certificateTypeCount -> i in
 	let parseByteList data 1 i -> certificateTypes in
@@ -710,50 +722,79 @@ fun _clientParseServerCertificateRequest tls data=
 	let i+signatureHashAlgosLength -> i in
 	let strRead16Msb data i+2 -> DistinguishedNamesLength in
 	let strSlice data i+4 DistinguishedNamesLength -> DistinguishedNames in
-	let _tlsSelectClientSignHash tls signatureHashAlgos -> algo in
-	if algo==nil then _setError tls "NO SUPPORTED SIGNATURE HASH ALGORITHMS"
+	let _selectSignAlgo tls signatureHashAlgos -> signAlgo in
+	if signAlgo==nil then _setError tls "NO SUPPORTED SIGNATURE HASH ALGORITHMS"
 	else (
+		if _DEBUG then echoTime ["CLIENT SIGNATURE ALGO---> " hexFromInt signAlgo];
 		set tls.serverCertificatRequestTLS=[
 			certificateTypes
 			signatureHashAlgos
 			asn1DistinguishedName DistinguishedNames
 		];
-		set tls.clientSignAlgoTLS=algo;
+		set tls.clientSignAlgoTLS=signAlgo;
+		tlsUpdateStage tls STAGE_CLI_CERTIF_SENT;
 	);;
 
 fun _clientParseServerDone tls=
 	_keyComputation tls;
-	set tls.stageTLS=[STAGE_NEXT strBuild {
+	tlsUpdateStage tls STAGE_CLI_DONE;
+	_tlsTcpSend tls strBuild {
 		(_clientCertificate tls)
 		(_clientKeyExchange tls call tls.cipherTLS.keyExchangeC tls)
 		(_clientCertificateVerify tls)
 
 		_clientChangeCipherSpec
 		(_clientHandshakeFinished tls)
-	}];
+	};
 	nil;;
 
 //------------ COMMON PARSING
-fun _parseHandshake tls type data=
-	if _DEBUG then (echoLn ["_parseHandshake " hexFromInt type]; hexDump data;);
+
+fun _parseHandshakeSrv tls type data=
+	if _DEBUG then (echoLn strFormat "_parseHandshake *" type; /*hexDump data;*/);
 	match type with
-		TLS_CLIENT_HELLO -> _serverParseClientHello tls data,
-		TLS_SERVER_HELLO -> _clientParseServerHello tls data,
-		TLS_CERTIFICATE -> _parseCertificate tls (strSlice data 3 nil),
-		TLS_SERVER_KEY_EXCHANGE -> _clientParseServerKeyExchange tls data,
-		TLS_CERTIFICATE_REQUEST -> _clientParseServerCertificateRequest tls data,
-		TLS_CERTIFICATE_VERIFY -> _parseCertificateVerify tls data,
-		TLS_CLIENT_KEY_EXCHANGE -> _serverParseClientKeyExchange tls data,
-		TLS_SERVER_DONE -> _clientParseServerDone tls,
-		_ -> (if _DEBUG then echoLn ["unknown handshake code " hexFromInt type];0)
+		TLS_CLIENT_HELLO -> if _checkBlockOrder tls STAGE_SRV_START then
+			_serverParseClientHello tls data,
+		TLS_CERTIFICATE -> if _checkBlockOrder tls STAGE_SRV_HELLO then
+			_parsePeerCertificate tls STAGE_SRV_CERTIF (strSlice data 3 nil),
+		TLS_CLIENT_KEY_EXCHANGE -> if _checkBlockOrder2 tls STAGE_SRV_HELLO STAGE_SRV_CERTIF then
+			_serverParseClientKeyExchange tls data,
+		TLS_CERTIFICATE_VERIFY -> if _checkBlockOrder tls STAGE_SRV_DONE then
+			_serverParseCertificateVerify tls data,
+		_ -> (if _DEBUG then echoLn strFormat "unknown handshake code *" type;nil)
 	;;
 
+fun _parseHandshakeCli tls type data=
+	if _DEBUG then (echoLn strFormat "_parseHandshake *" type; /*hexDump data;*/);
+	match type with
+		TLS_SERVER_HELLO -> if _checkBlockOrder tls STAGE_CLI_START then
+			_clientParseServerHello tls data,
+		TLS_CERTIFICATE -> if _checkBlockOrder tls STAGE_CLI_HELLO then
+			_parsePeerCertificate tls STAGE_CLI_CERTIF (strSlice data 3 nil),
+		TLS_SERVER_KEY_EXCHANGE -> if _checkBlockOrder tls STAGE_CLI_CERTIF then
+			_clientParseServerKeyExchange tls data,
+		TLS_CERTIFICATE_REQUEST -> if _checkBlockOrder tls STAGE_CLI_VERIFY then
+			_clientParseCertificateRequest tls data,
+		TLS_SERVER_DONE -> if _checkBlockOrder2 tls STAGE_CLI_CERTIF_SENT STAGE_CLI_VERIFY then
+			_clientParseServerDone tls,
+		_ -> (if _DEBUG then echoLn strFormat "unknown handshake code *" type;nil);
+	nil;;
+
 fun _parseHandshakes tls data i=
-	if i<strLength data then
+	if i>=strLength data then set tls._handshakeDataTLS=nil
+	else 
 	let strRead8 data i -> type in
 	let strRead24Msb data i+1 -> len in
+	if len>HANDSHAKE_BLOCK_MAX then _setError tls "LARGE HANDSHAKE BLOCK SIZE"
+	else
+	if i+len+4 > strLength data then (
+		if _DEBUG then echoLn "uncomplete data";
+		set tls._handshakeDataTLS=strSlice data i nil
+	)
+	else
 	(
-		_parseHandshake tls type strSlice data i+4 len;
+		if tls.serverTLS then _parseHandshakeSrv tls type strSlice data i+4 len
+		else _parseHandshakeCli tls type strSlice data i+4 len;
 		_parseHandshakes tls data i+4+len
 	);;
 
@@ -763,14 +804,18 @@ fun _parseHandshakeFinished tls data=
 	let _finished tls !tls.serverTLS encryptionIV -> encrypted in
 	if data==encrypted then true
 	else (
-		_setError tls nil;
+		_setError tls "data encryption error";
 		false
 	);;
 
 fun _parseApplicationData tls data=
 	let call tls.cipherTLS.decodeDataC tls TLS_APPLICATION_DATA !tls.serverTLS data -> msg in
-	if msg<>nil then set tls._bufferTLS=msg:tls._bufferTLS;
-	nil;;
+	if (_checkBlockOrder tls STAGE_READY)&& msg<>nil then (
+		if _DEBUG then echoLn "----------ONRECEIVE ";
+		fifoIn tls.fifoReadTT msg;
+		streamSetReadable tls true;
+		nil
+	);;
 
 fun _parseAlertData tls data= call tls.cipherTLS.decodeDataC tls TLS_ALERT_RECORD !tls.serverTLS data;;
 
@@ -782,8 +827,10 @@ fun _parse tls data=
 	let 5+strRead16Msb data 3 -> len in
 	if len>strLength data then data	// need more data
 	else let strSlice data len nil -> nextData in
+	let strRead8 data 0 -> type in
 	(
-		match strRead8 data 0 with
+		if _DEBUG then echoLn strFormat "_parseBlock *" type;// hexDump strLeft data len;
+		match type with
 			TLS_APPLICATION_DATA->
 			(
 //				echoLn "_parseApplicationData"; hexDump data;
@@ -796,33 +843,38 @@ fun _parse tls data=
 				if !tls.cipherOnTLS then
 				(
 					let strSlice data 5 len-5 -> data in
-					let _addPayload tls data -> data in
-					_parseHandshakes tls data 0;
+					let _addPayload tls data -> data in 
+					set tls._handshakeDataTLS=strConcat tls._handshakeDataTLS data;
+					_parseHandshakes tls tls._handshakeDataTLS 0;
 				)
 				else
-				if _parseHandshakeFinished tls strSlice data 5 len-5 then
-				set tls.stageTLS= if tls.serverTLS then
-					[STAGE_READY strBuild {
+				if _checkBlockOrder2 tls STAGE_SRV_DONE STAGE_CLI_DONE then 
+				if _parseHandshakeFinished tls strSlice data 5 len-5 then (
+					tlsUpdateStage tls STAGE_READY;
+					if tls.serverTLS then _tlsTcpSend tls strBuild {
 						_serverChangeCipherSpec
 						_serverHandshakeFinished tls
-					}]
-				else [STAGE_READY nil];
-				nil
+					};
+					if _DEBUG then echoLn strFormat "*----------READY" (tlsWho tls);	
+					streamSetWritable tls true;
+					nil
+				)
 			),
 			TLS_ALERT_RECORD->
 			(
 //				echoLn "Alert";
-				let tls.stageTLS ->[stage _] in
-				let match stage with
+				let match tls.stageTLS with
 					STAGE_READY -> _parseAlertData tls strSlice data 5 len-5,
 					_ -> strSlice data 5 nil
 				-> data in
 				let strRead16Msb data 0 -> alert in
+				let alert>>8 -> level in
+				let alert&255 -> code in	// https://www.gnutls.org/manual/html_node/The-TLS-Alert-Protocol.html
 				(
 //					hexDump data;
 					set tls.alertTLS=alert;
-					if 1<> (alert>>8) then _setError tls nil;
-					if _DEBUG then echoLn [(tlsWho tls) "----------ONALERT " hexFromInt tls.alertTLS];
+					if level<>1 then _setError tls "alert record";
+					if _DEBUG then echoLn strFormat "*----------ONALERT *: *" (tlsWho tls) level code;
 					nil
 				)
 			),
@@ -871,6 +923,8 @@ fun _create=
 			TLS_RSA_WITH_AES_128_GCM_SHA256:
 			TLS_RSA_WITH_AES_256_CBC_SHA256:
 			TLS_RSA_WITH_AES_128_CBC_SHA256:
+			TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384:
+			TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256:
 			TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA:
 			TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA:
 			TLS_RSA_WITH_AES_256_CBC_SHA:
@@ -881,11 +935,11 @@ fun _create=
 			RSA_PKCS1_SHA384: // assigned value for RSA/PKCS1/SHA386
 			RSA_PKCS1_SHA512: // assigned value for RSA/PKCS1/SHA512
 			RSA_PKCS1_SHA1: // assigned value for RSA/PKCS1/SHA1
-/*			0x0403: // assigned value for ECDSA/SECP256r1/SHA256
-			0x0503: // assigned value for ECDSA/SECP384r1/SHA384
-			0x0603: // assigned value for ECDSA/SECP521r1/SHA512
-			0x0203: // assigned value for ECDSA/SHA1
-*/			nil
+			ECDSA_SECP256R1_SHA256: // assigned value for ECDSA/SECP256r1/SHA256
+//			ECDSA_SECP384R1_SHA384: // assigned value for ECDSA/SECP384r1/SHA384	// not tested
+//			0x0603: // assigned value for ECDSA/SECP521r1/SHA512
+//			0x0203: // assigned value for ECDSA/SHA1
+			nil
 
 		supportedGroupsTLS=
 			TLS_x25519:
@@ -910,7 +964,6 @@ fun _addHost hosts host=
 	let _importCert certList -> derList in
 	let listMap derList (lambda bin= cerFromDER bin) -> certificateList in
 	let head certificateList -> certificate in
-	let listReverse certificateList -> certificateList in
 	let strBuild listMap derList (lambda bin= mkBlock24 bin) -> certblockList in
 	let oidHashmapSubjectAltName certificate -> serverNames in
 	let [serverKey certblockList (cerFromPEM authForClientCert nil)] -> block in
@@ -954,6 +1007,7 @@ fun tlsCreateCli serverName cipherSuites clientCertificate clientKey=
 		set tls.serverNameTLS=serverName;
 		set tls.randomClientTLS=strRand 32;
 		set tls.sendTT=tlsClientHello tls;
+		tlsUpdateStage tls STAGE_CLI_START;
 		tls
 	);;
 
@@ -963,6 +1017,7 @@ fun tlsCreateSrv hosts =
 	(
 		set tls.serverTLS=true;
 		set tls.hostsTLS=hosts;
+		tlsUpdateStage tls STAGE_SRV_START;
 		tls
 	);;
 
@@ -970,46 +1025,11 @@ fun tlsSetCipherSuites tls cipherSuites= set tls.cipherSuitesTLS= cipherSuites;;
 fun tlsSetSignatureAlgorithms tls signatureAlgorithms= set tls.signatureAlgorithmsTLS= signatureAlgorithms;;
 fun tlsSetSupportedGroups tls supportedGroups= set tls.supportedGroupsTLS= supportedGroups;;
 
-fun tlsGetClientCertificate tls= head tls.peerCertificatesTLS;;
-
-fun tlsStageNotify tls =
-	let tls.stageTLS -> [stage data] in (
-		if _DEBUG then echoLn [(tlsWho tls) "----------ONSTAGE " stage];
-		match stage with
-			STAGE_NEXT -> (
-				_tlsTcpSend tls data
-			),
-			STAGE_READY -> (
-	//					echoLn ">> send"; hexDump data;
-				_tlsTcpSend tls data;
-				streamSetWritable tls true;
-				nil
-			),
-			STAGE_ERROR -> (
-				if _DEBUG then echoLn strFormat "*----------ERROR *: *" (tlsWho tls) (hexFromInt tlsAlert tls) data;
-				streamClose tls.tcpTT;
-				_tlsTcpClosed tls;
-				nil
-			)
-	);;
+fun tlsGetClientCertificate tls= tls.clientValidatedCertificateTLS;;
 
 fun tlsReceive tls data=
-//echoLn ["tlsReceive " strLength data " bytes"];
-	let tls.stageTLS -> backup in
-	if _alive tls then
-	(
-		set tls.dataTLS=strConcat tls.dataTLS data;
-		set tls.dataTLS=_parse tls tls.dataTLS;
-		if tls.stageTLS<>backup then tlsStageNotify tls;
-		if tls._bufferTLS<>nil then let strListConcat listReverse tls._bufferTLS -> msg in
-		(
-			set tls._bufferTLS=nil;
-			if _DEBUG then echoLn "----------ONRECEIVE ";
-			fifoIn tls.fifoReadTT msg;
-			streamSetReadable tls true;
-		);
-		nil
-	);;
+//echoLn strFormat "tlsReceive * bytes" strLength data;
+	if _alive tls then set tls.dataTLS=_parse tls strConcat tls.dataTLS data;;
 
 fun tlsSend tls msg= _send tls TLS_APPLICATION_DATA msg;;
 fun tlsAlert tls= tls.alertTLS;;
@@ -1021,6 +1041,7 @@ fun tlsGetServerName tls = tls.serverNameTLS;;
 fun tlsClose tls= streamClose TLS12<tls;;
 
 fun _tlsTcpClosed tls=
+	streamClose tls.tcpTT;
 	fifoIn tls.fifoReadTT nil;
 	streamSetReadable tls true;
 	0;;
@@ -1053,8 +1074,7 @@ fun tlsTcpManage tcp tls=
 		))
 		(lambda = streamOnSelectWrite tls)	// onSelectWrite
 		(lambda data start =	// write
-			let tls.stageTLS -> [stage _] in
-			let match stage with
+			let match tls.stageTLS with
 				STAGE_READY -> _tlsTcpSend tls (tlsSend tls strSlice data start nil),
 				_ -> 0
 			-> len in

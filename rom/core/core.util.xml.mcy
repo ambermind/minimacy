@@ -30,9 +30,10 @@ export xmlFilterChilds xml tag;;
 // fun xmlEncodePretty: fun Xml -> Str
 
 use core.util.token;;
+
 sum Xml= tagXml _ _ _, contentXml _;;
 
-const TOKEN_ATTRIB= arrayInit 128 (lambda c=(c>='a' && c<='z')||(c>='A' && c<='Z')||(c=='_')||(c=='-')||(c=='.')||(c=='/')||(c==':')||(c>='0' && c<='9'));;
+const TOKEN_ATTRIB= arrayInit 128 (lambda c=(c>='a' && c<='z')||(c>='A' && c<='Z')||(c=='_')||(c=='-')||(c=='.')||(c==':')||(c>='0' && c<='9'));;
 
 const XML_SYMBOLS="< > = </ />";;
 const XML_FILTERS=
@@ -87,32 +88,32 @@ fun _xmlParseTagFinal p tag lattr lchild=
 	if val<>">" then _xmlError p "'>' expected, found '*'"
 	else tagXml tag lattr lchild;;
 
-fun _xmlParseAttrKey p tag key lattr=
+fun _xmlParseAttrKey p isHtml tag key lattr=
 	if key==nil then _xmlError p "empty attribute key around *" ;
 	if key=="/>" then tagXml tag (listReverse lattr) nil
 	else if key==">" then 
-		if hashsetContains NOCHILD tag then tagXml tag (listReverse lattr) nil
-		else _xmlParseTagFinal p tag (listReverse lattr) (_xmlParseContent p)
+		if isHtml && hashsetContains NOCHILD tag then tagXml tag (listReverse lattr) nil
+		else _xmlParseTagFinal p tag (listReverse lattr) (_xmlParseContent p isHtml)
 	else let _tokenTake p -> sep in
-	if sep<>"=" then _xmlParseAttrKey p tag sep [key key]:lattr
+	if sep<>"=" then _xmlParseAttrKey p isHtml tag sep [key key]:lattr
 	else let _tokenTake p -> val in
-	_xmlParseAttr p tag [key _xmlFilterAttr val]:lattr;;
+	_xmlParseAttr p isHtml tag [key _xmlFilterAttr val]:lattr;;
 
-fun _xmlParseAttr p tag lattr=
+fun _xmlParseAttr p isHtml tag lattr=
 	let _tokenTake p -> key in
-	_xmlParseAttrKey p tag key lattr;;
+	_xmlParseAttrKey p isHtml tag key lattr;;
 
-fun _xmlParseTag p=
+fun _xmlParseTag p isHtml=
 	let _tokenTake p -> tag in
-	_xmlParseAttr p tag nil;;
+	_xmlParseAttr p isHtml tag nil;;
 
-fun _xmlParseContent p=
+fun _xmlParseContent p isHtml=
 	let _tokenTakeContent p -> val in
 	if val<>nil then
 	match val with
 		"</" -> nil,
-		"<" -> (_xmlParseTag p):_xmlParseContent p,
-		_ -> (contentXml val):_xmlParseContent p;;
+		"<" -> (_xmlParseTag p isHtml):_xmlParseContent p isHtml,
+		_ -> (contentXml val):_xmlParseContent p isHtml;;
 
 fun _xmlNoMixChilds j strFilter=
 	match j with
@@ -191,16 +192,18 @@ fun _xmlStartDetect src i0=
 	else _xmlStartDetect src i+1;;
 		
 // try to guess if the source is Utf8, so that it can decode entities with code >= 256
-fun xmlParse src i0 noMixChild=
+fun _xmlParse src i0 noMixChild isHtml=
 	let if isU8 src then #u8FromXml else #latinFromXml -> strFilter in
 	let _xmlStartDetect src i0 -> i in
 	if i<>nil then
 	let tokenCreate src i-> p in
-	let head _xmlParseContent p -> xml in
+	let head _xmlParseContent p isHtml -> xml in
 	let if noMixChild then (_xmlNoMixChilds xml strFilter) else (_xmlMixChilds xml strFilter) -> xml in
 	let tokenIndex p -> next in
 	[xml next];;
 
+fun xmlParse src i0 noMixChild= _xmlParse src i0 noMixChild false;;
+fun htmlParse src i0 noMixChild= _xmlParse src i0 noMixChild true;;
 
 fun xmlGetTag xml= match xml with tagXml tag _ _ -> tag;;
 fun xmlGetAttributes xml= match xml with tagXml _ attributes _ -> attributes;;

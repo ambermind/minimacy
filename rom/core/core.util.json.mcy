@@ -31,6 +31,7 @@ fun jsonBoolGet p=match p with jsonTrue -> true, jsonFalse -> false;;
 fun jsonStringGet p=match p with jsonString v -> v;;
 fun jsonObjectGet p=match p with jsonObject v -> v;;
 fun jsonArrayGet p=match p with jsonArray v -> v;;
+fun jsonListGet p=match p with jsonArray v -> listFromArray v;;
 fun jsonFieldGet p field=match p with jsonObject l -> for q in l do let q->[key val] in if key==field then return val;;
 
 const _JSON_SYMBOLS="{ } [ ] : ,";;

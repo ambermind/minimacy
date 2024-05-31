@@ -11,6 +11,7 @@
 
 export HttpArgs, stringArg _ _, fileArg _ _ _;;
 export httpSetHeader h key val;;
+export httpGetHeader h headerName;;
 export httpGetRemote h;;
 export httpFormUrlEncodedFromList l;;
 export httpReuse h verb url version;;
@@ -42,7 +43,7 @@ struct Http=[
 	timeH timeoutH
 	tlsH serverH ipH portH cipherSuitesH clientCertificateH clientKeyH
 	requestH requestHeadersH postDataH thH
-	statusH replyHeadersH
+	statusH versionH codeH replyHeadersH
 	_bufferH _contentH _contentLengthH _transferH
 	cbReplyH
 	];;
@@ -84,7 +85,7 @@ fun _httpHeaders header=
 		for line in tail header do
 			let strPos line ": " 0 -> i in
 			if i<>nil then
-			let strLeft line i -> key in
+			let strLowercase strLeft line i -> key in
 			let strSlice line i+2 nil -> val in
 			let hashmapGet headers key -> current in
 			hashmapSet headers key if current==nil then val else strBuild [current "\n" val];
@@ -100,11 +101,11 @@ fun _checkHeader h data=
 	let strLeft begining i -> header in
 	let strSplit "\r\n" header -> header in
 	let _httpHeaders header -> headers in
-	let intFromDec hashmapGet headers HTTP_CONTENT_LENGTH -> contentLength in
-	let HTTP_CHUNKED==hashmapGet headers HTTP_TRANSFER_ENCODING -> chunked in
-	let strSplit " " head header -> firstLine in
+	let intFromDec hashmapGet headers "content-length" -> contentLength in
+	let HTTP_CHUNKED==hashmapGet headers "transfer-encoding" -> chunked in
+	let head header -> status in
+	let strSplit " " status -> version:code:_ in
 	let strSlice begining i+4 nil -> ending in
-	let firstLine -> (version:code:reply) in
 	let if code=="204" then 0 else contentLength -> contentLength in	//NO HEADER
 	(
 		set h._bufferH=nil;
@@ -117,7 +118,9 @@ fun _checkHeader h data=
 			transferChunked -> (set h._bufferH=ending; nil),
 			_ -> (set h._contentH=ending:nil; set h._contentLengthH=strLength ending);
 
-		set h.statusH=[version (intFromDec code) strJoin " " reply];
+		set h.statusH=status;
+		set h.versionH=version;
+		set h.codeH=intFromDec code;
 		set h.replyHeadersH=headers;
 		true
 	);;
@@ -191,8 +194,7 @@ fun _httpReceiveFinal h endFromContent=
 	let h.cbReplyH -> cb in
 	if cb<>nil then
 	let strBuild listReverse h._contentH -> content in
-	let h.statusH ->[serverVersion _ _] in
-	let serverVersion==HTTP_1_1 -> serverKeepsAlive in
+	let h.versionH==HTTP_1_1 -> serverKeepsAlive in
 	let h.statusH<>nil && (endFromContent || h._transferH==transferNone) -> ok in
 	(
 //	echoTime ["ok:" ok];
@@ -205,8 +207,8 @@ fun _httpReceiveFinal h endFromContent=
 		);
 		set h.cbReplyH=nil;
 		set h.busyH=false;
-		if ok then (call cb h.statusH h.replyHeadersH content)
-		else call cb nil nil nil;
+		if ok then (call cb h.codeH content)
+		else call cb nil nil;
 		nil
 	);;
 
@@ -256,7 +258,7 @@ fun _httpNewConnection h=
 //echoLn "=====================_httpNewConnection";
 	dnsRequest h.serverH (lambda ip=
 		set h.ipH=ip;
-		if ip==nil then (call h.cbReplyH nil nil nil; nil)
+		if ip==nil then (call h.cbReplyH nil nil; nil)
 		else _httpConnect h
 	);
 	h;;
@@ -266,6 +268,11 @@ fun _httpRestart h=
 	h;;
 
 //--------------------CLIENT END USER FUNCTIONS
+
+fun httpGetStatus h = h.statusH;;
+fun httpGetHeaders h = h.replyHeadersH;;
+fun httpGetHeader h headerName= hashmapGet h.replyHeadersH strLowercase headerName;;
+
 fun httpSetHeader h key val=
 	hashmapSet h.requestHeadersH key val;
 	h;;
@@ -296,6 +303,8 @@ fun httpReuse h verb url version=
 		set h.iH=0;
 		set h.closeAfterH=nil;
 		set h.statusH=nil;
+		set h.versionH=nil;
+		set h.codeH=nil;
 		set h.replyHeadersH=nil;
 		set h._bufferH=nil;
 		set h._transferH=nil;
@@ -342,20 +351,20 @@ fun _httpTimer h=
 		streamClose h.ttH;
 		set h.ttH=nil;
 		set h.busyH=false;
-		call h.cbReplyH nil nil nil;
+		call h.cbReplyH nil nil;
 		nil
 	)
 	else onTimeout 1000 (lambda = _httpTimer h);;
 
 fun httpSend h cb=
-	if h.busyH then (threadPost h.thH (lambda = call cb nil nil nil); nil)
+	if h.busyH then (threadPost h.thH (lambda = call cb nil nil); nil)
 	else
 	(
 		httpTouch h;
 		set h.thH= thisThread;
 		set h.busyH=true;
-		set h.cbReplyH=(lambda status headers content=
-			threadPost h.thH (lambda = call cb status headers content)
+		set h.cbReplyH=(lambda status content=
+			threadPost h.thH (lambda = call cb status content)
 		);
 		set h.sendH=_httpBuildRequest h;
 		if h.ttH==nil then (
@@ -369,11 +378,11 @@ fun httpSend h cb=
 
 fun httpGet url=
 	await (lambda join=
-		httpSend (httpCreate nil url HTTP_1_0) (lambda status headers data= joinSend join data)
+		httpSend (httpCreate nil url HTTP_1_0) (lambda code data= joinSend join data)
 	);;
 
 fun httpGet12 url=
 	await (lambda join=
-		httpSend (httpForceTls12 httpCreate nil url HTTP_1_0) (lambda status headers data= joinSend join data)
+		httpSend (httpForceTls12 httpCreate nil url HTTP_1_0) (lambda code data= joinSend join data)
 	);;
 

@@ -9,9 +9,7 @@
    You should have received a copy of the GNU General Public License along
    with this program. If not, see <https://www.gnu.org/licenses/>. */
 
-use core.crypto.sign;;
 use core.crypto.oid;;
-
 
 sum Asn1=
 	asn1ClassConstructed _ _ _,	asn1ClassPrimitive _ _ _,
@@ -240,15 +238,22 @@ fun rsaPubFromAsn1 bin=
 
 fun commonFromAsn1 h pkInfo signatureAlgorithm signature=
 	let listFromAsn1 pkInfo -> (encryption:raw:_) in
-	let strFromAsn1 head listFromAsn1 encryption -> encryption in 
+	let listFromAsn1 encryption -> encryption:curve:_ in
+	let strFromAsn1 encryption -> encryption in 
 	(
-		hashmapSet h "ALGO" encryption;
+		hashmapSet h OID_ENCRYPTION encryption;
 		if encryption==OID_rsaEncryption then
 			let rsaPubFromAsn1 raw ->[modulus pubExp] in
 			(
 				hashmapSet h OID_MODULUS modulus;
 				hashmapSet h OID_PUBEXP pubExp;
 			)
+		else if encryption==OID_ecPublicKey then
+			let hexFromStr strFromAsn1 raw -> pubKey in (
+				hashmapSet h OID_CURVE strFromAsn1 curve;
+				hashmapSet h OID_PUBKEY pubKey;
+			)
+		
 	);
 	let strFromAsn1 head listFromAsn1 signatureAlgorithm -> signatureAlgorithm in 
 		hashmapSet h OID_SIGNALGO signatureAlgorithm;
@@ -280,28 +285,6 @@ fun asn1Subject subjectList=
 			"emailAddress" -> [OID_emailAddress asn1IA5String val]
 	) -> l in
 	asn1Seq asn1MakeInfos l;;
-
-fun asn1EncryptionAlgo algo=
-	match algo with
-		RSA_PKCS1_SHA1 -> OID_RSA_PKCS1_SHA512,
-		RSA_PKCS1_SHA512 -> OID_RSA_PKCS1_SHA512,
-		RSA_PKCS1_SHA384 -> OID_RSA_PKCS1_SHA384,
-		RSA_PKCS1_SHA256 -> OID_RSA_PKCS1_SHA256;;
-
-fun asn1RsaSign algo rsa asn1=
-	let asn1EncryptionAlgo algo -> algoOid in
-	let asn1Pack asn1 -> data in
-	let signatureGenerate algo rsa data -> signature in
-	asn1Seq
-//		(asn1Raw data):
-		asn1:
-		(asn1Seq
-			(asn1ObjectIdentifier algoOid):
-			(asn1Null):
-			nil
-		):
-		(asn1BitString 0 signature):
-		nil;;
 
 fun derProcess der fHandle=
 	if der<>nil then

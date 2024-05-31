@@ -32,6 +32,7 @@ export httpSrvGetCookies h ;;
 export httpSrvGetCookie h cookie;;
 export httpSrvGetRequest h ;;
 export httpSrvGetRequestHeaders h ;;
+export httpSrvGetRequestHeader h headerName ;;
 export httpSrvGetServerName h ;;
 export httpSrvGetPostData h ;;
 
@@ -221,7 +222,7 @@ fun _httpSendReply h reply keepAlive=
 
 fun _httpGetReply h=
 	set h.postDataH=strBuild listReverse h._contentH;
-	let (strLowercase hashmapGet h.requestHeadersH "Connection")=="keep-alive" -> keepAlive in
+	let (strLowercase httpSrvGetRequestHeader h "Connection")=="keep-alive" -> keepAlive in
 	(
 		set h._contentH=nil;
 		let h.requestH -> [verb uri version] in
@@ -330,7 +331,7 @@ fun _wsHandleHeader h=
 		httpSrvSetHeader h "Server" "Minimacy WS server";
 		httpSrvSetHeader h "Upgrade" "websocket";
 		httpSrvSetHeader h "Connection" "Upgrade";
-		httpSrvSetHeader h WS_ACCEPT _wsHashSecret hashmapGet h.requestHeadersH WS_KEY;
+		httpSrvSetHeader h WS_ACCEPT _wsHashSecret httpSrvGetRequestHeader h WS_KEY;
 		set h.statusH=[HTTP_1_1 101 "Switching Protocols"];
 		_httpSend h _wsBuildReply h;
 		// the client is not supposed to send data before receiving this reply header
@@ -349,12 +350,12 @@ fun _httpHeaders header=
 	(
 		for line in tail header do
 			let strPos line ": " 0 -> i in
-			if i<>nil then hashmapSet headers (strLeft line i) (strSlice line i+2 nil);
+			if i<>nil then hashmapSet headers (strLowercase strLeft line i) (strSlice line i+2 nil);
 		headers
 	);;
 
 fun _headerCookies h=
-	let hashmapGet h.requestHeadersH HTTP_COOKIE -> cookies in
+	let httpSrvGetRequestHeader h HTTP_COOKIE -> cookies in
 	if cookies<>nil then
 	let hashmapCreate 4 -> listMap in
 	(
@@ -397,7 +398,7 @@ fun _checkHeader h data=
 
 fun _headerHandleData h data=
 	if data<>nil && _checkHeader h data then
-	let (hashmapGet h.requestHeadersH "Upgrade")=="websocket" -> ws in
+	let (httpSrvGetRequestHeader h "Upgrade")=="websocket" -> ws in
 	if ws then _wsHandleHeader h
 	else _httpHandleHeader h;;
 
@@ -498,6 +499,7 @@ fun httpSrvGetCookie h cookie= hashmapGet h.cookiesH cookie;;
 
 fun httpSrvGetRequest h = h.requestH;;	// returns [verb uri version]
 fun httpSrvGetRequestHeaders h = h.requestHeadersH;;
+fun httpSrvGetRequestHeader h headerName= hashmapGet h.requestHeadersH strLowercase headerName;;
 fun httpSrvGetServerName h = tlsGetServerName (tlsFromStream h.ttH);;
 fun httpSrvGetPostData h = h.postDataH;;
 
@@ -511,8 +513,7 @@ fun httpSrvParseArgs h=
 	let hashmapCreate 4 -> strings in
 	let hashmapCreate 1 -> files in
 	let h.requestH ->[_ uri _] in
-	let h.requestHeadersH -> headers in
-	let strSplit "; " hashmapGet headers HTTP_CONTENT_TYPE -> contentType in
+	let strSplit "; " httpSrvGetRequestHeader h HTTP_CONTENT_TYPE -> contentType in
 	let strPos uri "?" 0 -> i in
 	(
 		if i<>nil then _parseUrlEncoded strings strSlice uri i+1 nil;

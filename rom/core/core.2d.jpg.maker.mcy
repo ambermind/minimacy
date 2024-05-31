@@ -56,7 +56,7 @@ fun _jpegHuffmanFromTree fifos tree depth= match tree with
 	leafH _ code -> fifoIn fifos.depth code,
 	nodeH _ a b -> (_jpegHuffmanFromTree fifos a depth+1; _jpegHuffmanFromTree fifos b depth+1);;
 
-fun huffmanComputeForJpg lengths=
+fun _huffmanComputeForJpg lengths=
 	let _jpegHuffmanPatch huffmanBuildDecoder lengths -> tree in
 	let arrayInit 17 (lambda i=fifoCreate) -> fifos in
 	let fifoCreate -> elements in
@@ -70,9 +70,11 @@ fun huffmanComputeForJpg lengths=
 			[bits arrayFromList fifoList elements]
 		)
 	);;
-fun arrayMax src = arrayReduce src #max src.0;;
-fun huffmanBuildEncoderJpg [bits elements]=
-	let 1+arrayMax elements -> maxElement in
+
+fun _arrayMax src = arrayReduce src #max src.0;;
+
+fun _huffmanBuildEncoderJpg [bits elements]=
+	let 1+_arrayMax elements -> maxElement in
 	let arrayCreate maxElement 0 -> codeLengths in
 	let 0->code in
 	(
@@ -263,8 +265,8 @@ fun jpgFromBitmap bmp quality=
 			processBitmapBlock jpg jpg.componentsJ.2 x y 8;
 		);
 
-		set jpg.huffmanDefinitionJ=arrayMap jpg.huffmanCountsJ (lambda counts= huffmanComputeForJpg huffmanComputeCodeLengths counts);
-		set jpg.huffmanEncoderJ=arrayMap jpg.huffmanDefinitionJ (lambda def= huffmanBuildEncoderJpg def);
+		set jpg.huffmanDefinitionJ=arrayMap jpg.huffmanCountsJ (lambda counts= _huffmanComputeForJpg huffmanComputeCodeLengths counts);
+		set jpg.huffmanEncoderJ=arrayMap jpg.huffmanDefinitionJ (lambda def= _huffmanBuildEncoderJpg def);
 
 		bufferAppend jpg.outJ [
 			(strInt16Msb 0xFFD8)	// start

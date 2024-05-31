@@ -141,6 +141,7 @@ fun keyDown k=
 	0;;
 
 fun demoTriangulation=
+echoLn "demoTriangulation";
 	uiStart 30 40 WIDTH HEIGHT UI_NORMAL "Triangulation";
 	uiOnKeyDown #keyDown;
 

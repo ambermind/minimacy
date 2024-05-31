@@ -17,7 +17,7 @@ use core.crypto.asn1;;
 
 const _DEBUG=false;;
 
-const RootCertificates=hashmapCreate 6;;
+const _RootCertificates=hashmapCreate 6;;
 
 fun cerDefaultVersion certificateInfo=
 	let listFromAsn1 certificateInfo -> l in
@@ -161,14 +161,14 @@ fun rootCertificateRegister cer=
 		echoLn ["CERTIFICATE OUT OF TIME " oidHashmapSUBJECT cer];
 		nil
 	)
-	else hashmapSet RootCertificates (oidHashmapISSUER cer) cer;;
+	else hashmapSet _RootCertificates (oidHashmapISSUER cer) cer;;
 
 fun _cerCheckChain hChain t0 cer =
 	if _DEBUG then echoLn ["--check " oidHashmapSUBJECT cer];
 	if !cerCheckTime cer t0 then (strConcat "CERTIFICATE OUT OF TIME " oidHashmapSUBJECT cer)
 	else
 	let oidHashmapISSUER cer -> issuer in
-	let hashmapGet RootCertificates issuer -> root in
+	let hashmapGet _RootCertificates issuer -> root in
 	if cerCheckByAuth cer root then (
 	if _DEBUG then echoLn ["--find root " issuer];
 		nil
@@ -185,7 +185,7 @@ fun _cerCheckChain hChain t0 cer =
 
 fun cerCheckChain t0 siteCer lCertificates=
 	if _DEBUG then echoLn "cerCheckChain";
-	if 0==hashmapCount RootCertificates then (
+	if 0==hashmapCount _RootCertificates then (
 		if _DEBUG then echoLn "--no root registered. Skip test";
 		nil
 	)
@@ -199,3 +199,6 @@ fun cerCheckChain t0 siteCer lCertificates=
 
 fun cerByServerName serverName lCertificates=
 	listFind lCertificates lambda cer=cerMatchServerName cer serverName;;
+
+fun cerKeyIsRSA cer = (oidHashmapENCRYPTION cer)==OID_rsaEncryption;;
+fun cerKeyIsEC cer = (oidHashmapENCRYPTION cer)==OID_ecPublicKey;;

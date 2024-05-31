@@ -171,7 +171,7 @@ fun ecDump str p=
 fun ecStrFromPoint ec p =
 	let p->[x y] in strBuild {"\$04" (strFromBig x ec._byteLength) (strFromBig y ec._byteLength)};;
 
-fun ecPointFromStr ec str =
+fun ecPointFromStr str =
 	let strGet str 0 -> header in
 	let (strLength str)>>1 -> len in
 	if header==0x04 then [(bigFromStr strSlice str 1 len) (bigFromStr strSlice str 1+len nil)];;
@@ -202,7 +202,7 @@ fun ecEcdh ec keyAlice pubBob = let keyAlice -> [privAlice _] in ecMul ec privAl
 // idem with keyAlice and pubBob being binary strings
 fun ecEcdhStr ec keyAlice pubBob =
 	let keyAlice -> [privAlice _] in
-	let ecMul ec (bigFromStr privAlice) (ecPointFromStr ec pubBob) -> [x _] in
+	let ecMul ec (bigFromStr privAlice) (ecPointFromStr pubBob) -> [x _] in
 	strFromBig x ec._byteLength;;
 
 
@@ -231,4 +231,6 @@ fun ecVerify ec kPublic sign msg fHash=
 	let a %-> rr in	// must be equal to r
 	r == rr;;
 
-
+fun ecVerifyStr ec pubKey signX signY msg fHash=
+	let ecPointFromStr strFromHex pubKey -> kPublic in
+	ecVerify ec kPublic [signX signY] msg fHash;;

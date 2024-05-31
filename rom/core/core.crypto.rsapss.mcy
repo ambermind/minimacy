@@ -8,6 +8,10 @@
    version 2.0, for more details.
    You should have received a copy of the GNU General Public License along
    with this program. If not, see <https://www.gnu.org/licenses/>. */
+
+export rsaPssSign rsa data fHash hashLen;;
+export rsaPssVerify certificate data fHash hashLen signature;;
+
 use core.crypto.hash;;
 use core.crypto.rsa;;
 use core.crypto.oid;;
@@ -30,16 +34,8 @@ fun checkMask2 buf off len=
 	for i=0;i<len do if 0<>bytesGet buf off+i then return false;
 	true;;
 
-fun mkDataHash fHash data=
-	let "                                " -> space32 in
-	let strBuild {
-		space32 space32
-		data
-	} -> toSign in
-	call fHash toSign;;
-
 fun mkMask2 fHash data salt=
-	let mkDataHash fHash data -> hash in
+	let call fHash data -> hash in
 	call fHash strBuild {
 		"\0\0\0\0\0\0\0\0"
 		hash

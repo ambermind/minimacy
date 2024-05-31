@@ -14,7 +14,6 @@ use core.crypto.rsa;;
 use core.crypto.sign;;
 use core.crypto.oid;;
 use core.crypto.asn1;;
-use core.crypto.pem;;
 
 
 //-------------CSR-----------------------------
@@ -64,12 +63,34 @@ fun _csrInfoAsn1 subject modulus pubExp=
 	):
 	nil;;
 
+fun _asn1EncryptionAlgo algo=
+	match algo with
+		RSA_PKCS1_SHA1 -> OID_RSA_PKCS1_SHA512,
+		RSA_PKCS1_SHA512 -> OID_RSA_PKCS1_SHA512,
+		RSA_PKCS1_SHA384 -> OID_RSA_PKCS1_SHA384,
+		RSA_PKCS1_SHA256 -> OID_RSA_PKCS1_SHA256;;
+
+fun _asn1RsaSign algo rsa asn1=
+	let _asn1EncryptionAlgo algo -> algoOid in
+	let asn1Pack asn1 -> data in
+	let signatureGenerate algo rsa data -> signature in
+	asn1Seq
+//		(asn1Raw data):
+		asn1:
+		(asn1Seq
+			(asn1ObjectIdentifier algoOid):
+			(asn1Null):
+			nil
+		):
+		(asn1BitString 0 signature):
+		nil;;
+
 fun _csrAsn1 key algo subject=
 	let hashmapGet key OID_MODULUS -> modulus in
 	let hashmapGet key OID_PUBEXP -> pubExp in
 	let rsaImport key -> rsa in
 	let _csrInfoAsn1 subject modulus pubExp -> infos in
-	asn1RsaSign algo rsa infos;;
+	_asn1RsaSign algo rsa infos;;
 
 fun csrDER key algo subject=
 	let _csrAsn1 key algo subject -> csr in
