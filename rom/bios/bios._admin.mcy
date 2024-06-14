@@ -223,3 +223,12 @@ fun eth=		//only for root on Linux
 			ip
 		];
 	true;;
+
+fun nativeFonts=
+	let hashsetCreate 8 -> h in (
+		for fontName in _nativeFontList do hashsetAdd h fontName;
+		let listFromHashset h -> lNames in
+		let quicksort lNames (lambda a b= (strCmp a b)<0) -> lNames in
+		for fontName in lNames do echoLn fontName
+	);
+	true;;

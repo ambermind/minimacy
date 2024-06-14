@@ -559,22 +559,6 @@ Def* pkgAddCons0(Thread* th, Pkg* pkg, char* name, Def* defType)
 	return defCons;
 }
 
-void systemKeywords(Thread* th)
-{
-	Def* d = MM.system->first;
-	while (d)
-	{
-		char* p = defName(d);
-		if (p[0] != '_')
-		{
-			PRINTF(LOG_USER, "%s:%d:%s: ", p, d->code,d->parser&&d->parser->name?STR_START(d->parser->name):"");
-			typePrint(th, LOG_USER, d->type);
-			PRINTF(LOG_USER, "\n");
-		}
-		d = d->next;
-	}
-}
-
 void systemInit(Thread* th, Pkg *system)
 {
 	memoryEnterFast();

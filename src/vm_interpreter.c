@@ -125,7 +125,7 @@ LINT interpreterExec(Thread* th,LINT argc,LINT tfc)	// fun arg0 ... 0:argn-1
 	{
 		NATIVE native;
 		LINT fastAlloc= memoryGetFast();
-		LINT def=STACK_REF_(th)-argc;	// def is the position of the native function in the stack
+		LINT def=STACK_REF(th)-argc;	// def is the position of the native function in the stack
 		LINT skip;
 
 		if (!ARRAY_IS_PNT(fun,FUN_NATIVE_POINTER))
@@ -147,10 +147,10 @@ LINT interpreterExec(Thread* th,LINT argc,LINT tfc)	// fun arg0 ... 0:argn-1
 //			threadDump(LOG_SYS, th, 3);
 //		}
 		if (k) return k;
-		skip = STACK_REF_(th) - def;
+		skip = STACK_REF(th) - def;
 		if (skip<0)
 		{
-			PRINTF(LOG_SYS,">Error: NATIVE sp=" LSD ", should be at least " LSD " in %s\n",STACK_REF_(th),def,STR_START((ARRAY_PNT(fun,FUN_NATIVE_NAME))));
+			PRINTF(LOG_SYS,"> Error: NATIVE sp=" LSD ", should be at least " LSD " in %s\n",STACK_REF(th),def,STR_START((ARRAY_PNT(fun,FUN_NATIVE_NAME))));
 //			threadDump(LOG_SYS,th,5);
 			return -1;  // wrong implementation
 		}
@@ -167,7 +167,7 @@ LINT interpreterExec(Thread* th,LINT argc,LINT tfc)	// fun arg0 ... 0:argn-1
 	FUN_PUSH_PNT(th->fun);
 	FUN_PUSH_INT(th->pc);
 	FUN_PUSH_INT(th->callstack);
-	th->callstack=STACK_REF_(th);
+	th->callstack=STACK_REF(th);
 	th->pc=0;
 	th->fun=fun;
 	return -1;
@@ -200,8 +200,8 @@ int interpreterBreakThrow(Thread* th,LINT type, LW data, int dataType)
 		th->pc=STACK_REF_INT(th,th->callstack,CALLSTACK_PC);
 		th->callstack=STACK_REF_INT(th,th->callstack,CALLSTACK_PREV);
 	}
-	PRINTF(LOG_USER,"Uncaught exception!\n");
-	itemDump(th, LOG_USER,data, dataType);
+	PRINTF(LOG_SYS,"> Uncaught exception!\n");
+	itemDump(th, LOG_SYS,data, dataType);
 	return 0;
 }
 LINT interpreterEnd(Thread* th,LINT count, LINT result)
@@ -287,7 +287,7 @@ LINT interpreterRun(Thread* th,LINT maxCycles)
 			{
 				LINT pci=(LINT)(pc-1-BC_START(bytecode));
 				threadDump(LOG_USER,th,10);
-				PRINTF(LOG_USER,"#" LSD " (sp=" LSD " locals=" LSD " callstack=" LSD ") %s -> ",th->uid,th->sp, STACK_REF_(th)-locals,STACK_REF_(th)-th->callstack,interpreterCurrentFun(th));
+				PRINTF(LOG_USER,"#" LSD " (sp=" LSD " locals=" LSD " callstack=" LSD ") %s -> ",th->uid,th->sp, STACK_REF(th)-locals,STACK_REF(th)-th->callstack,interpreterCurrentFun(th));
 				PRINTF(LOG_USER,"count=" LSD "/" LSD " pc=" LSD " op=%2d:",th->count+nloop-count, maxCycles,pci,op);
 				opcodePrint(th, LOG_USER,op,pc,pci);
 //				if (1) PRINTF(LOG_DEV,"");
@@ -370,7 +370,7 @@ LINT interpreterRun(Thread* th,LINT maxCycles)
 				b = STACK_INT(th, 0);
 				if (!b)
 				{
-					PRINTF(LOG_SYS, ">Error: BCdiv division by zero in function %s\n", interpreterCurrentFun(th));
+					PRINTF(LOG_SYS, "> Error: BCdiv division by zero in function %s\n", interpreterCurrentFun(th));
 					STACK_SET_INT(th, 1, (0));
 				}
 				else STACK_SET_INT(th, 1, STACK_INT(th, 1) / b);
@@ -534,7 +534,7 @@ LINT interpreterRun(Thread* th,LINT maxCycles)
 				b = STACK_INT(th, 0);
 				if (!b)
 				{
-					PRINTF(LOG_SYS, ">Error: BCmod division by zero in function %s\n", interpreterCurrentFun(th));
+					PRINTF(LOG_SYS, "> Error: BCmod division by zero in function %s\n", interpreterCurrentFun(th));
 					STACK_SET_INT(th, 1, (0));
 				}
 				else STACK_SET_INT(th, 1, STACK_INT(th, 1) % b);
@@ -586,9 +586,9 @@ LINT interpreterRun(Thread* th,LINT maxCycles)
 				if (promptOnThread(th)) return INTERPRETER_OM;
 				break;
 			case OPret:
-				if (STACK_REF_(th) - th->callstack != 1)
+				if (STACK_REF(th) - th->callstack != 1)
 				{
-					PRINTF(LOG_SYS, ">Error: RET sp=" LSD ", should be " LSD " in %s\n", STACK_REF_(th), th->callstack + 1, interpreterCurrentFun(th));
+					PRINTF(LOG_SYS, "> Error: RET sp=" LSD ", should be " LSD " in %s\n", STACK_REF(th), th->callstack + 1, interpreterCurrentFun(th));
 					threadDump(LOG_SYS, th, 6);
 					return EXEC_EXIT;  // wrong implementation
 				}
@@ -741,7 +741,7 @@ LINT interpreterRun(Thread* th,LINT maxCycles)
 				STACK_DROP(th);
 				break;
 			default:
-				PRINTF(LOG_SYS, "\n>Error: Illegal Opcode %d in %s\n", 255 & op, interpreterCurrentFun(th));
+				PRINTF(LOG_SYS, "\n> Error: Illegal Opcode %d in %s\n", 255 & op, interpreterCurrentFun(th));
 				//					memoryAbort(m,1);
 				return EXEC_EXIT;
 			}

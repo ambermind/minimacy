@@ -317,63 +317,63 @@ int sysPlayStart(AudioEngine* t)
 	char* device="plughw:0,0";
 
 	if ((err = snd_pcm_open (&handle, device, SND_PCM_STREAM_PLAYBACK, 0)) < 0) {
-		PRINTF(LOG_DEV,"#ALSA : cannot open audio device %s (%s)\n", 
+		PRINTF(LOG_SYS,"> ALSA: cannot open audio device %s (%s)\n", 
 			device,
 			snd_strerror (err));
 		goto cleanup;
 	}
 	if ((err = snd_pcm_hw_params_malloc (&hw_params)) < 0) {
-		PRINTF(LOG_DEV,"#ALSA : cannot allocate hardware parameter structure (%s)\n",
+		PRINTF(LOG_SYS,"> ALSA: cannot allocate hardware parameter structure (%s)\n",
 			snd_strerror (err));
 		goto cleanup;
 	}
 			 
 	if ((err = snd_pcm_hw_params_any (handle, hw_params)) < 0) {
-		PRINTF(LOG_DEV,"#ALSA : cannot initialize hardware parameter structure (%s)\n",
+		PRINTF(LOG_SYS,"> ALSA: cannot initialize hardware parameter structure (%s)\n",
 			snd_strerror (err));
 		goto cleanup;
 	}
 
 	if ((err = snd_pcm_hw_params_set_access (handle, hw_params, SND_PCM_ACCESS_RW_INTERLEAVED)) < 0) {
-		PRINTF(LOG_DEV,"#ALSA : cannot set access type (%s)\n",
+		PRINTF(LOG_SYS,"> ALSA: cannot set access type (%s)\n",
 			snd_strerror (err));
 		goto cleanup;
 	}
 
 	if ((err = snd_pcm_hw_params_set_format (handle, hw_params,SND_PCM_FORMAT_S16_LE)) < 0) {
-		PRINTF(LOG_DEV,"#ALSA : cannot set sample format (%s)\n",
+		PRINTF(LOG_SYS,"> ALSA: cannot set sample format (%s)\n",
 			snd_strerror (err));
 		goto cleanup;
 	}
 	exact_rate=AUDIO_FREQ;
 	if ((err = snd_pcm_hw_params_set_rate_near (handle, hw_params, &exact_rate, 0)) < 0) {
-		PRINTF(LOG_DEV,"#ALSA : cannot set sample rate (%s)\n",
+		PRINTF(LOG_SYS,"> ALSA: cannot set sample rate (%s)\n",
 			snd_strerror (err));
 		goto cleanup;
 	}
-//	PRINTF(LOG_DEV,"#ALSA : exact_rate=%d\n",exact_rate);
+//	PRINTF(LOG_SYS,"> ALSA: exact_rate=%d\n",exact_rate);
 
 	if ((err = snd_pcm_hw_params_set_channels (handle, hw_params, AUDIO_CHANNELS)) < 0) {
-		PRINTF(LOG_DEV,"#ALSA : cannot set channel count (%s)\n",
+		PRINTF(LOG_SYS,"> ALSA: cannot set channel count (%s)\n",
 			snd_strerror (err));
 		goto cleanup;
 	}
 	if ((err = snd_pcm_hw_params_set_periods (handle, hw_params, AUDIO_NB_BUFFERS, 0)) < 0) {
-		PRINTF(LOG_DEV,"#ALSA : cannot set periods (%s)\n",
+		PRINTF(LOG_SYS,"> ALSA: cannot set periods (%s)\n",
 			snd_strerror (err));
 		goto cleanup;
 	}
 	exact_buffersize=AUDIO_NB_BUFFERS*AUDIO_SLICE;
-	//PRINTF(LOG_DEV,"#ALSA : expected buffersize=%d %d %d %d %d\n",(int)exact_buffersize,nbBuffers,channelSize,nChannels,resolution);
+	//PRINTF(LOG_SYS,"> ALSA: expected buffersize=%d %d %d %d %d\n",(int)exact_buffersize,nbBuffers,channelSize,nChannels,resolution);
 	if ((err = snd_pcm_hw_params_set_buffer_size_near (handle, hw_params, &exact_buffersize)) < 0) {
-		PRINTF(LOG_DEV,"#ALSA : cannot set buffer size (%s)\n",
+		PRINTF(LOG_SYS,"> ALSA: cannot set buffer size (%s)\n",
 			snd_strerror (err));
 		goto cleanup;
 	}
-//	PRINTF(LOG_DEV,"#ALSA : exact_buffersize=%d\n",(int)exact_buffersize);
+//	PRINTF(LOG_SYS,"> ALSA: exact_buffersize=%d\n",(int)exact_buffersize);
 
 	if ((err = snd_pcm_hw_params (handle, hw_params)) < 0) {
-		PRINTF(LOG_DEV,"#ALSA : cannot set parameters (%s)\n",
+		PRINTF(LOG_SYS,"> ALSA: cannot set parameters (%s)\n",
 			snd_strerror (err));
 		goto cleanup;
 	}
@@ -382,27 +382,27 @@ int sysPlayStart(AudioEngine* t)
 	hw_params=NULL;
 
 	if ((err = snd_pcm_sw_params_malloc (&sw_params)) < 0) {
-		PRINTF(LOG_DEV,"#ALSA : cannot allocate software parameter structure (%s)\n",
+		PRINTF(LOG_SYS,"> ALSA: cannot allocate software parameter structure (%s)\n",
 			snd_strerror (err));
 		goto cleanup;
 	}
 	if ((err = snd_pcm_sw_params_current (handle, sw_params)) < 0) {
-		PRINTF(LOG_DEV,"#ALSA : cannot current software parameter structure (%s)\n",
+		PRINTF(LOG_SYS,"> ALSA: cannot current software parameter structure (%s)\n",
 			snd_strerror (err));
 		goto cleanup;
 	}
 	if ((err = snd_pcm_sw_params_set_start_threshold (handle, sw_params,0)) < 0) {
-		PRINTF(LOG_DEV,"#ALSA : cannot initialize software start threshold (%s)\n",
+		PRINTF(LOG_SYS,"> ALSA: cannot initialize software start threshold (%s)\n",
 			snd_strerror (err));
 		goto cleanup;
 	}
 	if ((err = snd_pcm_sw_params_set_avail_min (handle, sw_params,AUDIO_SLICE)) < 0) {
-		PRINTF(LOG_DEV,"#ALSA : cannot initialize software available min (%s)\n",
+		PRINTF(LOG_SYS,"> ALSA: cannot initialize software available min (%s)\n",
 			snd_strerror (err));
 		goto cleanup;
 	}
 	if ((err = snd_pcm_sw_params(handle, sw_params)) < 0) {
-		PRINTF(LOG_DEV,"#ALSA : cannot initialize software parameter structure (%s)\n",
+		PRINTF(LOG_SYS,"> ALSA: cannot initialize software parameter structure (%s)\n",
 			snd_strerror (err));
 		goto cleanup;
 	}
@@ -410,7 +410,7 @@ int sysPlayStart(AudioEngine* t)
 	sw_params=NULL;
 
 	if ((err = snd_pcm_prepare (handle)) < 0) {
-		PRINTF(LOG_DEV,"cannot prepare audio interface for use (%s)\n",
+		PRINTF(LOG_SYS,"> ALSA: cannot prepare audio interface for use (%s)\n",
 			snd_strerror (err));
 		goto cleanup;
 	}

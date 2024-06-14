@@ -30,7 +30,7 @@ int fun_serialOpen(Thread* th)
 	fd = open(STR_START(v), O_RDWR | O_NOCTTY| O_NDELAY);
 	if (fd <0)
 	{
-		PRINTF(LOG_SYS, ">Error: Cannot open serial %s\n", STR_START(v));
+		PRINTF(LOG_SYS, "> Error: Cannot open serial %s\n", STR_START(v));
 		goto cleanup;
 	}
 	tcgetattr(fd, &options);
@@ -249,13 +249,13 @@ int fun_serialOpen(Thread* th)
 		NULL, OPEN_EXISTING, 0, NULL);
 	if (hCom == INVALID_HANDLE_VALUE)
 	{
-		PRINTF(LOG_SYS, ">Error: Cannot open serial %s\n", STR_START(v));
+		PRINTF(LOG_SYS, "> Error: Cannot open serial %s\n", STR_START(v));
 		goto cleanup;
 	}
 	fSuccess = GetCommState(hCom, &dcb);
 	if (!fSuccess)
 	{
-		PRINTF(LOG_SYS, ">Error: Cannot read serial state\n");
+		PRINTF(LOG_SYS, "> Error: Cannot read serial state\n");
 		goto cleanup;
 	}
 
@@ -272,13 +272,13 @@ int fun_serialOpen(Thread* th)
 	fSuccess = SetCommState(hCom, &dcb);
 	if (!fSuccess)
 	{
-		PRINTF(LOG_SYS, ">Error: Cannot write rs state\n");
+		PRINTF(LOG_SYS, "> Error: Cannot write rs state\n");
 		goto cleanup;
 	}
 	fSuccess = GetCommTimeouts(hCom, &ct);
 	if (!fSuccess)
 	{
-		PRINTF(LOG_SYS, ">Error: Cannot read rs timeouts\n");
+		PRINTF(LOG_SYS, "> Error: Cannot read rs timeouts\n");
 		goto cleanup;
 	}
 	ct.ReadIntervalTimeout = MAXDWORD;
@@ -291,7 +291,7 @@ int fun_serialOpen(Thread* th)
 	fSuccess = SetCommTimeouts(hCom, &ct);
 	if (!fSuccess)
 	{
-		PRINTF(LOG_SYS, ">Error: Cannot write rs timeouts\n");
+		PRINTF(LOG_SYS, "> Error: Cannot write rs timeouts\n");
 		goto cleanup;
 	}
 	PRINTF(LOG_SYS, "> Serial '%s' ready\n", STR_START(v));

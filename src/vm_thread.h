@@ -120,7 +120,7 @@ int coreThreadInit(Thread* th, Pkg *system);
 #define STACK_DROP(th) ((th)->sp--)
 #define STACK_DROPN(th,n) ((th)->sp-=(n))
 
-#define STACK_REF_(th) ((th)->sp)
+#define STACK_REF(th) ((th)->sp)
 #define STACK_DEF_INDEX(def,i) ((def)-(i))
 #define STACK_REF_INT(th,def,i) ARRAY_INT(STACK_BLOCK(th), STACK_DEF_INDEX(def,i))
 #define STACK_REF_PNT(th,def,i) ARRAY_PNT(STACK_BLOCK(th), STACK_DEF_INDEX(def,i))

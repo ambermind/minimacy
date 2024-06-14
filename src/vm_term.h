@@ -14,6 +14,8 @@
 typedef struct
 {
 	int mask;
+	int showBiosListing;
+	int showPkgListing;
 }Term;
 
 extern Term MainTerm;
@@ -29,6 +31,9 @@ void termEnd(void);
 void termSetMask(int i);
 int termGetMask(void);
 int termCheckMask(int mask);
+void termShowBiosListing(int val);
+void termShowPkgListing(int val);
+
 void termWrite(int mask, char* src, LINT len);
 void termPrintfv(int mask,char *format,va_list arglist);
 void termPrintf(int mask, char* format, ...);

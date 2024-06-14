@@ -182,6 +182,11 @@ int fun_echoIsEnabled(Thread* th)
 	FUN_RETURN_BOOL(termCheckMask(LOG_USER));
 }
 
+int fun_systemLogIsEnabled(Thread* th)
+{
+	FUN_RETURN_BOOL(termCheckMask(LOG_SYS));
+}
+
 int fun_systemLogEnable(Thread* th)
 {
 	int mask = termCheckMask(~LOG_SYS);
@@ -228,7 +233,8 @@ int fun_arraySlice(Thread* th)
 	LINT len = STACK_INT(th, 0);
 	LINT start = STACK_INT(th,1);
 	LB* p = STACK_PNT(th, 2);
-	FUN_SUBSTR(p,start, len, lenIsNil, ARRAY_LENGTH(p));
+	
+	FUN_SUBSTR(p,start, len, lenIsNil, ARRAY_LENGTH(p ));
 
 	q=memoryAllocArray(th, len, DBG_ARRAY); if (!q) return EXEC_OM;
 	for (i = 0; i < len; i++) ARRAY_COPY(q, i, p, start + i);
@@ -523,7 +529,7 @@ int coreInit(Thread* th, Pkg *system)
 	pkgAddConstPnt(th, system, device, NULL, Device->type);
 	pkgAddFun(th, system, "hostMemory", fun_hostMemory, typeAlloc(th,TYPECODE_FUN, NULL, 1, MM.Int));
 	pkgAddFun(th, system,"setHostUser", fun_setHostUser, fun_S_B);
-	pkgAddFun(th, system,"args",fun_args, fun_list_S);
+	pkgAddFun(th, system,"_args",fun_args, fun_list_S);
 	pkgAddFun(th, system,"_exit",fun_exit, fun_B);
 	pkgAddFun(th, system, "gc", fun_gc, fun_I);
 	pkgAddFun(th, system, "gcTrace", fun_gcTrace, fun_B_B);
@@ -534,6 +540,7 @@ int coreInit(Thread* th, Pkg *system)
 		
 	pkgAddFun(th, system, "_echoEnable", fun_echoEnable, fun_B_B);
 	pkgAddFun(th, system, "_echoIsEnabled", fun_echoIsEnabled, fun_B);
+	pkgAddFun(th, system, "_systemLogIsEnabled", fun_systemLogIsEnabled, fun_B);
 	pkgAddFun(th, system, "_systemLogEnable",fun_systemLogEnable, fun_B_B);
 	pkgAddOpcode(th, system,"dump", OPdump, typeAlloc(th,TYPECODE_FUN, NULL, 2, u0, u0));
 	pkgAddOpcode(th, system,"_dump2", OPdumpd, typeAlloc(th,TYPECODE_FUN, NULL, 2, u0, u0));

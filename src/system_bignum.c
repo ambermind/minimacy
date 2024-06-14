@@ -42,14 +42,14 @@ bignum bignumCreate(LINT nword)
 	bignum b;
 	if (!BigList)
 	{
-		PRINTF(LOG_SYS, ">Error: Out of bignum registers\n");
+		PRINTF(LOG_SYS, "> Error: Out of bignum registers\n");
 		return NULL;
 	}
 	
 	if (nword<1) nword=1;
 	if (nword > BIGNUM_MAXWORDS)
 	{
-		PRINTF(LOG_SYS, ">Error: Bignum too long (" LSD " bits, max is " LSD ")\n",nword*sizeof(uint), BIGNUM_MAXWORDS *sizeof(uint));
+		PRINTF(LOG_SYS, "> Error: Bignum too long (" LSD " bits, max is " LSD ")\n",nword*sizeof(uint), BIGNUM_MAXWORDS *sizeof(uint));
 		return NULL;
 	}
 	b = BigList;

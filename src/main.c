@@ -16,7 +16,7 @@ int boot(void)
 	LB* src = fsReadPackage(th, BOOT_FILE, NULL, 0);
 	if (!src)
 	{
-		PRINTF(LOG_USER, "\nboot file '%s"SUFFIX_CODE"' not found\n", BOOT_FILE);
+		PRINTF(LOG_USER, "\n> Error: boot file '%s"SUFFIX_CODE"' not found\n", BOOT_FILE);
 		fsReadPackage(th, BOOT_FILE, NULL, 1);
 #ifdef USE_FS_ANSI
 		ansiHelpBiosFinder();
@@ -38,18 +38,31 @@ int start(int argc, char** argv)
 //	char* args[]={"minimacy.exe","-h"};	argc=2;argv=args;
 //	for (i = 0; i < argc; i++) PRINTF(LOG_DEV,"arg %d: '%s'\n", i, argv[i]);
 	termInit();
-	if (argc && (strlen(argv[argc - 1]) >= strlen(SUFFIX_CODE))&& !strcmp(argv[argc-1] + strlen(argv[argc-1]) - strlen(SUFFIX_CODE), SUFFIX_CODE)) standalone = 0;
 
 	for (i = 0; i < argc; i++)
 	{
 		char* arg = argv[i];
-		if ((!strcmp(arg, "-h"))|| (!strcmp(arg, "-?")) || (!strcmp(arg, "-help")))
+		if ((!strcmp(arg, "-h"))|| (!strcmp(arg, "-?")) || (!strcmp(arg, "--help")))
 		{
 			termSetMask(LOG_ALL);
 			help = 1;
 		}
-		if ((!strcmp(arg, "-q")) || (!strcmp(arg,"-quiet"))) termSetMask(LOG_USER);
-		if ((!strcmp(arg, "-v")) || (!strcmp(arg,"-verbose"))) termSetMask(LOG_ALL);
+		if ((!strcmp(arg, "-q")) || (!strcmp(arg, "--quiet"))) {
+			termShowBiosListing(0);
+			termShowPkgListing(0);
+			termSetMask(LOG_ALL);
+		}
+		if ((!strcmp(arg, "-s")) || (!strcmp(arg, "--silent"))) {
+			termShowBiosListing(0);
+			termShowPkgListing(0);
+			termSetMask(LOG_USER);
+		}
+		if ((!strcmp(arg, "-v")) || (!strcmp(arg, "--verbose"))) {
+			termShowBiosListing(1);
+			termShowPkgListing(1);
+			termSetMask(LOG_ALL);
+		}
+		if ((strlen(arg) >= strlen(SUFFIX_CODE)) && !strcmp(arg + strlen(arg) - strlen(SUFFIX_CODE), SUFFIX_CODE)) standalone = 0;
 	}
 
 	PRINTF(LOG_SYS,"\n> Minimacy - Sylvain Huet - 2020-24 - "VERSION_MINIMACY"/"DEVICE_MODE"\n");
@@ -61,21 +74,21 @@ int start(int argc, char** argv)
 	else if ((LWLEN==4)&&(sizeof(LINT)==4)&&(sizeof(LFLOAT)==4) && (sizeof(double) == 8)) PRINTF(LOG_SYS,"> %d bits\n", 32 - NUMBER_RESERVED_BITS);
 	else
 	{
-		PRINTF(LOG_USER,"> wrong system [P:%d I:%d F:%d D:%d]\n",LWLEN,sizeof(LINT),sizeof(LFLOAT),sizeof(double));
+		PRINTF(LOG_USER,"> Error: wrong system [P:%d I:%d F:%d D:%d]\n",LWLEN,sizeof(LINT),sizeof(LFLOAT),sizeof(double));
 		return -1;
 	}
 
 	if (help)
 	{
-		PRINTF(LOG_USER, "\nUsage: minimacy [-h|-?|-help] [-dir path] [-v|-verbose] [-q|-quiet] [-compile] [*.mcy]\n\n");
+		PRINTF(LOG_USER, "\nUsage: minimacy [-h|-?|--help] [-v|--verbose] [-q|--quiet] [-s|--silent] [-c|--compile] [*.mcy] [args]\n\n");
 		PRINTF(LOG_USER, "Options:\n");
-		PRINTF(LOG_USER, "  -h|-?|-help: display this help message\n");
-		PRINTF(LOG_USER, "  -q|-quiet: disable the stderr output\n");
-		PRINTF(LOG_USER, "  -v|-verbose: enable the stderr output\n");
+		PRINTF(LOG_USER, "  -h|-?|--help: display this help message\n");
+		PRINTF(LOG_USER, "  -v|--verbose: print everything including bios listing\n");
+		PRINTF(LOG_USER, "  -q|--quiet: do not print compilation listing\n");
+		PRINTF(LOG_USER, "  -s|--silent: do not print compilation listing and system messages\n");
 		PRINTF(LOG_USER, "  -compile: compile and stop, this will be useful for any IDE extension\n");
-		PRINTF(LOG_USER, "  [*.mcy]: when the last argument is a *.mcy file:\n");
-		PRINTF(LOG_USER, "    - the stderr output is disabled until further notice (-v option or programmatically)\n");
-		PRINTF(LOG_USER, "    - the *.mcy file is launched instead of the system_path/pkg/boot.mcy file\n\n");
+		PRINTF(LOG_USER, "  [*.mcy]: a mcy file to start with (default is programs/boot.mcy)\n");
+		PRINTF(LOG_USER, "  [args]: args following a mcy file are reserved to this mcy program\n");
 #ifdef USE_FS_ANSI
 		ansiHelpBiosFinder();
 #endif

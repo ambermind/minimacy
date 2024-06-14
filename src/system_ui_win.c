@@ -70,7 +70,7 @@ void* myWglGetProcAddress(char* name)
 {
 	void* ad = wglGetProcAddress(name);
 	//	PRINTF(LOG_DEV,"wglGetProcAddress %s -> %llx", name, ad);
-	if (!ad) PRINTF(LOG_SYS, ">Error: cannot locate %s\n", name);
+	if (!ad) PRINTF(LOG_SYS, "> Error: cannot locate %s\n", name);
 	return ad;
 }
 
@@ -779,11 +779,6 @@ int fun_accelerometerY(Thread* th) FUN_RETURN_NIL
 int fun_accelerometerZ(Thread* th) FUN_RETURN_NIL
 int fun_accelerometerInit(Thread* th)FUN_RETURN_NIL
 
-#define FONT_BOLD 1
-#define FONT_ITALIC 2
-#define FONT_UNDERLINE 4
-#define FONT_STRIKED 8
-#define FONT_PIXEL 16
 
 typedef struct
 {
@@ -792,39 +787,30 @@ typedef struct
 	MARK mark;
 
 	HFONT hfont;
-}Font;
+}NativeFont;
 
-int _fontForget(LB* p)
+int _nativeFontForget(LB* p)
 {
-	Font* f = (Font*)p;
+	NativeFont* f = (NativeFont*)p;
 	if (f) DeleteObject(f->hfont);
 	return 0;
 }
 
-int fun_fontFromHost(Thread* th)
+int fun_nativeFontCreate(Thread* th)
 {
 	HFONT hfont;
-	Font* f;
-	LINT h;
+	NativeFont* f;
 
 	LINT flags = STACK_INT(th, 0);
 	LINT size = STACK_INT(th, 1);
 	LB* name = STACK_PNT(th, 2);
 	if (!name) FUN_RETURN_NIL;
 
-	h = size;
-	if (flags & FONT_PIXEL)
-	{
-		HDC DC = GetDC(NULL);
-		h = MulDiv((int)size, GetDeviceCaps(DC, LOGPIXELSY), 72);
-		ReleaseDC(NULL, DC);
-	}
-
-	hfont = CreateFont((int)h, 0, 0, 0, (flags & FONT_BOLD) ? 700 : 0, (flags & FONT_ITALIC) ? 1 : 0,
+	hfont = CreateFont((int)size, 0, 0, 0, (flags & FONT_BOLD) ? 700 : 0, (flags & FONT_ITALIC) ? 1 : 0,
 		(flags & FONT_UNDERLINE) ? 1 : 0, (flags & FONT_STRIKED) ? 1 : 0,
 		DEFAULT_CHARSET, 0, 0, 0, 0, STR_START(name));
 	if (!hfont) FUN_RETURN_NIL;
-	f = (Font*)memoryAllocExt(th, sizeof(Font), DBG_BIN, _fontForget, NULL);
+	f = (NativeFont*)memoryAllocExt(th, sizeof(NativeFont), DBG_BIN, _nativeFontForget, NULL);
 	if (!f) {
 		DeleteObject(hfont);
 		return EXEC_OM;
@@ -833,12 +819,12 @@ int fun_fontFromHost(Thread* th)
 	FUN_RETURN_PNT((LB*)f);
 }
 
-int fun_fontH(Thread* th)
+int fun_nativeFontH(Thread* th)
 {
 	HDC DC;
 	TEXTMETRIC tm;
 
-	Font* f= (Font*)STACK_PNT(th, 0);
+	NativeFont* f= (NativeFont*)STACK_PNT(th, 0);
 	if (!f) FUN_RETURN_NIL;
 
 	DC = GetDC(NULL);
@@ -848,24 +834,36 @@ int fun_fontH(Thread* th)
 	FUN_RETURN_INT(tm.tmHeight);
 }
 
-int _fontStringW(Thread* th,int u16)
+int fun_nativeFontBaseline(Thread* th)
+{
+	HDC DC;
+	TEXTMETRIC tm;
+
+	NativeFont* f= (NativeFont*)STACK_PNT(th, 0);
+	if (!f) FUN_RETURN_NIL;
+
+	DC = GetDC(NULL);
+	SelectFont(DC, f->hfont);
+	GetTextMetrics(DC, &tm);
+	ReleaseDC(NULL, DC);
+	FUN_RETURN_INT(tm.tmDescent);
+}
+
+int fun_nativeFontW(Thread* th)
 {
 	LINT size;
 	HDC DC;
 
-	LB* str = STACK_PNT(th, 0);
-	Font* f = (Font*)STACK_PNT(th, 1);
-	if ((!f) || (!str)) FUN_RETURN_NIL;
+	LINT code = STACK_INT(th, 0);
+	NativeFont* f = (NativeFont*)STACK_PNT(th, 1);
+	if (!f) FUN_RETURN_NIL;
 	
 	DC = GetDC(NULL);
 	SelectFont(DC, f->hfont);
-	if (u16) size= LOWORD(GetTabbedTextExtentW(DC, (LPCWSTR)STR_START(str), (int)STR_LENGTH(str) >> 1, 0, NULL));
-	else size = LOWORD(GetTabbedTextExtentA(DC, STR_START(str),(int) STR_LENGTH(str), 0, NULL));
+	size= LOWORD(GetTabbedTextExtentW(DC, (LPCWSTR)&code, 1, 0, NULL));
 	ReleaseDC(NULL, DC);
 	FUN_RETURN_INT(size);
 }
-int fun_fontStringW(Thread* th) { return _fontStringW(th, 0); }
-int fun_fontStringU16W(Thread* th) { return _fontStringW(th, 1); }
 
 void bitmapRequireDib(LBitmap* d)
 {
@@ -910,17 +908,17 @@ void bitmapRequireDib(LBitmap* d)
 	d->forget=bitmapForget;
 }
 
-int _fontDraw(Thread* th, int u16)
+int fun_nativeFontDraw(Thread* th)
 {
 	HDC dcb;
 
-	LB* str = STACK_PNT(th, 0);
-	Font* f = (Font*)STACK_PNT(th, 1);
+	LINT code = STACK_INT(th, 0);
+	NativeFont* f = (NativeFont*)STACK_PNT(th, 1);
 	LINT y = STACK_INT(th, 2);
 	LINT x = STACK_INT(th, 3);
 	LBitmap* b=(LBitmap*)STACK_PNT(th, 4);
-	if ((!f) || (!str) || (!b)) FUN_RETURN_NIL;
-
+	if ((!f) || (!b)) FUN_RETURN_NIL;
+	
 	bitmapRequireDib(b);
 	dcb = CreateCompatibleDC(NULL);
 	SelectObject(dcb, b->bmp);
@@ -928,31 +926,43 @@ int _fontDraw(Thread* th, int u16)
 	SetTextColor(dcb, 0xffffff);
 	SelectFont(dcb, f->hfont);
 	SetTextAlign(dcb, 0);
-	if (u16) TextOutW(dcb, (int)x, (int)y, (LPCWSTR)STR_START(str), (int)STR_LENGTH(str) >> 1);
-	else TextOutA(dcb, (int)x, (int)y, STR_START(str), (int)STR_LENGTH(str));
+	TextOutW(dcb, (int)x, (int)y, (LPCWSTR)&code, 1);
 	DeleteDC(dcb);
 	FUN_RETURN_PNT(MM._true);
 }
-int fun_fontDraw(Thread* th) { return _fontDraw(th, 0);}
-int fun_fontDrawU16(Thread* th) { return _fontDraw(th, 1); }
+
+int CALLBACK EnumFontFamilyExProc(
+	ENUMLOGFONTEX* lpelfe,
+	NEWTEXTMETRICEX* lpntme,
+	DWORD FontType,
+	LPARAM lParam
+)
+{
+	Thread* th = (Thread*)lParam;
+	char* fontName = (lpelfe->elfFullName);
+	STACK_PUSH_STR_ERR(th,fontName, -1, 1);
+	return 1;
+}
+
+int fun_nativeFontList(Thread* th)
+{
+	LOGFONT lf;
+	HDC hDC;
+	LINT fontNumber = STACK_REF(th);
+
+	memset(&lf, 0, sizeof(lf));
+	lf.lfCharSet = DEFAULT_CHARSET;
+	hDC = GetDC(NULL);
+	EnumFontFamiliesEx(hDC, &lf, (FONTENUMPROC)(EnumFontFamilyExProc), (LPARAM)th, 0);
+	fontNumber = STACK_REF(th) - fontNumber;
+	if (fontNumber < 0) fontNumber = -fontNumber;	// useless until we change the order of the stack
+	FUN_PUSH_NIL;
+	while(fontNumber--) FUN_MAKE_ARRAY(LIST_LENGTH, DBG_LIST);
+	return 0;
+}
 
 int coreUiHwInit(Thread* th, Pkg* system)
 {
-	Def* font = pkgAddType(th, system, "Font");
-
-	pkgAddConstInt(th, system, "FONT_BOLD", FONT_BOLD, MM.Int);
-	pkgAddConstInt(th, system, "FONT_ITALIC", FONT_ITALIC, MM.Int);
-	pkgAddConstInt(th, system, "FONT_UNDERLINE", FONT_UNDERLINE, MM.Int);
-	pkgAddConstInt(th, system, "FONT_STRIKED", FONT_STRIKED, MM.Int);
-	pkgAddConstInt(th, system, "FONT_PIXEL", FONT_PIXEL, MM.Int);
-
-	pkgAddFun(th, system, "fontFromHost", fun_fontFromHost, typeAlloc(th, TYPECODE_FUN, NULL, 4, MM.Str, MM.Int, MM.Int, font->type));
-	pkgAddFun(th, system, "fontH", fun_fontH, typeAlloc(th, TYPECODE_FUN, NULL, 2, font->type, MM.Int));
-	pkgAddFun(th, system, "fontStringW", fun_fontStringW, typeAlloc(th, TYPECODE_FUN, NULL, 3, font->type, MM.Str, MM.Int));
-	pkgAddFun(th, system, "fontStringU16W", fun_fontStringU16W, typeAlloc(th, TYPECODE_FUN, NULL, 3, font->type, MM.Str, MM.Int));
-	pkgAddFun(th, system, "fontDraw", fun_fontDraw, typeAlloc(th, TYPECODE_FUN, NULL, 6, MM.Bitmap, MM.Int, MM.Int, font->type, MM.Str, MM.Boolean));
-	pkgAddFun(th, system, "fontDrawU16", fun_fontDrawU16, typeAlloc(th, TYPECODE_FUN, NULL, 6, MM.Bitmap, MM.Int, MM.Int, font->type, MM.Str, MM.Boolean));
-
 	UI.thisInstance = GetModuleHandle(NULL);
 	UI.classRegistered = 0;
 	UI.win = 0;

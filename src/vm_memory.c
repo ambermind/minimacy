@@ -44,7 +44,7 @@ LB* memoryAlloc(Thread* th, LINT size,LINT type,LW dbg)
 				memoryFullGC();
 				if (!memoryChainTest(mem, total))
 				{
-					PRINTF(LOG_SYS, ">Error: Out of memory\n");
+					PRINTF(LOG_SYS, "> Error: Out of memory\n");
 					MM.OM = 1;
 					if (th) th->OM=1;
 					goto cleanup;	// no more memory for this thread
@@ -63,7 +63,7 @@ LB* memoryAlloc(Thread* th, LINT size,LINT type,LW dbg)
 	if (!p) 
 	{
 //		PRINTF(LOG_DEV,"x");
-		PRINTF(LOG_SYS,">Error: malloc " LSD " returns null\n",size);
+		PRINTF(LOG_SYS,"> Error: malloc " LSD " returns null\n",size);
 //		threadDump(LOG_SYS, th, 10);
 		goto cleanup;
 	}

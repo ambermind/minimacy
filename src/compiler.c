@@ -130,12 +130,13 @@ Type* compile(Compiler* c,LB* src,Pkg* pkg,Type* expectedType)
 	}
 	else
 	{
-		if (c->pkg==MM.system) PRINTF(LOG_SYS, "> BIOS compiled in "LSD" ms\n", t0);	//only for bios, handled by bios for other packages
-#ifndef HIDE_COMPILER_LISTING
-		else {
-			compileDisplay(LOG_SYS, c);
+		if (c->pkg == MM.system) {
+			if (MainTerm.showBiosListing) compileDisplay(LOG_SYS, c);
+			PRINTF(LOG_SYS, "> BIOS compiled in "LSD" ms\n", t0);	//only for bios, handled by bios for other packages
 		}
-#endif
+		else {
+			if (MainTerm.showPkgListing) compileDisplay(LOG_SYS, c);
+		}
 	}
 	c->pkg->forPrompt = 1;
 //	itemDump(c->th, LOG_USER, VAL_FROM_PNT(c->exports), 0);
@@ -155,7 +156,7 @@ int promptOnThread(Thread* th)
 	Compiler c;
 	Type* result;
 
-	LINT def=STACK_REF_(th)-2;
+	LINT def=STACK_REF(th)-2;
 	LB* src = STACK_PNT(th, 2);
 	Pkg* pkg=(Pkg*)STACK_PNT(th,1);
 	Type* type = (Type*)STACK_PNT(th, 0);
@@ -175,7 +176,7 @@ int promptOnThread(Thread* th)
 
 cleanup:
 	if (th->OM) return EXEC_OM;
-	while(def!=STACK_REF_(th)) STACK_DROP(th);
+	while(def!=STACK_REF(th)) STACK_DROP(th);
 	STACK_SET_NIL(th,0);
 	FUN_PUSH_NIL;
 	return 0;

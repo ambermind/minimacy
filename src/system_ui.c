@@ -52,6 +52,15 @@ int coreUiHwInit(Thread* th, Pkg* system) {return 0;}
 int fun_glMakeContext(Thread* th) FUN_RETURN_NIL
 int fun_glRefreshContext(Thread* th) FUN_RETURN_NIL
 #endif
+
+#ifndef WITH_NATIVE_FONT
+int fun_nativeFontCreate(Thread* th) FUN_RETURN_NIL
+int fun_nativeFontH(Thread* th) FUN_RETURN_NIL
+int fun_nativeFontBaseline(Thread* th) FUN_RETURN_NIL
+int fun_nativeFontW(Thread* th) FUN_RETURN_NIL
+int fun_nativeFontDraw(Thread* th) FUN_RETURN_NIL
+int fun_nativeFontList(Thread* th) FUN_RETURN_NIL
+#endif
 int coreUiInit(Thread* th, Pkg *system)
 {
 	Type* fun_I_I_I_I_I_S_B = typeAlloc(th, TYPECODE_FUN, NULL, 7, MM.Int, MM.Int, MM.Int, MM.Int, MM.Int, MM.Str, MM.Boolean);
@@ -67,6 +76,7 @@ int coreUiInit(Thread* th, Pkg *system)
 	Type* fun_II = typeAlloc(th, TYPECODE_FUN, NULL, 1, typeAlloc(th, TYPECODE_TUPLE, NULL, 2, MM.Int, MM.Int));
 	Type* fun_Bmp_I_I_Cursor = typeAlloc(th, TYPECODE_FUN, NULL, 4, MM.Bitmap, MM.Int, MM.Int, Cursor->type);
 	Type* fun_Cursor_Cursor = typeAlloc(th, TYPECODE_FUN, NULL, 2, Cursor->type, Cursor->type);
+	Def* font = pkgAddType(th, system, "NativeFont");
 
 	coreUiHwInit(th,system);
 #ifdef WITH_GL
@@ -148,6 +158,18 @@ int coreUiInit(Thread* th, Pkg *system)
 	pkgAddConstInt(th, system, "KeyMask_Alt", KeyMask_Alt, MM.Int);
 	pkgAddConstInt(th, system, "KeyMask_Control", KeyMask_Control, MM.Int);
 	pkgAddConstInt(th, system, "KeyMask_Meta", KeyMask_Meta, MM.Int);
+
+	pkgAddConstInt(th, system, "FONT_BOLD", FONT_BOLD, MM.Int);
+	pkgAddConstInt(th, system, "FONT_ITALIC", FONT_ITALIC, MM.Int);
+	pkgAddConstInt(th, system, "FONT_UNDERLINE", FONT_UNDERLINE, MM.Int);
+	pkgAddConstInt(th, system, "FONT_STRIKED", FONT_STRIKED, MM.Int);
+
+	pkgAddFun(th, system, "_nativeFontList", fun_nativeFontList, typeAlloc(th, TYPECODE_FUN, NULL, 1, typeAlloc(th, TYPECODE_LIST, NULL, 1, MM.Str)));
+	pkgAddFun(th, system, "nativeFontCreate", fun_nativeFontCreate, typeAlloc(th, TYPECODE_FUN, NULL, 4, MM.Str, MM.Int, MM.Int, font->type));
+	pkgAddFun(th, system, "nativeFontH", fun_nativeFontH, typeAlloc(th, TYPECODE_FUN, NULL, 2, font->type, MM.Int));
+	pkgAddFun(th, system, "nativeFontBaseline", fun_nativeFontBaseline, typeAlloc(th, TYPECODE_FUN, NULL, 2, font->type, MM.Int));
+	pkgAddFun(th, system, "nativeFontW", fun_nativeFontW, typeAlloc(th, TYPECODE_FUN, NULL, 3, font->type, MM.Int, MM.Int));
+	pkgAddFun(th, system, "nativeFontDraw", fun_nativeFontDraw, typeAlloc(th, TYPECODE_FUN, NULL, 6, MM.Bitmap, MM.Int, MM.Int, font->type, MM.Int, MM.Boolean));
 
 	return 0;
 }

@@ -112,7 +112,7 @@ int _glMakeGLcontextInitGL()
 	if (!vInfo) vInfo = glXChooseVisual(UI.displayGl, DefaultScreen(UI.displayGl), testAttributesB);
 	if (!vInfo) vInfo = glXChooseVisual(UI.displayGl, DefaultScreen(UI.displayGl), testAttributesC);
 	if (!vInfo) {
-		PRINTF(LOG_SYS,">Error: glXChooseVisual failed\n");
+		PRINTF(LOG_SYS,"> Error: glXChooseVisual failed\n");
 		return -1;
 	}
 	UI.contextGl = glXCreateContext(UI.displayGl, vInfo, NULL, True);
@@ -158,7 +158,7 @@ int hwindowStartX(char* station)
 	UI.display=XOpenDisplay(station);
 	if (!UI.display)
 	{
-		PRINTF(LOG_SYS,">Error: cannot open X11 display\n");
+		PRINTF(LOG_SYS,"> Error: cannot open X11 display\n");
 		return -1;
 	}
 	UI.screen=DefaultScreen(UI.display);
@@ -630,6 +630,142 @@ int fun_accelerometerX(Thread* th) FUN_RETURN_NIL
 int fun_accelerometerY(Thread* th) FUN_RETURN_NIL
 int fun_accelerometerZ(Thread* th) FUN_RETURN_NIL
 int fun_accelerometerInit(Thread* th)FUN_RETURN_NIL
+
+
+
+#define FONT_BOLD 1
+#define FONT_ITALIC 2
+#define FONT_UNDERLINE 4
+#define FONT_STRIKED 8
+#define FONT_PIXEL 16
+
+typedef struct
+{
+	LB header;
+	FORGET forget;
+	MARK mark;
+
+	XFontStruct* hfont;
+}NativeFont;
+
+Display *_nativeFontDisplay()
+{
+	if (UI.displayGl) return UI.displayGl;
+	return UI.display;
+}
+
+int _nativeFontForget(LB* p)
+{
+	NativeFont* f = (NativeFont*)p;
+	if (f) XFreeFont(_nativeFontDisplay(),f->hfont);
+	return 0;
+}
+
+int fun_nativeFontCreate(Thread* th)
+{
+	XFontStruct* hfont;
+	NativeFont* f;
+
+	LINT flags = STACK_INT(th, 0);
+	LINT size = STACK_INT(th, 1);
+	LB* name = STACK_PNT(th, 2);
+	if (!name) FUN_RETURN_NIL;
+
+	if (hwindowStartX(NULL)) FUN_RETURN_NIL;
+	hfont = XLoadQueryFont(_nativeFontDisplay(),STR_START(name));
+	if (!hfont) FUN_RETURN_NIL;
+	f = (NativeFont*)memoryAllocExt(th, sizeof(NativeFont), DBG_BIN, _nativeFontForget, NULL);
+	if (!f) {
+		XFreeFont(_nativeFontDisplay(),hfont);
+		return EXEC_OM;
+	}
+	f->hfont = hfont;
+	FUN_RETURN_PNT((LB*)f);
+}
+
+int fun_nativeFontH(Thread* th)
+{
+	NativeFont* f= (NativeFont*)STACK_PNT(th, 0);
+	if (!f) FUN_RETURN_NIL;
+	FUN_RETURN_INT(f->hfont->ascent+f->hfont->descent);
+}
+
+int fun_nativeFontBaseline(Thread* th)
+{
+	NativeFont* f= (NativeFont*)STACK_PNT(th, 0);
+	if (!f) FUN_RETURN_NIL;
+	FUN_RETURN_INT(f->hfont->descent);
+}
+
+int fun_nativeFontW(Thread* th)
+{
+	LINT size;
+	XChar2b c;
+
+	LINT code = STACK_INT(th, 0);
+	NativeFont* f = (NativeFont*)STACK_PNT(th, 1);
+	if (!f) FUN_RETURN_NIL;
+
+	c.byte2=code; code>>=8;
+	c.byte1=code;
+	size= XTextWidth16(f->hfont, &c, 1);
+	FUN_RETURN_INT(size);
+}
+
+int fun_nativeFontDraw(Thread* th)
+{
+	char* newstart;
+	XImage *image;
+	Pixmap pixmap;
+	XChar2b c;
+	Display *display;
+	int i,j;
+
+	LINT code = STACK_INT(th, 0);
+	NativeFont* f = (NativeFont*)STACK_PNT(th, 1);
+	LINT y = STACK_INT(th, 2);
+	LINT x = STACK_INT(th, 3);
+	LBitmap* b=(LBitmap*)STACK_PNT(th, 4);
+	if ((!f) || (!b)) FUN_RETURN_NIL;
+	display=_nativeFontDisplay();
+	UI.dc=DefaultGC(display,UI.screen);
+	XSetFont(display,UI.dc,f->hfont->fid);
+	XSetForeground(display,UI.dc,WhitePixel(display,UI.screen));
+	newstart=malloc(b->w*b->h*4); if (!newstart) FUN_RETURN_NIL;
+	memcpy(newstart,b->start8,b->w*b->h*4);
+	image=XCreateImage(display, UI.visual, UI.depth, ZPixmap, 0, newstart, b->w, b->h, 8, 0);
+	pixmap=XCreatePixmap(display,RootWindow(display,UI.screen),b->w, b->h,UI.depth);
+	XPutImage(display, pixmap, UI.dc, image, 0,0,0,0,b->w, b->h);
+	y+=f->hfont->ascent;
+	c.byte2=code; code>>=8;
+	c.byte1=code;
+	XDrawString16(display,pixmap, UI.dc,x,y,&c,1);
+	XGetSubImage(display,pixmap, 0,0, b->w, b->h, 0x00FFFFFF, ZPixmap,image,0,0);
+
+	memcpy(b->start8,newstart,b->w*b->h*4);
+	XDestroyImage(image);
+	XFreePixmap(display,pixmap);
+	FUN_RETURN_PNT(MM._true);
+}
+
+int fun_nativeFontList(Thread* th)
+{
+	char** fontList;
+	int fontNumber=1000000;
+	int i;
+
+	if (hwindowStartX(NULL)) FUN_RETURN_NIL;
+	fontList=XListFonts(_nativeFontDisplay(),"*",fontNumber,&fontNumber);
+//	printf("found %d fonts\n",fontNumber);
+	for(i=0;i<fontNumber;i++) {
+//		printf("> %s\n",fontList[i]);
+		FUN_PUSH_STR(fontList[i],-1);
+	}
+	XFreeFontNames(fontList);
+	FUN_PUSH_NIL;
+	while (fontNumber--) FUN_MAKE_ARRAY(LIST_LENGTH, DBG_LIST);
+	return 0;
+}
 int coreUiHwInit(Thread* th, Pkg* system)
 {
 	UI.display=NULL;

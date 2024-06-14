@@ -342,7 +342,11 @@ fun uiH=nil;;
 fun _xConvert x= x;;
 fun _yConvert y= y;;
 
-fun _uiStartDefault x y w h flag name= nil;;
+fun _uiStartDefault x y w h flag name=
+	echoLn "> This Minimacy VM doesn't support UI";
+	if device=="Unix" then echoLn "> You may launch minimacyX11GL instead of minimacy";
+	if device=="MacOsCmdLine" then echoLn "> You may launch minimacyMacX11GL instead of minimacyMac";
+	nil;;
 fun uiBufferSetSize w h filter= nil;;
 fun uiBuffer = nil;;
 fun _uiUpdateRegion x y w h =nil;;

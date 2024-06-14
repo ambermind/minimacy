@@ -9,6 +9,8 @@
    You should have received a copy of the GNU General Public License along
    with this program. If not, see <https://www.gnu.org/licenses/>. */
 
+var _Args=_args;;
+fun args=_Args;;
 
 fun _dirBestMatch dir candidate i result=
 	let strCharPos candidate '/' i -> i in
@@ -35,6 +37,7 @@ fun _getBootPkg lArgs =
 	else
 	let _systemDirFromFile head lArgs -> [dir pkg] in
 	(
+		set _Args=tail lArgs;
 		[pkg dir MAX_MEMORY_BOOT]
 	);;	
 
@@ -42,7 +45,7 @@ fun _start compile=
 	echoEnable true;
 	let _getBootPkg args ->[pkg programDir maxMemory] in
 	(
-		echoLn ["> current time: " fullDate time];
+		if _systemLogIsEnabled then echoLn ["> current time: " fullDate time];
 		_fsInit programDir;
 		_launchApp pkg maxMemory compile caller
 	);
@@ -50,10 +53,12 @@ fun _start compile=
 
 fun _handleArgs l compile=
 	if l==nil then _start compile
-	else let l ->(a:b:_) in
+	else let l -> a:b:_ in
 	match a with
-		"-compile" ->_handleArgs (tail l) true,
-		_ ->_handleArgs (tail l) compile;;
+		"-c" -> _handleArgs (tail l) true,
+		"--compile" ->_handleArgs (tail l) true,
+		_ -> if strEndsWith a SOURCE_EXTENSION then _start compile
+			else _handleArgs (tail l) compile;;
 
 fun _init=
 	msgException "";	// this prevents the weak type in msgException

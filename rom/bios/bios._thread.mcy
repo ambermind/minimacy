@@ -132,7 +132,7 @@ fun _launchApp pkgName maxMem compile caller=
 		let timeMs -> t0 in
 		let _prompt src dummyPkg -> [type val] in
 		if type<>nil then
-		let echoLn strFormat "> compiled in * ms\n" timeMs-t0 -> _ in
+		let if _systemLogIsEnabled then echoLn strFormat "> compiled in * ms\n" timeMs-t0 -> _ in
 		let head _pkgImports dummyPkg ->[name p] in
 		_launchRun pkgDefs p;
 		nil

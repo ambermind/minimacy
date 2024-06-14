@@ -472,7 +472,7 @@ int fun_udpCreate(Thread* th)
 		ina.sin_addr.s_addr = ip_str ? inet_addr(STR_START(ip_str)) : INADDR_ANY;
 		if ((k = bind(sock, (struct sockaddr*)&ina, sizeof(ina))) != 0)
 		{
-			PRINTF(LOG_SYS, ">Error: Udp port %s:%d bind error\n", ip_str ? STR_START(ip_str) : "*", port);
+			PRINTF(LOG_SYS, "> Error: Udp port %s:%d bind error\n", ip_str ? STR_START(ip_str) : "*", port);
 			closesocket(sock);
 			FUN_RETURN_NIL;
 		}
@@ -574,13 +574,13 @@ int fun_tcpListen(Thread* th)
 	ina.sin_addr.s_addr = ip_str ? inet_addr(STR_START(ip_str)) : INADDR_ANY;
 	if ((k = bind(sock, (struct sockaddr*)&ina, sizeof(ina))) != 0)
 	{
-		PRINTF(LOG_SYS, ">Error: Tcp port %s:%d bind error\n", ip_str ? STR_START(ip_str) : "*", port);
+		PRINTF(LOG_SYS, "> Error: Tcp port %s:%d bind error\n", ip_str ? STR_START(ip_str) : "*", port);
 		closesocket(sock);
 		FUN_RETURN_NIL;
 	}
 	if (listen(sock, 256) != 0)
 	{
-		PRINTF(LOG_SYS, ">Error: Tcp port %d listen error\n", port);
+		PRINTF(LOG_SYS, "> Error: Tcp port %d listen error\n", port);
 		closesocket(sock);
 		FUN_RETURN_NIL;
 	}
@@ -668,7 +668,7 @@ int fun_ethList(Thread* th)
 
 	ethSocket=socket(AF_PACKET, SOCK_RAW, IPPROTO_RAW);
 	if(ethSocket==INVALID_SOCKET) {
-		PRINTF(LOG_SYS, ">Error: Could not create AF_PACKET socket. User has insufficient permission\n");
+		PRINTF(LOG_SYS, "> Error: Could not create AF_PACKET socket. User has insufficient permission\n");
 		FUN_RETURN_NIL;
 	}
 	address = addresses;

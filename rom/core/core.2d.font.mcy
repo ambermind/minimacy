@@ -9,25 +9,32 @@
    You should have received a copy of the GNU General Public License along
    with this program. If not, see <https://www.gnu.org/licenses/>. */
 
-const ALIGN_HOR_MASK=3;;
+const _ALIGN_HOR_MASK=3;;
 const ALIGN_LEFT=0;;
 const ALIGN_RIGHT=1;;
 const ALIGN_CENTER=2;;
 
-const ALIGN_VER_MASK=28;;
+const _ALIGN_VER_MASK=28;;
 const ALIGN_TOP=0;;
 const ALIGN_BOTTOM=4;;
 const ALIGN_BASELINE=8;;
 const ALIGN_MIDDLE=16;;
 
-struct Font=[bmpF charsF wF hF baseLineF];;
-enum _X _Y _W _H;;
+struct Font=[_bmpF _charsF _hF _baseLineF];;
+// _bmpF is an all-white bitmap, glyphs are defined only by the alpha channel
+// _charsF is an array of char descriptors
+// each char descriptor is a 6-integers array, whose indexes are:
+enum _X _Y _W _H _DX _BBW;;
+// _X, _Y, _BBW (Bounding Box Width), _H: glyph rectangle area from the bitmap
+// _DX: vertical offset for overlapping glyphs, glyph must be drawn from x-_DX
+// _W: character width, aka number of pixels to the position of the next character to display
 
-fun _colorStart color= 0xff0000 == (color&0xffffff);;
-fun _colorBaseline color= 0xff00 == (color&0xffffff);;
+//-------------- variable-width fonts loading
+fun _colorStart color= 0xff0000 == (color&0xffffff);;	// red
+fun _colorBaseline color= 0xff00 == (color&0xffffff);;	// green
 
 fun _fontHeight bmp i baseline=
-	if (i>=bitmapH bmp) || (_colorStart bitmapGet bmp 0 i) then [i (if baseline==nil then 0 else i-baseline)]
+	if (i>=bitmapH bmp) || (_colorStart bitmapGet bmp 0 i) then [i (if baseline==nil then 0 else i-baseline-1)]
 	else if _colorBaseline (bitmapGet bmp 0 i) then _fontHeight bmp i+1 i
 	else _fontHeight bmp i+1 baseline;;
 
@@ -35,159 +42,172 @@ fun _fontNext bmp i y=
 	if (i>=bitmapW bmp) || (_colorStart bitmapGet bmp i y) then i
 	else _fontNext bmp i+1 y;;
 
+fun _fontDx bmp x y i=
+	let bitmapGet bmp x+i y -> color in
+	if color==nil || !_colorBaseline color then i
+	else _fontDx bmp x y i+1;;
+
+fun _fontWreal bmp x y i=
+	let bitmapGet bmp x+i y -> color in
+	if color==nil || (_colorBaseline color) || (_colorStart color) then i
+	else _fontWreal bmp x y i+1;;
+
 // we assume (x-1),y is a red point
 fun _charsParse bmp x y h=
 	if y<bitmapH bmp then
 	if x>=bitmapW bmp then _charsParse bmp 1 y+h h
 	else let _fontNext bmp x y -> xx in
 	if x==xx then _charsParse bmp 1 y+h h
-	else {x y xx-x h}:_charsParse bmp xx+1 y h;;
+	else 
+	let _fontDx bmp x y 0 -> dx in
+	let _fontWreal bmp x+dx y 0 -> wr in
+	{x y+1 xx-x h-1 dx wr}:_charsParse bmp xx+1 y h;;
 
 fun fontFromBitmap bmp= 
 	if _colorStart bitmapGet bmp 0 0 then
 	let _fontHeight bmp 1 nil ->[h baseLine] in
 	let arrayFromList _charsParse bmp 1 0 h -> chars in
 	(
-		bitmapComponents bmp COMP_B COMP_B COMP_B COMP_B;
-		bitmapFill bmp 0xffffff BLEND_ADD;
-		[bmpF=bmp charsF=chars hF=h baseLineF=baseLine]
+		bitmapComponents bmp COMP_B COMP_255 COMP_255 COMP_255;
+		[_bmpF=bmp _charsF=chars _hF=h-1 _baseLineF=baseLine]
 	);;
 
+//-------------- fixed-width fonts loading
 fun _charsFixed bw bh x y w h=
 	if y+h<=bh then
 	if x+w>bw then _charsFixed bw bh 0 y+h w h
-	else {x y w h}:_charsFixed bw bh x+w y w h;;
+	else {x y w h 0 w}:_charsFixed bw bh x+w y w h;;
 
 fun fontFixedFromBitmap bmp w h baseLine= 
-	bitmapComponents bmp COMP_B COMP_B COMP_B COMP_B;
-	bitmapFill bmp 0xffffff BLEND_ADD;
+	bitmapComponents bmp COMP_B COMP_255 COMP_255 COMP_255;
 	let arrayFromList _charsFixed (bitmapW bmp) (bitmapH bmp) 0 0 w h -> chars in
-	[bmpF=bmp charsF=chars wF=w hF=h baseLineF=baseLine];;
+	[_bmpF=bmp _charsF=chars _hF=h _baseLineF=baseLine];;
 	
-fun fontCharWidth f c= let f.charsF.c -> position in position._W;;
+//-------------- font size calculations
+fun fontCharWidth font c= let font._charsF.c -> position in position._W;;
 
-fun fontH f= f.hF;;
+fun fontH font= font._hF;;
 
-fun _multilineSplit fifo f str maxWidth i0 lastSeparator i width u8=
-//echoLn strFormat "i0=* lastSeparator=* i=* width=*" i0 lastSeparator i width;
+fun _multilineSplit fifo font str maxWidth i0 lastSeparator i w u8=
 	if i>=strLength str then fifoIn fifo strSlice str i0 nil
 	else
 	let if u8 then strReadU8 str i else strGet str i -> c in
 	let if u8 then strU8Next str i else i+1 -> iNext in
 	let if c<=32 then i else lastSeparator -> lastSeparator in
-	let f.charsF.c -> position in
-	let width+position._W -> width in
-	if width<=maxWidth then _multilineSplit fifo f str maxWidth i0 lastSeparator iNext width u8
+	let font._charsF.c -> position in
+	let w+position._W -> w in
+	if w<=maxWidth then _multilineSplit fifo font str maxWidth i0 lastSeparator iNext w u8
 	else
 	if lastSeparator<>nil then (
 		fifoIn fifo strSlice str i0 (lastSeparator-i0);
-		_multilineSplit fifo f str maxWidth lastSeparator+1 nil lastSeparator+1 0 u8
+		_multilineSplit fifo font str maxWidth lastSeparator+1 nil lastSeparator+1 0 u8
 	)
 	else
 	let if i==i0 then iNext else i -> i in	// when the first char of a line is larger than maxWidth
 	(
 		fifoIn fifo strSlice str i0 (i-i0);
-		_multilineSplit fifo f str maxWidth i nil i 0 u8
+		_multilineSplit fifo font str maxWidth i nil i 0 u8
 	);;
 
 
-fun _fontStringMultiline f str width u8=
+fun _fontStringMultiline font str w u8=
 	let fifoCreate -> fifo in
 	(
-		for line in strLines str do _multilineSplit fifo f line width 0 nil 0 0 u8;
+		for line in strLines str do _multilineSplit fifo font line w 0 nil 0 0 u8;
 		fifoList fifo
 	);;
-fun fontStringMultiline f str width= _fontStringMultiline f str width false;;
-fun fontStringMultilineU8 f str width= _fontStringMultiline f str width true;;
+fun fontStringMultiline font str w= _fontStringMultiline font str w false;;
+fun fontStringMultilineU8 font str w= _fontStringMultiline font str w true;;
 
-fun fontStringMultilineHeight f str width= (fontH f) * listLength fontStringMultiline f str width;;
-fun fontStringMultilineHeightU8 f str width= (fontH f) * listLength fontStringMultilineU8 f str width;;
+fun fontStringMultilineHeight font str w= (fontH font) * listLength fontStringMultiline font str w;;
+fun fontStringMultilineHeightU8 font str w= (fontH font) * listLength fontStringMultilineU8 font str w;;
 
-fun fontStringWidth f str= 
+fun fontStringWidth font str= 
 	let 0->len in
 	let strLength str -> n in
 	for i=0;i<n do
 		let strGet str i -> c in
-		let f.charsF.c -> position in
+		let font._charsF.c -> position in
 		set len=len+position._W;;
 
-fun fontStringWidthU8 f str= 
+fun fontStringWidthU8 font str= 
 	let 0->len in
 	let strLength str -> n in
 	for i=0;i<n;strU8Next str i do
 		let strReadU8 str i -> c in
-		let f.charsF.c -> position in
+		let font._charsF.c -> position in
 		set len=len+position._W;;
 
-fun fontPosition f str x=
+fun fontPosition font str x=
 	let 0->len in
 	let strLength str -> n in
 	for i=0;i<n do
 		let strGet str i -> c in
-		let f.charsF.c -> position in (
+		let font._charsF.c -> position in (
 			set len=len+position._W;
 			if len>x then return i
 		);
 	strLength str;;
 
-fun fontPositionU8 f str x=
+fun fontPositionU8 font str x=
 	let 0->len in
 	let strLength str -> n in
 	for i=0;i<n;strU8Next str i do
 		let strReadU8 str i -> c in
-		let f.charsF.c -> position in (
+		let font._charsF.c -> position in (
 			set len=len+position._W;
 			if len>x then return i
 		);
 	strLength str;;
 
-fun _bitmapText bmp x y flag lText lineSpacing f fg bg u8=
-	let fontH f -> height in
+//-------------- text drawing
+fun _bitmapText bmp x y flag lText lineSpacing font foreground background u8=
+	let fontH font -> height in
 	let listLength lText -> nbLines in
 	let nbLines*height + (nbLines-1)*lineSpacing -> totalHeight in
-	let match ALIGN_VER_MASK&flag with
-		ALIGN_BASELINE -> y+f.baseLineF - totalHeight,
+	let match _ALIGN_VER_MASK&flag with
+		ALIGN_BASELINE -> y+font._baseLineF + 1 - totalHeight,
 		ALIGN_BOTTOM -> y-totalHeight,
 		ALIGN_MIDDLE -> y-(totalHeight>>1),
 		_-> y
 	-> y in
 	for text in lText do
-	let if u8 then fontStringWidthU8 f text else fontStringWidth f text -> width in
-	let match ALIGN_HOR_MASK&flag with
-		ALIGN_CENTER -> x-(width>>1),
-		ALIGN_RIGHT -> x-width,
+	let if u8 then fontStringWidthU8 font text else fontStringWidth font text -> w in
+	let match _ALIGN_HOR_MASK&flag with
+		ALIGN_CENTER -> x-(w>>1),
+		ALIGN_RIGHT -> x-w,
 		_-> x
 	-> x in
 	let if u8 then (lambda i= strReadU8 text i) else (lambda i= strGet text i) -> fRead in
 	let if u8 then (lambda i= strU8Next text i) else (lambda i= i+1) -> fNext in
 	(
-		if bg<>nil then bitmapFillRectangle bmp x y width height bg nil;
+		if background<>nil then bitmapFillRectangle bmp x y w height background nil;
 		let strLength text -> n in
-		for i=0;i<n;call fNext i do let f.charsF.(call fRead i) -> position in
+		for i=0;i<n;call fNext i do let font._charsF.(call fRead i) -> position in
 		if position<>nil then
 		(
-			bitmapColoredBlit bmp x y f.bmpF position._X position._Y position._W position._H BLEND_ALPHA 0xff000000|fg BLEND_MUL;
+			bitmapColoredBlit bmp x-position._DX y font._bmpF position._X position._Y position._BBW position._H BLEND_ALPHA 0xff000000|foreground BLEND_MUL;
 			set x=x+position._W
 		);
 		set y=y+height+lineSpacing
 	);
 	bmp;;	
 
-fun bitmapText bmp x y flag text f fg bg=_bitmapText bmp x y flag text:nil 0 f fg bg false;;
-fun bitmapTextU8 bmp x y flag text f fg bg=_bitmapText bmp x y flag text:nil 0 f fg bg true;;
-
-fun _bitmapMultiLineText bmp x y w flag lText lineSpacing f fg bg u8=
-	let match ALIGN_HOR_MASK&flag with
+fun _bitmapMultiLineText bmp x y w flag lText lineSpacing font foreground background u8=
+	let match _ALIGN_HOR_MASK&flag with
 		ALIGN_CENTER -> x+(w>>1),
 		ALIGN_RIGHT -> x+w,
 		_-> x
 	-> x in
-	_bitmapText bmp x y flag lText lineSpacing f fg bg u8;;
+	_bitmapText bmp x y flag lText lineSpacing font foreground background u8;;
 
-fun bitmapMultiLineText bmp x y w lineSpacing flag text f fg bg=
-	let fontStringMultiline f text w -> lText in
-	_bitmapMultiLineText bmp x y w flag lText lineSpacing f fg bg false;;
+fun bitmapText bmp x y flag text font foreground background=_bitmapText bmp x y flag text:nil 0 font foreground background false;;
+fun bitmapTextU8 bmp x y flag text font foreground background=_bitmapText bmp x y flag text:nil 0 font foreground background true;;
 
-fun bitmapMultiLineTextU8 bmp x y w lineSpacing flag text f fg bg=
-	let fontStringMultilineU8 f text w -> lText in
-	_bitmapMultiLineText bmp x y w flag lText lineSpacing f fg bg true;;
+fun bitmapMultiLineText bmp x y w lineSpacing flag text font foreground background=
+	let fontStringMultiline font text w -> lText in
+	_bitmapMultiLineText bmp x y w flag lText lineSpacing font foreground background false;;
+
+fun bitmapMultiLineTextU8 bmp x y w lineSpacing flag text font foreground background=
+	let fontStringMultilineU8 font text w -> lText in
+	_bitmapMultiLineText bmp x y w flag lText lineSpacing font foreground background true;;

@@ -15,6 +15,12 @@ Term MainTerm;
 void termInit(void)
 {
 	MainTerm.mask = LOG_ALL;
+	MainTerm.showBiosListing = 0;
+#ifdef HIDE_COMPILER_LISTING
+	MainTerm.showPkgListing = 0;
+#else
+	MainTerm.showPkgListing = 1;
+#endif
 }
 void termEnd(void)
 {
@@ -32,6 +38,8 @@ int termCheckMask(int mask)
 {
 	return mask & MainTerm.mask;
 }
+void termShowBiosListing(int val) { MainTerm.showBiosListing = val; }
+void termShowPkgListing(int val) { MainTerm.showPkgListing = val; }
 int termUserOutput(int mask)
 {
 	return (mask == LOG_USER) ? 1 : 0;

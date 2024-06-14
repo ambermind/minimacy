@@ -133,7 +133,7 @@ fun _promptInput fOnInput c=
 	else if c==0x7f then _promptRemove
 	else if c==0x1b then (set _PromptTmp="^["; nil)
 	else if c>=0xc2 && c<=0xf4 then (set _PromptTmp=strFromChar c; nil)
-	else if c==10 then _promptSend fOnInput _PromptBuffer
+	else if c==10 || c==13 then _promptSend fOnInput _PromptBuffer
 	else if c==4 then _promptSend fOnInput nil	// ctrl-D
 	else if c>=32 then _promptInsert strFromChar c;;
 

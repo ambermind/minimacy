@@ -11,7 +11,7 @@
 #ifndef _MINIMACY_
 #define _MINIMACY_
 
-#define VERSION_MINIMACY "1.3.3"
+#define VERSION_MINIMACY "1.3.4"
 
 
 #ifdef ON_WINDOWS
@@ -25,6 +25,7 @@
 #define WITH_GL
 #define WITH_AUDIO
 //#define WITH_DECODE_MP3
+#define WITH_NATIVE_FONT
 #define GROUP_COMMON_ANSI
 #define USE_CONSOLE_OUT_ANSI
 #define USE_CONSOLE_IN_WIN
@@ -282,6 +283,12 @@ int startInThread(int argc, char** argv);
 
 #ifdef USE_FS_ANSI_UNIX
 #define USE_FS_ANSI
+#endif
+
+#ifdef WITH_UI
+#ifdef USE_X11
+#define WITH_NATIVE_FONT
+#endif
 #endif
 
 

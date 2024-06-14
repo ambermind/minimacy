@@ -49,7 +49,20 @@ int fun_accelerometerY(Thread* th);
 int fun_accelerometerZ(Thread* th);
 int fun_accelerometerInit(Thread* th);
 
+#define FONT_BOLD 1
+#define FONT_ITALIC 2
+#define FONT_UNDERLINE 4
+#define FONT_STRIKED 8
+#define FONT_PIXEL 16
+int fun_nativeFontCreate(Thread* th);
+int fun_nativeFontH(Thread* th);
+int fun_nativeFontBaseline(Thread* th);
+int fun_nativeFontW(Thread* th);
+int fun_nativeFontDraw(Thread* th);
+int fun_nativeFontList(Thread* th);
+
 int coreUiHwInit(Thread* th, Pkg* system);
 int coreUiGLInit(Thread* th, Pkg* system);
 int coreUiInit(Thread* th, Pkg* system);
+
 #endif

@@ -76,7 +76,7 @@ int fun_glCompileShader(Thread* th)
 	{
 		char* infoLog = (char*)malloc(sizeof(char) * infoLen);
 		glGetShaderInfoLog(s->shader, infoLen, NULL, infoLog);
-		PRINTF(LOG_SYS, ">Error: compiling shader:\n%s\n", infoLog);
+		PRINTF(LOG_SYS, "> Error: compiling shader:\n%s\n", infoLog);
 		free(infoLog);
 	}
 	FUN_RETURN_PNT(MM._false);

@@ -78,7 +78,7 @@ Type* compileImportNew(Compiler* c, Pkg* pkg)
 	Type* result;
 	LB* src;
 	
-	PRINTF(LOG_USER, "> compiling '%s'\n", pkgName(pkg));
+	PRINTF(LOG_SYS, "> compiling '%s'\n", pkgName(pkg));
 	src = fsReadPackage(c->th, pkgName(pkg), NULL, 0);
 	if (!src) return compileError(c,"file not found ('%s')\n", pkgName(pkg));
 
