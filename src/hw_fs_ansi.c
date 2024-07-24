@@ -286,6 +286,7 @@ LINT ansiDirectoryList(Thread* th, Buffer* out, char* dir)	// we expect dir to e
 		snprintf(tmpAttr, 32, LSX" "LSX" %c", (LINT)info.st_size, (LINT)info.st_mtime, S_ISDIR(info.st_mode) ? 'd' : '-');
 		_fsAddFileInfo(th, out, dp->d_name, -1, tmpAttr);
 	}
+	closedir(d);
 	return 0;
 }
 int ansiCreateDir(char* dir)
