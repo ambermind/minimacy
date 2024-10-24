@@ -24,9 +24,9 @@ struct Font=[_bmpF _charsF _hF _baseLineF];;
 // _bmpF is an all-white bitmap, glyphs are defined only by the alpha channel
 // _charsF is an array of char descriptors
 // each char descriptor is a 6-integers array, whose indexes are:
-enum _X _Y _W _H _DX _BBW;;
+enum _X _Y _BBW _H _DX _W;;
 // _X, _Y, _BBW (Bounding Box Width), _H: glyph rectangle area from the bitmap
-// _DX: vertical offset for overlapping glyphs, glyph must be drawn from x-_DX
+// _DX: horizontal offset for overlapping glyphs, glyph must be drawn from x-_DX
 // _W: character width, aka number of pixels to the position of the next character to display
 
 //-------------- variable-width fonts loading

@@ -18,7 +18,6 @@
 
 typedef struct
 {
-	Thread* th;
 	Buffer* out;
 
 	int bit;
@@ -27,7 +26,7 @@ typedef struct
 
 int bwAlign(Deflate* z)
 {
-	if ((z->bit) && bufferAddChar(z->th, z->out, z->val)) return -1;	// should be OM error
+	if ((z->bit) && bufferAddChar(z->out, z->val)) return -1;	// should be OM error
 	z->bit = z->val = 0;
 	return 0;
 }
@@ -38,13 +37,13 @@ int bwFinal(Deflate* z)
 int bwChar(Deflate* z, int val)
 {
 	if (bwAlign(z)) return -1;
-	if (bufferAddChar(z->th, z->out, val)) return -1;
+	if (bufferAddChar(z->out, val)) return -1;
 	return 0;
 }
 int bwBytes(Deflate* z, char* data, int len)
 {
 	if (bwAlign(z)) return -1;
-	if (bufferAddBin(z->th, z->out, data, len)) return -1;
+	if (bufferAddBin(z->out, data, len)) return -1;
 	return 0;
 }
 int bwBitsLsb(Deflate* z, int data, int nbits)
@@ -53,7 +52,7 @@ int bwBitsLsb(Deflate* z, int data, int nbits)
 	for (i = 0; i < nbits; i++) {
 		z->val |= (((data >> i) & 1) << z->bit);
 		if (z->bit >= 7) {
-			if (bufferAddChar(z->th, z->out, z->val)) return -1;
+			if (bufferAddChar(z->out, z->val)) return -1;
 			z->val = z->bit = 0;
 		}
 		else z->bit++;
@@ -66,7 +65,7 @@ int bwBitsLsbInv(Deflate* z, int data, int nbits)
 	for (i = 0; i < nbits; i++) {
 		z->val |= (((data >> (nbits - i - 1)) & 1) << z->bit);
 		if (z->bit >= 7) {
-			if (bufferAddChar(z->th, z->out, z->val)) return -1;
+			if (bufferAddChar(z->out, z->val)) return -1;
 			z->val = z->bit = 0;
 		}
 		else z->bit++;
@@ -325,9 +324,8 @@ int deflateBlockNoCompression(Deflate* z, char* start, int len)
 	return bwBytes(z, start, len);
 	return 0;
 }
-void deflateInit(Deflate* z,Thread* th, Buffer* out)
+void deflateInit(Deflate* z, Buffer* out)
 {
-	z->th = th;
 	z->out = out;
 
 	z->bit = 0;
@@ -358,9 +356,13 @@ MTHREAD_START _deflate(Thread* th)
 	LB* src= STACK_PNT(th, 0);
 	Buffer* out = (Buffer*)STACK_PNT(th, 1);
 	if ((!src)||(!out)) return workerDonePnt(th,MM._false);
-
-	deflateInit(&z, th, out);
-	if (deflateLoop(&z, STR_START(src),(int)STR_LENGTH(src))) return workerDonePnt(th,MM._false);
+	bufferSetWorkerThread(out, th);
+	deflateInit(&z, out);
+	if (deflateLoop(&z, STR_START(src), (int)STR_LENGTH(src))) {
+		bufferSetWorkerThread(out, NULL);
+		return workerDonePnt(th, MM._false);
+	}
+	bufferSetWorkerThread(out, NULL);
 	return workerDonePnt(th,MM._true);
 }
 int fun_deflate(Thread* th) { return workerStart(th, 2, _deflate); }

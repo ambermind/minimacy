@@ -12,9 +12,8 @@
 
 int fun_pkgCreate(Thread* th)
 {
-	Pkg* pkg = pkgAlloc(th, (STACK_PNT(th,1)),0, PKG_FROM_NOTHING);
+	Pkg* pkg = pkgAlloc((STACK_PNT(th,0)),0, PKG_FROM_NOTHING);
 	if (!pkg) return EXEC_OM;
-	pkg->importList = STACK_PNT(th, 0);
 	FUN_RETURN_PNT((LB*)pkg);
 }
 
@@ -36,6 +35,13 @@ int fun_pkgName(Thread* th)
 	FUN_RETURN_PNT((LB*)(p ? p->name : NULL));
 }
 
+int fun_pkgMemory(Thread* th)
+{
+	Pkg* p = (Pkg*)STACK_PNT(th, 0);
+	if (!p) FUN_RETURN_NIL;
+	FUN_RETURN_INT(p->memory);
+}
+
 int fun_pkgDefs(Thread* th)
 {
 	Pkg* p = (Pkg*)STACK_PNT(th, 0);
@@ -47,72 +53,97 @@ int fun_pkgStart(Thread* th)
 	Pkg* p = (Pkg*)STACK_PNT(th, 0);
 	FUN_RETURN_PNT((LB*)(p ? p->start : NULL));
 }
+int fun_pkgForget(Thread* th)
+{
+	Pkg* q;
+	Pkg* p = (Pkg*)STACK_PNT(th, 0);
+	if (p == MM.system) FUN_RETURN_FALSE;	// can't remove system package
+	if (p == MM.listPkgs) {
+		MM.listPkgs = p->listNext;
+		FUN_RETURN_TRUE;
+	}
+	q = MM.listPkgs;
+	while (q->listNext) {
+		if (q->listNext == p) {
+			q->listNext = p->listNext;
+			FUN_RETURN_TRUE;
+		}
+		q = q->listNext;
+	}
+	FUN_RETURN_FALSE;
+}
+
+int fun_pkgForgetAll(Thread* th)
+{
+	MM.listPkgs = MM.system;
+	FUN_RETURN_TRUE;
+}
 
 int fun_defName(Thread* th)
 {
-	Def* def = (Def*)STACK_PNT(th, 0);
-	FUN_RETURN_PNT((LB*)(def ? def->name : NULL));
+	Def* d = (Def*)STACK_PNT(th, 0);
+	FUN_RETURN_PNT((LB*)(d ? d->name : NULL));
 }
 
 int fun_defType(Thread* th)
 {
-	Def* def = (Def*)STACK_PNT(th, 0);
-	FUN_RETURN_PNT((LB*)(def ? def->type : NULL));
+	Def* d = (Def*)STACK_PNT(th, 0);
+	FUN_RETURN_PNT((LB*)(d ? d->type : NULL));
 }
 int fun_defPkg(Thread* th)
 {
-	Def* def = (Def*)STACK_PNT(th, 0);
-	FUN_RETURN_PNT((LB*)(def ? def->pkg : NULL));
+	Def* d = (Def*)STACK_PNT(th, 0);
+	FUN_RETURN_PNT((LB*)(d ? d->header.pkg : NULL));
 }
 
 int fun_defIsPublic(Thread* th)
 {
-	Def* def = (Def*)STACK_PNT(th, 0);
-	if (!def) FUN_RETURN_NIL;
-	STACK_SET_BOOL(th, 0, (def->public != DEF_HIDDEN));
+	Def* d = (Def*)STACK_PNT(th, 0);
+	if (!d) FUN_RETURN_NIL;
+	STACK_SET_BOOL(th, 0, (d->public != DEF_HIDDEN));
 	return 0;
 }
 int fun_defCode(Thread* th)
 {
-	Def* def = (Def*)STACK_PNT(th, 0);
-	if (!def) FUN_RETURN_NIL;
-	FUN_RETURN_INT(def->code);
+	Def* d = (Def*)STACK_PNT(th, 0);
+	if (!d) FUN_RETURN_NIL;
+	FUN_RETURN_INT(d->code);
 }
 int fun_defCodeName(Thread* th)
 {
-	Def* def = (Def*)STACK_PNT(th, 0);
-	if (!def) FUN_RETURN_NIL;
-	FUN_RETURN_STR(defCodeName(def->code), -1);
+	Def* d = (Def*)STACK_PNT(th, 0);
+	if (!d) FUN_RETURN_NIL;
+	FUN_RETURN_STR(defCodeName(d->code), -1);
 }
 int fun_defNext(Thread* th)
 {
-	Def* def = (Def*)STACK_PNT(th, 0);
-	FUN_RETURN_PNT((LB*)(def ? def->next : NULL));
+	Def* d = (Def*)STACK_PNT(th, 0);
+	FUN_RETURN_PNT((LB*)(d ? d->next : NULL));
 }
 
 int fun_defSourceName(Thread* th)
 {
-	Def* def = (Def*)STACK_PNT(th, 0);
-	if ((!def)||(!def->parser)) FUN_RETURN_NIL;
-	FUN_RETURN_PNT(def->parser->name);
+	Def* d = (Def*)STACK_PNT(th, 0);
+	if ((!d)||(!d->parser)) FUN_RETURN_NIL;
+	FUN_RETURN_PNT(d->parser->name);
 }
 int fun_defSourceCode(Thread* th)
 {
-	Def* def = (Def*)STACK_PNT(th, 0);
-	if ((!def)||(!def->parser)) FUN_RETURN_NIL;
-	FUN_RETURN_PNT(def->parser->block);
+	Def* d = (Def*)STACK_PNT(th, 0);
+	if ((!d)||(!d->parser)) FUN_RETURN_NIL;
+	FUN_RETURN_PNT(d->parser->block);
 }
 int fun_defIndexInCode(Thread* th)
 {
-	Def* def = (Def*)STACK_PNT(th, 0);
-	if ((!def)||(!def->parser)) FUN_RETURN_NIL;
+	Def* d = (Def*)STACK_PNT(th, 0);
+	if ((!d)||(!d->parser)) FUN_RETURN_NIL;
 
-	FUN_RETURN_INT(def->parserIndex- (def->name? STR_LENGTH(def->name):0) );
+	FUN_RETURN_INT(d->parserIndex- (d->name? STR_LENGTH(d->name):0) );
 }
 int fun_defSimpleFunction(Thread* th)
 {
-	Def* def = (Def*)STACK_PNT(th, 0);
-	FUN_RETURN_PNT((LB*)((def && (def->code ==0)) ? PNT_FROM_VAL(def->val) : NULL));
+	Def* d = (Def*)STACK_PNT(th, 0);
+	FUN_RETURN_PNT((LB*)((d && (d->code ==0)) ? PNT_FROM_VAL(d->val) : NULL));
 }
 
 int fun_strFromType(Thread* th)
@@ -121,7 +152,7 @@ int fun_strFromType(Thread* th)
 	Type* t = (Type*)STACK_PNT(th, 0);
 	if (!t) FUN_RETURN_NIL;
 	bufferReinit(MM.tmpBuffer);
-	if ((k = typeBuffer(th, MM.tmpBuffer, t))) return k;
+	if ((k = typeBuffer(MM.tmpBuffer, t))) return k;
 	FUN_RETURN_BUFFER(MM.tmpBuffer);
 }
 
@@ -143,19 +174,44 @@ int fun_reboot(Thread* th)
 
 int fun_gc(Thread* th)
 {
-	memoryFullGC();
+	memoryFinalizeGC();
 	FUN_RETURN_NIL
+}
+
+int fun_memoryRecount(Thread* th)
+{
+	memoryRecount();
+	FUN_RETURN_INT(MM.blocs_length);
+}
+#ifdef USE_MEMORY_C
+int fun_memoryLongerBlock(Thread* th)
+{
+	FUN_RETURN_INT(bmmMaxSize());
+}
+int fun_memoryReserve(Thread* th)
+{
+	FUN_RETURN_INT(bmmReservedMem());
+}
+#else
+int fun_memoryLongerBlock(Thread* th) FUN_RETURN_NIL
+int fun_memoryReserve(Thread* th) FUN_RETURN_NIL
+#endif
+int fun_systemLoadAllNatives(Thread* th)
+{
+	int k;
+	if ((k=systemMakeAllNatives())) return k;
+	FUN_RETURN_INT(MM.system->defs->nb);
 }
 
 int fun_echo(Thread* th)
 {
-	itemEcho(th, LOG_USER,STACK_GET(th,0),STACK_TYPE(th,0),0);
+	itemEcho(LOG_USER,STACK_GET(th,0),STACK_TYPE(th,0),0);
 	return 0;
 }
 
 int fun_echoLn(Thread* th)
 {
-	itemEcho(th, LOG_USER,STACK_GET(th,0),STACK_TYPE(th,0),1);
+	itemEcho(LOG_USER,STACK_GET(th,0),STACK_TYPE(th,0),1);
 	return 0;
 }
 int fun_address(Thread* th)
@@ -220,7 +276,7 @@ int fun_arrayCreate(Thread* th)
 //	STACK_(th,0) is the initialization value
 	LINT n=STACK_INT(th,1);
 	if (STACK_IS_NIL(th,1)||(n<0)) FUN_RETURN_NIL;
-	p= memoryAllocArray(th, n, DBG_ARRAY); if (!p) return EXEC_OM;
+	p= memoryAllocArray(n, DBG_ARRAY); if (!p) return EXEC_OM;
 	if (!STACK_IS_NIL(th,0)) for(i=0;i<n;i++) STACK_STORE(p,i,th,0);
 	FUN_RETURN_PNT(p);
 }
@@ -236,7 +292,7 @@ int fun_arraySlice(Thread* th)
 	
 	FUN_SUBSTR(p,start, len, lenIsNil, ARRAY_LENGTH(p ));
 
-	q=memoryAllocArray(th, len, DBG_ARRAY); if (!q) return EXEC_OM;
+	q=memoryAllocArray(len, DBG_ARRAY); if (!q) return EXEC_OM;
 	for (i = 0; i < len; i++) ARRAY_COPY(q, i, p, start + i);
 	FUN_RETURN_PNT(q);
 }
@@ -343,7 +399,7 @@ int fun_fifoNext(Thread* th)
 
 int fun_hashmapCreate(Thread* th)
 {
-	HashSlots* hash=hashSlotsCreate(th, STACK_INT(th,0),DBG_HASHMAP);
+	HashSlots* hash=hashSlotsCreate(STACK_INT(th,0),DBG_HASHMAP);
 	if (!hash) return EXEC_OM;
 	FUN_RETURN_PNT((LB*)hash);
 }
@@ -393,7 +449,7 @@ int fun_hashmapSet(Thread* th)
 
 int fun_hashsetCreate(Thread* th)
 {
-	HashSlots* hash = hashSlotsCreate(th, STACK_INT(th, 0), DBG_HASHSET);
+	HashSlots* hash = hashSlotsCreate(STACK_INT(th, 0), DBG_HASHSET);
 	if (!hash) return EXEC_OM;
 	FUN_RETURN_PNT((LB*)hash);
 }
@@ -411,7 +467,7 @@ int fun_hashsetAdd(Thread* th)
 	int k;
 	LB* hash = STACK_PNT(th, 1);
 	if ((!hash) || STACK_IS_NIL(th, 0)) FUN_RETURN_NIL;
-	if ((k = hashsetAdd(th, (HashSlots*)hash, STACK_GET(th, 0), STACK_TYPE(th, 0)))) return k;
+	if ((k = hashsetAdd((HashSlots*)hash, STACK_GET(th, 0), STACK_TYPE(th, 0)))) return k;
 	return 0;
 }
 int fun_hashsetRemove(Thread* th)
@@ -431,6 +487,7 @@ int fun_intRand(Thread* th)
 {
 	unsigned int x;
 	hwRandomBytes((char*)&x,4);
+	x &= 0x7fffffff;
 	FUN_RETURN_INT(x);
 }
 
@@ -452,7 +509,7 @@ int fun_args(Thread* th)
 int fun_hostMemory(Thread* th)
 {
 #ifdef USE_MEMORY_C
-	FUN_RETURN_INT(MEMORY_C_SIZE);
+	FUN_RETURN_INT(bmmTotalSize());
 #else
 	FUN_RETURN_NIL
 #endif
@@ -488,168 +545,162 @@ int fun_signExtend(Thread* th)
 	val=signExtend(val,bit);
 	FUN_RETURN_INT(val);
 }
-int coreInit(Thread* th, Pkg *system)
-{
-	LFLOAT pi=3.14159265359;
-	LFLOAT e=2.718281828459045;
-	char device[64];
 
-	Def* _Def = pkgAddType(th, system, "Definition");
-	Def* Useless = pkgAddType(th, system, "Useless");
-	Def* Device = pkgAddType(th, system, "Device");
-	Type* u0=typeAllocUndef(th);
-	Type* u1=typeAllocUndef(th);
-	Type* list_u0=typeAlloc(th,TYPECODE_LIST,NULL,1,u0);
-	Type* array_u0=typeAlloc(th,TYPECODE_ARRAY,NULL,1,u0);
-	Type* hashmap_u0_u1=typeAlloc(th,TYPECODE_HASHMAP,NULL,2,u0,u1);
-	Type* hashset_u0=typeAlloc(th,TYPECODE_HASHSET,NULL,1,u0);
-	Type* fun_u0_u0_Boolean =typeAlloc(th,TYPECODE_FUN,NULL,3,u0,u0,MM.Boolean);
-	Type* fifo_u0 = typeAlloc(th,TYPECODE_FIFO, NULL, 1, u0);
-	Type* fun_I=typeAlloc(th,TYPECODE_FUN,NULL,1,MM.Int);
-	Type* fun_B=typeAlloc(th,TYPECODE_FUN,NULL,1,MM.Boolean);
-	Type* fun_u0_I = typeAlloc(th,TYPECODE_FUN, NULL, 2, u0, MM.Int);
-	Type* fun_S_B = typeAlloc(th,TYPECODE_FUN, NULL, 2, MM.Str, MM.Boolean);
-	Type* fun_B_B = typeAlloc(th,TYPECODE_FUN, NULL, 2, MM.Boolean, MM.Boolean);
-	Type* fun_list_S = typeAlloc(th,TYPECODE_FUN, NULL, 1, typeAlloc(th,TYPECODE_LIST, NULL, 1, MM.Str));
-	Type* fun_F_B = typeAlloc(th,TYPECODE_FUN, NULL, 2, MM.Float, MM.Boolean);
-	Type* fun_F_F = typeAlloc(th,TYPECODE_FUN, NULL, 2, MM.Float, MM.Float);
-	Type* fun_F_F_F=typeAlloc(th,TYPECODE_FUN,NULL,3,MM.Float,MM.Float,MM.Float);
-	Type* fun_I_I=typeAlloc(th,TYPECODE_FUN,NULL,2,MM.Int,MM.Int);
-	Type* fun_I_I_I=typeAlloc(th,TYPECODE_FUN,NULL,3,MM.Int,MM.Int,MM.Int);
-	Type* fun_I_I_Boolean = typeAlloc(th,TYPECODE_FUN, NULL, 3, MM.Int, MM.Int, MM.Boolean);
-	Type* list_S_Pkg = typeAlloc(th,TYPECODE_LIST, NULL, 1, typeAlloc(th,TYPECODE_TUPLE, NULL, 2, MM.Str, MM.Package));
-	Type* hashmapSlot_u0_u1= typeAlloc(th,TYPECODE_TUPLE, NULL, 3, u0, u1, NULL);
-	hashmapSlot_u0_u1->child[2] = hashmapSlot_u0_u1;
-	MM.Type = pkgAddType(th, system, "Type")->type;
+int coreInit(Pkg *system)
+{
+	char device[64];
+	static const LFLOAT pi = (LFLOAT)3.14159265359;
+	static const LFLOAT e = (LFLOAT)2.718281828459045;
+	static const Native nativeDefs[] = {
+		{ NATIVE_FUN, "hostMemory", fun_hostMemory, "fun -> Int"},
+		{ NATIVE_FUN, "setHostUser", fun_setHostUser, "fun Str -> Bool"},
+		{ NATIVE_FUN, "_args", fun_args, "fun -> list Str"},
+		{ NATIVE_FUN, "_exit", fun_exit, "fun -> Bool"},
+		{ NATIVE_FUN, "gc", fun_gc, "fun -> Int"},
+		{ NATIVE_FUN, "gcTrace", fun_gcTrace, "fun Bool -> Bool"},
+		{ NATIVE_FUN, "memoryRecount", fun_memoryRecount, "fun -> Int"},
+		{ NATIVE_FUN, "memoryLongerBlock", fun_memoryLongerBlock, "fun -> Int"},
+		{ NATIVE_FUN, "memoryReserve", fun_memoryReserve, "fun -> Int"},
+		{ NATIVE_FUN, "systemLoadAllNatives", fun_systemLoadAllNatives, "fun -> Int"},
+		{ NATIVE_FUN, "address", fun_address, "fun a1 -> Int"},
+		{ NATIVE_FUN, "_reboot", fun_reboot, "fun -> Int"},
+
+		{ NATIVE_FUN, "echo", fun_echo, "fun a1 -> a1"},
+		{ NATIVE_FUN, "echoLn", fun_echoLn, "fun a1 -> a1"},
+
+		{ NATIVE_FUN, "_echoEnable", fun_echoEnable, "fun Bool -> Bool"},
+		{ NATIVE_FUN, "_echoIsEnabled", fun_echoIsEnabled, "fun -> Bool"},
+		{ NATIVE_FUN, "_systemLogIsEnabled", fun_systemLogIsEnabled, "fun -> Bool"},
+		{ NATIVE_FUN, "_systemLogEnable",fun_systemLogEnable, "fun Bool -> Bool"},
+		{ NATIVE_OPCODE, "dump", (void*)OPdump, "fun a1 -> a1"},
+		{ NATIVE_OPCODE, "_dump2", (void*)OPdumpd, "fun a1 -> a1"},
+
+		{ NATIVE_FUN, "_pkgCreate", fun_pkgCreate, "fun Str -> Package"},
+		{ NATIVE_FUN, "_pkgImports", fun_pkgImports, "fun Package -> list [Str Package]"},
+		{ NATIVE_FUN, "_pkgNext", fun_pkgNext, "fun Package -> Package"},
+		{ NATIVE_FUN, "pkgName", fun_pkgName, "fun Package -> Str"},
+		{ NATIVE_FUN, "pkgMemory", fun_pkgMemory, "fun Package -> Int"},
+		{ NATIVE_FUN, "pkgDefs", fun_pkgDefs, "fun Package -> Definition"},
+		{ NATIVE_FUN, "pkgStart", fun_pkgStart, "fun Package -> Definition"},
+		{ NATIVE_FUN, "pkgForget", fun_pkgForget, "fun Package -> Bool"},
+		{ NATIVE_FUN, "pkgForgetAll", fun_pkgForgetAll, "fun -> Bool"},
+		{ NATIVE_FUN, "defName", fun_defName, "fun Definition -> Str"},
+		{ NATIVE_FUN, "defCode", fun_defCode, "fun Definition -> Int"},
+		{ NATIVE_FUN, "defIsPublic", fun_defIsPublic, "fun Definition -> Bool"},
+		{ NATIVE_FUN, "defCodeName", fun_defCodeName, "fun Definition -> Str"},
+		{ NATIVE_FUN, "defType", fun_defType, "fun Definition -> Type"},
+		{ NATIVE_FUN, "defPkg", fun_defPkg, "fun Definition -> Package"},
+		{ NATIVE_FUN, "defNext", fun_defNext, "fun Definition -> Definition"},
+		{ NATIVE_FUN, "defSourceCode", fun_defSourceCode, "fun Definition -> Str"},
+		{ NATIVE_FUN, "defSourceName", fun_defSourceName, "fun Definition -> Str"},
+		{ NATIVE_FUN, "defIndexInCode", fun_defIndexInCode, "fun Definition -> Int"},
+		{ NATIVE_FUN, "_defSimpleFunction", fun_defSimpleFunction, "fun Definition -> (fun -> Useless)"},
+		{ NATIVE_FUN, "strFromType", fun_strFromType, "fun Type -> Str"},
+
+		{ NATIVE_FUN, "fifoList", fun_fifoList, "fun fifo a1 -> list a1" },
+		{ NATIVE_FUN, "fifoCreate", fun_fifoCreate, "fun -> fifo a1" },
+		{ NATIVE_OPCODE, "head", (void*)OPhd, "fun list a1 -> a1" },
+		{ NATIVE_OPCODE, "tail", (void*)OPtl, "fun list a1 -> list a1" },
+
+
+		{ NATIVE_FUN, "fifoCount", fun_fifoCount, "fun fifo a1 -> Int"},
+		{ NATIVE_FUN, "fifoIn", fun_fifoIn, "fun fifo a1 a1 -> fifo a1"},
+		{ NATIVE_FUN, "fifoNext", fun_fifoNext, "fun fifo a1 -> a1"},
+		{ NATIVE_FUN, "fifoOut", fun_fifoOut, "fun fifo a1 -> a1"},
+
+		{ NATIVE_FLOAT, "pi", (void*)&pi, "Float" },
+		{ NATIVE_FLOAT, "e", (void*)&e, "Float" },
+
+		{ NATIVE_FUN, "signExtend32", fun_signExtend32, "fun Int -> Int"},
+		{ NATIVE_FUN, "signExtend16", fun_signExtend16, "fun Int -> Int"},
+		{ NATIVE_FUN, "signExtend8", fun_signExtend8, "fun Int -> Int"},
+		{ NATIVE_FUN, "signExtend", fun_signExtend, "fun Int Int -> Int"},
+
+		{ NATIVE_OPCODE, "abs", (void*)OPabs, "fun Int -> Int"},
+		{ NATIVE_OPCODE, "min", (void*)OPmin, "fun Int Int -> Int"},
+		{ NATIVE_OPCODE, "max", (void*)OPmax, "fun Int Int -> Int"},
+
+		{ NATIVE_OPCODE, "isNan", (void*)OPisnan, "fun Float -> Bool"},
+		{ NATIVE_OPCODE, "isInf", (void*)OPisinf, "fun Float -> Bool"},
+		{ NATIVE_OPCODE, "cos", (void*)OPcos, "fun Float -> Float"},
+		{ NATIVE_OPCODE, "sin", (void*)OPsin, "fun Float -> Float"},
+		{ NATIVE_OPCODE, "tan", (void*)OPtan, "fun Float -> Float"},
+		{ NATIVE_OPCODE, "acos", (void*)OPacos, "fun Float -> Float"},
+		{ NATIVE_OPCODE, "asin", (void*)OPasin, "fun Float -> Float"},
+		{ NATIVE_OPCODE, "atan", (void*)OPatan, "fun Float -> Float"},
+		{ NATIVE_OPCODE, "atan2", (void*)OPatan2, "fun Float Float -> Float"},
+		{ NATIVE_OPCODE, "absf", (void*)OPabsf, "fun Float -> Float"},
+		{ NATIVE_OPCODE, "ln", (void*)OPln, "fun Float -> Float"},
+		{ NATIVE_OPCODE, "log", (void*)OPlog, "fun Float -> Float"},
+		{ NATIVE_OPCODE, "exp", (void*)OPexp, "fun Float -> Float"},
+		{ NATIVE_OPCODE, "sqr", (void*)OPsqr, "fun Float -> Float"},
+		{ NATIVE_OPCODE, "sqrt", (void*)OPsqrt, "fun Float -> Float"},
+		{ NATIVE_OPCODE, "floor", (void*)OPfloor, "fun Float -> Float"},
+		{ NATIVE_OPCODE, "ceil", (void*)OPceil, "fun Float -> Float"},
+		{ NATIVE_OPCODE, "round", (void*)OPround, "fun Float -> Float"},
+		{ NATIVE_OPCODE, "minf", (void*)OPminf, "fun Float Float -> Float"},
+		{ NATIVE_OPCODE, "maxf", (void*)OPmaxf, "fun Float Float -> Float"},
+
+		{ NATIVE_OPCODE, "cosh", (void*)OPcosh, "fun Float -> Float"},
+		{ NATIVE_OPCODE, "sinh", (void*)OPsinh, "fun Float -> Float"},
+		{ NATIVE_OPCODE, "tanh", (void*)OPtanh, "fun Float -> Float"},
+
+		{ NATIVE_FUN, "floatFromInt", fun_floatFromInt, "fun Int -> Float" },
+		{ NATIVE_FUN, "intFromFloat", fun_intFromFloat, "fun Float -> Int" },
+
+		{ NATIVE_OPCODE, "tron", (void*)OPtron, "fun -> Int"},
+		{ NATIVE_OPCODE, "troff", (void*)OPtroff, "fun -> Int"},
+
+		{ NATIVE_OPCODE, "equals", (void*)OPeq, "fun a1 a1 -> Bool"},
+
+		{ NATIVE_FUN, "bitTest", fun_bitTest, "fun Int Int -> Bool"},
+		{ NATIVE_FUN, "intRand", fun_intRand, "fun -> Int"},
+		{ NATIVE_FUN, "randomHardware", fun_randomHardware, "fun -> Bool"},
+		{ NATIVE_FUN, "randomEntropy", fun_randomEntropy, "fun Int -> Int"},
+
+		{ NATIVE_FUN, "time", fun_time, "fun -> Int"},
+		{ NATIVE_FUN, "timeMs", fun_timeMs, "fun -> Int"},
+		{ NATIVE_FUN, "timeSet", fun_timeSet, "fun Int -> Int"},
+
+		{ NATIVE_FUN, "arrayCreate",fun_arrayCreate, "fun Int a1 -> array a1"},
+		{ NATIVE_FUN, "arraySlice", fun_arraySlice, "fun array a1 Int Int -> array a1"},
+		{ NATIVE_OPCODE, "arrayLength", (void*)OParraylen,"fun array a1 -> Int"},
+
+		{ NATIVE_FUN, "hashmapCreate",fun_hashmapCreate, "fun Int -> hashmap a1 -> a2"},
+		{ NATIVE_FUN, "hashmapGet",fun_hashmapGet, "fun hashmap a1 -> a2 a1 -> a2"},
+		{ NATIVE_FUN, "hashmapSet",fun_hashmapSet, "fun hashmap a1 -> a2 a1 a2 -> a2"},
+		{ NATIVE_FUN, "hashmapCount", fun_hashmapCount, "fun hashmap a1 -> a2 -> Int"},
+		{ NATIVE_FUN, "hashmapBitSize", fun_hashmapBitSize, "fun hashmap a1 -> a2 -> Int"},
+		{ NATIVE_FUN, "hashmapGetSlot", fun_hashmapGetSlot, "fun hashmap a1 -> a2 Int -> [a1 a2 r0]"},
+
+		{ NATIVE_FUN, "hashsetCreate",fun_hashsetCreate, "fun Int -> hashset a1"},
+		{ NATIVE_FUN, "hashsetContains",fun_hashsetContains, "fun hashset a1 a1 -> Bool"},
+		{ NATIVE_FUN, "hashsetAdd",fun_hashsetAdd, "fun hashset a1 a1 -> a1"},
+		{ NATIVE_FUN, "hashsetRemove",fun_hashsetRemove, "fun hashset a1 a1 -> Bool"},
+		{ NATIVE_FUN, "hashsetCount", fun_hashmapCount, "fun hashset a1 -> Int"},
+		{ NATIVE_FUN, "hashsetBitSize", fun_hashmapBitSize, "fun hashset a1 -> Int"},
+		{ NATIVE_FUN, "hashsetGetSlot", fun_hashmapGetSlot, "fun hashset a1 Int -> list a1"},
+
+
+//		{ NATIVE_INT,"foobar",(void*)1234,"Int" },
+	};
+
+	pkgAddType(system, "Definition");
+	pkgAddType(system, "Useless");
+	Def* Device = pkgAddType(system, "Device");
+	MM.Type = pkgAddType(system, "Type")->type;
+
+	TimeDelta = 0;
 
 	snprintf(device, sizeof(device),"%sDevice", DEVICE_MODE);
 
-	pkgAddConstPnt(th, system, "version", memoryAllocStr(th, VERSION_MINIMACY,-1), MM.Str);
-	pkgAddConstPnt(th, system, "device", memoryAllocStr(th, DEVICE_MODE,-1), MM.Str);
-	pkgAddConstPnt(th, system, device, NULL, Device->type);
-	pkgAddFun(th, system, "hostMemory", fun_hostMemory, typeAlloc(th,TYPECODE_FUN, NULL, 1, MM.Int));
-	pkgAddFun(th, system,"setHostUser", fun_setHostUser, fun_S_B);
-	pkgAddFun(th, system,"_args",fun_args, fun_list_S);
-	pkgAddFun(th, system,"_exit",fun_exit, fun_B);
-	pkgAddFun(th, system, "gc", fun_gc, fun_I);
-	pkgAddFun(th, system, "gcTrace", fun_gcTrace, fun_B_B);
+	pkgAddConstPnt(system, "version", memoryAllocStr(VERSION_MINIMACY,-1), MM.Str);
+	pkgAddConstPnt(system, "device", memoryAllocStr(DEVICE_MODE,-1), MM.Str);
+	pkgAddConstPnt(system, device, NULL, Device->type);
 
-	pkgAddFun(th, system, "address", fun_address, fun_u0_I);
-
-	pkgAddFun(th, system, "_reboot", fun_reboot, fun_I);
-		
-	pkgAddFun(th, system, "_echoEnable", fun_echoEnable, fun_B_B);
-	pkgAddFun(th, system, "_echoIsEnabled", fun_echoIsEnabled, fun_B);
-	pkgAddFun(th, system, "_systemLogIsEnabled", fun_systemLogIsEnabled, fun_B);
-	pkgAddFun(th, system, "_systemLogEnable",fun_systemLogEnable, fun_B_B);
-	pkgAddOpcode(th, system,"dump", OPdump, typeAlloc(th,TYPECODE_FUN, NULL, 2, u0, u0));
-	pkgAddOpcode(th, system,"_dump2", OPdumpd, typeAlloc(th,TYPECODE_FUN, NULL, 2, u0, u0));
-	pkgAddFun(th, system,"echo",fun_echo,typeAlloc(th,TYPECODE_FUN,NULL,2,u0,u0));
-	pkgAddFun(th, system,"echoLn",fun_echoLn,typeAlloc(th,TYPECODE_FUN,NULL,2,u0,u0));
-	
-	pkgAddFun(th, system, "_pkgCreate", fun_pkgCreate, typeAlloc(th,TYPECODE_FUN, NULL, 3, MM.Str, list_S_Pkg , MM.Package));
-	pkgAddFun(th, system, "_pkgImports", fun_pkgImports, typeAlloc(th,TYPECODE_FUN, NULL, 2, MM.Package, list_S_Pkg));
-	pkgAddFun(th, system, "_pkgNext", fun_pkgNext, typeAlloc(th,TYPECODE_FUN, NULL, 2, MM.Package, MM.Package));
-	pkgAddFun(th, system, "pkgName", fun_pkgName, typeAlloc(th,TYPECODE_FUN, NULL, 2, MM.Package, MM.Str));
-	pkgAddFun(th, system, "pkgDefs", fun_pkgDefs, typeAlloc(th,TYPECODE_FUN, NULL, 2, MM.Package, _Def->type));
-	pkgAddFun(th, system, "pkgStart", fun_pkgStart, typeAlloc(th,TYPECODE_FUN, NULL, 2, MM.Package, _Def->type));
-	pkgAddFun(th, system, "defName", fun_defName, typeAlloc(th,TYPECODE_FUN, NULL, 2, _Def->type, MM.Str));
-	pkgAddFun(th, system, "defCode", fun_defCode, typeAlloc(th,TYPECODE_FUN, NULL, 2, _Def->type, MM.Int));
-	pkgAddFun(th, system, "defIsPublic", fun_defIsPublic, typeAlloc(th,TYPECODE_FUN, NULL, 2, _Def->type, MM.Boolean));
-	pkgAddFun(th, system, "defCodeName", fun_defCodeName, typeAlloc(th,TYPECODE_FUN, NULL, 2, _Def->type, MM.Str));
-	pkgAddFun(th, system, "defType", fun_defType, typeAlloc(th,TYPECODE_FUN, NULL, 2, _Def->type, MM.Type));
-	pkgAddFun(th, system, "defPkg", fun_defPkg, typeAlloc(th,TYPECODE_FUN, NULL, 2, _Def->type, MM.Package));
-	pkgAddFun(th, system, "defNext", fun_defNext, typeAlloc(th,TYPECODE_FUN, NULL, 2, _Def->type, _Def->type));
-	pkgAddFun(th, system, "defSourceCode", fun_defSourceCode, typeAlloc(th,TYPECODE_FUN, NULL, 2, _Def->type, MM.Str));
-	pkgAddFun(th, system, "defSourceName", fun_defSourceName, typeAlloc(th,TYPECODE_FUN, NULL, 2, _Def->type, MM.Str));
-	pkgAddFun(th, system, "defIndexInCode", fun_defIndexInCode, typeAlloc(th,TYPECODE_FUN, NULL, 2, _Def->type, MM.Int));
-	pkgAddFun(th, system, "_defSimpleFunction", fun_defSimpleFunction, typeAlloc(th,TYPECODE_FUN, NULL, 2, _Def->type, typeAlloc(th, TYPECODE_FUN, NULL, 1, Useless->type)));
-	pkgAddFun(th, system, "strFromType", fun_strFromType, typeAlloc(th,TYPECODE_FUN, NULL, 2, MM.Type, MM.Str));
+	NATIVE_DEF(nativeDefs);
 
 
-	TimeDelta = 0;
-	pkgAddFun(th, system,"time",fun_time,typeAlloc(th,TYPECODE_FUN,NULL,1,MM.Int));
-	pkgAddFun(th, system,"timeMs",fun_timeMs,typeAlloc(th,TYPECODE_FUN,NULL,1,MM.Int));
-	pkgAddFun(th, system,"timeSet",fun_timeSet,typeAlloc(th,TYPECODE_FUN,NULL,2,MM.Int, MM.Int));
-
-	pkgAddFun(th, system,"arrayCreate",fun_arrayCreate,typeAlloc(th,TYPECODE_FUN,NULL,3,MM.Int,u0,array_u0));
-	pkgAddFun(th, system, "arraySlice", fun_arraySlice, typeAlloc(th, TYPECODE_FUN, NULL, 4, array_u0, MM.Int, MM.Int, array_u0));
-	pkgAddOpcode(th, system,"arrayLength",OParraylen,typeAlloc(th,TYPECODE_FUN,NULL,2,array_u0,MM.Int));
-
-	pkgAddFun(th, system,"hashmapCreate",fun_hashmapCreate,typeAlloc(th,TYPECODE_FUN,NULL,2,MM.Int,hashmap_u0_u1));
-	pkgAddFun(th, system,"hashmapGet",fun_hashmapGet,typeAlloc(th,TYPECODE_FUN,NULL,3,hashmap_u0_u1,u0,u1));
-	pkgAddFun(th, system,"hashmapSet",fun_hashmapSet,typeAlloc(th,TYPECODE_FUN,NULL,4,hashmap_u0_u1,u0,u1,u1));
-	pkgAddFun(th, system,"hashmapCount", fun_hashmapCount, typeAlloc(th,TYPECODE_FUN, NULL, 2, hashmap_u0_u1, MM.Int));
-	pkgAddFun(th, system,"hashmapBitSize", fun_hashmapBitSize, typeAlloc(th,TYPECODE_FUN, NULL, 2, hashmap_u0_u1, MM.Int));
-	pkgAddFun(th, system,"hashmapGetSlot", fun_hashmapGetSlot, typeAlloc(th,TYPECODE_FUN, NULL, 3, hashmap_u0_u1, MM.Int, hashmapSlot_u0_u1));
-
-	pkgAddFun(th, system,"hashsetCreate",fun_hashsetCreate,typeAlloc(th,TYPECODE_FUN,NULL,2,MM.Int,hashset_u0));
-	pkgAddFun(th, system,"hashsetContains",fun_hashsetContains,typeAlloc(th,TYPECODE_FUN,NULL,3,hashset_u0,u0,MM.Boolean));
-	pkgAddFun(th, system,"hashsetAdd",fun_hashsetAdd,typeAlloc(th,TYPECODE_FUN,NULL,3,hashset_u0,u0,u0));
-	pkgAddFun(th, system,"hashsetRemove",fun_hashsetRemove,typeAlloc(th,TYPECODE_FUN,NULL,3,hashset_u0,u0,MM.Boolean));
-	pkgAddFun(th, system,"hashsetCount", fun_hashmapCount, typeAlloc(th,TYPECODE_FUN, NULL, 2, hashset_u0, MM.Int));
-	pkgAddFun(th, system,"hashsetBitSize", fun_hashmapBitSize, typeAlloc(th,TYPECODE_FUN, NULL, 2, hashset_u0, MM.Int));
-	pkgAddFun(th, system,"hashsetGetSlot", fun_hashmapGetSlot, typeAlloc(th,TYPECODE_FUN, NULL, 3, hashset_u0, MM.Int, list_u0));
-
-	pkgAddFun(th, system, "fifoCreate", fun_fifoCreate, typeAlloc(th,TYPECODE_FUN, NULL, 1,fifo_u0));
-	pkgAddFun(th, system, "fifoList", fun_fifoList, typeAlloc(th,TYPECODE_FUN, NULL, 2, fifo_u0, list_u0));
-	pkgAddFun(th, system, "fifoCount", fun_fifoCount, typeAlloc(th,TYPECODE_FUN, NULL, 2, fifo_u0, MM.Int));
-	pkgAddFun(th, system, "fifoIn", fun_fifoIn, typeAlloc(th,TYPECODE_FUN, NULL, 3, fifo_u0, u0, fifo_u0));
-	pkgAddFun(th, system, "fifoNext", fun_fifoNext, typeAlloc(th,TYPECODE_FUN, NULL, 2, fifo_u0, u0));
-	pkgAddFun(th, system, "fifoOut", fun_fifoOut, typeAlloc(th,TYPECODE_FUN, NULL, 2, fifo_u0, u0));
-
-	pkgAddFun(th, system,"floatFromInt",fun_floatFromInt,typeAlloc(th,TYPECODE_FUN,NULL,2,MM.Int,MM.Float));
-	pkgAddFun(th, system,"intFromFloat",fun_intFromFloat,typeAlloc(th,TYPECODE_FUN,NULL,2,MM.Float,MM.Int));
-
-	pkgAddOpcode(th, system,"tron", OPtron, typeAlloc(th,TYPECODE_FUN,NULL,1,MM.Int));
-	pkgAddOpcode(th, system,"troff", OPtroff, typeAlloc(th,TYPECODE_FUN,NULL,1,MM.Int));
-
-	pkgAddOpcode(th, system,"head", OPhd, typeAlloc(th,TYPECODE_FUN,NULL,2,list_u0,u0));
-	pkgAddOpcode(th, system,"tail", OPtl, typeAlloc(th,TYPECODE_FUN,NULL,2,list_u0,list_u0));
-
-	pkgAddOpcode(th, system, "equals", OPeq, fun_u0_u0_Boolean);
-
-	pkgAddConstFloat(th, system,"pi",pi,MM.Float);
-	pkgAddConstFloat(th, system,"e",e,MM.Float);
-
-	pkgAddFun(th, system,"signExtend32",fun_signExtend32,fun_I_I);
-	pkgAddFun(th, system,"signExtend16",fun_signExtend16,fun_I_I);
-	pkgAddFun(th, system,"signExtend8",fun_signExtend8,fun_I_I);
-	pkgAddFun(th, system,"signExtend",fun_signExtend,fun_I_I_I);
-
-	pkgAddOpcode(th, system,"abs",OPabs,fun_I_I);
-	pkgAddOpcode(th, system,"min",OPmin,fun_I_I_I);
-	pkgAddOpcode(th, system,"max",OPmax,fun_I_I_I);
-
-	pkgAddOpcode(th, system,"isNan",OPisnan, fun_F_B);
-	pkgAddOpcode(th, system,"isInf",OPisinf, fun_F_B);
-	pkgAddOpcode(th, system,"cos",OPcos,fun_F_F);
-	pkgAddOpcode(th, system,"sin",OPsin,fun_F_F);
-	pkgAddOpcode(th, system,"tan",OPtan,fun_F_F);
-	pkgAddOpcode(th, system,"acos",OPacos,fun_F_F);
-	pkgAddOpcode(th, system,"asin",OPasin,fun_F_F);
-	pkgAddOpcode(th, system,"atan",OPatan,fun_F_F);
-	pkgAddOpcode(th, system,"atan2",OPatan2,fun_F_F_F);
-	pkgAddOpcode(th, system,"absf",OPabsf,fun_F_F);
-	pkgAddOpcode(th, system,"ln",OPln,fun_F_F);
-	pkgAddOpcode(th, system,"log",OPlog,fun_F_F);
-	pkgAddOpcode(th, system,"exp",OPexp,fun_F_F);
-	pkgAddOpcode(th, system,"sqr",OPsqr,fun_F_F);
-	pkgAddOpcode(th, system,"sqrt",OPsqrt,fun_F_F);
-	pkgAddOpcode(th, system,"floor",OPfloor,fun_F_F);
-	pkgAddOpcode(th, system,"ceil",OPceil,fun_F_F);
-	pkgAddOpcode(th, system,"round",OPround,fun_F_F);
-	pkgAddOpcode(th, system,"minf",OPminf,fun_F_F_F);
-	pkgAddOpcode(th, system,"maxf",OPmaxf,fun_F_F_F);
-
-	pkgAddOpcode(th, system,"cosh",OPcosh,fun_F_F);
-	pkgAddOpcode(th, system,"sinh",OPsinh,fun_F_F);
-	pkgAddOpcode(th, system,"tanh",OPtanh,fun_F_F);
-
-	pkgAddFun(th, system, "bitTest", fun_bitTest, fun_I_I_Boolean);
-	pkgAddFun(th, system, "intRand", fun_intRand, typeAlloc(th,TYPECODE_FUN, NULL, 1, MM.Int));
-	pkgAddFun(th, system, "randomHardware", fun_randomHardware, typeAlloc(th,TYPECODE_FUN, NULL, 1, MM.Boolean));
-	pkgAddFun(th, system, "randomEntropy", fun_randomEntropy, typeAlloc(th,TYPECODE_FUN, NULL, 2, MM.Int, MM.Int));
 
 	return 0;
 }

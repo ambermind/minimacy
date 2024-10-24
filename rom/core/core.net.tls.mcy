@@ -97,18 +97,17 @@ const TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384 = 0xc02c;;
 const TLS_AES_128_GCM_SHA256 = 0x1301;;
 const TLS_AES_256_GCM_SHA384 = 0x1302;;
 
-struct TlsCrypto=[nameC privateKeyC publicKeyC dhC];;
+struct TlsCrypto=[nameC publicKeyC dhC];;
 
 fun parse16MsbList data i end= if i<end then (strRead16Msb data i):parse16MsbList data i+2 end;;
 fun parseShortList data i end= if i<end then (strSlice data i 2):parseShortList data i+2 end;;
 fun parseByteList data i end= if i<end then (strRead8 data i):parseByteList data i+1 end;;
 
 fun _structFromEc ec =
-	let ecKeyPairStr ec nil -> privateKey in
+	let ecCreateKey ec -> key in
 	[
-		privateKeyC=privateKey
-		publicKeyC=ecKeyPub privateKey
-		dhC= lambda priv pub= ecEcdhStr ec priv pub
+		publicKeyC= ecKeyPubStr key
+		dhC= (lambda pub= ecEcdhStr key pub)
 	];;
 
 fun makeCurve curveInfo=
@@ -116,9 +115,8 @@ fun makeCurve curveInfo=
 	let match curveInfo with
 		TLS_x25519 -> let x25519KeyPair nil -> privateKey in
 			[
-				privateKeyC= privateKey
 				publicKeyC=  x25519KeyPub privateKey
-				dhC=#x25519Ecdh
+				dhC=(lambda pub= x25519Ecdh privateKey pub)
 			],
 		TLS_secp256r1 -> _structFromEc ecSecp256r1,
 		TLS_secp384r1 -> _structFromEc ecSecp384r1,
@@ -128,7 +126,7 @@ fun makeCurve curveInfo=
 		curve
 	);;
 
-fun ecdhePremaster curve peerPublicKey= call curve.dhC curve.privateKeyC peerPublicKey;;
+fun ecdhePremaster curve peerPublicKey= call curve.dhC peerPublicKey;;
 
 fun mkBlock8 data=
 	let strBuild data -> data in

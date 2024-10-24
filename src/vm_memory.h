@@ -13,17 +13,6 @@
 
 #define USE_ALL_BITS
 
-#ifdef USE_MEMORY_C
-void cMallocInit();
-void* bmmMalloc(long long size);
-void bmmFree(void* block);
-#define VM_MALLOC bmmMalloc
-#define VM_FREE bmmFree
-#else
-#define VM_MALLOC malloc
-#define VM_FREE free
-#endif
-
 #ifdef ATOMIC_32
 #define LSHIFT 2
 typedef char* LW;
@@ -44,7 +33,38 @@ typedef double LFLOAT;
 #define LSD "%lld"
 #endif
 
+#ifdef USE_MEMORY_C
+void cMallocInit();
+void* bmmMalloc(LINT size);
+void bmmFree(void* block);
+void* bmmRegularMalloc(LINT size);
+void bmmRegularFree(void* block);
+void bmmRebuildTree(void);
+LINT bmmMaxSize(void);
+void bmmDump(void);
+void bmmMayday(void);
+LINT bmmReservedMem(void);
+
+void bmmSetTotalSize(LINT size);
+LINT bmmTotalSize();
+#define VM_MALLOC bmmMalloc
+#define VM_FREE bmmFree
+#define REGULAR_MALLOC bmmRegularMalloc
+#define REGULAR_FREE bmmRegularFree
+#else
+#ifdef ON_ESP32
+void* VM_MALLOC(long long x);
+void VM_FREE(void* x);
+#else
+#define VM_MALLOC malloc
+#define VM_FREE free
+#define REGULAR_MALLOC malloc
+#define REGULAR_FREE free
+#endif
+#endif
+
 #define LWLEN sizeof(LW)
+#define LWLEN_MASK ((LWLEN)-1)
 
 #define VLSB true
 
@@ -85,23 +105,9 @@ struct LB
 	LINT sizeAndType;
 	LB *lifo;
 	LB *nextBlock;
-	Mem* mem;
+	Pkg* pkg;
 	LW data[1];
 };
-
-struct Mem
-{
-	LB header;
-	FORGET forget;
-	MARK mark;
-
-	LB* name;
-	LINT count;	// reference counter of blocks (threads and other)
-	LINT bytes;
-	LINT maxBytes;
-	Mem* listNext;
-};
-
 
 typedef struct {
 	MTHREAD_ID mainThread;
@@ -110,6 +116,7 @@ typedef struct {
 	LB* USEFUL;
 	LB* USELESS;
 	LB* roots;
+	LB* tmpRoot;
 
 	LINT fastAlloc;
 	LINT step;	// GC step (0/1/2)
@@ -118,12 +125,11 @@ typedef struct {
 	LB *listCheck;
 	LB *listFast;
 
-	Mem* mem;	// default mem structure for allocation
 	MLOCK lock;
 
 	Thread* listThreads;
-	Mem* listMems;
 	Pkg* listPkgs;
+	Pkg* currentPkg;
 
 	LINT blocs_nb;
 	LINT blocs_length;
@@ -154,41 +160,36 @@ typedef struct {
 	Type* Bytes;
 	Type* Boolean;
 	Type* BigNum;
-	Type* Bitmap;
-	Type* Buffer;
 	Type* Package;
 	Type* Exception;
 	Type* Type;
-	Type* Thread;
-	Type* Socket;
-	Type* VolumeType;
-	LW MemoryException;
+
 	Type* fun_u0_list_u0_list_u0;
 	Type* fun_array_u0_I_u0;
 
-	Def* bigAdd;
-	Def* bigSub;
-	Def* bigMul;
-	Def* bigDiv;
-	Def* bigExp;
-	Def* bigAddMod;
-	Def* bigSubMod;
-	Def* bigMulMod;
-	Def* bigDivMod;
-	Def* bigExpMod;
+	LINT bigAdd;
+	LINT bigSub;
+	LINT bigMul;
+	LINT bigDiv;
+	LINT bigExp;
+	LINT bigAddMod;
+	LINT bigSubMod;
+	LINT bigMulMod;
+	LINT bigDivMod;
+	LINT bigExpMod;
 
-	Def* bigMulModBarrett;
-	Def* bigDivModBarrett;
-	Def* bigExpModBarrett;
-	Def* bigModBarrett;
+	LINT bigMulModBarrett;
+	LINT bigDivModBarrett;
+	LINT bigExpModBarrett;
+	LINT bigModBarrett;
 
-	Def* bigMod;
-	Def* bigNeg;
-	Def* bigNegMod;
-	Def* bigGT;
-	Def* bigGE;
-	Def* bigLT;
-	Def* bigLE;
+	LINT bigMod;
+	LINT bigNeg;
+	LINT bigNegMod;
+	LINT bigGT;
+	LINT bigGE;
+	LINT bigLT;
+	LINT bigLE;
 
 	LB* funStart;
 	int gcTrace;
@@ -197,27 +198,25 @@ typedef struct {
 }Memory;
 
 extern Memory MM;
-extern int gcTRON;
 
 typedef int (*NATIVE)(Thread*);
 
-
-#define MEM_BY_TID_SIZE (1<<8)	// should be a power of 2
-#define MEM_LIST_NB 3
-#define MEM_LIST_KEY 0
-#define MEM_LIST_VAL 1
-#define MEM_LIST_NEXT 2
-
 #define GC_PERIOD 20
+#ifndef MEMORY_SAFE_SIZE
+#define MEMORY_SAFE_SIZE (1024*1024*16)
+#endif
 
-#define TYPE_BINARY 0
+#define TYPE_FREE 0
 #define TYPE_ARRAY 1
 #define TYPE_NATIVE 2
+#define TYPE_BINARY 3
 
 #define _USEFUL (LB*)(2)
 #define _USELESS (LB*)(3)
 
-#define MEMORY_MARK(from,p) {if ((p) && ((p)->lifo==MM.USELESS)) {(p)->lifo=MM.lifo; MM.lifo=(p); } }
+//void checkPointer(LINT p);
+//#define MEMORY_MARK(p) { checkPointer((LINT)(p)); if ((p) && (((LB*)(p))->lifo==MM.USELESS)) {((LB*)(p))->lifo=MM.lifo; MM.lifo=(LB*)(p); } }
+#define MEMORY_MARK(p) { if ((p) && (((LB*)(p))->lifo==MM.USELESS)) {((LB*)(p))->lifo=MM.lifo; MM.lifo=(LB*)(p); } }
 
 #define NATIVE_FORGET 0
 #define NATIVE_MARK 1
@@ -230,8 +229,17 @@ typedef int (*NATIVE)(Thread*);
 
 #define HEADER_TYPE(p) (((p)->sizeAndType)&3)
 #define HEADER_SIZE(p) (((p)->sizeAndType)>>2)
-#define HEADER_SET_SIZE_AND_TYPE(p,size,type) ((p)->sizeAndType=((size<<2)+(type&3)))
+#define HEADER_SET_SIZE_AND_TYPE(p,size,type) ((p)->sizeAndType=(((size)<<2)+((type)&3)))
 #define HEADER_DBG(p) ((p)->data[0])
+#ifdef USE_ALL_BITS
+#define BLOCK_TOTAL_MEMORY(type,size) \
+	(sizeof(LB) + (((size)+ LWLEN_MASK)&~LWLEN_MASK)+\
+	(((type) != TYPE_ARRAY)?0:(((size) >> LSHIFT) + LWLEN_MASK) &~LWLEN_MASK))
+
+
+#else
+#define BLOCK_TOTAL_MEMORY(type,size) (sizeof(LB) + (((size)+ LWLEN_MASK)&~LWLEN_MASK))
+#endif
 
 
 #ifdef USE_ALL_BITS
@@ -261,7 +269,7 @@ typedef int (*NATIVE)(Thread*);
 	char memType=type;	\
 	((char*)p)[sizeof(LB)+HEADER_SIZE(p)+ memI]= memType; \
 	(p)->data[1+ memI]=memVal; \
- 	if (memType ==VAL_TYPE_PNT) MEMORY_MARK(p,PNT_FROM_VAL(memVal)); \
+ 	if (memType ==VAL_TYPE_PNT) MEMORY_MARK(PNT_FROM_VAL(memVal)); \
 }
 #define ARRAY_SET_TYPE_NO_MARK(p,i,v,type) \
 { \
@@ -295,7 +303,7 @@ typedef int (*NATIVE)(Thread*);
 	int memType=type; \
 	memVal=(memVal&-4)|type;	\
 	(p)->data[1+(i)]=(LW)memVal; \
- 	if (memType==VAL_TYPE_PNT) MEMORY_MARK(p,PNT_FROM_VAL((LW)memVal)); \
+ 	if (memType==VAL_TYPE_PNT) MEMORY_MARK(PNT_FROM_VAL((LW)memVal)); \
 }
 #define ARRAY_SET_TYPE_NO_MARK(p,i,v,type) \
 { \
@@ -347,33 +355,28 @@ typedef int (*NATIVE)(Thread*);
 #define DBG_FIFO VAL_FROM_DEBUG(18)
 #define DBG_FUN VAL_FROM_DEBUG(19)
 #define DBG_SOCKET VAL_FROM_DEBUG(20)
-#define DBG_MEMCOUNT VAL_FROM_DEBUG(21)
 #define DBG_HASHSET VAL_FROM_DEBUG(22)
 
-void memoryInit(int argc, char** argv);
+void memoryInit(int argc, const char** argv);
 int memoryEnd(void);
 LB* memoryPrintBuffer(Thread* th, Buffer* buffer);
 void memoryGC(LINT period);
-void memoryFullGC(void);
-void memoryCheck(LB* p);
+void memoryFinalizeGC(void);
+void memoryRecount(void);
 
-Mem* memCreate(Thread* th, Mem* parent, LINT maxBytes, LB* name);
-void memCountDecrement(Mem* mem);
-
-#define NEED_FAST_ALLOC(th) if (!memoryGetFast()) memoryEnterFast();
 void memoryEnterFast(void); // after this, newly allocated blocks cannot be GCized until memoryLeaveFast
 void memoryLeaveFast(void);
 LINT memoryGetFast(void);
 
 int memoryAddRoot(LB * root);
+void memorySetTmpRoot(LB* p);
 
-LB* memoryAllocArray(Thread * th, LINT size, LW dbg);
-LB* memoryAllocExt(Thread * th, LINT sizeofExt,LW dbg,FORGET forget,MARK mark);
-LB* memoryAllocStr(Thread * th, char* src, LINT size);
-LB* memoryAllocBin(Thread * th, char* src, LINT size, LW dbg);
-LB* memoryAllocFromBuffer(Thread * th, Buffer * b);
+LB* memoryAllocArray(LINT size, LW dbg);
+LB* memoryAllocExt(LINT sizeofExt,LW dbg,FORGET forget,MARK mark);
+LB* memoryAllocStr(char* src, LINT size);
+LB* memoryAllocBin(char* src, LINT size, LW dbg);
+LB* memoryAllocFromBuffer(Buffer * b);
 
-void memoryTake(Mem * m, LB * p);
 int memoryIsMainThread(void);
 
 char* errorName(int err);

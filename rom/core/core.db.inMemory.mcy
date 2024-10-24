@@ -64,7 +64,6 @@ struct DB=[
 	startD
 	endD
 	availableD
-	memAuthD
 	diskThreadD
 
 	offsetD
@@ -351,13 +350,12 @@ fun dbOpen path maxTableNum=
 		nameD=path
 		lockD=lockCreate
 		exportLockD=lockCreate
-		memAuthD=memoryAuthorize
 		diskThreadD= threadStart "diskThread" nil
 	];;
 	
-fun dbCheck lck fIsStarted pkg maxMem fInit=
+fun dbCheck lck fIsStarted pkg fInit=
 	let strConcat "DB:" pkgName pkg -> name in
-	appStart lck fIsStarted name maxMem fInit;;
+	appStart lck fIsStarted name fInit;;
 
 fun _dbMakeHeader db=
 	let strVarUInt db.lastIdD -> lastId in strBuild {
@@ -384,10 +382,6 @@ fun dbTable db tableNum maxFieldNum fCreate=
 	);;	
 fun dbField table num fParse= set table.parseT.num=(lambda a b c d=call fParse a b c d; true);;
 
-fun dbMemoryUse db f= memoryUse db.memAuthD f;;
-fun dbMemoryTake db val= memoryTake db.memAuthD val;;
-
-
 fun _dbMakeContent data=
 	let strLength data -> size in
 	let strVarUInt size -> header in
@@ -402,7 +396,6 @@ fun dbUpdate table block=
 	let table.dbT -> db in
 	if block<>nil then lockSync db.lockD (lambda=
 		if db.fileD<>nil then
-		dbMemoryUse db (lambda=
 			let call table.makeDataT block -> content in
 			if block._sizeB==strLength content then
 			(	
@@ -413,8 +406,7 @@ fun dbUpdate table block=
 			(
 				_dbDel db block._startB block._sizeB nil;
 				_dbAdd db block content
-			)
-		);
+			);
 		block
 	);;
 
@@ -592,7 +584,7 @@ fun _dbExport db file buffer start=
 
 fun dbExport db output=
 	let fileOpen output FILE_REWRITE -> file in
-	if file<>nil then dbMemoryUse db (lambda=
+	if file<>nil then
 		lockSync db.exportLockD (lambda=
 			set db.fifoPendingD=fifoCreate;	// from now, any database update is buffered into this fifo
 
@@ -621,8 +613,7 @@ fun dbExport db output=
 				// then we remove the fifoPending, allowing further direct database update
 				set db.fifoPendingD=nil;
 			);
-		)
-	);;
+		);;
 
 //-----------TO BE REMOVED
 fun dbDump db= hexDump load echoLn db.nameD; db.nameD;;

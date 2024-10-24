@@ -39,7 +39,7 @@ Type* compileStructure1(Compiler* c, Def* structDef)
 		if (!exportLabelListIsSingle(c, c->parser->token)) return compileError(c,"the export declaration is not compatible with a type (should have no argument)\n");
 
 		if (pkgFirstGet(c->pkg, c->parser->token)) return compileError(c,"'%s' already defined\n", compileToken(c));
-		fieldName = memoryAllocStr(c->th, c->parser->token, -1); if (!fieldName) return NULL;
+		fieldName = memoryAllocStr(c->parser->token, -1); if (!fieldName) return NULL;
 
 		if (!parserNext(c)) return compileError(c,"unexpected end of file\n");
 
@@ -49,14 +49,14 @@ Type* compileStructure1(Compiler* c, Def* structDef)
 		}
 		else parserGiveback(c);
 
-		fieldType = typeAlloc(c->th, TYPECODE_FIELD, NULL, 2, typeAllocUndef(c->th), typeAllocUndef(c->th)); if (!fieldType) return NULL;
+		fieldType = typeAlloc(TYPECODE_FIELD, NULL, 2, typeAllocUndef(), typeAllocUndef()); if (!fieldType) return NULL;
 
-		fieldDef=defAlloc(c->th, DEF_CODE_FIELD,0,structDef->val, structDef->valType, fieldType); if (!fieldDef) return NULL;
+		fieldDef=defAlloc(DEF_CODE_FIELD,0,structDef->val, structDef->valType, fieldType); if (!fieldDef) return NULL;
 		fieldDef->proto = 1;
 		defSet(structDef,VAL_FROM_PNT((LB*)fieldDef),VAL_TYPE_PNT);
 		fieldDef->parent = structDef;
 		defSetParser(fieldDef, c, pIndex);
-		if (pkgAddDef(c->th, c->pkg, fieldName, fieldDef)) return NULL;
+		if (pkgAddDef(c->pkg, fieldName, fieldDef)) return NULL;
 	}
 	if (parserAssume(c,";;")) return NULL;
 	return structDef->type;
@@ -64,7 +64,7 @@ Type* compileStructure1(Compiler* c, Def* structDef)
 Type* compileStructure2(Compiler* c, Def* structDef, Locals* labels)
 {
 	Type* structType = structDef->type;
-	Type* derivative = typeDerivate(c->th, structDef->type); if (!derivative) return NULL;
+	Type* derivative = typeDerivate(structDef->type); if (!derivative) return NULL;
 
 	if ((!parserNext(c)) || ((!islabel(c->parser->token)) && strcmp(c->parser->token, "[")))
 		return compileError(c,"type name or '[' expected (found '%s')\n", compileToken(c));
@@ -125,7 +125,7 @@ Type* compileStructure2(Compiler* c, Def* structDef, Locals* labels)
 		else
 		{ 
 			parserGiveback(c);
-			t = typeAllocWeak(c->th); if (!t) return NULL;
+			t = typeAllocWeak(); if (!t) return NULL;
 		}
 		if (typeUnify(c, derivative, defField->type->child[TYPEFIELD_MAIN])) return NULL;
 		if (typeUnify(c, t, defField->type->child[TYPEFIELD_FIELD])) return NULL;
@@ -138,7 +138,7 @@ Type* compileStructure3(Compiler* c, Def* structDef, int rec)
 {
 	Def* def;
 	Def* defParent = structDef->parent;
-	if (rec<0) return compileError(c,"loop detected in struct '%s' defined in package '%s'\n", defName(structDef), pkgName(structDef->pkg));
+	if (rec<0) return compileError(c,"loop detected in struct '%s' defined in package '%s'\n", defName(structDef), pkgName(structDef->header.pkg));
 	if (!structDef->proto) return MM.Int;
 	if (defParent)
 	{
@@ -170,10 +170,10 @@ Type* compileFields(Compiler* c, Def* def)
 	g = c->fmk->globals;
 
 	if (bcint_byte_or_int(c,global)) return NULL;
-	if (bufferAddChar(c->th, c->bytecode,OPstruct)) return NULL;
+	if (bufferAddChar(c->bytecode,OPstruct)) return NULL;
 
 //	PRINTF(LOG_DEV,"compileFields, start with %s\n", defName(def));
-	root = typeAllocUndef(c->th); if (!root) return NULL;	// root is expected to become a1(BiggestChild)
+	root = typeAllocUndef(); if (!root) return NULL;	// root is expected to become a1(BiggestChild)
 	while(1)
 	{
 		Type* t;
@@ -216,7 +216,7 @@ Type* compileEmptyStruct(Compiler* c, Def* def)
 
 	if (funMakerAddGlobal(c->fmk, (LB*)def, &global)) return NULL;
 	if (bcint_byte_or_int(c, global)) return NULL;
-	if (bufferAddChar(c->th, c->bytecode, OPstruct)) return NULL;
+	if (bufferAddChar(c->bytecode, OPstruct)) return NULL;
 
 	for(d=def;d->parent;d=d->parent)
 	{
@@ -226,5 +226,5 @@ Type* compileEmptyStruct(Compiler* c, Def* def)
 
 	if (parserAssume(c, "]")) return NULL;
 
-	return typeCopy(c->th, def->type);
+	return typeCopy(def->type);
 }

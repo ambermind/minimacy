@@ -216,7 +216,7 @@ fun _"db"Load path =
 
 //----------USER API
 
-fun "db"Open path = parent.dbCheck __"Db"Lock (lambda= __"Db"<>nil) pkg " if maxMem<>nil then decFromInt maxMem else "nil" " lambda =_"db"Load path;;
+fun "db"Open path = parent.dbCheck __"Db"Lock (lambda= __"Db"<>nil) pkg lambda =_"db"Load path;;
 fun "db"Dump = parent.dbDump __"Db";;
 fun "db"Status = parent.dbStatus __"Db";;
 fun "db"Export output= parent.dbExport __"Db" output;;
@@ -244,31 +244,31 @@ fun "db Table"MapDesc f = parent.dbMap __"Table" true f #_"db Table";;
 "
 (listMap fields lambda [Field num type] = [
 "fun "db Table Field" row = row._"table Field";;
-fun "db Table "Set" Field" v row = dbMemoryUse __"Db" lambda= "
+fun "db Table "Set" Field" v row = "
 (listMap indexes lambda [Field2 size] = if Field==Field2 then [
 " parent.dbUpdateMap __"Db" __"Table Field"Index row row._"table Field
 ])
-" set row._"table Field" = dbMemoryTake __"Db" v; row;;
+" set row._"table Field" = v; row;;
 
 "
 ])
 
 (listMap volatiles lambda Field = [
 "fun "db Table Field" row = row._"table Field";;
-fun "db Table "Set" Field" v row = dbMemoryUse __"Db" lambda= "
+fun "db Table "Set" Field" v row = "
 (listMap indexes lambda [Field2 size] = if Field==Field2 then [
 " parent.dbUpdateMap __"Db" __"Table Field"Index row row._"table Field
 ])
-" set row._"table Field" = dbMemoryTake __"Db" v; row;;
+" set row._"table Field" = v; row;;
 
 "
 ])
 
 "fun "db Table"Flush row= _"Table"<Block parent.dbUpdate __"Table" Block< (_"Table"< row);;
 
-fun "db Table"Insert = dbMemoryUse __"Db" lambda= _"Table"<Block parent.dbInsert __"Table" Block< [_"Table"] nil;;
-fun "db Table"InsertId id = dbMemoryUse __"Db" lambda= _"Table"<Block parent.dbInsert __"Table" Block< [_"Table"] id;;
-fun "db Table"Delete row = dbMemoryUse __"Db" lambda= parent.dbDelete __"Table" Block<"
+fun "db Table"Insert = _"Table"<Block parent.dbInsert __"Table" Block< [_"Table"] nil;;
+fun "db Table"InsertId id = _"Table"<Block parent.dbInsert __"Table" Block< [_"Table"] id;;
+fun "db Table"Delete row = parent.dbDelete __"Table" Block<"
 (listMap indexes lambda [Field size] = [
 " parent.dbDeleteMap __"Db" __"Table Field"Index row._"table Field
 ])

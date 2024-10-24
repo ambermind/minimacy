@@ -46,11 +46,7 @@ struct Thread
 	LINT callstack;
 	LINT pc;
 	LB* fun;
-	char forceOpcode;
-	char OM;	// 0 until Out of Memory error
-	char atomic;
-
-	Mem* memDelegate;
+	LINT forceOpcode;
 
 	Thread* listNext;
 
@@ -60,9 +56,10 @@ struct Thread
 
 	LINT sp;
 	LB* stack;
+	char atomic;
 };
 
-Thread* threadCreate(Thread* th, Mem* mem);
+Thread* threadCreate(LINT stackLen);
 int threadBigger(Thread* th);
 void stackReset(Thread* th);
 
@@ -74,12 +71,12 @@ int stackSetBuffer(Thread * th, LINT i, Buffer * b);
 
 void threadPrintCallstack(Thread* t);
 
-int coreThreadInit(Thread* th, Pkg *system);
+int coreThreadInit(Pkg *system);
 
-#define THREAD_STACK_LENGTH0 1024
-#define THREAD_STACK_STEP (1024*16)
+#define THREAD_STACK_LENGTH0 256
+#define THREAD_STACK_STEP (256*16)
 
-#define THREAD_OPCODE_NONE ((char)-1)
+#define THREAD_OPCODE_NONE (-1)
 
 #define EXEC_IDLE 0
 #define EXEC_PREEMPTION 1
@@ -197,3 +194,6 @@ int coreThreadInit(Thread* th, Pkg *system);
 
 
 #endif
+
+#define TMP_PUSH(p,err) if(MM.tmpStack) STACK_PUSH_PNT_ERR(MM.tmpStack,(LB*)(p),err)
+#define TMP_PULL() if(MM.tmpStack) STACK_DROP(MM.tmpStack)

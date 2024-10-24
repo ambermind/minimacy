@@ -18,15 +18,10 @@ fun pkgByName name=
 	for p in pkgs do if name==pkgName p then return p;
 	nil;;
 
-fun _pkgFilter l=
-	if l<>nil then let head l ->[alias pkg] in
-	if pkg==nil then _pkgFilter tail l
-	else [alias pkg]:_pkgFilter tail l;;
-
 var _PkgCount=-1;;
-fun pkgCreate name lImport=
-	let if name==nil then strConcat "pkg" decFromInt set _PkgCount=_PkgCount+1 else name -> name in
-	_pkgCreate name _pkgFilter lImport;;
+fun pkgCreate name=
+	let if name==nil then strFormat "_tmp*_" decFromInt set _PkgCount=_PkgCount+1 else name -> name in
+	_pkgCreate name;;
 
 fun pkgList= for p in pkgs do echoLn {"   " pkgName p};true;;
 
@@ -175,7 +170,7 @@ fun _makeprompt src caller=
 	let _firstWord src 0 -> key in
 	if key=="run" then
 	(
-		_launchApp (trim strSlice src 4 nil) MAX_MEMORY_STANDALONE false caller;
+		_launchApp (trim strSlice src 4 nil) false caller;
 		nil
 	)
 	else if listContains _DECLARATIONS key then _appendEndPattern src

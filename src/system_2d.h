@@ -33,7 +33,7 @@ typedef struct
 #endif
 }LBitmap;
 
-LBitmap* _bitmapCreate(Thread* th, LINT w, LINT h);
+LBitmap* _bitmapCreate(LINT w, LINT h);
 
-int core2dInit(Thread* th, Pkg* system);
+int core2dInit(Pkg* system);
 #endif

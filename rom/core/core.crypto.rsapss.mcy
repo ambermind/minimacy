@@ -10,11 +10,10 @@
    with this program. If not, see <https://www.gnu.org/licenses/>. */
 
 export rsaPssSign rsa data fHash hashLen;;
-export rsaPssVerify certificate data fHash hashLen signature;;
+export rsaPssVerify rsa data fHash hashLen signature;;
 
 use core.crypto.hash;;
 use core.crypto.rsa;;
-use core.crypto.oid;;
 
 fun _mkMask fHash data count bytesToCompute=
 	if bytesToCompute>0 then
@@ -66,9 +65,9 @@ fun rsaPssSign rsa data fHash hashLen=
 		strFromBig (rsaComputePrivateExp rsa msg) blockLen
 	);;
 	
-fun rsaPssVerify certificate data fHash hashLen signature=
-	let bigFromHex oidHashmapMODULUS certificate -> modulus in
-	let bigFromHex oidHashmapPUBEXP certificate -> pubExp in
+fun rsaPssVerify rsa data fHash hashLen signature=
+	let rsaModulus rsa -> modulus in
+	let rsaPubExp rsa -> pubExp in
 	let _computeFromPublicKey modulus -> [firstByteMask blockLen] in
 	let strFromBig (bigExpMod (bigFromStr signature) pubExp modulus) blockLen -> block in
 	if 0xbc <> strGet block (-1) then false

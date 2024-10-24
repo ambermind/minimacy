@@ -14,6 +14,7 @@ export Xml, tagXml _ _ _, contentXml _;;
 export xmlEncodePretty xml;;
 export xmlEncode xml;;
 export xmlParse src i0 noMixChild;;
+export htmlParse src i0 noMixChild;;
 export xmlGetTag xml;;
 export xmlGetAttributes xml;;
 export xmlGetChilds xml;;

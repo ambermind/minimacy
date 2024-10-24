@@ -41,9 +41,9 @@ Type* compileSetPoint(Compiler* c, Type* t0, int* opstore)
 			parserJump(c, parserSave);
 
 			if (!(t = compileTerm(c, 1))) return NULL;
-			TYPE_PUSH_NULL(c, t0);
-			TYPE_PUSH_NULL(c, t);
-			u = typeCopy(c->th, MM.fun_array_u0_I_u0); if (!u) return NULL;
+			TYPE_PUSH_NULL(t0);
+			TYPE_PUSH_NULL(t);
+			u = typeCopy(MM.fun_array_u0_I_u0); if (!u) return NULL;
 			if (!(t0 = typeUnifyFromStack(c, u))) return NULL;
 		}
 		if (!parserNext(c)) return t0;
@@ -59,7 +59,7 @@ Type* compileSetPoint(Compiler* c, Type* t0, int* opstore)
 		if (index >= 0) {
 			if (bc_byte_or_int(c, index, OPfetchb, OPfetch)) return NULL;
 		}
-		else if (bufferAddChar(c->th, c->bytecode, OPfetch)) return NULL;
+		else if (bufferAddChar(c->bytecode, OPfetch)) return NULL;
 	}
 }
 
@@ -125,7 +125,7 @@ Type* compileSet(Compiler* c)
 
 	if (parserAssume(c,"=")) return NULL;
 	if (!(tsrc=compileExpression(c))) return NULL;
-	if (bufferAddChar(c->th, c->bytecode,opstore)) return NULL;
+	if (bufferAddChar(c->bytecode,opstore)) return NULL;
 
 	if (typeUnify(c,t,tsrc)) return NULL;
 	return t;
@@ -210,34 +210,35 @@ Type* compileLocalsTerm(Compiler* c, int* simple)
 
 			if (!strcmp(c->parser->token, "]"))
 			{
-				if (bufferAddChar(c->th, c->bytecode, OPdrop)) return NULL;
-				return typeAllocFromStack(c->th, NULL, TYPECODE_TUPLE, n);
+				if (bufferAddChar(c->bytecode, OPdrop)) return NULL;
+				return typeAllocFromStack(NULL, TYPECODE_TUPLE, n);
 			}
 			else if (!strcmp(c->parser->token, "_"))
 			{
-				Type* u = typeAllocUndef(c->th); if (!u) return NULL;
-				TYPE_PUSH_NULL(c, u);
+				Type* u = typeAllocUndef(); if (!u) return NULL;
+				TYPE_PUSH_NULL(u);
 				n++;
 			}
 			else
 			{
 				parserGiveback(c);
-				if (bufferAddChar(c->th, c->bytecode, OPdup)) return NULL;
+				if (bufferAddChar(c->bytecode, OPdup)) return NULL;
 				if (bc_byte_or_int(c, n, OPfetchb, OPfetch)) return NULL;
 				if (!(t = compileLocals(c, simple))) return NULL;
-				TYPE_PUSH_NULL(c, t);
+				TYPE_PUSH_NULL(t);
 				n++;
 			}
 		}
 	}
 	if (!strcmp(c->parser->token, "_"))
 	{
-		if (bufferAddChar(c->th, c->bytecode, OPdrop)) return NULL;
-		return typeAllocUndef(c->th);
+		if (bufferAddChar(c->bytecode, OPdrop)) return NULL;
+		return typeAllocUndef();
 	}
 	if (islabel(c->parser->token))
 	{
-		Locals* l = funMakerAddLocal(c, c->parser->token); if (!l) return NULL;
+		Locals* l;
+		l = funMakerAddLocal(c, c->parser->token); if (!l) return NULL;
 		if (!parserNext(c)) return compileError(c,"unexpected end of file\n");
 		if (!strcmp(c->parser->token, "@")) {
 			Type* t = compilerParseTypeDef(c, 0, &c->fmk->typeLabels);
@@ -257,19 +258,20 @@ Type* compileLocals(Compiler* c, int* simple)
 	Type* t;
 	LINT firstOpcode = bytecodePin(c);
 //	PRINTF(LOG_DEV,"------compileLocals %d again=%d\n", c->parser->index, c->parser->again);
-	if (bufferAddChar(c->th, c->bytecode, OPnop)) return NULL;
+
+	if (bufferAddChar(c->bytecode, OPnop)) return NULL;
 	t = compileLocalsTerm(c, simple); if (!t) return NULL;
 
 	if (parserNext(c) && !strcmp(c->parser->token, ":"))
 	{
-		Type* tlist = typeAlloc(c->th, TYPECODE_LIST, NULL, 1, t); if (!tlist) return NULL;
+		Type* tlist = typeAlloc(TYPECODE_LIST, NULL, 1, t); if (!tlist) return NULL;
 		if (simple) *simple = 0;
 		if ((bytecodePin(c) == firstOpcode + 2) && (bufferGetChar(c->bytecode, firstOpcode + 1) == OPdrop))
 			bufferDelete(c->bytecode, firstOpcode, 2);	// remove OPnop, OPdrop
 		else
 			bufferSetChar(c->bytecode, firstOpcode, OPfirst);
-		if (bufferAddChar(c->th, c->bytecode, OPfetchb)) return NULL;
-		if (bufferAddChar(c->th, c->bytecode, 1)) return NULL; 
+		if (bufferAddChar(c->bytecode, OPfetchb)) return NULL;
+		if (bufferAddChar(c->bytecode, 1)) return NULL; 
 		
 		t = compileLocals(c, simple); if (!t) return NULL;
 		if (typeUnify(c, tlist, t)) return NULL;
@@ -340,11 +342,11 @@ Type* compileGetPoint(Compiler* c,Type* t0)
 			parserJump(c,parserSave);
 
 			if (!(t=compileTerm(c,1))) return NULL;
-			TYPE_PUSH_NULL(c,t0);
-			TYPE_PUSH_NULL(c,t);
-			u = typeCopy(c->th,MM.fun_array_u0_I_u0); if (!u) return NULL;
+			TYPE_PUSH_NULL(t0);
+			TYPE_PUSH_NULL(t);
+			u = typeCopy(MM.fun_array_u0_I_u0); if (!u) return NULL;
 			if (!(t0=typeUnifyFromStack(c,u))) return NULL;
-			if (bufferAddChar(c->th, c->bytecode,OPfetch)) return NULL;
+			if (bufferAddChar(c->bytecode,OPfetch)) return NULL;
 		}
 	}
 }
@@ -355,8 +357,8 @@ Type* compileUpCast(Compiler* c, Def* to)
 	Type* derivate;
 	Type* u;
 	if (!(t = compileExpression(c))) return NULL;
-	u = typeCopy(c->th, to->type); if (!u) return NULL;
-	if (!(derivate = typeDerivate(c->th, u))) return NULL;
+	u = typeCopy(to->type); if (!u) return NULL;
+	if (!(derivate = typeDerivate(u))) return NULL;
 	if (typeUnify(c, t, derivate)) return NULL;
 	return u;
 }
@@ -370,9 +372,9 @@ Type* compileDownCast(Compiler* c, Def* from, Def* to)
 	// we need the following condition, else there are typechecking traps
 	if (from->type->nb != to->type->nb) return compileError(c,"no downcast from %s to %s (different number of parameters)\n", defName(from), defName(to));
 	if (!(t = compileExpression(c))) return NULL;
-	u = typeCopy(c->th, from->type); if (!u) return NULL;
+	u = typeCopy(from->type); if (!u) return NULL;
 	if (typeUnify(c, t, u)) return NULL;
-	u = typeCopy(c->th, to->type); if (!u) return NULL;
+	u = typeCopy(to->type); if (!u) return NULL;
 	while (t->actual) t = t->actual;
 	for (i = 0; i < t->nb; i++) if (typeUnify(c, t->child[i], u->child[i])) return NULL;
 
@@ -429,41 +431,61 @@ Type* compileDef(Compiler* c,int noPoint)
 	if (code>=0)
 	{
 		int i;
-		Type* q;
 		LINT global;
-		
-		if (def->index!=DEF_INDEX_OPCODE)
+		LINT index = def->index;
+		LW val = def->val;
+		char* name = index== DEF_INDEX_STATIC?(char*)def->name:defName(def);
+		Type* q = def->type;
+		if ((index != DEF_INDEX_STATIC) && (def != c->fmk->def)) q = typeInstance(c, def);
+		if (!q) return NULL;
+
+		if ((index!=DEF_INDEX_OPCODE)&&(index!= DEF_INDEX_STATIC))
 		{
 			if (funMakerNeedGlobal(c->fmk, (LB*)def, &global)) return NULL;
-			if (bc_byte_or_int(c,global,OPrglobb,OPrglob)) return NULL;	// or store def->val and use OPconst ? => no, because def->val may change during compilation (if prototype)
+			if (bc_byte_or_int(c,global,OPrglobb,OPrglob)) return NULL;	// or store val and use OPconst ? => no, because val may change during compilation (if prototype)
 		}
 		for(i=0;i<code;i++)
 		{
 			if (!(t=compileExpression(c))) return NULL;
-			TYPE_PUSH_NULL(c,t);
+			TYPE_PUSH_NULL(t);
 		}
 
 		if (code) {
 			if (!parserNext(c)) return compileError(c,"unexpected end of file\n");
-			if (!parserIsFinal(c)) return compileError(c,"too many argument(s) for function '%s' (should be "LSD")\n", defName(def),code);
+			if (!parserIsFinal(c)) return compileError(c,"too many argument(s) for function '%s' (should be "LSD")\n", name,code);
 			parserGiveback(c);		
 		}
-		if (def->index != DEF_INDEX_OPCODE) {
+		if ((index != DEF_INDEX_OPCODE) && (index != DEF_INDEX_STATIC)) {
 			if (bc_byte_or_int(c, code, OPexecb, OPexec)) return NULL;
 		}
-		else if (bufferAddChar(c->th, c->bytecode,(char)(ARRAY_INT(PNT_FROM_VAL(def->val),FUN_NATIVE_POINTER)))) return NULL;
-
-		q=(def!=c->fmk->def)?typeInstance(c,def):def->type; if (!q) return NULL;
-//		PRINTF(LOG_DEV,"def=%s\n", defName(def));
+		else {
+			LINT opcode = (index == DEF_INDEX_OPCODE)?ARRAY_INT(PNT_FROM_VAL(val), FUN_NATIVE_OPCODE):INT_FROM_VAL(val);
+			if (bc_opcode(c, opcode)) return NULL;
+		}
+//		PRINTF(LOG_DEV,"def=%s\n", name);
 		return typeUnifyFromStack(c,q);
 	}
 	else if ((code==DEF_CODE_VAR)||(code==DEF_CODE_CONST))	// read a definition
 	{
-		LINT global;
-		if (funMakerNeedGlobal(c->fmk, (LB*)def, &global)) return NULL;
-		if (bc_byte_or_int(c,global,OPrglobb,OPrglob)) return NULL;
-		if (noPoint) return def->type;
-		return compileGetPoint(c,def->type);
+		if (def->index == DEF_INDEX_STATIC) {
+			if (def->type == MM.Float) {
+				LFLOAT f = FLOAT_FROM_VAL(def->val);
+				if (bufferAddChar(c->bytecode, OPfloat)) return NULL;
+				if (bufferAddInt(c->bytecode, *(LINT*)&f)) return NULL;
+			}
+			else {
+				if (bufferAddChar(c->bytecode, OPint)) return NULL;
+				if (bufferAddInt(c->bytecode, INT_FROM_VAL(def->val))) return NULL;
+			}
+			return def->type;
+		}
+		else {
+			LINT global;
+			if (funMakerNeedGlobal(c->fmk, (LB*)def, &global)) return NULL;
+			if (bc_byte_or_int(c, global, OPrglobb, OPrglob)) return NULL;
+			if (noPoint) return def->type;
+			return compileGetPoint(c, def->type);
+		}
 	}
 	return compileError(c,"impossible def '%s')\n",compileToken(c));
 }

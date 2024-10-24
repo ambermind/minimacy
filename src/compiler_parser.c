@@ -42,11 +42,11 @@ int parserIndex(Compiler* c)
 	if (c->parser->again) return c->parser->index0;
 	return c->parser->index;
 }
-void parserRestoreFromDef(Compiler* c,Def* def)
+void parserRestoreFromDef(Compiler* c,Def* d)
 {
 	if (c->parser) parserReset(c);
-	c->parser = def->parser;
-	parserJump(c,(int)def->parserIndex);
+	c->parser = d->parser;
+	parserJump(c,(int)d->parserIndex);
 }
 void parserGiveback(Compiler* c)
 {
@@ -99,123 +99,123 @@ void parserAgainchar(Compiler* c)
 	c->parser->index--;
 }
 
-int parserGettoken(Compiler* p)
+int parserGettoken(Compiler* c)
 {
-	int c, d, f;
+	int ch, d, f;
 
-	parserRestorechar(p);
+	parserRestorechar(c);
 
 	do
 	{   // looking for the beginning of the token
 		// save the current position in source code
-		p->parser->index0 = p->parser->index;
-		c = parserNextchar(p);
-		if (!c) return -1;	// end of file, no next token
-	} while (c <= 32);
+		c->parser->index0 = c->parser->index;
+		ch = parserNextchar(c);
+		if (!ch) return -1;	// end of file, no next token
+	} while (ch <= 32);
 
-	p->parser->token = &p->parser->src[p->parser->index0];
+	c->parser->token = &c->parser->src[c->parser->index0];
 
 	f = 0;
-	if (c == '\"')	// token is a string
+	if (ch == '\"')	// token is a string
 		while (1)
 		{
-			c = parserNextchar(p);
-			if (!c)
+			ch = parserNextchar(c);
+			if (!ch)
 			{
-				compileError(p, "uncomplete string reaches EOF\n");
+				compileError(c, "uncomplete string reaches EOF\n");
 				return -1;
 			}
-			if ((c == '\"') && (f == 0))
+			if ((ch == '\"') && (f == 0))
 			{
-				parserSavechar(p, p->parser->index);
+				parserSavechar(c, c->parser->index);
 				return 0;
 			}
-			if (c == '\\') f = 1 - f;
+			if (ch == '\\') f = 1 - f;
 			else f = 0;
 		}
-	if (isletnum(c))	// token is number or label
+	if (isletnum(ch))	// token is number or label
 	{
 		int onlynum = 1;
 		while (1)
 		{
-			if (!isnum(c)) onlynum = 0;
-			c = parserNextchar(p);
-			if (!c) return 0;
-			if ((c == '.') && (onlynum))	// floating number
+			if (!isnum(ch)) onlynum = 0;
+			ch = parserNextchar(c);
+			if (!ch) return 0;
+			if ((ch == '.') && (onlynum))	// floating number
 			{
 				int acceptE = 1;
 				int acceptSign = 0;
 				while (1)
 				{
-					c = parserNextchar(p);
-					if (!c) return 0;
-					if (isnum(c)) continue;
-					if (acceptE&&(c == 'E' || c == 'e')) {
+					ch = parserNextchar(c);
+					if (!ch) return 0;
+					if (isnum(ch)) continue;
+					if (acceptE&&(ch == 'E' || ch == 'e')) {
 						acceptSign = 1;
 						acceptE = 0;
 						continue;
 					}
-					if ((c == '+' || c == '-') && acceptSign) {
+					if ((ch == '+' || ch == '-') && acceptSign) {
 						acceptSign = 0;
 						continue;
 					}
-					parserAgainchar(p);
-					parserSavechar(p, p->parser->index);
+					parserAgainchar(c);
+					parserSavechar(c, c->parser->index);
 					return 0;
 				}
 			}
-			if (!isletnum(c))
+			if (!isletnum(ch))
 			{
-				parserAgainchar(p);
-				parserSavechar(p, p->parser->index);
+				parserAgainchar(c);
+				parserSavechar(c, c->parser->index);
 				return 0;
 			}
 		}
 	}
-	d = parserNextchar(p);
+	d = parserNextchar(c);
 	if (!d)	return 0;	// end of file on a special char
 
-	if (((c == '&') && (d == '&'))
-		|| ((c == '|') && (d == '|'))
-		|| ((c == '^') && (d == '^'))
-		|| ((c == ';') && (d == ';'))
-		|| ((c == '-') && (d == '>'))
-		|| ((c == '<') && ((d == '<') || (d == '>')))
-		|| ((c == '>') && (d == '>'))
-		|| ((c == '=') && (d == '='))
-		|| (((c == '+') || (c == '-') || (c == '*') || (c == '/')) && (d == '.'))
-		|| (((c == '=') || (c == '<') || (c == '>')) && (d == '.'))
-		|| ((c == '/') && (d == '*'))
-		|| ((c == '*') && (d == '/'))
-		|| ((c == '%') && (d == '.'))
+	if (((ch == '&') && (d == '&'))
+		|| ((ch == '|') && (d == '|'))
+		|| ((ch == '^') && (d == '^'))
+		|| ((ch == ';') && (d == ';'))
+		|| ((ch == '-') && (d == '>'))
+		|| ((ch == '<') && ((d == '<') || (d == '>')))
+		|| ((ch == '>') && (d == '>'))
+		|| ((ch == '=') && (d == '='))
+		|| (((ch == '+') || (ch == '-') || (ch == '*') || (ch == '/')) && (d == '.'))
+		|| (((ch == '=') || (ch == '<') || (ch == '>')) && (d == '.'))
+		|| ((ch == '/') && (d == '*'))
+		|| ((ch == '*') && (d == '/'))
+		|| ((ch == '%') && (d == '.'))
 		)
 	{
 		// double token recognized
 	}
-	else if ((c == '/') && (d == '/'))
+	else if ((ch == '/') && (d == '/'))
 	{
 		do	// comment //
 		{
-			c = parserNextchar(p);
-			if (c == 10) return -2;
-		} while (c);
+			ch = parserNextchar(c);
+			if (ch == 10) return -2;
+		} while (ch);
 		return -1;	// end of file
 	}
-	else if (((c == '!') || (c == '>') || (c == '<')) && (d == '='))
+	else if (((ch == '!') || (ch == '>') || (ch == '<')) && (d == '='))
 	{
-		d = parserNextchar(p);
+		d = parserNextchar(c);
 		if (!d)	return 0; // end of file
-		if (d != '.') parserAgainchar(p);
+		if (d != '.') parserAgainchar(c);
 	}
-	else if ((c == '*') && (d == '*'))
+	else if ((ch == '*') && (d == '*'))
 	{
-		d = parserNextchar(p);
+		d = parserNextchar(c);
 		if (!d)	return 0; // end of file
-		if (d != '.') parserAgainchar(p);
+		if (d != '.') parserAgainchar(c);
 	}
 	else
-		parserAgainchar(p);
-	parserSavechar(p, p->parser->index);
+		parserAgainchar(c);
+	parserSavechar(c, c->parser->index);
 	return 0;
 }
 
@@ -244,91 +244,73 @@ int parserUntil(Compiler* c, char* keyword)
 // parse a string (c->parser->token points to the first double quote)
 int parserGetstring(Compiler* c, Buffer* b)
 {
-	return strFromSource(c->th, b, c->parser->token, strlen(c->parser->token));
+	return strFromSource(b, c->parser->token, strlen(c->parser->token));
 }
 
 int parserIsFinal(Compiler* c)
 {
-	Def* def;
+	Def* d;
 	char* p;
 	char* token = c->parser->token;
 	if (!token) return 1;
 	p = strstr(" ) } ] : , ; ;; -> then else do with catch ", token);
 	if (p && (p[-1]==32) && (p[strlen(token)]==32)) return 1;
-	def = compileGetDef(c);
+	d = compileGetDef(c);
 
 	// the following test allows to initialize a field with a direct function call, without parenthesis: [xP=sin 1. yP=0.], instead of [xP=(sin 1.) yP=0.] for a Struct Point = [xP yP];;
-	if (def && def->code == DEF_CODE_FIELD) return 1;
-//	PRINTF(LOG_DEV,"isNotFinal %s '%s'\n", token, defName(def));
+	if (d && d->code == DEF_CODE_FIELD) return 1;
+//	PRINTF(LOG_DEV,"isNotFinal %s '%s'\n", token, defName(d));
 	return 0;
 }
 
 // read the next char
-int parserNextchar(Compiler* p)
+int parserNextchar(Compiler* c)
 {
-	Parser* parser;
-	int c = p->parser->src[p->parser->index];
-	if (c)
+	Parser* parser = c->parser;
+	int ch = parser->src[parser->index];
+	if (ch)
 	{
-		p->parser->index++;
-		return c;
+		parser->index++;
+		return ch;
 	}
-	parser = p->parser;
-	if (!parser->parent) return 0;
+	if (parser==c->mainParser) return 0;
 	if (!parser->mayGetBackToParent) return 0;
-	p->parser = parser->parent;
-	parserRestorechar(p);
+	c->parser = c->mainParser;
+	parserRestorechar(c);
 	return 10;
 }
 
 void parserMark(LB* user)
 {
 	Parser* parser = (Parser*)user;
-	MEMORY_MARK(user, (LB*)parser->name);
-	MEMORY_MARK(user, (LB*)parser->block);
+	MEMORY_MARK(parser->name);
+	MEMORY_MARK(parser->block);
 }
-// Warning: we assume that the parser is used under memoryEnterFast
-int parserFromData(Compiler* c, char* name, char* data)
+
+int parserFromData(Compiler* c, char* name, LB* srcBlock)
 {
-	Parser* parser = (Parser*)memoryAllocExt(c->th,sizeof(Parser), DBG_BIN, NULL, parserMark); if (!parser) return EXEC_OM;
-//	PRINTF(LOG_DEV,"parserFromData %s "LSX" -> "LSX"\n", name, c, parser);
+	Parser* parser;
+	TMP_PUSH(srcBlock, EXEC_OM);
+	parser = (Parser*)memoryAllocExt(sizeof(Parser), DBG_BIN, NULL, parserMark); if (!parser) return EXEC_OM;
+//	PRINTF(LOG_DEV,"parserFromData %s "LSX" "LSX" -> "LSX"\n", name, c, srcBlock, parser);
 	parser->name = NULL;
-	parser->block = NULL;
-	parser->parent = c->parser;
+	parser->block = srcBlock;
+	parser->src = STR_START(parser->block);
 	parser->mayGetBackToParent = 0;
+	parser->indexsavedchar = -1;
 	c->parser = parser;
-	parser->nextLib = c->parserLib;
-	c->parserLib = parser;
 
 	if (!name) name = "";
-	c->parser->name = memoryAllocStr(c->th, name, -1); if (!c->parser->name) return EXEC_OM;
-	c->parser->src = NULL;
-	c->parser->indexsavedchar = -1;
-	parser->block = memoryAllocStr(c->th, data, -1); if (!parser->block) return EXEC_OM;
-	c->parser->src = STR_START(parser->block);	// under memoryEnterFast, there is no need to keep an eye on the corresponding LB*
+	parser->name = memoryAllocStr(name, -1); if (!parser->name) return EXEC_OM;
+	TMP_PULL();
 	parserReset(c);
 	return 0;
 }
 	
 Type* parserFromIncludes(Compiler* c,char* name)
 {
-	LB* src;
-	Parser* parser = c->parserLib;
-	while (parser)
-	{
-		if (!strcmp(STR_START(parser->name), name))
-		{
-			parser->parent = c->parser;
-			parser->mayGetBackToParent = 0;
-
-			c->parser = parser;
-			parserReset(c);
-			return MM.Str;
-		}
-		parser = parser->nextLib;
-	}
-	src = fsReadPackage(c->th, name, NULL, 0);
+	LB* src = fsReadPackage(name, NULL, 0);
 	if (!src) return compileError(c,"file not found ('%s')\n", name);
-	if (parserFromData(c, name, STR_START(src))) return NULL;
+	if (parserFromData(c, name, src)) return NULL;
 	return MM.Str;
 }

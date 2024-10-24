@@ -10,7 +10,7 @@
    with this program. If not, see <https://www.gnu.org/licenses/>. */
 #include"minimacy.h"
 
-#define BIGREGISTERS 32
+#define BIGREGISTERS 18
 BignumRegister BigRegisters[BIGREGISTERS];
 bignum BigList=NULL;
 LINT BigCount;	// number of available registers, should be BIGREGISTERS when idle
@@ -24,10 +24,9 @@ void bignumDebug(bignum a,char* label)
 	for (i = bignumLen(a) - 1; i >= 0; i--) PRINTF(LOG_DEV,"%08x", bignumGet(a, i));
 	PRINTF(LOG_DEV,"\n");
 }
-LB* bignumStringAlloc(Thread* th, char* src,LINT len)
+LB* bignumStringAlloc(char* src,LINT len)
 {
-	NEED_FAST_ALLOC(th)
-	return memoryAllocStr(th, src,len);
+	return memoryAllocStr(src,len);
 }
 
 void bignumOptimize(bignum b)
@@ -277,38 +276,6 @@ LINT charMul4Daa(char *buf,LINT c,LINT len)
 	return 0;
 }
 
-LB* bignumStringDec(Thread* th,bignum b)
-{
-	LB* p_dst;
-	char* buf;
-	char* dst;
-	char* result;
-	LINT i,l;
-	LINT len=bignumLen(b)*10;
-	LB* p_buf = bignumStringAlloc(th, NULL, len); if (!p_buf) return NULL;
-	p_dst = bignumStringAlloc(th, NULL, len + 2); if (!p_dst) return NULL;
-	buf=STR_START(p_buf);
-	dst=STR_START(p_dst);
-	result=dst;
-	if (bignumSign(b)) *(dst++)='-';
-	for(i=0;i<len;i++)buf[i]=0;
-	for(i=bignumLen(b)-1;i>=0;i--)
-	{
-		LINT j;
-		uint x=bignumGet(b,i);
-		for(j=28;j>=0;j-=4)
-		{
-			charMul4Daa(buf,0,len);
-			charMul4Daa(buf,(x>>j)&15,len);
-		}
-	}
-	l=len-1;
-	while((l>0)&&(buf[l]==0)) l--;
-	while(l>=0) *(dst++)=buf[l--]+48;
-	*dst=0;	// we may truncate the output
-	return bignumStringAlloc(th, result, -1);	// therefore we instantiate another string with the exact length
-}
-
 LINT _bignumhtoc(LINT c)
 {
 	if ((c>='0')&&(c<='9')) return c-'0';
@@ -316,7 +283,7 @@ LINT _bignumhtoc(LINT c)
 	else if ((c>='a')&&(c<='f')) return c-'a'+10;
 	return 0;
 }
-bignum bignumFromHex(Thread* th, char* src)
+bignum bignumFromHex(char* src)
 {
 	char* bin;
 	bignum res;
@@ -334,7 +301,7 @@ bignum bignumFromHex(Thread* th, char* src)
 		len--;
 	}
 	start = len & 1;
-	p = bignumStringAlloc(th, NULL, (len + 1) / 2); if (!p) return NULL;
+	p = bignumStringAlloc(NULL, (len + 1) / 2); if (!p) return NULL;
 	bin = STR_START(p);
 	for(i=start;i<len+start;i++)
 	{
@@ -372,52 +339,18 @@ LINT bignumStringHex(bignum b,char* dst)
 	return len;
 }
 
-int bignumToStr(Thread* th, bignum b, char* dest)
-{
-	char* buf;
-	LINT lenResult = 0;
-	LINT i, l;
-	LINT len = bignumLen(b) * 10;
-	LB* p_buf = bignumStringAlloc(th, NULL, len); if (!p_buf) return 0;
-
-	buf = STR_START(p_buf);
-	if (bignumSign(b))
-	{
-		lenResult = 1;
-		if (dest) *(dest++) = '-';
-	}
-	for (i = 0; i < len; i++)buf[i] = 0;
-	for (i = bignumLen(b) - 1; i >= 0; i--)
-	{
-		LINT j;
-		uint x = bignumGet(b, i);
-		for (j = 28; j >= 0; j -= 4)
-		{
-			charMul4Daa(buf, 0, len);
-			charMul4Daa(buf, (x >> j) & 15, len);
-		}
-	}
-	l = len - 1;
-	while ((l > 0) && (buf[l] == 0)) l--;
-	lenResult += l+1;
-	if (dest)
-	{
-		while (l >= 0) *(dest++)= buf[l--] + 48;
-	}
-	return (int)lenResult;
-}
-int bignumToBuffer(Thread* th, bignum b, Buffer* buffer)
+int bignumDecToBuffer(bignum b, Buffer* buffer)
 {
 	int k;
 	char* buf;
 	LINT i, l;
 	LINT len = bignumLen(b) * 10;
-	LB* p_buf = bignumStringAlloc(th, NULL, len); if (!p_buf) return EXEC_OM;
-
+	LB* p_buf = bignumStringAlloc(NULL, len); if (!p_buf) return EXEC_OM;
+	TMP_PUSH(p_buf, EXEC_OM);
 	buf = STR_START(p_buf);
 	if (bignumSign(b))
 	{
-		if ((k = bufferAddChar(th, buffer, '-'))) return k;
+		if ((k = bufferAddChar(buffer, '-'))) return k;
 	}
 	for (i = 0; i < len; i++)buf[i] = 0;
 	for (i = bignumLen(b) - 1; i >= 0; i--)
@@ -432,7 +365,8 @@ int bignumToBuffer(Thread* th, bignum b, Buffer* buffer)
 	}
 	l = len - 1;
 	while ((l > 0) && (buf[l] == 0)) l--;
-	while (l >= 0) if ((k = bufferAddChar(th, buffer, buf[l--] + 48))) return k;
+	while (l >= 0) if ((k = bufferAddChar(buffer, buf[l--] + 48))) return k;
+	TMP_PULL();
 	return 0;
 }
 
@@ -1157,13 +1091,13 @@ bignum bignumExpChinese5(bignum c, bignum p1, bignum p2, bignum e1, bignum e2, b
 }
 
 //----------------------------------------
-LB* bigAlloc(Thread* th, bignum b0)
+LB* bigAlloc(bignum b0)
 {
 	LINT len;
 	LB* b;
 	if (!b0) return NULL;
 	len = sizeof(Bignum) - sizeof(LB) + sizeof(uint) * (((LINT)b0->len) - 1);
-	b = memoryAllocBin(th, (char*)&b0->len, len, DBG_B); if (!b) return NULL;
+	b = memoryAllocBin((char*)&b0->len, len, DBG_B); if (!b) return NULL;
 	bignumRelease(b0);
 	return b;
 }
@@ -1177,8 +1111,7 @@ int bigPush(Thread* th, bignum b0)
 	}
 	len = sizeof(Bignum) - sizeof(LB) + sizeof(uint) * (((LINT)b0->len) - 1);
 
-	NEED_FAST_ALLOC(th)	// maybe not
-	b = memoryAllocBin(th, (char*)&b0->len, len, DBG_B); if (!b) return EXEC_OM;
+	b = memoryAllocBin((char*)&b0->len, len, DBG_B); if (!b) return EXEC_OM;
 	FUN_PUSH_PNT(b);
 	bignumRelease(b0);
 	return 0;
@@ -1201,7 +1134,7 @@ int fun_strFromBig(Thread* th)
 
 	size=bignumStringBin(b,len,NULL);
 	if (size<0) FUN_RETURN_NIL;
-	p = bignumStringAlloc(th, NULL, size); if (!p) return EXEC_OM;
+	p = bignumStringAlloc(NULL, size); if (!p) return EXEC_OM;
 	bignumStringBin(b,len, STR_START(p));
 	FUN_RETURN_PNT(p);
 }
@@ -1221,7 +1154,7 @@ int fun_signedStrFromBig(Thread* th)
 
 	size = bignumStringSignedBin(b, NULL);
 	if (size < 0) FUN_RETURN_NIL;
-	p = bignumStringAlloc(th, NULL, size); if (!p) return EXEC_OM;
+	p = bignumStringAlloc(NULL, size); if (!p) return EXEC_OM;
 	bignumStringSignedBin(b, STR_START(p));
 	FUN_RETURN_PNT(p);
 }
@@ -1234,20 +1167,20 @@ int fun_bigFromDec(Thread* th)
 
 int fun_decFromBig(Thread* th)
 {
-	LB* p;
+	int k;
 
 	bignum b=_bignumGet(th,0);
 	if (!b) FUN_RETURN_NIL;
-
-	p = bignumStringDec(th, b);	if (!p) return EXEC_OM;
-	FUN_RETURN_PNT(p);
+	bufferReinit(MM.tmpBuffer);
+	if ((k = bignumDecToBuffer((bignum)b, MM.tmpBuffer))) return k;
+	FUN_RETURN_BUFFER(MM.tmpBuffer);
 }
 
 int fun_bigFromHex(Thread* th)
 {
 	LB* p=STACK_PNT(th,0);
 	if (!p) FUN_RETURN_NIL;
-	FUN_RETURN_BIG(bignumFromHex(th, STR_START(p)));
+	FUN_RETURN_BIG(bignumFromHex(STR_START(p)));
 }
 int fun_hexFromBig(Thread* th)
 {
@@ -1258,7 +1191,7 @@ int fun_hexFromBig(Thread* th)
 	if (!b) FUN_RETURN_NIL;
 	size=bignumStringHex(b,NULL);
 	if (size<0) FUN_RETURN_NIL;
-	p = bignumStringAlloc(th, NULL, size); if (!p) return EXEC_OM;
+	p = bignumStringAlloc(NULL, size); if (!p) return EXEC_OM;
 	bignumStringHex(b, STR_START(p));
 	FUN_RETURN_PNT(p);
 }
@@ -1366,92 +1299,92 @@ void coreBignumReset(void)
 	}
 	BigCount = BIGREGISTERS;
 }
-int coreBignumInit(Thread* th, Pkg *system)
+int coreBignumInit(Pkg *system)
 {
-	Type* B = MM.BigNum;
-	Type* fun_B_B=typeAlloc(th, TYPECODE_FUN,NULL,2,B,B);
-	Type* fun_B_B__B_B=typeAlloc(th, TYPECODE_FUN,NULL,3,B,B,typeAlloc(th, TYPECODE_TUPLE,NULL,2,B,B));
-	Type* fun_B_B__B_B_B=typeAlloc(th, TYPECODE_FUN,NULL,3,B,B,typeAlloc(th, TYPECODE_TUPLE,NULL,3,B,B,B));
-	Type* fun_B_B_B=typeAlloc(th, TYPECODE_FUN,NULL,3,B,B,B);
-	Type* fun_B_B_B_B=typeAlloc(th, TYPECODE_FUN,NULL,4,B,B,B,B);
-	Type* fun_B_B_B_B_B=typeAlloc(th, TYPECODE_FUN,NULL,5,B,B,B,B,B);
-	Type* fun_B_B_B_B_B_B_B=typeAlloc(th, TYPECODE_FUN,NULL,7,B,B,B,B,B,B,B);
-	Type* fun_B_B_B_B_B_B_B_B_B = typeAlloc(th, TYPECODE_FUN, NULL, 9, B, B, B, B, B, B, B, B, B);
-	Type* fun_B_B_I=typeAlloc(th, TYPECODE_FUN,NULL,3,B,B,MM.Int);
-	Type* fun_B_B_Bool = typeAlloc(th, TYPECODE_FUN, NULL, 3, B, B, MM.Boolean);
-	Type* fun_B_I=typeAlloc(th, TYPECODE_FUN,NULL,2,B,MM.Int);
-	Type* fun_B_Bool = typeAlloc(th, TYPECODE_FUN, NULL, 2, B, MM.Boolean);
-	Type* fun_B_I_B=typeAlloc(th, TYPECODE_FUN,NULL,3,B,MM.Int,B);
-	Type* fun_B_I_I=typeAlloc(th, TYPECODE_FUN,NULL,3,B,MM.Int,MM.Int);
-	Type* fun_B_I_S=typeAlloc(th, TYPECODE_FUN,NULL,3,B,MM.Int,MM.Str);
-	Type* fun_B_S=typeAlloc(th, TYPECODE_FUN,NULL,2,B,MM.Str);
-	Type* fun_I_B=typeAlloc(th, TYPECODE_FUN,NULL,2,MM.Int,B);
-	Type* fun_I_Bool_B=typeAlloc(th, TYPECODE_FUN,NULL,3,MM.Int,MM.Boolean,B);
-	Type* fun_S_B=typeAlloc(th, TYPECODE_FUN,NULL,2,MM.Str,B);
-	Type* fun_Bytes_B=typeAlloc(th, TYPECODE_FUN,NULL,2,MM.Bytes,B);
+	static const Native nativeDefs[] = {
+		{ NATIVE_FUN, "bigAbs", fun_bigAbs, "fun BigNum -> BigNum"},
+		{ NATIVE_FUN, "bigAdd", fun_bigAdd, "fun BigNum BigNum -> BigNum" },
+		{ NATIVE_FUN, "bigXor", fun_bigXor, "fun BigNum BigNum -> BigNum" },
+		{ NATIVE_FUN, "bigBarrett", fun_bigBarrett, "fun BigNum -> BigNum" },
+		{ NATIVE_FUN, "bigBit", fun_bigBit, "fun BigNum Int -> Int" },
+		{ NATIVE_FUN, "bigCmp", fun_bigCmp, "fun BigNum BigNum -> Int" },
+		{ NATIVE_FUN, "bigEquals", fun_bigEquals, "fun BigNum BigNum -> Bool" },
+		{ NATIVE_FUN, "bigGreater", fun_bigGreater, "fun BigNum BigNum -> Bool" },
+		{ NATIVE_FUN, "bigGreaterEquals", fun_bigGreaterEquals, "fun BigNum BigNum -> Bool" },
+		{ NATIVE_FUN, "bigLower", fun_bigLower, "fun BigNum BigNum -> Bool" },
+		{ NATIVE_FUN, "bigLowerEquals", fun_bigLowerEquals, "fun BigNum BigNum -> Bool" },
+		{ NATIVE_FUN, "bigDivRemainder", fun_bigDivRemainder, "fun BigNum BigNum -> [BigNum BigNum]" },
+		{ NATIVE_FUN, "bigASR", fun_bigASR, "fun BigNum Int -> BigNum" },
+		{ NATIVE_FUN, "bigEuclid", fun_bigEuclid, "fun BigNum BigNum -> [BigNum BigNum BigNum]" },
+		{ NATIVE_FUN, "bigExpChinese", fun_bigExpChinese, "fun BigNum BigNum BigNum BigNum -> BigNum" },
+		{ NATIVE_FUN, "bigExpChinese7", fun_bigExpChinese7, "fun BigNum BigNum BigNum BigNum BigNum BigNum BigNum BigNum -> BigNum" },
+		{ NATIVE_FUN, "bigExpChinese5", fun_bigExpChinese5, "fun BigNum BigNum BigNum BigNum BigNum BigNum -> BigNum" },
+		{ NATIVE_FUN, "bigExpMod", fun_bigExpMod, "fun BigNum BigNum BigNum -> BigNum" },
+		{ NATIVE_FUN, "bigExpModBarrett", fun_bigExpModBarrett, "fun BigNum BigNum BigNum BigNum -> BigNum" },
+		{ NATIVE_FUN, "bigFromStr", fun_bigFromStr, "fun Str -> BigNum" },
+		{ NATIVE_FUN, "bigFromBytes", fun_bigFromStr, "fun Bytes -> BigNum" },
+		{ NATIVE_FUN, "bigFromSignedStr", fun_bigFromSignedStr, "fun Str -> BigNum" },
+		{ NATIVE_FUN, "bigFromSignedBytes", fun_bigFromSignedStr, "fun Bytes -> BigNum" },
+		{ NATIVE_FUN, "bigFromDec", fun_bigFromDec, "fun Str -> BigNum" },
+		{ NATIVE_FUN, "bigFromHex", fun_bigFromHex, "fun Str -> BigNum" },
+		{ NATIVE_FUN, "bigFromInt", fun_bigFromInt, "fun Int -> BigNum" },
+		{ NATIVE_FUN, "bigInv", fun_bigInv, "fun BigNum BigNum -> BigNum" },
+		{ NATIVE_FUN, "bigIsEven", fun_bigIsEven, "fun BigNum -> Bool" },
+		{ NATIVE_FUN, "bigIsNull", fun_bigIsNull, "fun BigNum -> Bool" },
+		{ NATIVE_FUN, "bigIsOne", fun_bigIsOne, "fun BigNum -> Bool" },
+		{ NATIVE_FUN, "bigLowestBit", fun_bigLowestBit, "fun BigNum -> Int" },
+		{ NATIVE_FUN, "bigNegMod", fun_bigNegMod, "fun BigNum BigNum -> BigNum" },
+		{ NATIVE_FUN, "bigMod", fun_bigMod, "fun BigNum BigNum -> BigNum" },
+		{ NATIVE_FUN, "bigModBarrett", fun_bigModBarrett, "fun BigNum BigNum BigNum -> BigNum" },
+		{ NATIVE_FUN, "bigModPower2", fun_bigModPower2, "fun BigNum Int -> BigNum" },
+		{ NATIVE_FUN, "bigMul", fun_bigMul, "fun BigNum BigNum -> BigNum" },
+		{ NATIVE_FUN, "bigExp", fun_bigExp, "fun BigNum BigNum -> BigNum" },
+		{ NATIVE_FUN, "bigDiv", fun_bigDiv, "fun BigNum BigNum -> BigNum" },
+		{ NATIVE_FUN, "bigAddMod", fun_bigAddMod, "fun BigNum BigNum BigNum -> BigNum" },
+		{ NATIVE_FUN, "bigSubMod", fun_bigSubMod, "fun BigNum BigNum BigNum -> BigNum" },
+		{ NATIVE_FUN, "bigDivMod", fun_bigDivMod, "fun BigNum BigNum BigNum -> BigNum" },
+		{ NATIVE_FUN, "bigMulMod", fun_bigMulMod, "fun BigNum BigNum BigNum -> BigNum" },
+		{ NATIVE_FUN, "bigMulModBarrett", fun_bigMulModBarrett, "fun BigNum BigNum BigNum BigNum -> BigNum" },
+		{ NATIVE_FUN, "bigDivModBarrett", fun_bigDivModBarrett, "fun BigNum BigNum BigNum BigNum -> BigNum" },
+		{ NATIVE_FUN, "bigNbits", fun_bigNbits, "fun BigNum -> Int" },
+		{ NATIVE_FUN, "bigNeg", fun_bigNeg, "fun BigNum -> BigNum" },
+		{ NATIVE_FUN, "bigGcd", fun_bigGcd, "fun BigNum BigNum -> BigNum" },
+		{ NATIVE_FUN, "bigPositive", fun_bigPositive, "fun BigNum -> Bool" },
+		{ NATIVE_FUN, "bigPower2", fun_bigPower2, "fun Int -> BigNum" },
+		{ NATIVE_FUN, "bigRand", fun_bigRand, "fun Int Bool -> BigNum" },
+		{ NATIVE_FUN, "bigASL1", fun_bigASL1, "fun BigNum -> BigNum" },
+		{ NATIVE_FUN, "bigASR1", fun_bigASR1, "fun BigNum -> BigNum" },
+		{ NATIVE_FUN, "bigSub", fun_bigSub, "fun BigNum BigNum -> BigNum" },
+		{ NATIVE_FUN, "strFromBig", fun_strFromBig, "fun BigNum Int -> Str" },
+		{ NATIVE_FUN, "signedStrFromBig", fun_signedStrFromBig, "fun BigNum -> Str" },
+		{ NATIVE_FUN, "decFromBig", fun_decFromBig, "fun BigNum -> Str" },
+		{ NATIVE_FUN, "hexFromBig", fun_hexFromBig, "fun BigNum -> Str" },
+		{ NATIVE_FUN, "intFromBig", fun_intFromBig, "fun BigNum -> Int" },
+	};
+	NATIVE_DEF(nativeDefs);
+	MM.bigAdd = nativeOpcode("bigAdd", 2);
+	MM.bigGT = nativeOpcode("bigGT", 2);
+	MM.bigGE = nativeOpcode("bigGE", 2);
+	MM.bigLT = nativeOpcode("bigLT", 2);
+	MM.bigLE = nativeOpcode("bigLE", 2);
 
-	pkgAddFun(th, system,"bigAbs", fun_bigAbs,fun_B_B);
-	pkgAddFun(th, system,"bigAdd", fun_bigAdd,fun_B_B_B); MM.bigAdd = system->first;
-	pkgAddFun(th, system,"bigXor", fun_bigXor,fun_B_B_B);
-	pkgAddFun(th, system,"bigBarrett", fun_bigBarrett,fun_B_B);
-	pkgAddFun(th, system,"bigBit", fun_bigBit,fun_B_I_I);
-	pkgAddFun(th, system,"bigCmp", fun_bigCmp,fun_B_B_I);
-	pkgAddFun(th, system,"bigEquals", fun_bigEquals, fun_B_B_Bool);
-	pkgAddFun(th, system, "bigGreater", fun_bigGreater, fun_B_B_Bool); MM.bigGT = system->first;
-	pkgAddFun(th, system, "bigGreaterEquals", fun_bigGreaterEquals, fun_B_B_Bool); MM.bigGE = system->first;
-	pkgAddFun(th, system, "bigLower", fun_bigLower, fun_B_B_Bool); MM.bigLT = system->first;
-	pkgAddFun(th, system, "bigLowerEquals", fun_bigLowerEquals, fun_B_B_Bool); MM.bigLE = system->first;
+	MM.bigExpMod = nativeOpcode("bigExpMod", 3);
+	MM.bigExpModBarrett = nativeOpcode("bigExpModBarrett", 4);
+	MM.bigNegMod = nativeOpcode("bigNegMod",2);
+	MM.bigMod = nativeOpcode("bigMod",2);
+	MM.bigModBarrett = nativeOpcode("bigModBarrett", 3);
+	MM.bigMul = nativeOpcode("bigMul", 2);
+	MM.bigExp = nativeOpcode("bigExp", 2);
+	MM.bigDiv = nativeOpcode("bigDiv", 2);
+	MM.bigAddMod = nativeOpcode("bigAddMod", 3);
+	MM.bigSubMod = nativeOpcode("bigSubMod", 3);
+	MM.bigDivMod = nativeOpcode("bigDivMod", 3);
+	MM.bigMulMod = nativeOpcode("bigMulMod", 3);
 
-	pkgAddFun(th, system,"bigDivRemainder", fun_bigDivRemainder,fun_B_B__B_B);
-	pkgAddFun(th, system,"bigASR", fun_bigASR,fun_B_I_B);
-	pkgAddFun(th, system,"bigEuclid", fun_bigEuclid,fun_B_B__B_B_B);
-	pkgAddFun(th, system,"bigExpChinese", fun_bigExpChinese,fun_B_B_B_B_B);
-	pkgAddFun(th, system,"bigExpChinese7", fun_bigExpChinese7,fun_B_B_B_B_B_B_B_B_B);
-	pkgAddFun(th, system,"bigExpChinese5", fun_bigExpChinese5, fun_B_B_B_B_B_B_B);
-
-	pkgAddFun(th, system,"bigExpMod", fun_bigExpMod,fun_B_B_B_B); MM.bigExpMod = system->first;
-	pkgAddFun(th, system,"bigExpModBarrett", fun_bigExpModBarrett,fun_B_B_B_B_B); MM.bigExpModBarrett = system->first;
-	pkgAddFun(th, system,"bigFromStr", fun_bigFromStr,fun_S_B);
-	pkgAddFun(th, system,"bigFromBytes", fun_bigFromStr, fun_Bytes_B);
-	pkgAddFun(th, system,"bigFromSignedStr", fun_bigFromSignedStr,fun_S_B);
-	pkgAddFun(th, system,"bigFromSignedBytes", fun_bigFromSignedStr, fun_Bytes_B);
-	pkgAddFun(th, system,"bigFromDec", fun_bigFromDec,fun_S_B);
-	pkgAddFun(th, system,"bigFromHex", fun_bigFromHex,fun_S_B);
-
-	pkgAddFun(th, system,"bigFromInt", fun_bigFromInt,fun_I_B);
-	pkgAddFun(th, system,"bigInv", fun_bigInv,fun_B_B_B);
-	pkgAddFun(th, system,"bigIsEven", fun_bigIsEven, fun_B_Bool);
-	pkgAddFun(th, system,"bigIsNull", fun_bigIsNull, fun_B_Bool);
-	pkgAddFun(th, system,"bigIsOne", fun_bigIsOne, fun_B_Bool);
-	pkgAddFun(th, system,"bigLowestBit", fun_bigLowestBit,fun_B_I);
-	pkgAddFun(th, system,"bigNegMod", fun_bigNegMod,fun_B_B_B); MM.bigNegMod = system->first;
-	pkgAddFun(th, system,"bigMod", fun_bigMod,fun_B_B_B); MM.bigMod = system->first;
-	pkgAddFun(th, system,"bigModBarrett", fun_bigModBarrett,fun_B_B_B_B); MM.bigModBarrett = system->first;
-	pkgAddFun(th, system,"bigModPower2", fun_bigModPower2,fun_B_I_B);
-	pkgAddFun(th, system,"bigMul", fun_bigMul,fun_B_B_B); MM.bigMul = system->first;
-	pkgAddFun(th, system,"bigExp", fun_bigExp,fun_B_B_B); MM.bigExp = system->first;
-	pkgAddFun(th, system,"bigDiv", fun_bigDiv, fun_B_B_B); MM.bigDiv = system->first;
-	pkgAddFun(th, system,"bigAddMod", fun_bigAddMod,fun_B_B_B_B); MM.bigAddMod = system->first;
-	pkgAddFun(th, system,"bigSubMod", fun_bigSubMod,fun_B_B_B_B); MM.bigSubMod = system->first;
-	pkgAddFun(th, system,"bigDivMod", fun_bigDivMod,fun_B_B_B_B); MM.bigDivMod = system->first;
-	pkgAddFun(th, system,"bigMulMod", fun_bigMulMod,fun_B_B_B_B); MM.bigMulMod = system->first;
-
-	pkgAddFun(th, system,"bigMulModBarrett", fun_bigMulModBarrett,fun_B_B_B_B_B); MM.bigMulModBarrett = system->first;
-	pkgAddFun(th, system,"bigDivModBarrett", fun_bigDivModBarrett,fun_B_B_B_B_B); MM.bigDivModBarrett = system->first;
-	pkgAddFun(th, system,"bigNbits", fun_bigNbits,fun_B_I);
-	pkgAddFun(th, system,"bigNeg", fun_bigNeg,fun_B_B); MM.bigNeg = system->first;
-	pkgAddFun(th, system,"bigGcd", fun_bigGcd,fun_B_B_B);
-	pkgAddFun(th, system,"bigPositive", fun_bigPositive,fun_B_Bool);
-	pkgAddFun(th, system,"bigPower2", fun_bigPower2,fun_I_B);
-	pkgAddFun(th, system,"bigRand", fun_bigRand,fun_I_Bool_B);
-	pkgAddFun(th, system,"bigASL1", fun_bigASL1,fun_B_B);
-	pkgAddFun(th, system,"bigASR1", fun_bigASR1,fun_B_B);
-	pkgAddFun(th, system,"bigSub", fun_bigSub,fun_B_B_B); MM.bigSub = system->first;
-	pkgAddFun(th, system,"strFromBig", fun_strFromBig,fun_B_I_S);
-	pkgAddFun(th, system,"signedStrFromBig", fun_signedStrFromBig,fun_B_S);
-	pkgAddFun(th, system,"decFromBig", fun_decFromBig,fun_B_S);
-	pkgAddFun(th, system,"hexFromBig", fun_hexFromBig,fun_B_S);
-	pkgAddFun(th, system,"intFromBig", fun_intFromBig,fun_B_I);
+	MM.bigMulModBarrett = nativeOpcode("bigMulModBarrett", 4);
+	MM.bigDivModBarrett = nativeOpcode("bigDivModBarrett", 4);
+	MM.bigNeg = nativeOpcode("bigNeg", 2);
+	MM.bigSub = nativeOpcode("bigSub", 2);
 	BigCount = 0;
 	coreBignumReset();
 	return 0;

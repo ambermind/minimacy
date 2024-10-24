@@ -12,6 +12,7 @@
 export HttpArgs, stringArg _ _, fileArg _ _ _;;
 export httpSetHeader h key val;;
 export httpGetHeader h headerName;;
+export httpGetHeaders h;;
 export httpGetRemote h;;
 export httpFormUrlEncodedFromList l;;
 export httpReuse h verb url version;;
@@ -258,7 +259,11 @@ fun _httpNewConnection h=
 //echoLn "=====================_httpNewConnection";
 	dnsRequest h.serverH (lambda ip=
 		set h.ipH=ip;
-		if ip==nil then (call h.cbReplyH nil nil; nil)
+		if ip==nil then (
+			set h.busyH=false;
+			call h.cbReplyH nil nil;
+			nil
+		)
 		else _httpConnect h
 	);
 	h;;

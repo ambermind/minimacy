@@ -10,105 +10,45 @@
    with this program. If not, see <https://www.gnu.org/licenses/>. */
 
 use core.crypto.primal;;
-use core.crypto.oid;;
 
-struct RSA=[modulusR pubExpR privExpR p1R p2R e1R e2R coefR];;
+struct RSA=[modulusR pubExpR privExpR pR qR dPR dQR qInvR];;
 
 //---------------------------
 // RSA create keys
 
-fun rsaCreate nbits exponent=
-	let bigFromInt 1 -> one in
-	let if exponent==nil then 0x010001 else exponent -> exponent in
-	let bigFromInt exponent -> pub in
+fun rsaFromPublic modulus pubExp=
+	[modulusR=modulus pubExpR=pubExp];;
+
+fun rsaFromPQ pubExp p q=
+\bigNum
+	let p*q -> modulus in
+	let (p-1)*(q-1) -> phi in
+	let bigInv pubExp phi -> privExp in
+	let privExp % (p-1) -> dP in
+	let privExp % (q-1) -> dQ in
+	let bigInv q p -> qInv in
+	[modulusR=modulus pubExpR=pubExp privExpR=privExp pR=p qR=q dPR=dP dQR=dQ qInvR=qInv];;
+
+fun rsaCreate nbits pubExp=
+	if !randomHardware then echoLn "> Warning: generate RSA key with pure software pseudorandom generator";
+	let if pubExp==nil then 0x010001 else pubExp -> pubExp in
 	let bigPrimal nbits>>1 16-> p in
 	let bigPrimal nbits-(nbits>>1) 16-> q in
-	if p==q then rsaCreate nbits exponent
-	else let bigMul p q -> n in
-	let bigMul (bigSub p one) (bigSub q one) -> phi in
-	let bigInv pub phi -> priv in
-	let bigMod priv bigSub p one -> e1 in
-	let bigMod priv bigSub q one -> e2 in
-	let bigInv q p -> coef in
-	[modulusR=n pubExpR=pub privExpR=priv p1R=p p2R=q e1R=e1 e2R=e2 coefR=coef];;
-
-fun rsaCompletion rsa=
-\bigNum
-	let rsa -> [pub n priv p q] in
-	let priv % (p-1) -> e1 in
-	let priv % (q-1) -> e2 in
-	let bigInv q p -> coef in
-	[modulusR=n pubExpR=pub privExpR=priv p1R=p p2R=q e1R=e1 e2R=e2 coefR=coef];;
+	if p==q then rsaCreate nbits pubExp	// try again
+	else rsaFromPQ (bigFromInt pubExp) p q;;
 
 fun rsaDump rsa=
 	(
-		echoLn ["modulus: " rsa.modulusR];
-		echoLn ["pubExp : " rsa.pubExpR];
-		echoLn ["privExp: " rsa.privExpR];
-		echoLn ["p1     : " rsa.p1R];
-		echoLn ["p2     : " rsa.p2R];
-		echoLn ["e1     : " rsa.e2R];
-		echoLn ["e2     : " rsa.e2R];
-		echoLn ["coef   : " rsa.coefR];
+		echoLn  "RSA KEY:";
+		echoLn ["modulus: " hexFromBig rsa.modulusR];
+		echoLn ["pubExp : " hexFromBig rsa.pubExpR];
+		echoLn ["privExp: " hexFromBig rsa.privExpR];
+		echoLn ["p      : " hexFromBig rsa.pR];
+		echoLn ["q      : " hexFromBig rsa.qR];
+		echoLn ["dP     : " hexFromBig rsa.dQR];
+		echoLn ["dQ     : " hexFromBig rsa.dQR];
+		echoLn ["qInv   : " hexFromBig rsa.qInvR];
 		rsa
-	);;
-
-fun rsaImport h=
-	[
-		modulusR=bigFromHex hashmapGet h OID_MODULUS
-		pubExpR=bigFromHex hashmapGet h OID_PUBEXP
-		privExpR=bigFromHex hashmapGet h "PRIVEXP"
-		p1R=bigFromHex hashmapGet h "P1"
-		p2R=bigFromHex hashmapGet h "P2"
-		e1R=bigFromHex hashmapGet h "E1"
-		e2R=bigFromHex hashmapGet h "E2"
-		coefR=bigFromHex hashmapGet h "C"
-	];;
-
-//----------------------------
-// exponentials modulo: a**exponent mod n
-// bigExpMod          : a exponent n (implemented with Barret mu computation)
-// bigExpModBarrett      : a exponent n mu (Barret implementation)
-// bigExpChinese      : a exponent p q
-// bigExpChinese5 : a p1 p2 e1 e2 coef (assume exponent=private key, use another one to use public exponent)
-// bigExpChinese7 : a exponent p q u v pmu qmu
-//----------------------------
-// Montgomery exponential
-// precompute montgo with: montgoPrecompute n
-// then perform exponential modulo n with: montgoPower val exponent montgo
-
-fun montgoPrecompute n=
-	let bigNbits n -> Rb in
-	let bigPower2 Rb -> R in
-	let bigEuclid R n ->[Rinv v _] in
-	\bigNum
-		let (-v)%R -> v in
-		let Rinv%n -> Rinv in
-		let R-n -> P in
-		[n Rb R Rinv v P];;
-/*	let bigNeg v -> v in
-	let bigMod v R -> v in
-	let bigMod Rinv n -> Rinv in
-	let bigSub R n -> P in
-	[n Rb R Rinv v P];;
-*/
-fun _montgoProduct a b n v Rb=
-	let bigMul a b -> ab in
-	let bigModPower2 (bigMul v (bigModPower2 ab Rb)) Rb -> m in
-	let bigASR (bigAdd ab (bigMul m n)) Rb -> t in
-	let if (bigCmp t n)>=0 then (bigSub t n) else t -> t in
-	t;;
-
-fun montgoPower a k montgo=
-	let montgo -> [n Rb R Rinv v P] in
-	let bigMulMod a R n -> A in
-	(
-		for i=(bigNbits k)-1;i>=0;i-1 do
-		(
-			set P=_montgoProduct P P n v Rb;
-			if 0<>bigBit k i then set P=_montgoProduct A P n v Rb
-		);
-		bigMulMod P Rinv n
 	);;
 
 // compute a random number modulo n
@@ -118,4 +58,6 @@ fun rsaModulus rsa= rsa.modulusR;;
 fun rsaPubExp rsa= rsa.pubExpR;;
 
 fun rsaComputePrivateExp rsa msg=
-	bigExpChinese5 msg rsa.p1R rsa.p2R rsa.e1R rsa.e2R rsa.coefR;;
+	bigExpChinese5 msg rsa.pR rsa.qR rsa.dPR rsa.dQR rsa.qInvR;;
+
+fun rsaIsPrivate rsa= rsa.privExpR<>nil;;

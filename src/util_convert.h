@@ -20,52 +20,52 @@ LINT stringLengthU16(char* src,LINT len);
 LINT stringLengthU8(char* src,LINT len);
 LINT stringLengthLatin(char* src,LINT len);
 
-int u16LeFromLatin(Thread* th, Buffer* tmp, char* src, LINT len);
-int latinFromU16Le(Thread* th, Buffer* tmp, char* src, LINT len);
+int u16LeFromLatin(Buffer* tmp, char* src, LINT len);
+int latinFromU16Le(Buffer* tmp, char* src, LINT len);
 
-int u8FromU16Le(Thread* th, Buffer* tmp, char* src, LINT len);
-int u16LeFromU8(Thread* th, Buffer* tmp, char* src, LINT len);
+int u8FromU16Le(Buffer* tmp, char* src, LINT len);
+int u16LeFromU8(Buffer* tmp, char* src, LINT len);
 
-int u16BeFromLatin(Thread* th, Buffer* tmp, char* src, LINT len);
-int latinFromU16Be(Thread* th, Buffer* tmp, char* src, LINT len);
+int u16BeFromLatin(Buffer* tmp, char* src, LINT len);
+int latinFromU16Be(Buffer* tmp, char* src, LINT len);
 
-int u8FromU16Be(Thread* th, Buffer* tmp, char* src, LINT len);
-int u16BeFromU8(Thread* th, Buffer* tmp, char* src, LINT len);
+int u8FromU16Be(Buffer* tmp, char* src, LINT len);
+int u16BeFromU8(Buffer* tmp, char* src, LINT len);
 
-int latinFromU8(Thread* th, Buffer* tmp, char* src, LINT len);
-int u8FromLatin(Thread* th, Buffer* tmp, char* src, LINT len);
+int latinFromU8(Buffer* tmp, char* src, LINT len);
+int u8FromLatin(Buffer* tmp, char* src, LINT len);
 
-int strFromSource(Thread* th, Buffer* tmp, char* src, LINT len);
-int sourceFromStr(Thread* th, Buffer* tmp, char* src, LINT len);
+int strFromSource(Buffer* tmp, char* src, LINT len);
+int sourceFromStr(Buffer* tmp, char* src, LINT len);
 
-int u8FromJson(Thread* th, Buffer* tmp, char* src, LINT len);
-int jsonFromU8(Thread* th, Buffer* tmp, char* src, LINT len);
+int u8FromJson(Buffer* tmp, char* src, LINT len);
+int jsonFromU8(Buffer* tmp, char* src, LINT len);
 
-int u8FromXml(Thread* th, Buffer* tmp, char* src, LINT len);
-int latinFromXml(Thread* th, Buffer* tmp, char* src,LINT len);
-int xmlFromStr(Thread* th, Buffer* tmp, char* src, LINT len);
+int u8FromXml(Buffer* tmp, char* src, LINT len);
+int latinFromXml(Buffer* tmp, char* src,LINT len);
+int xmlFromStr(Buffer* tmp, char* src, LINT len);
 
-int strWithLF(Thread* th, Buffer* tmp, char* src, LINT len);
-int strWithCR(Thread* th, Buffer* tmp, char* src, LINT len);
-int strWithCRLF(Thread* th, Buffer* tmp, char* src, LINT len);
+int strWithLF(Buffer* tmp, char* src, LINT len);
+int strWithCR(Buffer* tmp, char* src, LINT len);
+int strWithCRLF(Buffer* tmp, char* src, LINT len);
 
-int strSearchcase(Thread* th, Buffer* tmp, char* src, LINT len);
-int strLowercase(Thread* th, Buffer* tmp, char* src, LINT len);
-int strUppercase(Thread* th, Buffer* tmp, char* src, LINT len);
-int strUnaccented(Thread* th, Buffer* tmp, char* src, LINT len);
+int strSearchcase(Buffer* tmp, char* src, LINT len);
+int strLowercase(Buffer* tmp, char* src, LINT len);
+int strUppercase(Buffer* tmp, char* src, LINT len);
+int strUnaccented(Buffer* tmp, char* src, LINT len);
 
-int strSearchcaseU8(Thread* th, Buffer* tmp, char* src, LINT len);
-int strLowercaseU8(Thread* th, Buffer* tmp, char* src, LINT len);
-int strUppercaseU8(Thread* th, Buffer* tmp, char* src, LINT len);
-int strUnaccentedU8(Thread* th, Buffer* tmp, char* src, LINT len);
+int strSearchcaseU8(Buffer* tmp, char* src, LINT len);
+int strLowercaseU8(Buffer* tmp, char* src, LINT len);
+int strUppercaseU8(Buffer* tmp, char* src, LINT len);
+int strUnaccentedU8(Buffer* tmp, char* src, LINT len);
 
-int strSearchcaseU16Le(Thread* th, Buffer* tmp, char* src, LINT len);
-int strLowercaseU16Le(Thread* th, Buffer* tmp, char* src, LINT len);
-int strUppercaseU16Le(Thread* th, Buffer* tmp, char* src, LINT len);
-int strUnaccentedU16Le(Thread* th, Buffer* tmp, char* src, LINT len);
+int strSearchcaseU16Le(Buffer* tmp, char* src, LINT len);
+int strLowercaseU16Le(Buffer* tmp, char* src, LINT len);
+int strUppercaseU16Le(Buffer* tmp, char* src, LINT len);
+int strUnaccentedU16Le(Buffer* tmp, char* src, LINT len);
 
-int strSearchcaseU16Be(Thread* th, Buffer* tmp, char* src, LINT len);
-int strLowercaseU16Be(Thread* th, Buffer* tmp, char* src, LINT len);
-int strUppercaseU16Be(Thread* th, Buffer* tmp, char* src, LINT len);
-int strUnaccentedU16Be(Thread* th, Buffer* tmp, char* src, LINT len);
+int strSearchcaseU16Be(Buffer* tmp, char* src, LINT len);
+int strLowercaseU16Be(Buffer* tmp, char* src, LINT len);
+int strUppercaseU16Be(Buffer* tmp, char* src, LINT len);
+int strUnaccentedU16Be(Buffer* tmp, char* src, LINT len);
 #endif

@@ -8,51 +8,100 @@
    version 2.0, for more details.
    You should have received a copy of the GNU General Public License along
    with this program. If not, see <https://www.gnu.org/licenses/>. */
-   
-fun _mkTitleAndContent content files=
-	if files<>nil then
-	let head files->[path data] in
-	let strListConcat path:"\0":data:nil -> data in
-	let strLength data -> len in
-	(
-		bufferAppend content data;
-		len:_mkTitleAndContent content tail files
+
+// A romdisk is made of two parts: a table of contents and the content itself
+// The Table of contents is an array of N+2 LSB 32 bits integers where N is the number of files in the romdisk :
+// - the total length of the romdisk
+// - N offsets providing the absolute start position of the N files
+// - 0
+// The content is made of N blocks, one block per file. Each block is made of:
+// - the absolute path
+// - one null byte
+// - the file content itself
+
+// fill the content part of the romdisk and return the list of file lengths
+fun _fillContent content paths verbose=
+	listMap paths (lambda path=
+		let load path -> data in
+		if data<>nil then	// ignore missing files
+		let strListConcat path:"\0":data:nil -> pathAndData in
+		let strLength pathAndData -> len in
+		(
+			if verbose then echoLn path;
+			bufferAppend content pathAndData;
+			len
+		)
 	);;
+	
 
 fun _recTable offset lSize=
 	if lSize==nil then 0:nil
 	else offset:_recTable (offset+head lSize) tail lSize;;
-
 	
 fun _mkTable lSize =
-	let listReduce lSize 0 (lambda s v= s+v) -> dataLen in
+	let listReduce lSize 0 (lambda currentSize size= currentSize+size) -> contentLen in
 	let listLength lSize -> nbEntry in
-	let (nbEntry+2)*4 -> dataOffset in
-	let (dataLen+dataOffset):_recTable dataOffset lSize -> table in
-	let strBuild listMap table (lambda offset= strInt32Lsb offset) -> data in
-	data;;
+	let (nbEntry+2)*4 -> tableLen in
+	let (contentLen+tableLen):_recTable tableLen lSize -> tableValues in
+	let strBuild listMap tableValues (lambda offset= strInt32Lsb offset) -> table in
+	table;;
 	
-
-fun _romdiskBuildLoop i fifo path=
-	for fi in partitionListInfo i path do
-		let fileInfoName fi -> path in
-		if fileInfoIsDir fi then _romdiskBuildLoop i fifo path
-		else
-		if strEndsWith path ".mcy" then let load dump path -> data in
-		if data<>nil then fifoIn fifo [path data];;
-
-
-fun romdiskFromFiles files=
+// build a romdisk from a list of paths
+fun romdiskBuild paths verbose=
 	let bufferCreate -> content in
-	(
-		let _mkTitleAndContent content files -> lSize in
-		let _mkTable lSize -> data in
-		strConcat data (strFromBuffer content)
+	let _fillContent content paths verbose -> lSize in
+	if lSize<>nil then
+	let _mkTable lSize -> table in
+	strConcat table (strFromBuffer content);;
+
+//------- create a romdisk from an app name and a list of resources
+fun _addPkgToFifo fifo name path subPathList =
+	if subPathList<>nil then _addPkgToFifo fifo name (strFormat "**/" path head subPathList) tail subPathList;
+	let fileList path -> files in
+	let strFormat "**.mcy" path name -> mainName in
+	let strFormat "**._" path name -> prefixInclude in
+	for file in files do
+		if file==mainName || ((strStartsWith file prefixInclude) && (strEndsWith file ".mcy")) then fifoIn fifo file;;
+	
+fun romdiskCreateFromApp appName rscFiles=
+	pkgForgetAll;
+	compile appName;
+	echoLn "> Create romdisk:";
+	let fifoCreate -> fifo in (
+		for p in pkgs do
+			let pkgName p -> name in
+			if name<> "bios" then
+			_addPkgToFifo fifo name "" (strSplit "." name);
+		let fifoList fifo -> mcyPaths in
+		if mcyPaths==nil then (echoLn "> No mcy file"; nil)
+		else
+		let listConcat (strLines rscFiles) mcyPaths -> paths in
+		let strFormat "*.disk" appName -> fileName in
+		let romdiskBuild paths true -> romdisk in (
+			save romdisk fileName;
+			echoLn ["-> " fileName];
+			fileName
+		)
 	);;
 
-fun romdiskFromPartitionSources i =
+fun romdiskStart appName romdisk=
+	pkgForgetAll;
+	fsClear;
+	romdiskImport appName romdisk;
+	fs;
+	start appName nil;;
+
+//------- create a romdisk with all mcy files from a partition
+fun _romdiskFindMcy i fifo path=
+	for fi in mountListInfo i path do
+		let fileInfoName fi -> path in
+		if fileInfoIsDir fi then _romdiskFindMcy i fifo path
+		else
+		if strEndsWith path ".mcy" then fifoIn fifo path;;
+
+fun romdiskFromMountSources i =
 	let fifoCreate -> fifo in (
-		_romdiskBuildLoop i fifo "";
-		let romdiskFromFiles fifoList fifo -> data in
+		_romdiskFindMcy i fifo "";
+		let romdiskBuild (fifoList fifo) false -> data in
 		romdiskImport "Import" data;
 	);;

@@ -17,9 +17,9 @@
 #define MAX_CODE 288
 #define MAX_DIST 32
 
-extern int LEN_ORDER[];
-extern int LENS257[];
-extern int DISTANCES[];
+extern const int LEN_ORDER[];
+extern const int LENS257[];
+extern const int DISTANCES[];
 
 typedef struct HuffNode HuffNode;
 struct HuffNode {

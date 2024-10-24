@@ -25,7 +25,7 @@ int _workerProcessCommand(Thread* t)
 	{
 		case WORKER_ALLOC_EXT:
 		{
-			LB* p = memoryAllocExt(t, t->worker.allocSize, t->worker.dbg, t->worker.forget, t->worker.mark);
+			LB* p = memoryAllocExt(t->worker.allocSize, t->worker.dbg, t->worker.forget, t->worker.mark);
 			if (!p) return _workerFailedOM(t);
 			memset(((char*)p) + sizeof(LB) + 2 * sizeof(void*), 0, t->worker.allocSize - sizeof(LB) - 2 * sizeof(void*));
 			STACK_PUSH_PNT_ERR(t,p,_workerFailedOM(t));
@@ -34,7 +34,7 @@ int _workerProcessCommand(Thread* t)
 		case WORKER_BIGGER_BUFFER:
 		{
 			//		PRINTF(LOG_DEV,"case WORKER_BIGGER_BUFFER\n");
-			if (_bufferBiggerFinalize(t, t->worker.buffer, t->worker.allocSize)) return _workerFailedOM(t);
+			if (_bufferBiggerFinalize(t->worker.buffer, t->worker.allocSize)) return _workerFailedOM(t);
 			break;
 		}
 		default:
@@ -49,7 +49,7 @@ int _workerProcessCommand(Thread* t)
 
 void _workerFinalize(Thread* t)
 {
-	t->sp = t->worker.sp; // th->worker.sp is the position of the native function in the stack
+	t->sp = t->worker.sp; // th->worker.sp is the position  where the result should be stored
 	if (t->worker.type == VAL_TYPE_INT) {
 		STACK_SET_INT(t, 0, INT_FROM_VAL(t->worker.result));
 	}
@@ -66,10 +66,10 @@ void _workerFinalize(Thread* t)
 int workerStart(Thread* th, int argc, void* start)
 {
 	th->worker.state = WORKER_RUN;
-	th->worker.sp = th->sp - argc;	// th->worker.sp is the position of the native function in the stack
+	th->worker.sp = th->sp - argc+(argc ? 1 : 0);	// th->worker.sp is the position where the result should be stored
 #ifdef USE_WORKER_SYNC
 	(*(NATIVE)start)(th);
-	if (th->OM) return EXEC_OM;
+	if (MM.OM) return EXEC_OM;
 	return 0;
 #endif
 #ifdef USE_WORKER_ASYNC
@@ -122,7 +122,7 @@ int workerWait(Thread *th, LINT state)
 {
 #ifdef USE_WORKER_SYNC
 	_workerProcessCommand(th);
-	if (th->OM) return EXEC_OM;
+	if (MM.OM) return EXEC_OM;
 #endif
 #ifdef USE_WORKER_ASYNC
 	internalPoke();
@@ -138,7 +138,7 @@ int workerWait(Thread *th, LINT state)
     semP(&th->worker.sem);
 #endif
 #endif
-	if (th->OM) return EXEC_OM;
+	if (MM.OM) return EXEC_OM;
 	return 0;
 }
 
@@ -173,9 +173,11 @@ int fun_workerDone(Thread* th)
 	_workerProcessCommand(t);
 	FUN_RETURN_FALSE;
 }
-int sysWorkerInit(Thread* th, Pkg *system)
+int sysWorkerInit(Pkg *system)
 {
-	Type* fun_T_B = typeAlloc(th, TYPECODE_FUN, NULL, 2, MM.Thread, MM.Boolean);
-	pkgAddFun(th, system, "_workerDone", fun_workerDone, fun_T_B);
+	static const Native nativeDefs[] = {
+		{ NATIVE_FUN, "_workerDone", fun_workerDone, "fun _Thread -> Bool"},
+	};
+	NATIVE_DEF(nativeDefs);
 	return 0;
 }

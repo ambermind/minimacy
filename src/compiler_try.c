@@ -16,14 +16,14 @@ Type* compileTry(Compiler* c)
 	Type* tresult;
 	LINT bc_catch,bc_next,end;
 
-	if (bufferAddChar(c->th, c->bytecode,OPtry)) return NULL;
+	if (bufferAddChar(c->bytecode,OPtry)) return NULL;
 	bc_catch= bytecodeAddEmptyJump(c);
 	if (bc_catch < 0) return NULL;
 
 	if (!(tresult=compileProgram(c))) return NULL;
-	if (bufferAddChar(c->th, c->bytecode,OPunmark)) return NULL;
+	if (bufferAddChar(c->bytecode,OPunmark)) return NULL;
 
-	if (bufferAddChar(c->th, c->bytecode,OPgoto)) return NULL;
+	if (bufferAddChar(c->bytecode,OPgoto)) return NULL;
 	bc_next=bytecodeAddEmptyJump(c);
 	if (bc_next < 0) return NULL;
 
@@ -43,8 +43,8 @@ Type* compileThrow(Compiler* c)
 
 	if (!(t=compileExpression(c))) return NULL;
 	if (typeUnify(c,t,MM.Exception)) return NULL;
-	if (bufferAddChar(c->th, c->bytecode,OPthrow)) return NULL;
+	if (bufferAddChar(c->bytecode,OPthrow)) return NULL;
 
-	return typeAllocUndef(c->th);
+	return typeAllocUndef();
 }
 

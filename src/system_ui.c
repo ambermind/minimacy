@@ -44,14 +44,9 @@ int fun_accelerometerZ(Thread* th) FUN_RETURN_NIL
 int fun_accelerometerInit(Thread* th)FUN_RETURN_NIL
 
 
-int coreUiHwInit(Thread* th, Pkg* system) {return 0;}
+int coreUiHwInit(Pkg* system) {return 0;}
 #endif
 
-
-#ifndef WITH_GL
-int fun_glMakeContext(Thread* th) FUN_RETURN_NIL
-int fun_glRefreshContext(Thread* th) FUN_RETURN_NIL
-#endif
 
 #ifndef WITH_NATIVE_FONT
 int fun_nativeFontCreate(Thread* th) FUN_RETURN_NIL
@@ -61,115 +56,90 @@ int fun_nativeFontW(Thread* th) FUN_RETURN_NIL
 int fun_nativeFontDraw(Thread* th) FUN_RETURN_NIL
 int fun_nativeFontList(Thread* th) FUN_RETURN_NIL
 #endif
-int coreUiInit(Thread* th, Pkg *system)
+int coreUiInit(Pkg* system)
 {
-	Type* fun_I_I_I_I_I_S_B = typeAlloc(th, TYPECODE_FUN, NULL, 7, MM.Int, MM.Int, MM.Int, MM.Int, MM.Int, MM.Str, MM.Boolean);
-	Type* fun_I_I_B = typeAlloc(th, TYPECODE_FUN, NULL, 3, MM.Int, MM.Int, MM.Boolean);
-	Type* fun_B = typeAlloc(th, TYPECODE_FUN, NULL, 1, MM.Boolean);
-	Type* fun_F = typeAlloc(th, TYPECODE_FUN, NULL, 1, MM.Float);
-    Type* fun_F_F = typeAlloc(th, TYPECODE_FUN, NULL, 2, MM.Float, MM.Float);
-	Type* fun_S = typeAlloc(th, TYPECODE_FUN, NULL, 1, MM.Str);
-	Type* fun_S_S = typeAlloc(th, TYPECODE_FUN, NULL, 2, MM.Str, MM.Str);
-	Type* fun_I = typeAlloc(th, TYPECODE_FUN, NULL, 1, MM.Int);
-	Type* fun_list_S = typeAlloc(th, TYPECODE_FUN, NULL, 1, typeAlloc(th, TYPECODE_LIST, NULL, 1, MM.Str));
-	Def* Cursor= pkgAddType(th, system, "Cursor");
-	Type* fun_II = typeAlloc(th, TYPECODE_FUN, NULL, 1, typeAlloc(th, TYPECODE_TUPLE, NULL, 2, MM.Int, MM.Int));
-	Type* fun_Bmp_I_I_Cursor = typeAlloc(th, TYPECODE_FUN, NULL, 4, MM.Bitmap, MM.Int, MM.Int, Cursor->type);
-	Type* fun_Cursor_Cursor = typeAlloc(th, TYPECODE_FUN, NULL, 2, Cursor->type, Cursor->type);
-	Def* font = pkgAddType(th, system, "NativeFont");
+	static const Native nativeDefs[] = {
+		{ NATIVE_INT, "UI_NORMAL", (void*)UI_NORMAL, "Int"},
+		{ NATIVE_INT, "UI_RESIZE", (void*)UI_RESIZE, "Int" },
+		{ NATIVE_INT, "UI_FULLSCREEN", (void*)UI_FULLSCREEN, "Int" },
+		{ NATIVE_INT, "UI_GL", (void*)UI_GL, "Int" },
 
-	coreUiHwInit(th,system);
-#ifdef WITH_GL
-	coreUiGLInit(th, system);
-#else
-	pkgAddFun(th, system, "_glMakeContext", fun_glMakeContext, fun_I);
-	pkgAddFun(th, system, "_glRefreshContext", fun_glRefreshContext, fun_I);
-#endif
-	pkgAddConstInt(th, system, "UI_NORMAL", UI_NORMAL, MM.Int);
-	pkgAddConstInt(th, system, "UI_RESIZE", UI_RESIZE, MM.Int);
-	pkgAddConstInt(th, system, "UI_FULLSCREEN", UI_FULLSCREEN, MM.Int);
-	pkgAddConstInt(th, system, "UI_GL", UI_GL, MM.Int);
-
-	pkgAddFun(th, system, "_uiStart", fun_uiStart, fun_I_I_I_I_I_S_B);
-	pkgAddFun(th, system, "_uiStop", fun_uiStop, fun_B);
-	pkgAddFun(th, system, "uiResize", fun_uiResize, fun_I_I_B);
-	pkgAddFun(th, system, "_uiW", fun_uiW, fun_I);
-	pkgAddFun(th, system, "_uiH", fun_uiH, fun_I);
-	pkgAddFun(th, system, "_uiDrop", fun_uiDrop, fun_list_S);
-	
-	pkgAddFun(th, system, "screenW", fun_screenW, fun_I);
-	pkgAddFun(th, system, "screenH", fun_screenH, fun_I);
-
-	pkgAddFun(th, system, "uiSetTitle", fun_uiSetTitle, fun_S_S);
-	pkgAddFun(th, system, "keyboardState", fun_keyboardState, fun_I);
-
-	pkgAddFun(th, system, "clipboardCopy", fun_clipboardCopy, fun_S_S);
-	pkgAddFun(th, system, "clipboardPaste", fun_clipboardPaste, fun_S);
-
-
-	pkgAddFun(th, system, "cursorSize", fun_cursorSize, fun_II);
-	pkgAddFun(th, system, "_cursorCreate", fun_cursorCreate, fun_Bmp_I_I_Cursor);
-	pkgAddFun(th, system, "_cursorShow", fun_cursorShow, fun_Cursor_Cursor);
+		{ NATIVE_FUN, "_uiStart", fun_uiStart, "fun Int Int Int Int Int Str -> Bool"},
+		{ NATIVE_FUN, "_uiStop", fun_uiStop, "fun -> Bool" },
+		{ NATIVE_FUN, "uiResize", fun_uiResize, "fun Int Int -> Bool" },
+		{ NATIVE_FUN, "_uiW", fun_uiW, "fun -> Int" },
+		{ NATIVE_FUN, "_uiH", fun_uiH, "fun -> Int" },
+		{ NATIVE_FUN, "_uiDrop", fun_uiDrop, "fun -> list Str" },
+		{ NATIVE_FUN, "screenW", fun_screenW, "fun -> Int" },
+		{ NATIVE_FUN, "screenH", fun_screenH, "fun -> Int" },
+		{ NATIVE_FUN, "uiSetTitle", fun_uiSetTitle, "fun Str -> Str" },
+		{ NATIVE_FUN, "keyboardState", fun_keyboardState, "fun -> Int" },
+		{ NATIVE_FUN, "clipboardCopy", fun_clipboardCopy, "fun Str -> Str" },
+		{ NATIVE_FUN, "clipboardPaste", fun_clipboardPaste, "fun -> Str" },
+		{ NATIVE_FUN, "cursorSize", fun_cursorSize, "fun -> [Int Int]" },
+		{ NATIVE_FUN, "_cursorCreate", fun_cursorCreate, "fun Bitmap Int Int -> Cursor" },
+		{ NATIVE_FUN, "_cursorShow", fun_cursorShow, "fun Cursor -> Cursor" },
+		{ NATIVE_FUN, "keyboardShow", fun_keyboardShow, "fun -> Bool" },
+		{ NATIVE_FUN, "keyboardHide", fun_keyboardHide, "fun -> Bool" },
+		{ NATIVE_FUN, "keyboardHeight", fun_keyboardHeight, "fun -> Int" },
+		{ NATIVE_FUN, "orientationGet", fun_orientationGet, "fun -> Int" },
+		{ NATIVE_FUN, "accelerometerX", fun_accelerometerX, "fun -> Float" },
+		{ NATIVE_FUN, "accelerometerY", fun_accelerometerY, "fun -> Float" },
+		{ NATIVE_FUN, "accelerometerZ", fun_accelerometerZ, "fun -> Float" },
+		{ NATIVE_FUN, "accelerometerInit", fun_accelerometerInit, "fun Float -> Float" },
+		{ NATIVE_INT, "Key_Pause", (void*)XKey_Pause, "Int" },
+		{ NATIVE_INT, "Key_Scroll_Lock", (void*)XKey_Scroll_Lock, "Int" },
+		{ NATIVE_INT, "Key_Sys_Req", (void*)XKey_Sys_Req, "Int" },
+		{ NATIVE_INT, "Key_Delete", (void*)XKey_Delete, "Int" },
+		{ NATIVE_INT, "Key_Home", (void*)XKey_Home, "Int" },
+		{ NATIVE_INT, "Key_Left", (void*)XKey_Left, "Int" },
+		{ NATIVE_INT, "Key_Up", (void*)XKey_Up, "Int" },
+		{ NATIVE_INT, "Key_Right", (void*)XKey_Right, "Int" },
+		{ NATIVE_INT, "Key_Down", (void*)XKey_Down, "Int" },
+		{ NATIVE_INT, "Key_Prior", (void*)XKey_Prior, "Int" },
+		{ NATIVE_INT, "Key_Page_Up", (void*)XKey_Page_Up, "Int" },
+		{ NATIVE_INT, "Key_Next", (void*)XKey_Next, "Int" },
+		{ NATIVE_INT, "Key_Page_Down", (void*)XKey_Page_Down, "Int" },
+		{ NATIVE_INT, "Key_End", (void*)XKey_End, "Int" },
+		{ NATIVE_INT, "Key_Insert", (void*)XKey_Insert, "Int" },
+		{ NATIVE_INT, "Key_Num_Lock", (void*)XKey_Num_Lock, "Int" },
+		{ NATIVE_INT, "Key_F1", (void*)XKey_F1, "Int" },
+		{ NATIVE_INT, "Key_F2", (void*)XKey_F2, "Int" },
+		{ NATIVE_INT, "Key_F3", (void*)XKey_F3, "Int" },
+		{ NATIVE_INT, "Key_F4", (void*)XKey_F4, "Int" },
+		{ NATIVE_INT, "Key_F5", (void*)XKey_F5, "Int" },
+		{ NATIVE_INT, "Key_F6", (void*)XKey_F6, "Int" },
+		{ NATIVE_INT, "Key_F7", (void*)XKey_F7, "Int" },
+		{ NATIVE_INT, "Key_F8", (void*)XKey_F8, "Int" },
+		{ NATIVE_INT, "Key_F9", (void*)XKey_F9, "Int" },
+		{ NATIVE_INT, "Key_F10", (void*)XKey_F10, "Int" },
+		{ NATIVE_INT, "Key_F11", (void*)XKey_F11, "Int" },
+		{ NATIVE_INT, "Key_F12", (void*)XKey_F12, "Int" },
+		{ NATIVE_INT, "Key_Caps_Lock", (void*)XKey_Caps_Lock, "Int" },
+		{ NATIVE_INT, "KeyMask_Shift", (void*)KeyMask_Shift, "Int" },
+		{ NATIVE_INT, "KeyMask_Alt", (void*)KeyMask_Alt, "Int" },
+		{ NATIVE_INT, "KeyMask_Control", (void*)KeyMask_Control, "Int" },
+		{ NATIVE_INT, "KeyMask_Meta", (void*)KeyMask_Meta, "Int" },
+		{ NATIVE_INT, "FONT_BOLD", (void*)FONT_BOLD, "Int" },
+		{ NATIVE_INT, "FONT_ITALIC", (void*)FONT_ITALIC, "Int" },
+		{ NATIVE_INT, "FONT_UNDERLINE", (void*)FONT_UNDERLINE, "Int" },
+		{ NATIVE_INT, "FONT_STRIKED", (void*)FONT_STRIKED, "Int" },
+		{ NATIVE_FUN, "_nativeFontList", fun_nativeFontList, "fun -> list Str"},
+		{ NATIVE_FUN, "nativeFontCreate", fun_nativeFontCreate, "fun Str Int Int -> NativeFont" },
+		{ NATIVE_FUN, "nativeFontH", fun_nativeFontH, "fun NativeFont -> Int" },
+		{ NATIVE_FUN, "nativeFontBaseline", fun_nativeFontBaseline, "fun NativeFont -> Int" },
+		{ NATIVE_FUN, "nativeFontW", fun_nativeFontW, "fun NativeFont Int -> Int" },
+		{ NATIVE_FUN, "nativeFontDraw", fun_nativeFontDraw, "fun Bitmap Int Int NativeFont Int -> Bool" },
 #ifdef USE_SOFT_CURSOR
-	pkgAddConstInt(th, system, "useSoftCursor", 1, MM.Int);
+		{ NATIVE_INT, "useSoftCursor", (void*)1, "Int" },
 #endif
+	};
+	pkgAddType(system, "Cursor");
+	pkgAddType(system, "NativeFont");
+	NATIVE_DEF(nativeDefs);
 
-	
-	pkgAddFun(th, system, "keyboardShow", fun_keyboardShow, fun_B);
-	pkgAddFun(th, system, "keyboardHide", fun_keyboardHide, fun_B);
-	pkgAddFun(th, system, "keyboardHeight", fun_keyboardHeight, fun_I);
-
-	pkgAddFun(th, system, "orientationGet", fun_orientationGet, fun_I);
-	pkgAddFun(th, system, "accelerometerX", fun_accelerometerX, fun_F);
-	pkgAddFun(th, system, "accelerometerY", fun_accelerometerY, fun_F);
-	pkgAddFun(th, system, "accelerometerZ", fun_accelerometerZ, fun_F);
-    pkgAddFun(th, system, "accelerometerInit", fun_accelerometerInit, fun_F_F);
-
-	pkgAddConstInt(th, system, "Key_Pause", XKey_Pause, MM.Int);
-	pkgAddConstInt(th, system, "Key_Scroll_Lock", XKey_Scroll_Lock, MM.Int);
-	pkgAddConstInt(th, system, "Key_Sys_Req", XKey_Sys_Req, MM.Int);
-	pkgAddConstInt(th, system, "Key_Delete", XKey_Delete, MM.Int);
-	pkgAddConstInt(th, system, "Key_Home", XKey_Home, MM.Int);
-	pkgAddConstInt(th, system, "Key_Left", XKey_Left, MM.Int);
-	pkgAddConstInt(th, system, "Key_Up", XKey_Up, MM.Int);
-	pkgAddConstInt(th, system, "Key_Right", XKey_Right, MM.Int);
-	pkgAddConstInt(th, system, "Key_Down", XKey_Down, MM.Int);
-	pkgAddConstInt(th, system, "Key_Prior", XKey_Prior, MM.Int);
-	pkgAddConstInt(th, system, "Key_Page_Up", XKey_Page_Up, MM.Int);
-	pkgAddConstInt(th, system, "Key_Next", XKey_Next, MM.Int);
-	pkgAddConstInt(th, system, "Key_Page_Down", XKey_Page_Down, MM.Int);
-	pkgAddConstInt(th, system, "Key_End", XKey_End, MM.Int);
-	pkgAddConstInt(th, system, "Key_Insert", XKey_Insert, MM.Int);
-	pkgAddConstInt(th, system, "Key_Num_Lock", XKey_Num_Lock, MM.Int);
-	pkgAddConstInt(th, system, "Key_F1", XKey_F1, MM.Int);
-	pkgAddConstInt(th, system, "Key_F2", XKey_F2, MM.Int);
-	pkgAddConstInt(th, system, "Key_F3", XKey_F3, MM.Int);
-	pkgAddConstInt(th, system, "Key_F4", XKey_F4, MM.Int);
-	pkgAddConstInt(th, system, "Key_F5", XKey_F5, MM.Int);
-	pkgAddConstInt(th, system, "Key_F6", XKey_F6, MM.Int);
-	pkgAddConstInt(th, system, "Key_F7", XKey_F7, MM.Int);
-	pkgAddConstInt(th, system, "Key_F8", XKey_F8, MM.Int);
-	pkgAddConstInt(th, system, "Key_F9", XKey_F9, MM.Int);
-	pkgAddConstInt(th, system, "Key_F10", XKey_F10, MM.Int);
-	pkgAddConstInt(th, system, "Key_F11", XKey_F11, MM.Int);
-	pkgAddConstInt(th, system, "Key_F12", XKey_F12, MM.Int);
-	pkgAddConstInt(th, system, "Key_Caps_Lock", XKey_Caps_Lock, MM.Int);
-	pkgAddConstInt(th, system, "KeyMask_Shift", KeyMask_Shift, MM.Int);
-	pkgAddConstInt(th, system, "KeyMask_Alt", KeyMask_Alt, MM.Int);
-	pkgAddConstInt(th, system, "KeyMask_Control", KeyMask_Control, MM.Int);
-	pkgAddConstInt(th, system, "KeyMask_Meta", KeyMask_Meta, MM.Int);
-
-	pkgAddConstInt(th, system, "FONT_BOLD", FONT_BOLD, MM.Int);
-	pkgAddConstInt(th, system, "FONT_ITALIC", FONT_ITALIC, MM.Int);
-	pkgAddConstInt(th, system, "FONT_UNDERLINE", FONT_UNDERLINE, MM.Int);
-	pkgAddConstInt(th, system, "FONT_STRIKED", FONT_STRIKED, MM.Int);
-
-	pkgAddFun(th, system, "_nativeFontList", fun_nativeFontList, typeAlloc(th, TYPECODE_FUN, NULL, 1, typeAlloc(th, TYPECODE_LIST, NULL, 1, MM.Str)));
-	pkgAddFun(th, system, "nativeFontCreate", fun_nativeFontCreate, typeAlloc(th, TYPECODE_FUN, NULL, 4, MM.Str, MM.Int, MM.Int, font->type));
-	pkgAddFun(th, system, "nativeFontH", fun_nativeFontH, typeAlloc(th, TYPECODE_FUN, NULL, 2, font->type, MM.Int));
-	pkgAddFun(th, system, "nativeFontBaseline", fun_nativeFontBaseline, typeAlloc(th, TYPECODE_FUN, NULL, 2, font->type, MM.Int));
-	pkgAddFun(th, system, "nativeFontW", fun_nativeFontW, typeAlloc(th, TYPECODE_FUN, NULL, 3, font->type, MM.Int, MM.Int));
-	pkgAddFun(th, system, "nativeFontDraw", fun_nativeFontDraw, typeAlloc(th, TYPECODE_FUN, NULL, 6, MM.Bitmap, MM.Int, MM.Int, font->type, MM.Int, MM.Boolean));
+	coreUiHwInit(system);
+	coreUiGLInit(system);
 
 	return 0;
 }

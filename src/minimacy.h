@@ -11,8 +11,12 @@
 #ifndef _MINIMACY_
 #define _MINIMACY_
 
-#define VERSION_MINIMACY "1.3.4"
+#define VERSION_MINIMACY "1.3.5"
 
+#ifdef ON_WINDOWS____
+#undef ON_WINDOWS
+#define ON_NOTHING
+#endif
 
 #ifdef ON_WINDOWS
 #define DEVICE_MODE "Windows"
@@ -33,9 +37,12 @@
 #define USE_RANDOM_WIN
 #define USE_THREAD_WIN
 
-//#define MEMORY_C_SIZE (1024*1024*64)
 //#define USE_MEMORY_C
+//#define MEMORY_C_SIZE (1024*400)
+//#define MEMORY_SAFE_SIZE (32*1024)
 //#define USE_WORKER_SYNC	// when USE_WORK_SYNC is set, no UI is possible as the event loop runs in a dedicated worker and never returns
+//#define FORGET_PARSER
+
 #define USE_WORKER_ASYNC
 #define USE_SOCKET_WIN
 #define USE_ETH_STUB
@@ -49,20 +56,21 @@
 #ifdef ON_NOTHING
 #define DEVICE_MODE "BareMetal"
 #define GROUP_BAREMETAL
-#define MEMORY_C_SIZE (1024*1024*128)
+#define MEMORY_C_SIZE (1024*1024*2)
 #define USE_STDARG_ANSI
 #define USE_RANDOM_C
 #define USE_TIME_STUB
 #define USE_TIME_MS_STUB
 #define USE_ETH_STUB
-#define USE_FS_ROMDISK0 "nothing_romdisk0.h"
+#define USE_FS_ROMDISK0 "../baremetal/nothing/nothing_romdisk0.h"
 #define USE_FS_SYSTEMDIR_STUB
 #define USE_SERIAL_STUB
 #ifdef WIN32
 #define USE_CONSOLE_OUT_ANSI
 #else
-#define USE_CONSOLE_OUT_STUB
+//#define USE_CONSOLE_OUT_STUB
 #endif
+//#define USE_CONSOLE_IN_ANSI
 #define USE_CONSOLE_IN_STUB
 #endif
 
@@ -80,10 +88,39 @@
 #define USE_CONSOLE_OUT_UART
 #define USE_CONSOLE_IN_UART
 #define USE_FS_SYSTEMDIR_STUB
-//#define USE_FS_ROMDISK0 "../baremetal/uefi/uefi_romdisk0.h"
+#define USE_FS_ROMDISK0 "../baremetal/uefi/uefi_romdisk0.h"
 //#define USE_UEFI_MANUAL_BLIT
 #define USE_FS_UEFI
 #define USE_SERIAL_STUB
+#define USE_HOST_ONLY_FUNCTIONS
+#endif
+
+#ifdef ON_ESP32
+#define DEVICE_MODE "ESP32"
+#define ATOMIC_32
+#define WITH_UART
+#define USE_THREAD_STUB
+#define USE_WORKER_SYNC
+//#define USE_MEMORY_C
+#define USE_TYPES_C
+#define USE_MATH_C
+//#define USE_STR_C
+#define USE_MINMAX_C
+#define USE_SOCKET_STUB
+//#define HIDE_COMPILER_LISTING
+//#define MEMORY_C_SIZE (1024*1024*2)
+#define USE_STDARG_ANSI
+#define USE_RANDOM_C
+#define USE_TIME_ANSI
+#define USE_TIME_MS_ANSI
+#define USE_ETH_STUB
+#define USE_FS_ROMDISK0 "esp32_romdisk0.h"
+#define USE_FS_SYSTEMDIR_STUB
+#define USE_SERIAL_STUB
+#define USE_CONSOLE_OUT_ANSI
+#define USE_CONSOLE_IN_UART
+#define USE_BOOTLOADER
+#include<string.h>
 #endif
 
 #ifdef ON_STM32
@@ -101,6 +138,51 @@
 #define USE_FS_ROMDISK0 "../baremetal/stm32/stm32_romdisk0.h"
 #define USE_SERIAL_STUB
 #define USE_BOOTLOADER
+#endif
+
+#ifdef ON_ILABS_CHALLENGER_RP2350_BCONNECT
+#define DEVICE_MODE "IlabsChallengerRP2350BConnect"
+#define FLASH_SIZE (1024*1024*8)
+#define USE_PSRAM
+#define MEMORY_C_START (char*)0x11000000
+#define MEMORY_SAFE_SIZE (512*1024)
+//#define MEMORY_C_SIZE (1024*472)
+//#define MEMORY_SAFE_SIZE (32*1024)
+#define GROUP_RP2350
+#endif
+
+#ifdef ON_SPARKFUN_PRO_MICRO_RP2350
+#define DEVICE_MODE "SparkFunProMicroRP2350"
+#define FLASH_SIZE (1024*1024*16)
+#define USE_PSRAM
+#define MEMORY_C_START (char*)0x11000000
+#define MEMORY_SAFE_SIZE (512*1024)
+#define GROUP_RP2350
+#endif
+
+#ifdef ON_PICO_2
+#define DEVICE_MODE "Pico2"
+#define FLASH_SIZE (1024*1024*8)
+#define MEMORY_C_SIZE (1024*472)
+#define MEMORY_SAFE_SIZE (32*1024)
+#define GROUP_RP2350
+#endif
+
+#ifdef GROUP_RP2350
+#define ATOMIC_32
+#define WITH_UART
+#define WITH_ACTIVITY_LED
+#define GROUP_BAREMETAL
+
+#define USE_STDARG_ANSI
+#define USE_ETH_STUB
+#define USE_FS_ROMDISK0 "../baremetal/raspberry-2350/rp2350_romdisk0.h"
+#define USE_FS_SYSTEMDIR_STUB
+#define USE_SERIAL_STUB
+#define USE_CONSOLE_OUT_UART
+#define USE_CONSOLE_IN_UART
+#define USE_BOOTLOADER
+#define USE_HOST_ONLY_FUNCTIONS
 #endif
 
 #ifdef ON_RPI3
@@ -144,6 +226,7 @@ extern volatile unsigned char _end;
 #define USE_FS_ROMDISK0 "../baremetal/raspberry/pi_romdisk0.h"
 #define USE_SERIAL_STUB
 #define USE_SOFT_CURSOR
+#define USE_HOST_ONLY_FUNCTIONS
 //#define NEED_ALIGN
 #endif
 
@@ -157,6 +240,7 @@ extern volatile unsigned char _end;
 #define USE_MINMAX_C
 #define USE_SOCKET_STUB
 #define HIDE_COMPILER_LISTING
+#define FORGET_PARSER
 #endif
 
 #ifdef ON_UNIX_X11GL
@@ -259,7 +343,7 @@ extern volatile unsigned char _end;
 #define USE_RANDOM_UNIX
 #define USE_FS_ANSI_UNIX
 #define USE_SERIAL_UNIX
-int startInThread(int argc, char** argv);
+int startInThread(int argc, const char** argv);
 #endif
 
 #ifdef GROUP_FULL_ANSI
@@ -366,6 +450,6 @@ char* bootDiskLoader();
 
 #define BOOT_FILE "bios"
 
-int start(int argc, char** argv);
+int start(int argc, const char** argv);
 
 #endif

@@ -27,7 +27,6 @@ typedef struct
 	FORGET forget;
 	MARK mark;
 
-	Thread* th;
 	Buffer* output;
 	int done;
 
@@ -55,13 +54,13 @@ typedef struct
 #define LZW_ERR (-1)
 
 
-#define _lzwPrintChar(d,c) bufferAddChar(d->th,d->output,c);
+#define _lzwPrintChar(d,c) bufferAddChar(d->output,c);
 /*void _lzwPrintChar(Dict* d,int c)
 {
-	bufferAddChar(d->th,d->output,c);
+	bufferAddChar(d->output,c);
 }
 */
-int LZW_MASKS[33]=
+const int LZW_MASKS[33]=
 {0x00000000,0x00000001,0x00000003,0x00000007,
  0x0000000f,0x0000001f,0x0000003f,0x0000007f,
  0x000000ff,0x000001ff,0x000003ff,0x000007ff,
@@ -248,7 +247,6 @@ void _lzwDecodeStream(Dict* d,char* p, LINT len)
 void _lzwInit(Dict* d, LINT dataBitSize)
 {
 	d->output = NULL;
-	d->th = NULL;
 	d->done = LZW_ONGOING;
 	d->inputBitSize = 0;
 	d->outputBitSize = 0;
@@ -267,10 +265,10 @@ int fun_lzwCreate(Thread* th)
 {
 	Dict* d;
 
-	LINT dataBitSize = STACK_PULL_INT(th);
+	LINT dataBitSize = STACK_INT(th,0);
 	if ((dataBitSize<0)||(dataBitSize> MAX_BIT_LENGTH)) FUN_RETURN_NIL;
 	if (dataBitSize == 0) dataBitSize = 8;
-	d = (Dict*)memoryAllocExt(th, sizeof(Dict), DBG_BIN, NULL, NULL); if (!d) return EXEC_OM;
+	d = (Dict*)memoryAllocExt(sizeof(Dict), DBG_BIN, NULL, NULL); if (!d) return EXEC_OM;
 	_lzwInit(d, dataBitSize);
 
 	FUN_RETURN_PNT((LB*)d);
@@ -286,7 +284,7 @@ MTHREAD_START _lzwDeflate(Thread* th)
 	Buffer* b = (Buffer*)STACK_PNT(th, 3);
 	Dict* d = (Dict*)STACK_PNT(th, 4);
 	if ((!b)||(!d)||(d->done!= LZW_ONGOING)) return workerDoneNil(th);
-	d->th = th;
+	bufferSetWorkerThread(b, th);
 	d->output = b;
 	if (src)
 	{
@@ -301,6 +299,7 @@ MTHREAD_START _lzwDeflate(Thread* th)
 		_lzwEncodeLastChar(d);
 		d->done = LZW_DONE;
 	}
+	bufferSetWorkerThread(b, NULL);
 	return workerDonePnt(th, MM._true);
 }
 
@@ -315,26 +314,26 @@ MTHREAD_START _lzwInflate(Thread* th)
 	Buffer* b = (Buffer*)STACK_PNT(th, 3);
 	Dict* d = (Dict*)STACK_PNT(th, 4);
 	if ((!b)||(!d)||(d->done!= LZW_ONGOING)) return workerDoneNil(th);
-	d->th = th;
+	bufferSetWorkerThread(b, th);
 	d->output = b;
 	WORKER_SUBSTR(src, index, len, lenIsNil, STR_LENGTH(src));
 	_lzwDecodeStream(d, STR_START(src) + index, len);
+	bufferSetWorkerThread(b, NULL);
 	if (d->done == LZW_DONE) return workerDonePnt(th, MM._true);
 	if (d->done == LZW_ERR) return workerDonePnt(th, MM._false);
 	return workerDoneNil(th);
 }
 int fun_lzwInflate(Thread* th) { return workerStart(th, 5, _lzwInflate); }
 
-int coreLzwInit(Thread* th, Pkg* system)
+int coreLzwInit(Pkg* system)
 {
-	Def* Lzw = pkgAddType(th, system, "_Lzw");
-	Type* fun_I_Lzw = typeAlloc(th, TYPECODE_FUN, NULL, 2, MM.Int, Lzw->type);
-	Type* fun_Lzw_Buf_S_I_I_B = typeAlloc(th, TYPECODE_FUN, NULL, 6,
-		Lzw->type, MM.Buffer, MM.Str, MM.Int, MM.Int, MM.Boolean);
-
-	pkgAddFun(th, system, "_lzwCreate", fun_lzwCreate, fun_I_Lzw);
-	pkgAddFun(th, system, "_lzwDeflate", fun_lzwDeflate, fun_Lzw_Buf_S_I_I_B);
-	pkgAddFun(th, system, "_lzwInflate", fun_lzwInflate, fun_Lzw_Buf_S_I_I_B);
+	pkgAddType(system, "_Lzw");
+	static const Native nativeDefs[] = {
+		{ NATIVE_FUN, "_lzwCreate", fun_lzwCreate, "fun Int -> _Lzw"},
+		{ NATIVE_FUN, "_lzwDeflate", fun_lzwDeflate, "fun _Lzw Buffer Str Int Int -> Bool"},
+		{ NATIVE_FUN, "_lzwInflate", fun_lzwInflate, "fun _Lzw Buffer Str Int Int -> Bool"},
+	};
+	NATIVE_DEF(nativeDefs);
 
 	return 0;
 }

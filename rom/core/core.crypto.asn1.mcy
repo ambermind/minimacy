@@ -117,16 +117,6 @@ fun asn1MakeInfos l=
 		)
 	);;
 
-fun asn1RsaKeyPub modulus pubExp=
-	asn1Seq
-		(asn1Integer strFromHex modulus):
-		(asn1Integer strFromHex pubExp):nil;;
-
-fun asn1RsaEncryption modulus pubExp=
-	asn1Seq
-		(asn1Seq (asn1ObjectIdentifier OID_rsaEncryption):asn1Null:nil):
-		(asn1BitString 0 asn1Pack asn1RsaKeyPub modulus pubExp):nil;;
-
 //---------------UNPACK----------------------------------------------
 
 fun _asn1ReadCode bin i=
@@ -290,12 +280,7 @@ fun derProcess der fHandle=
 	if der<>nil then
 	let head asn1Unpack der -> asn1 in
 	let asn1InfoBlock der -> info in
-	let call fHandle asn1 -> h in
-	(
-		hashmapSet h OID_INFO hexFromStr info;
-//		echoOIDHashmap h;
-		h
-	);;
+	call fHandle info asn1;;
 
 fun _distinguishedName l=
 	if l<>nil then

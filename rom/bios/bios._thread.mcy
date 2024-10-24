@@ -9,15 +9,9 @@
    You should have received a copy of the GNU General Public License along
    with this program. If not, see <https://www.gnu.org/licenses/>. */
 
-fun _rootMem m=	let _memParent m -> p in if p==nil then m else _rootMem p;;
-
-fun _memList m= if m<>nil then m:_memList _memNext m;;
-fun _mems= _memList _memNext nil;;
-
 //------------ THREAD
 const _BiosLock=lockCreate;;
 const _CheckList=fifoCreate;;
-
 
 fun _threadFull th= (fifoCount th._tasksT)>=_MAX__THREAD_TASKS ;;
 
@@ -48,8 +42,8 @@ fun _threadsCheck =
 			_threadUnblockPosting th;
 		);;
 
-fun _threadCommonStart name mem caller start=
-	let _threadCreate mem -> sysThread in
+fun _threadNew name caller start=
+	let _threadCreate -> sysThread in
 	if sysThread<>nil then
 	let caller ->[funName _ _ pkg] in
 	let [
@@ -68,34 +62,15 @@ fun _threadCommonStart name mem caller start=
 		th
 	);;
 
-// threadStart is always possible because the caller thread shares its memory with the new thread
-fun threadStart name start =
-	let caller -> caller in
-	let _threadCurrent -> th in
-	let _threadMemory th -> mem in
-	let _memParent mem -> parentMem in
-	let if parentMem<>nil then (_memCreate parentMem (_memName parentMem) nil) else mem -> mem in
-	_threadCommonStart name mem caller start;;
+fun threadStart name start = _threadNew name caller start;;
 
-fun _threadNew name maxMem caller fLoad=
-// here we could control the available space (>maxMem) and refuse to start the thread
-	let _memCreate nil name maxMem -> parentMem in
-	let _memCreate parentMem name nil -> mem in
-	_threadCommonStart name mem caller fLoad;;
-
-fun _threadSetMaxMemory val=
-	let _threadCurrent -> th in
-	let _threadMemory th -> mem in
-	_memSetMaxMemory mem val;;
-
-fun appStart lck fIsStarted name maxMem fStart=
+fun appStart lck fIsStarted name fStart=
 	let caller -> caller in
 	lockSync (if lck==nil then _BiosLock else lck) (lambda=
 		if (!call fIsStarted) then
 		let joinCreate -> join in
 		(
-			_threadNew name (if maxMem<>nil then maxMem*1024*1024) caller (lambda=
-				memoryTake memoryAuthorize name;
+			_threadNew name caller (lambda=
 				call fStart;
 				joinSend join true
 			);
@@ -113,14 +88,14 @@ fun _checkPkgName str i=
 	else let strGet str i -> c in
 	if (c>='a' && c<='z')||(c>='A' && c<='Z')||(c=='_')||(c=='.')||(c>='0' && c<='9') then _checkPkgName str i+1;;
 
-fun _launchApp pkgName maxMem compile caller=
+fun _launchApp pkgName compile caller=
 	if !_checkPkgName pkgName 0 then ( // check syntax of pkgName
 		echoLn strFormat "Invalid package name '*'" pkgName;
 		nil
 	)
 	else
 	let strFormat "use *;;" pkgName -> src in
-	let _pkgCreate nil nil -> dummyPkg in
+	let pkgCreate nil -> dummyPkg in
 	if compile then
 	(
 		_compile src dummyPkg;
@@ -128,7 +103,7 @@ fun _launchApp pkgName maxMem compile caller=
 		nil
 	)
 	else
-	_threadNew pkgName maxMem caller (lambda =
+	_threadNew pkgName caller (lambda =
 		let timeMs -> t0 in
 		let _prompt src dummyPkg -> [type val] in
 		if type<>nil then
@@ -139,9 +114,9 @@ fun _launchApp pkgName maxMem compile caller=
 	);
 	true;;
 
-fun start pkgName memory=
-	let if memory==nil then MAX_MEMORY_STANDALONE else memory -> memory in
-	_launchApp pkgName memory false caller;;
+fun compile pkgName= _launchApp pkgName true nil; _echoEnable true;;
+
+fun start pkgName= _launchApp pkgName false caller;;
 
 fun threadStop th=
 	if th<>nil && th._stateT<>_THREAD_DONE then
@@ -174,37 +149,14 @@ fun threadPost th task=
 		true
 	);;
 
-fun memoryUse memAuth f=
-	let _memoryAssign memAuth -> memSave in
-	try (
-		let (call f) -> result in
-		(
-			_memoryAssign memSave;
-			result
-		)
-	) catch
-	memoryException -> (
-		_memoryAssign memSave;
-		nil
-	),
-	_ -> (
-		_memoryAssign memSave;
-		throw _
-	);;
-
-
 fun threadId th= _threadId th._threadT;;
 fun threadName th= th._nameT;;
 fun threadOrigin th= th._callerT;;
 fun threadState th= th._stateT;;
 fun threadCycles th= th._cyclesT;;
 fun threadT0 th= th._t0T;;
-fun threadMemory th= _memMemory _threadMemory th._threadT;;
-fun threadMaxMemory th= _memMaxMemory _threadMemory th._threadT;;
 fun threadCallstack th= _callstack th._threadT;;
 fun threadTaskCount th= fifoCount th._tasksT;;
-
-fun threadApp th= _rootMem _threadMemory th._threadT;;
 
 fun _threadById id=
 	if id==nil then  _This

@@ -12,10 +12,10 @@
 struct BytecodeOps {
 	int op;
 	int argc;
-	char* str;
+	const char* str;
 };
 
-struct BytecodeOps BytecodeDef[OPCODE_NB] = {
+const struct BytecodeOps BytecodeDef[OPCODE_NB] = {
 {OPabs, 0, "abs"},
 {OPabsf, 0, "absf"},
 {OPacos, 0, "acos"},
@@ -66,6 +66,7 @@ struct BytecodeOps BytecodeDef[OPCODE_NB] = {
 {OPgt, 0, "gt"},
 {OPgtf, 0, "gtf"},
 {OPhd, 0, "head"},
+{OPhide, 0, "hide"},
 {OPholdon, 0, "holdon"},
 {OPint, LWLEN, "int"},
 {OPintb, 1, "int.b"},
@@ -140,49 +141,44 @@ struct BytecodeOps BytecodeDef[OPCODE_NB] = {
 {OPupdt, 0, "updt"},
 {OPupdtb, 1, "updt.b"},
 };
-int BytecodeArgc[OPCODE_NB];
-char* BytecodeStr[OPCODE_NB];
 
-void bytecodeInit()
-{
-	int i;
-	for (i = 0; i < OPCODE_NB; i++) {
-		BytecodeArgc[BytecodeDef[i].op] = BytecodeDef[i].argc;
-		BytecodeStr[BytecodeDef[i].op] = BytecodeDef[i].str;
-	}
-}
-void opcodePrint(Thread* th, int msk,LINT op,char* p,LINT ind0)
+void opcodePrint(int msk,LINT op,char* p,LINT ind0)
 {
 	char* spaces="         ";
+	if (op & 0x8000) {
+		Native* n = NativeDefs[op & 0x7fff];
+		PRINTF(msk, ">%s%s\n", n->name, spaces +((strlen(n->name)<8)?strlen(n->name)+1:8));
+		return;
+	}
 	if ((op<0)||(op>=OPCODE_NB)) PRINTF(msk,"??\n");
 	else if (op==OPint)
 	{
 		LINT v=getLsbInt(p);
-		PRINTF(msk,"%s%s " LSD "\n",BytecodeStr[op],spaces+strlen(BytecodeStr[op]),v);
+		PRINTF(msk,"%s%s " LSD "\n",BytecodeDef[op].str,spaces+strlen(BytecodeDef[op].str),v);
 		return;
 	}
 	else if ((op==OPgoto)||(op==OPelse)||(op==OPmark))
 	{
 		LINT v=ind0+bytecodeGetJump(p);
-		PRINTF(msk,"%s%s >" LSD "\n",BytecodeStr[op],spaces+strlen(BytecodeStr[op]),v);
+		PRINTF(msk,"%s%s >" LSD "\n",BytecodeDef[op].str,spaces+strlen(BytecodeDef[op].str),v);
 		return;
 	}
 	else if (op==OPfloat)
 	{
 		LINT v=getLsbInt(p);
-		PRINTF(msk,"%s%s %g\n",BytecodeStr[op],spaces+strlen(BytecodeStr[op]),*(LFLOAT*)&v);
+		PRINTF(msk,"%s%s %g\n",BytecodeDef[op].str,spaces+strlen(BytecodeDef[op].str),*(LFLOAT*)&v);
 		return;
 	}
-	else if (BytecodeArgc[op]==1)
+	else if (BytecodeDef[op].argc==1)
 	{
 		LINT v=p[0]&255;
-		PRINTF(msk,"%s%s " LSD "\n",BytecodeStr[op],spaces+strlen(BytecodeStr[op]),v);
+		PRINTF(msk,"%s%s " LSD "\n",BytecodeDef[op].str,spaces+strlen(BytecodeDef[op].str),v);
 		return;
 	}
-	else PRINTF(msk,"%s%s\n",BytecodeStr[op],spaces+strlen(BytecodeStr[op]));
+	else PRINTF(msk,"%s\n",BytecodeDef[op].str);
 }
 
-void bytecodePrint(Thread* th, int msk,LB* bytecode)
+void bytecodePrint(int msk,LB* bytecode)
 {
 	LINT ind=0;
 	LINT len=BIN_LENGTH(bytecode);
@@ -195,10 +191,17 @@ void bytecodePrint(Thread* th, int msk,LB* bytecode)
 		LINT op=255&(*(p++));
 		PRINTF(msk,"| %4d   ",ind++);
 //		PRINTF(msk,"| %02d.%4d   ",op,ind++);
-		opcodePrint(th, msk,op,p,ind);
-//		if (op == OPpickb) PRINTF(LOG_DEV,"found OPpickb %d\n", BytecodeArgc[op]);
-		p+=BytecodeArgc[op];
-		ind+=BytecodeArgc[op];
+		if (op & 0x80) {
+			op = (op << 8) + (255 & (*p++));
+			opcodePrint(msk, op, p, ind);
+			ind++;
+		}
+		else {
+			opcodePrint(msk, op, p, ind);
+			//		if (op == OPpickb) PRINTF(LOG_DEV,"found OPpickb %d\n", BytecodeDef[op].argc);
+			p += BytecodeDef[op].argc;
+			ind += BytecodeDef[op].argc;
+		}
 	}
 }
 
@@ -221,7 +224,6 @@ void bytecodeOptimize(LB* bytecode)
 	LINT ind=0;
 	LINT len=STR_LENGTH(bytecode);
 	char* p=STR_START(bytecode);
-
 //	PRINTF(LOG_DEV,"bytecodeOptimize before\n");
 //	bytecodePrint(LOG_SYS,bytecode);
 
@@ -231,8 +233,14 @@ void bytecodeOptimize(LB* bytecode)
 		LINT op=255&(*p);
 		if ((op==OPexec)&&(bytecodeIsTfc(p+1))) *p=OPtfc;
 		if ((op==OPexecb)&&(bytecodeIsTfc(p+2))) *p=OPtfcb;
-		p+=1+BytecodeArgc[op];
-		ind+=1+BytecodeArgc[op];
+		if (op & 0x80) {
+			p+=2;
+			ind+=2;
+		}
+		else {
+			p += 1 + BytecodeDef[op].argc;
+			ind += 1 + BytecodeDef[op].argc;
+		}
 	}
 
 }

@@ -24,7 +24,7 @@ struct Locals
 	Locals* next;
 };
 
-Locals* localsCreate(Thread* th, char* name, LINT level, Type* type, Locals* next);
+Locals* localsCreate(char* name, LINT level, Type* type, Locals* next);
 Locals* localsGet(Locals* locals,LINT level,char* name);
 LINT localsNb(Locals* locals);
 Locals* localsByIndex(Locals* locals, LINT index);

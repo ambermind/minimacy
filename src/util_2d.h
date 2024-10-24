@@ -16,9 +16,8 @@ BLEND_FUNCTION _blendFunction(LINT num);
 
 LINT _clip1D(LINT targetX, LINT targetW, LINT* x, LINT* w, LINT* dx);
 
-void _colorInit(void);
 void _bitmapFill(LBitmap* b, int color, BLEND_FUNCTION blend);
-int _bitmapCopy(Thread* th, LBitmap* b, LINT x, LINT y, LINT w, LINT h, LBitmap** result);
+int _bitmapCopy(LBitmap* b, LINT x, LINT y, LINT w, LINT h, LBitmap** result);
 void _bitmapPlot(LBitmap* b, LINT x, LINT y, int color, BLEND_FUNCTION blend);
 void _bitmapMakeColorTransparent(LBitmap* b, int color);
 void _bitmapToBitmap(LBitmap* b, LINT xdst, LINT ydst, LBitmap* a, LINT xsrc, LINT ysrc, LINT w, LINT h, BLEND_FUNCTION blend);

@@ -388,6 +388,9 @@
     <ClInclude Include="..\..\src\vm_types.h">
       <Filter>Source Files\src</Filter>
     </ClInclude>
+    <ClInclude Include="..\..\src\util_2d_const.h">
+      <Filter>Source Files\src</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <None Include="..\..\rom\core\core.2d.bmp.mcy">

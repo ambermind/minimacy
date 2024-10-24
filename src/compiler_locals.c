@@ -19,25 +19,30 @@ LINT localsNb(Locals* locals)
 void localsMark(LB* user)
 {
 	Locals* l=(Locals*)user;
-	MEMORY_MARK(user,l->name);
-	MEMORY_MARK(user,(LB*)l->type);
-	MEMORY_MARK(user,(LB*)l->next);
+	MEMORY_MARK(l->name);
+	MEMORY_MARK(l->type);
+	MEMORY_MARK(l->next);
 }
 
-Locals* localsCreate(Thread* th, char* name,LINT level, Type* type, Locals* next)
+Locals* localsCreate(char* name,LINT level, Type* type, Locals* next)
 {
 	Locals* l;
-	memoryEnterFast();
-	l=(Locals*)memoryAllocExt(th, sizeof(Locals),DBG_LOCALS,NULL,localsMark); if (!l) return NULL;
+	memorySetTmpRoot((LB*)next);
+	TMP_PUSH(type,NULL);
+	l=(Locals*)memoryAllocExt(sizeof(Locals),DBG_LOCALS,NULL,localsMark); if (!l) return NULL;
 	l->index=localsNb(next);
 	l->level=level;
 	l->type=type;
 	l->next=next;
 	l->name = NULL;
+	TMP_PULL();
 	if (name) {
-		l->name = memoryAllocStr(th, name, -1); if (!l->name) return NULL;
+		LB* p;
+		TMP_PUSH(l, NULL);
+		p = memoryAllocStr(name, -1); if (!p) return NULL;
+		l->name = p;
+		TMP_PULL();
 	}
-	memoryLeaveFast();
 	return l;
 }
 

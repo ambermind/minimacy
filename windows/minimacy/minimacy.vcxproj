@@ -128,6 +128,7 @@
     <ClInclude Include="..\..\src\system_worker.h" />
     <ClInclude Include="..\..\src\util.h" />
     <ClInclude Include="..\..\src\util_2d.h" />
+    <ClInclude Include="..\..\src\util_2d_const.h" />
     <ClInclude Include="..\..\src\util_ansi.h" />
     <ClInclude Include="..\..\src\util_buffer.h" />
     <ClInclude Include="..\..\src\util_convert.h" />
@@ -323,7 +324,7 @@
       <PreprocessorDefinitions>WIN32;_DEBUG;_CONSOLE;ATOMIC_32;ON_WINDOWS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
-      <DisableSpecificWarnings>4996</DisableSpecificWarnings>
+      <DisableSpecificWarnings>4996;4090</DisableSpecificWarnings>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -341,7 +342,7 @@
       <PreprocessorDefinitions>WIN32;NDEBUG;_CONSOLE;ATOMIC_32;ON_WINDOWS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
-      <DisableSpecificWarnings>4996</DisableSpecificWarnings>
+      <DisableSpecificWarnings>4996;4090</DisableSpecificWarnings>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -359,7 +360,7 @@
       <PreprocessorDefinitions>_DEBUG;_CONSOLE;ON_WINDOWS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
-      <DisableSpecificWarnings>4996</DisableSpecificWarnings>
+      <DisableSpecificWarnings>4996;4090</DisableSpecificWarnings>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -377,7 +378,7 @@
       <PreprocessorDefinitions>NDEBUG;_CONSOLE;ON_WINDOWS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
-      <DisableSpecificWarnings>4996</DisableSpecificWarnings>
+      <DisableSpecificWarnings>4996;4090</DisableSpecificWarnings>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>

@@ -14,7 +14,7 @@ const _UI_DEBUG=false;;
 var _UiThread;;
 
 var _BackBuffer @Bitmap;;
-
+//fun useSoftCursor=true;;
 #ifdef useSoftCursor
 struct SoftCursor=[bmpC xC yC dxC dyC backC displayedC];;
 const Pointer={
@@ -96,13 +96,15 @@ var _BackBytes;;
 var _Texture;;
 var _DstW;;
 var _DstH;;
-var _Ax;;
-var _Bx;;
-var _Ay;;
-var _By;;
+var _Mxx;;
+var _Mxy;;
+var _Mx;;
+var _Myx;;
+var _Myy;;
+var _My;;
 
-fun _xConvert x= intFromFloat (_Ax*.floatFromInt x)+._Bx;;
-fun _yConvert y= intFromFloat (_Ay*.floatFromInt y)+._By;;
+fun _xConvert x y= intFromFloat (_Mxx*.floatFromInt x)+.(_Mxy*.floatFromInt y)+._Mx;;
+fun _yConvert x y= intFromFloat (_Myx*.floatFromInt x)+.(_Myy*.floatFromInt y)+._My;;
 
 const _FRAGMENT_TEXTURE="
 	uniform sampler2D uSampler;
@@ -178,23 +180,45 @@ fun _textureUpdateRegion texture x y w h=
 
 fun _uiVrtUpdate=
 //echoLn strFormat "vrtUpdate *, * in *, *" uiW uiH _DstW _DstH;
-	let (floatFromInt uiW*_DstH)/.(floatFromInt uiH*_DstW) -> k in
+	let (_DstW<_DstH)&&(uiW>uiH) -> rotate in
+	let if rotate then (floatFromInt uiW*_DstW)/.(floatFromInt uiH*_DstH) 
+		else (floatFromInt uiW*_DstH)/.(floatFromInt uiH*_DstW) 
+	-> k in
 	let minf 1. k -> kw in
 	let minf 1. 1./.k -> kh in
 	(
-		set _VRT=floatsFromArray \float {(-kw) kh 0  kw kh 0  (-kw) (-kh) 0  kw (-kh) 0};
-		if k>.1. then 
-			let (floatFromInt uiW)/.(floatFromInt _DstW) -> k in (
-				set _Ax= set _Ay = k;
-				set _Bx=0.;
-				set _By= 0.5*.((floatFromInt uiH)-.(floatFromInt _DstH)*.k);
-			) 
+		set _VRT=floatsFromArray \float
+			if rotate then {(kh) kw 0  kh (-kw) 0  (-kh) kw 0  (-kh) (-kw) 0}
+			else {(-kw) kh 0  kw kh 0  (-kw) (-kh) 0  kw (-kh) 0};
+		if rotate then
+			if k>=.1. then 
+				let (floatFromInt uiW)/.(floatFromInt _DstH) -> k in (
+					set _Mxy= k; set _Myx = -.k;
+					set _Mxx= set _Myy= set _Mx=0.;
+					set _My= (floatFromInt uiH-1) -. 0.5*.((floatFromInt uiH)-.(floatFromInt _DstW)*.k);
+				) 
+			else
+				let (floatFromInt uiH)/.(floatFromInt _DstW) -> k in (
+					set _Mxy= k; set _Myx = -.k;
+					set _Mxx= set _Myy= set _My=0.;
+					set _Mx= 0.5*.((floatFromInt uiW)-.(floatFromInt _DstH)*.k);
+					set _My= floatFromInt uiH-1;
+				) 
 		else
-			let (floatFromInt uiH)/.(floatFromInt _DstH) -> k in (
-				set _Ax= set _Ay = k;
-				set _Bx= 0.5*.((floatFromInt uiW)-.(floatFromInt _DstW)*.k);
-				set _By=0.;
-			)
+			if k>.1. then 
+				let (floatFromInt uiW)/.(floatFromInt _DstW) -> k in (
+					set _Mxx= set _Myy = k;
+					set _Mxy= set _Myx= set _Mx=0.;
+					set _My= 0.5*.((floatFromInt uiH)-.(floatFromInt _DstH)*.k);
+				) 
+			else
+				let (floatFromInt uiH)/.(floatFromInt _DstH) -> k in (
+					set _Mxx= set _Myy = k;
+					set _Mx= 0.5*.((floatFromInt uiW)-.(floatFromInt _DstW)*.k);
+					set _Mxy= set _Myx= set _My=0.;
+				);
+//		echoLn "to:"; echoLn strJoin ", " [_Mxx _Mxy _Mx _Myx _Myy _My];
+
 	);;
 
 fun _uiRender =
@@ -216,8 +240,8 @@ fun _uiStartDefault x y w h flag name=
 	set _ProgramTexture=nil;
 	set _Texture=nil;
 	set _DstW= set _DstH=nil;
-	set _Ax= set _Ay = 1.;
-	set _Bx= set _By = 0.;
+	set _Mxx= set _Myy = 1.;
+	set _Mx= set _My = 0.;
 	_workerEnter;
 	set _UiFullGL = bitTest flag UI_GL;
 	if _uiStart x y w h flag|UI_GL name then
@@ -283,8 +307,8 @@ var _OffX;;
 var _OffY;;
 fun uiW=bitmapW _BackBuffer;;
 fun uiH=bitmapH _BackBuffer;;
-fun _xConvert x= x;;
-fun _yConvert y= y;;
+fun _xConvert x y= x;;
+fun _yConvert x y= y;;
 
 fun graphicList =
 	for [i w h f] in graphicModes do
@@ -339,8 +363,8 @@ fun _uiStopThread th= nil;;
 fun uiW=nil;;
 fun uiH=nil;;
 
-fun _xConvert x= x;;
-fun _yConvert y= y;;
+fun _xConvert x y= x;;
+fun _yConvert x y= y;;
 
 fun _uiStartDefault x y w h flag name=
 	echoLn "> This Minimacy VM doesn't support UI";
@@ -393,11 +417,13 @@ fun _uiOnKeyUp x y v    =
 	if _UI_DEBUG then dump strFormat "keyUp *,* / *" x y v; 
 	threadPost _UiThread (lambda= call _Uicb._EVENT_KEYUP x y v);;
 
-fun _uiCommonEvent x y v name index=
-	set x=_xConvert x; set y=_yConvert y;
-	_cursorUpdatePos x y; 
-	if _UI_DEBUG then dump strFormat "* *,* / *" name x y v; 
-	threadPost _UiThread (lambda= call _Uicb.index x y v);;
+fun _uiCommonEvent x0 y0 v name index=
+	let _xConvert x0 y0 -> x in
+	let _yConvert x0 y0 -> y in (
+		_cursorUpdatePos x y; 
+		if _UI_DEBUG then dump strFormat "* *,* / *" name x y v; 
+		threadPost _UiThread (lambda= call _Uicb.index x y v)
+	);;
 
 fun _uiOnMouseMove x y v= _uiCommonEvent x y v "mouseMove" _EVENT_MOUSEMOVE;;
 fun _uiOnClick x y v    = _uiCommonEvent x y v "click" _EVENT_CLICK;;

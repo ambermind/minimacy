@@ -588,7 +588,7 @@ fun _serverParseClientHello tls data=
 fun _parseClientKeyExchangeRsa tls data=
 	let strRead16Msb data 0-> encodedLength in
 	let strSlice data 2 encodedLength -> encoded in
-	let _getServerKey tls -> rsa in
+	let rsaFromKey _getServerKey tls -> rsa in
 	let pkcs1DecryptPrivRsa rsa encoded -> premaster in
 	(
 		set tls.premasterCKE=premaster;
@@ -615,7 +615,7 @@ fun _serverParseCertificateVerify tls data=
 	let strSlice data 4 len -> sign in
 	let listLast tls.peerCertificatesTLS -> certificate in
 	let strListConcat listReverse (tail tls.payloadTLS) -> payload in	// the payload list is still complete as tlsFinished not yet called has not make it empty
-	let signatureCheck signAlgo certificate payload sign -> result in
+	let signatureCheckFromCertificate signAlgo certificate payload sign -> result in
 	if !result then _setError tls "CLIENT CERTIFICATE NOT ACCEPTED"
 	else
 	let _getAuthForClientCert tls -> authForClientCert in
@@ -676,7 +676,7 @@ fun _clientParseCertificateVerify tls signAlgo payload sign=
 	let cerCheckChain t0 siteCertificate lCertificates -> error in
 	if error<>nil then _setError tls error
 	else
-	let signatureCheck signAlgo siteCertificate payload tls.signatureSKE -> result in
+	let signatureCheckFromCertificate signAlgo siteCertificate payload tls.signatureSKE -> result in
 	if !result then
 		let if result==false then "WRONG SIGNATURE " else "UNKNOWN ALGO " -> txt in
 		_setError tls [txt hexFromInt signAlgo]
@@ -960,7 +960,7 @@ fun _importCert l=
 
 fun _addHost hosts host=
 	let host ->[privateKey pwd certList authForClientCert] in
-	let rsaFromPEM privateKey pwd -> serverKey in
+	let keyFromPEM privateKey pwd -> serverKey in
 	let _importCert certList -> derList in
 	let listMap derList (lambda bin= cerFromDER bin) -> certificateList in
 	let head certificateList -> certificate in
@@ -997,7 +997,7 @@ fun tlsClientHello tls =
 
 fun tlsCreateCli serverName cipherSuites clientCertificate clientKey= 
 	let _create-> tls in
-	let rsaFromPEM clientKey nil -> clientKey in
+	let keyFromPEM clientKey nil -> clientKey in
 	let head pemRead clientCertificate -> [name headers clientCertificate] in
 	(
 		if cipherSuites<>nil then set tls.cipherSuitesTLS= cipherSuites;

@@ -22,7 +22,6 @@ sum DnsCache= dnsIp _, dnsPending _;;
 struct Dns=[udpD transactionD cacheD];;
 var PUBLIC_DNS="1.1.1.2";;
 const DNS_TIMEOUT=10000;;
-const DNS_MEMORY=4;;
 const DNS_PORT=53;;
 const USE_HOST_SOLVER=true;;
 
@@ -148,7 +147,7 @@ fun dnsRequest domain cb=
 	)
 	else
 	(
-		appStart _DnsLock (lambda=_DnsSrv<>nil) "DNS" DNS_MEMORY (lambda= _dnsCreate);
+		appStart _DnsLock (lambda=_DnsSrv<>nil) "DNS" (lambda= _dnsCreate);
 		_dnsRequest th domain cb;
 		nil
 	);;

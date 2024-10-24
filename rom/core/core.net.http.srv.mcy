@@ -374,8 +374,8 @@ fun _checkHeader h data=
 	let strLeft begining i -> header in
 	let strSplit "\r\n" header -> header in
 	let _httpHeaders header -> headers in
-	let intFromDec hashmapGet headers HTTP_CONTENT_LENGTH -> contentLength in
-	let HTTP_CHUNKED==hashmapGet headers HTTP_TRANSFER_ENCODING -> chunked in
+	let intFromDec hashmapGet headers strLowercase HTTP_CONTENT_LENGTH -> contentLength in
+	let HTTP_CHUNKED==hashmapGet headers strLowercase HTTP_TRANSFER_ENCODING -> chunked in
 	let strSplit " " head header -> firstLine in
 	let strSlice begining i+4 nil -> ending in
 	let firstLine -> (verb:uri:version:_) in

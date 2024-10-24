@@ -10,12 +10,11 @@
    with this program. If not, see <https://www.gnu.org/licenses/>. */
 #include"minimacy.h"
 
-TypeLabel* typeLabelAdd(Thread* th, LB* type, LINT category, TypeLabel* next)
+TypeLabel* typeLabelAdd(LB* type, LINT category, TypeLabel* next)
 {
 	TypeLabel* l;
 	TypeLabel* i=next;
-	memoryEnterFast();
-	l = (TypeLabel*)memoryAllocExt(th, sizeof(TypeLabel), DBG_BIN, NULL, NULL);	if (!l) return NULL;
+	l = (TypeLabel*)memoryAllocExt(sizeof(TypeLabel), DBG_BIN, NULL, NULL);	if (!l) return NULL;
 
 	// this is to find the next available index a0, a1, a2, ...
 	// category is for weak or any
@@ -26,7 +25,6 @@ TypeLabel* typeLabelAdd(Thread* th, LB* type, LINT category, TypeLabel* next)
 	l->type = type;
 	l->category = category;
 	l->next = next;
-	memoryLeaveFast();
 	return l;
 }
 LINT typeLabelGet(TypeLabel* h, LB* type)
@@ -52,34 +50,34 @@ void typeMark(LB* user)
 {
 	LINT i;
 	Type* type=(Type*)user;
-	MEMORY_MARK((LB*)type,(LB*)type->actual);
-	MEMORY_MARK((LB*)type,(LB*)type->copy);
-	MEMORY_MARK((LB*)type,(LB*)type->def);
-	for(i=0;i<type->nb;i++) MEMORY_MARK((LB*)type,(LB*)type->child[i]);
+	MEMORY_MARK(type->actual);
+	MEMORY_MARK(type->copy);
+	MEMORY_MARK(type->def);
+	for(i=0;i<type->nb;i++) MEMORY_MARK(type->child[i]);
 }
 
-Type* typeAllocEmpty(Thread* th, LINT code,Def* def,LINT nb)
+Type* typeAllocEmpty(LINT code,Def* def,LINT nb)
 {
 	LINT i;
-	Type* t=(Type*)memoryAllocExt(th, sizeof(Type)+(nb-1)*sizeof(Type*),DBG_TYPE,NULL,typeMark); if (!t) return NULL;
+	Type* t=(Type*)memoryAllocExt(sizeof(Type)+nb*sizeof(Type*),DBG_TYPE,NULL,typeMark); if (!t) return NULL;
 //	PRINTF(LOG_DEV,"alloc type " LSD " " LSD "\n",code,nb);
-	t->code=code;
+	t->code=(short)code;
 	t->def=def;
 	t->actual=NULL;
 	t->copy=NULL;
-	t->nb=nb;
+	t->nb=(short)nb;
 	for(i=0;i<t->nb;i++) t->child[i]=NULL;
 	return t;
 }
-Type* typeAllocRec(Thread* th, LINT rec)
+Type* typeAllocRec(LINT rec)
 {
-	Type* t = typeAllocEmpty(th, TYPECODE_REC, NULL, 0); if (!t) return NULL;
+	Type* t = typeAllocEmpty(TYPECODE_REC, NULL, 0); if (!t) return NULL;
 	t->actual = (Type*)rec;
 	return t;
 }
-Type* typeAlloc(Thread* th, LINT code, Def* def,LINT nb,...)
+Type* typeAlloc(LINT code, Def* def,LINT nb,...)
 {
-	Type* t = typeAllocEmpty(th,code, def, nb); if (!t) return NULL;
+	Type* t = typeAllocEmpty(code, def, nb); if (!t) return NULL;
 	if (nb)
 	{
 		LINT i;
@@ -91,33 +89,33 @@ Type* typeAlloc(Thread* th, LINT code, Def* def,LINT nb,...)
 	return t;
 }
 
-Type* typeAllocFromStack(Thread* th, Def* def, LINT code, LINT nb)
+Type* typeAllocFromStack(Def* def, LINT code, LINT nb)
 {
 	LINT i;
-	Type* t = typeAllocEmpty(th, code, def, nb); if (!t) return NULL;
+	Type* t = typeAllocEmpty(code, def, nb); if (!t) return NULL;
 	for(i=nb-1;i>=0;i--)
 	{
-		LB* p=STACK_PULL_PNT(th);
+		LB* p=STACK_PULL_PNT(MM.tmpStack);
 		t->child[i]=(Type*)p;
-		MEMORY_MARK((LB*)t, p);
+		MEMORY_MARK(p);
 	}
 	return t;
 }
-Type* typeAllocWeak(Thread* th)
+Type* typeAllocWeak(void)
 {
-	return typeAlloc(th, TYPECODE_WEAK, NULL, 0);
+	return typeAlloc(TYPECODE_WEAK, NULL, 0);
 }
-Type* typeAllocUndef(Thread* th)
+Type* typeAllocUndef(void)
 {
-	return typeAlloc(th, TYPECODE_UNDEF, NULL, 0);
+	return typeAlloc(TYPECODE_UNDEF, NULL, 0);
 }
 
-Type* typeDerivate(Thread* th, Type* p)
+Type* typeDerivate(Type* p)
 {
 	Type* d;
 
 	while (p->actual) p = p->actual;
-	d = typeAlloc(th, TYPECODE_UNDEF, NULL, TYPENB_DERIVATIVE,p); if (!d) return d;
+	d = typeAlloc(TYPECODE_UNDEF, NULL, TYPENB_DERIVATIVE,p); if (!d) return d;
 	return d;
 }
 Type* typeUnderivate(Compiler* c,Type* p)
@@ -161,7 +159,7 @@ Type* _compilerParseType(Compiler* c,int mono, int depth, Locals** labels, LINT*
 	}
 	if ((c->parser->token[0] == 'a') && (isdecimal(c->parser->token + 1)))
 	{
-		Locals* label = localsCreate(c->th, c->parser->token, 0, NULL, *labels); if (!(labels)) return NULL;
+		Locals* label = localsCreate(c->parser->token, 0, NULL, *labels); if (!(label)) return NULL;
 		if (mono) return compileError(c, "polymorphism (%s) is not accepted here\n", c->parser->token);
 		*labels = label;
 		if ((parserNext(c)) && (!strcmp(c->parser->token, "{")))
@@ -170,11 +168,11 @@ Type* _compilerParseType(Compiler* c,int mono, int depth, Locals** labels, LINT*
 			if (!(t = _compilerParseType(c, mono, depth + 1, labels, withRec))) return NULL;
 			if (t->code != TYPECODE_PRIMARY) return compileError(c, "only primary types may be derivated\n");
 			if (parserAssume(c, "}")) return NULL;
-			label->type = typeDerivate(c->th, t);
+			label->type = typeDerivate(t);
 			return label->type;
 		}
 		else parserGiveback(c);
-		label->type = typeAllocUndef(c->th);
+		label->type = typeAllocUndef();
 		return label->type;
 	}
 	if ((c->parser->token[0] == 'r') && (isdecimal(c->parser->token + 1)))
@@ -182,11 +180,11 @@ Type* _compilerParseType(Compiler* c,int mono, int depth, Locals** labels, LINT*
 		LINT i = ls_atoi(c->parser->token + 1,1);
 		if ((i < 0) || (i >= depth)) return compileError(c,"recursivity out of range %d [0 %d[\n", i, depth);
 		*withRec = 1;
-		return typeAllocRec(c->th,i);
+		return typeAllocRec(i);
 	}
 	if (!strcmp(c->parser->token, "array"))
 	{
-		Type* nt = typeAllocEmpty(c->th,TYPECODE_ARRAY, NULL, 1); if (!nt) return NULL;
+		Type* nt = typeAllocEmpty(TYPECODE_ARRAY, NULL, 1); if (!nt) return NULL;
 		if (!depth) return compileError(c,"types starting with 'array' must be enclosed in parentheses\n");
 
 		if (!(t = _compilerParseType(c, mono, depth + 1, labels, withRec))) return NULL;
@@ -195,7 +193,7 @@ Type* _compilerParseType(Compiler* c,int mono, int depth, Locals** labels, LINT*
 	}
 	if (!strcmp(c->parser->token, "list"))
 	{
-		Type* nt = typeAllocEmpty(c->th, TYPECODE_LIST, NULL, 1); if (!nt) return NULL;
+		Type* nt = typeAllocEmpty(TYPECODE_LIST, NULL, 1); if (!nt) return NULL;
 		if (!depth) return compileError(c,"types starting with 'list' must be enclosed in parentheses\n");
 		if (!(t = _compilerParseType(c, mono, depth + 1, labels, withRec))) return NULL;
 		nt->child[0] = t;
@@ -203,7 +201,7 @@ Type* _compilerParseType(Compiler* c,int mono, int depth, Locals** labels, LINT*
 	}
 	if (!strcmp(c->parser->token, "fifo"))
 	{
-		Type* nt = typeAllocEmpty(c->th, TYPECODE_FIFO, NULL, 1); if (!nt) return NULL;
+		Type* nt = typeAllocEmpty(TYPECODE_FIFO, NULL, 1); if (!nt) return NULL;
 		if (!depth) return compileError(c,"types starting with 'fifo' must be enclosed in parentheses\n");
 
 		if (!(t = _compilerParseType(c, mono, depth + 1, labels, withRec))) return NULL;
@@ -212,7 +210,7 @@ Type* _compilerParseType(Compiler* c,int mono, int depth, Locals** labels, LINT*
 	}
 	if (!strcmp(c->parser->token, "hashmap"))
 	{
-		Type* nt = typeAllocEmpty(c->th, TYPECODE_HASHMAP, NULL, 2); if (!nt) return NULL;
+		Type* nt = typeAllocEmpty(TYPECODE_HASHMAP, NULL, 2); if (!nt) return NULL;
 		if (!depth) return compileError(c,"types starting with 'hashmap' must be enclosed in parentheses\n");
 
 		if (!(t = _compilerParseType(c, mono, depth + 1, labels, withRec))) return NULL;
@@ -224,7 +222,7 @@ Type* _compilerParseType(Compiler* c,int mono, int depth, Locals** labels, LINT*
 	}
 	if (!strcmp(c->parser->token, "hashset"))
 	{
-		Type* nt = typeAllocEmpty(c->th, TYPECODE_HASHSET, NULL, 1); if (!nt) return NULL;
+		Type* nt = typeAllocEmpty(TYPECODE_HASHSET, NULL, 1); if (!nt) return NULL;
 		if (!depth) return compileError(c,"types starting with 'hashset' must be enclosed in parentheses\n");
 
 		if (!(t = _compilerParseType(c, mono, depth + 1, labels, withRec))) return NULL;
@@ -242,13 +240,13 @@ Type* _compilerParseType(Compiler* c,int mono, int depth, Locals** labels, LINT*
 			if (!strcmp(c->parser->token, "->"))
 			{
 				if (!(t = _compilerParseType(c, mono, depth + 1, labels, withRec))) return NULL;
-				TYPE_PUSH_NULL(c, t);
+				TYPE_PUSH_NULL(t);
 				n++;
-				return typeAllocFromStack(c->th, NULL, TYPECODE_FUN, n);
+				return typeAllocFromStack(NULL, TYPECODE_FUN, n);
 			}
 			parserGiveback(c);
 			if (!(t = _compilerParseType(c, mono, depth + 1, labels, withRec))) return NULL;
-			TYPE_PUSH_NULL(c, t);
+			TYPE_PUSH_NULL(t);
 			n++;
 		}
 	}
@@ -260,11 +258,11 @@ Type* _compilerParseType(Compiler* c,int mono, int depth, Locals** labels, LINT*
 			if (!parserNext(c)) return compileError(c,"uncomplete type reaches EOF\n");
 			if (!strcmp(c->parser->token, "]"))
 			{
-				return typeAllocFromStack(c->th, NULL, TYPECODE_TUPLE, n);
+				return typeAllocFromStack(NULL, TYPECODE_TUPLE, n);
 			}
 			parserGiveback(c);
 			if (!(t = _compilerParseType(c, mono, depth + 1, labels, withRec))) return NULL;
-			TYPE_PUSH_NULL(c, t);
+			TYPE_PUSH_NULL(t);
 			n++;
 		}
 	}
@@ -287,7 +285,7 @@ Type* _compilerParseType(Compiler* c,int mono, int depth, Locals** labels, LINT*
 				{
 					Type* t;
 					if (!(t = _compilerParseType(c, mono, depth + 1, labels, withRec))) return NULL;
-					TYPE_PUSH_NULL(c, t);
+					TYPE_PUSH_NULL(t);
 					n++;
 
 					if (!parserNext(c)) return compileError(c,"type or '}' expected (found '%s')\n", compileToken(c));
@@ -298,7 +296,7 @@ Type* _compilerParseType(Compiler* c,int mono, int depth, Locals** labels, LINT*
 			}
 			else parserGiveback(c);
 		}
-		nt = typeAllocFromStack(c->th, def, code, n); if (!nt) return NULL;
+		nt = typeAllocFromStack(def, code, n); if (!nt) return NULL;
 
 		t = def->type;
 		if (t->nb!=nt->nb) return compileError(c,"wrong number of parameters for type '%s' %lld/%lld\n", defName(def),t->nb,nt->nb);
@@ -320,14 +318,14 @@ Type* _compilerHandleRec(Compiler* c, Type* p)
 	if (p->code == TYPECODE_REC)
 	{
 		LINT rec = (LINT)p->actual;
-		p->actual = (Type*)STACK_PNT(c->th, rec);
+		p->actual = (Type*)STACK_PNT(MM.tmpStack, rec);
 	}
 	else if (p->nb>0)
 	{
 		LINT i;
-		TYPE_PUSH_NULL(c, p);
+		TYPE_PUSH_NULL(p);
 		for (i = 0; i < p->nb; i++) if (!_compilerHandleRec(c, p->child[i])) return NULL;
-		STACK_DROP(c->th);
+		STACK_DROP(MM.tmpStack);
 	}
 	return p;
 }
@@ -337,6 +335,30 @@ Type* compilerParseTypeDef(Compiler* c, int mono, Locals** labels)
 	Type *t=_compilerParseType(c, mono, 0, labels, &withRec);
 	if (withRec) _compilerHandleRec(c,t);
 	return t;
+}
+Type* typeParseStatic(const char* typeStr)
+{
+	Compiler c;
+	Parser p;
+	Locals* locals = NULL;
+	char buffer[256];
+	if (strlen(typeStr) > 253) return NULL;
+	strcpy(buffer,"(");
+	strcpy(buffer+1,typeStr);
+	strcpy(buffer+1+strlen(typeStr),")");
+//	PRINTF(LOG_DEV,"typeParseStatic %x %x\n",&c,&p);
+	c.pkg = MM.system;
+	c.parser = &p;
+	p.name = NULL;
+	p.block = NULL;
+	p.mayGetBackToParent = 0;
+	c.mainParser = c.parser;
+	p.name = NULL;
+	p.src = buffer;
+	p.indexsavedchar = -1;
+	parserReset(&c);
+
+	return compilerParseTypeDef(&c, 0, &locals);
 }
 int _compilerSkipTypeDef(Compiler* c, int depth)
 {
@@ -420,8 +442,9 @@ int compilerSkipTypeDef(Compiler* c)
 	return _compilerSkipTypeDef(c, 0);
 }
 
-int _typePrintRec(Thread* th,Buffer* tmp, TypeLabel **h,Type* p,int depth)
+int _typePrintRec(Buffer* tmp, TypeLabel **h,Type* p,int depth)
 {
+	int k;
 	LINT i;
 	LB* type;
 	TypeLabel* labels = *h;
@@ -434,112 +457,122 @@ int _typePrintRec(Thread* th,Buffer* tmp, TypeLabel **h,Type* p,int depth)
 
 	for(i=0;i<depth;i++) if (type==STACK_PNT(MM.tmpStack,i+1))
 	{
-		bufferPrintf(th, tmp,"r%d",i);
+		if ((k=bufferPrintf(tmp,"r%d",i))) return k;
 		STACK_DROP(MM.tmpStack);
 		return 0;
 	}
 	if (p->code==TYPECODE_PRIMARY)
 	{
-		bufferAddStr(th, tmp, defName(p->def));
+		if ((k = bufferAddStr(tmp, defName(p->def)))) return k;
 		if (p->nb)
 		{
-			bufferAddStr(th, tmp,"{");
+			if ((k = bufferAddStr(tmp,"{"))) return k;
 			if (depth<100) for(i=0;i<p->nb;i++)
 			{
-				if (i) bufferAddStr(th, tmp, " ");
-				_typePrintRec(th, tmp,h,p->child[i],depth+1);
+				if (i) {
+					if ((k = bufferAddStr(tmp, " "))) return k;
+				}
+				if ((k = _typePrintRec(tmp,h,p->child[i],depth+1))) return k;
 			}
-			else bufferAddStr(th, tmp, "...");
-			bufferAddStr(th, tmp,"}");
+			else {
+				if ((k = bufferAddStr(tmp, "..."))) return k;
+			}
+			if ((k = bufferAddStr(tmp,"}"))) return k;
 		}
 	}
 	else if (p->code==TYPECODE_FUN)
 	{
-		if (depth) bufferAddStr(th, tmp, "(");
-		bufferAddStr(th, tmp,"fun ");
+		if (depth) bufferAddStr(tmp, "(");
+		if ((k = bufferAddStr(tmp,"fun "))) return k;
 		for(i=0;i<p->nb-1;i++)
 		{
-			_typePrintRec(th, tmp,h,p->child[i],depth+1);
-			bufferAddStr(th, tmp, " ");
+			if ((k = _typePrintRec(tmp,h,p->child[i],depth+1))) return k;
+			if ((k = bufferAddStr(tmp, " "))) return k;
 		}
-		bufferAddStr(th, tmp,"-> ");
-		_typePrintRec(th, tmp,h,p->child[p->nb-1],depth+1);
-		if (depth) bufferAddStr(th, tmp, ")");
+		if ((k = bufferAddStr(tmp,"-> "))) return k;
+		if ((k = _typePrintRec(tmp,h,p->child[p->nb-1],depth+1))) return k;
+		if (depth) bufferAddStr(tmp, ")");
 	}
 	else if (p->code==TYPECODE_LIST)
 	{
-//		if (depth) bufferAddStr(th, tmp, "(");
-		bufferAddStr(th, tmp,"list ");
-		_typePrintRec(th, tmp,h,p->child[0],depth+1);
-//		if (depth) bufferAddStr(th, tmp, ")");
+//		if (depth) bufferAddStr(tmp, "(");
+		if ((k = bufferAddStr(tmp,"list "))) return k;
+		if ((k = _typePrintRec(tmp,h,p->child[0],depth+1))) return k;
+//		if (depth) bufferAddStr(tmp, ")");
 	}
 	else if (p->code==TYPECODE_HASHMAP)
 	{
-		if (depth) bufferAddStr(th, tmp, "(");
-		bufferAddStr(th, tmp,"hashmap ");
-		_typePrintRec(th, tmp,h,p->child[0],depth+1);
-		bufferAddStr(th, tmp," -> ");
-		_typePrintRec(th, tmp,h,p->child[1],depth+1);
-		if (depth) bufferAddStr(th, tmp, ")");
+		if (depth) {
+			if ((k = bufferAddStr(tmp, "("))) return k;
+		}
+		if ((k = bufferAddStr(tmp,"hashmap "))) return k;
+		if ((k = _typePrintRec(tmp,h,p->child[0],depth+1))) return k;
+		if ((k = bufferAddStr(tmp," -> "))) return k;
+		if ((k = _typePrintRec(tmp,h,p->child[1],depth+1))) return k;
+		if (depth) {
+			if ((k = bufferAddStr(tmp, ")"))) return k;
+		}
 	}
 	else if (p->code==TYPECODE_HASHSET)
 	{
-		bufferAddStr(th, tmp,"hashset ");
-		_typePrintRec(th, tmp,h,p->child[0],depth+1);
+		if ((k = bufferAddStr(tmp,"hashset "))) return k;
+		if ((k = _typePrintRec(tmp,h,p->child[0],depth+1))) return k;
 	}
 	else if (p->code == TYPECODE_FIELD)
 	{
-		//		bufferAddStr(th, tmp,"field ");
-		_typePrintRec(th, tmp, h, p->child[0], depth + 1);
-		bufferAddStr(th, tmp, " -> ");
-		_typePrintRec(th, tmp, h, p->child[1], depth + 1);
+		//		bufferAddStr(tmp,"field ");
+		if ((k = _typePrintRec(tmp, h, p->child[0], depth + 1))) return k;
+		if ((k = bufferAddStr(tmp, " -> "))) return k;
+		if ((k = _typePrintRec(tmp, h, p->child[1], depth + 1))) return k;
 	}
 	else if (p->code==TYPECODE_ARRAY)
 	{
-//		if (depth) bufferAddStr(th, tmp, "(");
-		bufferAddStr(th, tmp,"array ");
-		_typePrintRec(th, tmp,h,p->child[0],depth+1);
-//		if (depth) bufferAddStr(th, tmp, ")");
+//		if (depth) bufferAddStr(tmp, "(");
+		if ((k = bufferAddStr(tmp,"array "))) return k;
+		if ((k = _typePrintRec(tmp,h,p->child[0],depth+1))) return k;
+//		if (depth) bufferAddStr(tmp, ")");
 	}
 	else if (p->code == TYPECODE_FIFO)
 	{
-//		if (depth) bufferAddStr(th, tmp, "(");
-		bufferAddStr(th, tmp, "fifo ");
-		_typePrintRec(th, tmp, h, p->child[0], depth + 1);
-//		if (depth) bufferAddStr(th, tmp, ")");
+//		if (depth) bufferAddStr(tmp, "(");
+		if ((k = bufferAddStr(tmp, "fifo "))) return k;
+		if ((k = _typePrintRec(tmp, h, p->child[0], depth + 1))) return k;
+//		if (depth) bufferAddStr(tmp, ")");
 	}
 	else if (p->code==TYPECODE_TUPLE)
 	{
-		bufferAddStr(th, tmp,"[");
+		if ((k = bufferAddStr(tmp,"["))) return k;
 		for(i=0;i<p->nb;i++)
 		{
-			if (i) bufferAddStr(th, tmp," ");
-			_typePrintRec(th, tmp,h,p->child[i],depth+1);
+			if (i) {
+				if ((k = bufferAddStr(tmp, " "))) return k;
+			}
+			if ((k = _typePrintRec(tmp,h,p->child[i],depth+1))) return k;
 		}
-		bufferAddStr(th, tmp,"]");
+		if ((k = bufferAddStr(tmp,"]"))) return k;
 	}
 	else if ((p->code==TYPECODE_UNDEF)||(p->code==TYPECODE_WEAK))
 	{
 		LINT num;
 		if ((p->nb == TYPENB_DERIVATIVE) && (p->child[0]->def->dCI == 0))
 		{
-			_typePrintRec(th, tmp, h, p->child[0], depth + 1);
+			if ((k = _typePrintRec(tmp, h, p->child[0], depth + 1))) return k;
 		}
 		else
 		{
 			num = typeLabelGet(labels, type);
 			if (!num)
 			{
-				*h = typeLabelAdd(th, type, p->code, labels); if (!(*h)) return EXEC_OM;
+				*h = typeLabelAdd(type, p->code, labels); if (!(*h)) return EXEC_OM;
 				num = (*h)->num;
 			}
 //			PRINTF(LOG_DEV,"\ntypeLabelGet %llx: %d -> %d\n", typew, p->code, num);
-			bufferPrintf(th, tmp, "%c"LSD, (p->code == TYPECODE_UNDEF) ? 'a' : 'w', num);
+			if ((k = bufferPrintf(tmp, "%c"LSD, (p->code == TYPECODE_UNDEF) ? 'a' : 'w', num))) return k;
 			if (p->nb == TYPENB_DERIVATIVE)	// derivative struct
 			{
-				bufferAddStr(th, tmp, "{");
-				_typePrintRec(th, tmp, h, p->child[0], depth + 1);
-				bufferAddStr(th, tmp, "}");
+				if ((k = bufferAddStr(tmp, "{"))) return k;
+				if ((k = _typePrintRec(tmp, h, p->child[0], depth + 1))) return k;
+				if ((k = bufferAddStr(tmp, "}"))) return k;
 			}
 		}
 	}
@@ -547,62 +580,60 @@ int _typePrintRec(Thread* th,Buffer* tmp, TypeLabel **h,Type* p,int depth)
 	return 0;
 }
 
-int typeBuffer(Thread *th,Buffer* tmp, Type* type)
+int typeBuffer(Buffer* tmp, Type* type)
 {
 	int k;
 	TypeLabel* h = NULL;
-	stackReset(MM.tmpStack);
-	memoryEnterFast();
-	if ((k = _typePrintRec(th, tmp, &h, type, 0))) return k;
-	memoryLeaveFast();
+	if ((k = _typePrintRec(tmp, &h, type, 0))) return k;
 	return 0;
 }
-int typePrint(Thread* th, int mask, Type* type)
+int typePrint(int mask, Type* type)
 {
 	int k;
 	if (!termCheckMask(mask)) return 0;
 	bufferReinit(MM.tmpBuffer);
-	if ((k = typeBuffer(th, MM.tmpBuffer, type))) return k;
+	if ((k = typeBuffer(MM.tmpBuffer, type))) return k;
 	termWrite(mask, bufferStart(MM.tmpBuffer), bufferSize(MM.tmpBuffer));
 	return 0;
 }
 
 
 // initialize types required by the compiler
-void typesInit(Thread* th, Pkg* system)
+void typesInit(Pkg* system)
 {
 	Def* Exception;
 	Def* Boolean;
 	Type* u0, * list_u0, * array_u0;
 
-	MM.Int = pkgAddType(th,system, "Int")->type;
-	MM.Float = pkgAddType(th,system, "Float")->type;
-	MM.Str = pkgAddType(th,system, "Str")->type;
-	MM.Bytes = pkgAddType(th,system, "Bytes")->type;
-	MM.BigNum = pkgAddType(th,system, "BigNum")->type;
-	MM.Bitmap = pkgAddType(th,system, "Bitmap")->type;
-	MM.Buffer = pkgAddType(th,system, "Buffer")->type;
+	memoryEnterFast();
+	MM.Int = pkgAddType(system, "Int")->type;
+	MM.Float = pkgAddType(system, "Float")->type;
+	MM.Str = pkgAddType(system, "Str")->type;
+	MM.Bytes = pkgAddType(system, "Bytes")->type;
+	MM.BigNum = pkgAddType(system, "BigNum")->type;
+	pkgAddType(system, "Bitmap");
+	pkgAddType(system, "Buffer");
 
-	Boolean = pkgAddSum(th,system, "Bool");
+	Boolean = pkgAddSum(system, "Bool");
 	MM.Boolean = Boolean->type;
-	MM._true = (LB*)pkgAddCons0(th,system, "true", Boolean);
-	MM._false =(LB*)pkgAddCons0(th,system, "false", Boolean);
+	MM._true = (LB*)pkgAddCons0(system, "true", Boolean);
+	MM._false =(LB*)pkgAddCons0(system, "false", Boolean);
 
-	MM.Package = pkgAddType(th,system, "Package")->type;
-	MM.Thread = pkgAddType(th,system, "_Thread")->type;
-	MM.Socket= pkgAddType(th, system, "Socket")->type;
+	MM.Package = pkgAddType(system, "Package")->type;
+	pkgAddType(system, "_Thread");
+	pkgAddType(system, "Socket");
 
-	Exception = pkgAddSum(th,system, "Exception");
+	Exception = pkgAddSum(system, "Exception");
 	MM.Exception = Exception->type;
-	pkgAddCons0(th,system, "anyException", Exception);
-	MM.MemoryException =VAL_FROM_PNT((LB*)pkgAddCons0(th,system, "memoryException", Exception));
+	pkgAddCons0(system, "anyException", Exception);
 
-	u0 = typeAllocUndef(th);
-	list_u0 = typeAlloc(th,TYPECODE_LIST, NULL, 1, u0);
-	array_u0 = typeAlloc(th,TYPECODE_ARRAY, NULL, 1, u0);
+	u0 = typeAllocUndef();
+	list_u0 = typeAlloc(TYPECODE_LIST, NULL, 1, u0);
+	array_u0 = typeAlloc(TYPECODE_ARRAY, NULL, 1, u0);
 
-	MM.fun_u0_list_u0_list_u0 = typeAlloc(th, TYPECODE_FUN, NULL, 3, u0, list_u0, list_u0);
-	MM.fun_array_u0_I_u0 = typeAlloc(th, TYPECODE_FUN, NULL, 3, array_u0, MM.Int, u0);
+	MM.fun_u0_list_u0_list_u0 = typeAlloc(TYPECODE_FUN, NULL, 3, u0, list_u0, list_u0);
+	MM.fun_array_u0_I_u0 = typeAlloc(TYPECODE_FUN, NULL, 3, array_u0, MM.Int, u0);
+	memoryLeaveFast();
 }
 
 
@@ -620,11 +651,11 @@ int typeRecNeedCopy(Type* p)
 	for(i=0;i<p->nb;i++) if (typeRecNeedCopy(p->child[i])) return 1;
 	return 0;
 }
-Type* typeRecCopy(Thread* th, Type* p)
+
+Type* typeRecCopy(Type* p)
 {
-	int i;
+	int i,needCopy;
 	Type* t;
-	LINT copyCode;
 
 	if (!p) return p;
 	while(p->actual) p=p->actual;
@@ -633,16 +664,21 @@ Type* typeRecCopy(Thread* th, Type* p)
 	if ((p->code==TYPECODE_PRIMARY)&&(p->nb==0)) return p;	// primary type, non parametric, no copy
 	if (p->code==TYPECODE_WEAK) return p;	// weak type, do not copy
 
-	copyCode = p->code;
-//	if (p->code == TYPECODE_UNDEF) copyCode = TYPECODE_WEAK;
-	t=typeAllocEmpty(th, copyCode,p->def,p->nb); if (!t) return NULL;	// copy everything else
+	t=typeAllocEmpty(p->code,p->def,p->nb); if (!t) return NULL;	// copy everything else
 	p->copy=t;
 
+	needCopy = 0;
 	for (i = 0; i < p->nb; i++) {
-		Type* r = typeRecCopy(th, p->child[i]); if (!r) return NULL;
+		Type* ch = p->child[i];
+		Type* r;
+		while (ch->actual) ch = ch->actual;
+		r = typeRecCopy(ch); if (!r) return NULL;
+		if (r != ch) needCopy = 1;
 		t->child[i] = r;
 	}
-	return t;
+	if (needCopy || p->code==TYPECODE_UNDEF) return t;
+	p->copy = p;
+	return p;
 }
 void typeRecReset(Type* p)
 {
@@ -655,14 +691,14 @@ void typeRecReset(Type* p)
 	for(i=0;i<p->nb;i++) typeRecReset(p->child[i]);
 }
 
-Type* typeCopy(Thread* th, Type* p)
+Type* typeCopy(Type* p)
 {
 	if (!p) return NULL;
 	if (typeRecNeedCopy(p))
 	{
 		Type* t;
 		typeRecReset(p);
-		t=typeRecCopy(th, p);
+		t=typeRecCopy(p);
 		typeRecReset(p);
 		return t;
 	}
@@ -755,14 +791,32 @@ int typeLink(Type* from, Type* to, Type* parentUnif, Type* childUnif )
 	}
 	return 0;
 }
+Type* _typeRecSimplify(Type* p)
+{
+	int i;
+
+	if (!p) return 0;
+	while (p->actual) p = p->actual;
+	if (p->copy) return p;
+	p->copy = p;
+	for (i = 0; i < p->nb; i++) p->child[i] = _typeRecSimplify(p->child[i]);
+	return p;
+}
+Type* typeSimplify(Type* p)
+{
+	p = _typeRecSimplify(p);
+	typeRecReset(p);
+	return p;
+}
+
 // unification
 int typeRecUnify(Type* s,Type* t)
 {
 	Type* z;
 	LINT ns, nt;
 
-	while(s->actual) s=s->actual;
-	while(t->actual) t=t->actual;
+	while (s->actual) s=s->actual;
+	while (t->actual) t=t->actual;
 	if (s==t) return 0;	// this includes non parametric primary types
 	
 	if ((t->code == TYPECODE_UNDEF) || (t->code == TYPECODE_WEAK)) { z = t; t = s; s = z; }
@@ -813,9 +867,9 @@ int typeUnify(Compiler* c,Type* x,Type* y)
 		return 0;
 	}
 	compileError(c,"'");
-	typePrint(c->th, LOG_USER,x);
+	typePrint(LOG_USER,x);
 	PRINTF(LOG_USER,"' does not match with '");
-	typePrint(c->th, LOG_USER,y);
+	typePrint(LOG_USER,y);
 	PRINTF(LOG_USER,"'\n");
 
 	if (c->fmk)
@@ -828,7 +882,7 @@ int typeUnify(Compiler* c,Type* x,Type* y)
 			if (lb->name)
 			{
 				PRINTF(LOG_USER, "   local %s: ",STR_START(lb->name));
-				typePrint(c->th, LOG_USER, lb->type);
+				typePrint(LOG_USER, lb->type);
 				PRINTF(LOG_USER, "\n");
 			}
 			lb = lb->next;
@@ -841,7 +895,7 @@ int typeUnify(Compiler* c,Type* x,Type* y)
 				if (def->name)
 				{
 					PRINTF(LOG_USER, "   global %s: ", STR_START(def->name));
-					typePrint(c->th, LOG_USER, def->type);
+					typePrint(LOG_USER, def->type);
 					PRINTF(LOG_USER, "\n");
 				}
 			}
@@ -857,6 +911,6 @@ Type* typeUnifyFromStack(Compiler* c,Type* fun)
 {
 	LINT i;
 	i= fun->nb - 2;
-	while(i>=0) if (typeUnify(c,(Type*)STACK_PULL_PNT(c->th),fun->child[i--])) return NULL;	// check and pull args
+	while(i>=0) if (typeUnify(c,(Type*)STACK_PULL_PNT(MM.tmpStack),fun->child[i--])) return NULL;	// check and pull args
 	return fun->child[fun->nb-1];	// return unified function result
 }

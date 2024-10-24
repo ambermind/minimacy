@@ -40,8 +40,8 @@ int _shaderForget(LB* p)
 }
 int fun_glCreateShader(Thread* th)
 {
-	LINT type = STACK_PULL_INT(th);
-	lglShader* d = (lglShader*)memoryAllocExt(th, sizeof(lglShader), DBG_BIN, NULL, NULL); if (!d) return EXEC_OM;
+	LINT type = STACK_INT(th, 0);
+	lglShader* d = (lglShader*)memoryAllocExt(sizeof(lglShader), DBG_BIN, NULL, NULL); if (!d) return EXEC_OM;
 	if (!GLready) FUN_RETURN_NIL;
 	d->shader= glCreateShader((GLenum)type);
 	d->instance = GLinstance;
@@ -91,7 +91,7 @@ int _programForget(LB* p)
 }
 int fun_glCreateProgram(Thread* th)
 {
-	lglProgram* d = (lglProgram*)memoryAllocExt(th, sizeof(lglProgram), DBG_BIN, _programForget, NULL); if (!d) return EXEC_OM;
+	lglProgram* d = (lglProgram*)memoryAllocExt(sizeof(lglProgram), DBG_BIN, _programForget, NULL); if (!d) return EXEC_OM;
 	if (!GLready) FUN_RETURN_NIL;
 	d->program = glCreateProgram();
 	d->instance = GLinstance;
@@ -128,7 +128,7 @@ int _glTexSubImage2D(lglTexture* t, int vtarget, int vlevel, int x, int y, int w
 
 int fun_glCreateTexture(Thread* th)
 {
-	lglTexture* d = (lglTexture*)memoryAllocExt(th, sizeof(lglTexture), DBG_BIN, _textureForget, NULL); if (!d) return EXEC_OM;
+	lglTexture* d = (lglTexture*)memoryAllocExt(sizeof(lglTexture), DBG_BIN, _textureForget, NULL); if (!d) return EXEC_OM;
 	d->data0 = NULL;
 	glGenTextures(1, &d->Texture);
 	d->instance = GLinstance;
@@ -247,7 +247,7 @@ int fun_floatsFromArray(Thread* th)
 	LB* src = STACK_PNT(th,0);
 	if (!src) FUN_RETURN_NIL;
 	n = ARRAY_LENGTH(src);
-	result = memoryAllocBin(th, NULL, sizeof(float) * n, DBG_BIN); if (!result) return EXEC_OM;
+	result = memoryAllocBin(NULL, sizeof(float) * n, DBG_BIN); if (!result) return EXEC_OM;
 	p = (float*)BIN_START(result);
 	for (i = 0; i < n; i++) p[i] = (float)ARRAY_FLOAT(src, i);
 	FUN_RETURN_PNT(result);
@@ -325,160 +325,155 @@ GLIIIFloats(fun_glUniformMatrix2fv, glUniformMatrix2fv)
 GLIIIFloats(fun_glUniformMatrix3fv, glUniformMatrix3fv)
 GLIIIFloats(fun_glUniformMatrix4fv, glUniformMatrix4fv)
 
-int coreUiGLInit(Thread* th, Pkg* system)
+int coreUiGLInit(Pkg* system)
 {
-	Def* floats = pkgAddType(th, system, "Floats");
-	Def* shader = pkgAddType(th, system, "GlShader");
-	Def* program = pkgAddType(th, system, "GlProgram");
-	Def* texture = pkgAddType(th, system, "GlTexture");
-	Type* GLNONE = typeAlloc(th, TYPECODE_FUN, NULL, 1, MM.Int);
-    Type* GLBOOL=typeAlloc(th, TYPECODE_FUN, NULL, 1, MM.Boolean);
-	Type* GLI = typeAlloc(th, TYPECODE_FUN, NULL, 2, MM.Int, MM.Int);
-	Type* GLII = typeAlloc(th, TYPECODE_FUN, NULL, 3, MM.Int, MM.Int, MM.Int);
-	Type* GLIII = typeAlloc(th, TYPECODE_FUN, NULL, 4, MM.Int, MM.Int, MM.Int, MM.Int);
-	Type* GLIIII = typeAlloc(th, TYPECODE_FUN, NULL, 5, MM.Int, MM.Int, MM.Int, MM.Int, MM.Int);
-	Type* GLIIIIIIII = typeAlloc(th, TYPECODE_FUN, NULL, 9, MM.Int, MM.Int, MM.Int, MM.Int, MM.Int, MM.Int, MM.Int, MM.Int, MM.Int);
-	Type* GLF = typeAlloc(th, TYPECODE_FUN, NULL, 2, MM.Float, MM.Int);
-	Type* GLFFFF = typeAlloc(th, TYPECODE_FUN, NULL, 5, MM.Float, MM.Float, MM.Float, MM.Float, MM.Int);
-	Type* GLIIF = typeAlloc(th, TYPECODE_FUN, NULL, 4, MM.Int, MM.Int, MM.Float, MM.Int);
-	Type* GLP = typeAlloc(th, TYPECODE_FUN, NULL, 2, program->type, MM.Int);
-	Type* GLIs = typeAlloc(th, TYPECODE_FUN, NULL, 2, MM.Int, MM.Str);
-	Type* GLPSi = typeAlloc(th, TYPECODE_FUN, NULL, 3, program->type, MM.Str, MM.Int);
-	Type* GLIIFloats = typeAlloc(th, TYPECODE_FUN, NULL, 4, MM.Int, MM.Int, floats->type, MM.Int);
-	Type* GLIIIFloats = typeAlloc(th, TYPECODE_FUN, NULL, 5, MM.Int, MM.Int, MM.Int, floats->type, MM.Int);
-	Type* GLFloatsI = typeAlloc(th, TYPECODE_FUN, NULL, 3, floats->type, MM.Int, MM.Float);
+	Def* floats = pkgAddType(system, "Floats");
+	Def* shader = pkgAddType(system, "GlShader");
+	Def* program = pkgAddType(system, "GlProgram");
+	Def* texture = pkgAddType(system, "GlTexture");
 
-	pkgAddConstInt(th, system, "GL_COLOR_BUFFER_BIT", GL_COLOR_BUFFER_BIT, MM.Int);
-	pkgAddConstInt(th, system, "GL_TRIANGLES", GL_TRIANGLES, MM.Int);
-	pkgAddConstInt(th, system, "GL_LINE_LOOP", GL_LINE_LOOP, MM.Int);
-	pkgAddConstInt(th, system, "GL_SRC_ALPHA", GL_SRC_ALPHA, MM.Int);
-	pkgAddConstInt(th, system, "GL_ONE_MINUS_SRC_ALPHA", GL_ONE_MINUS_SRC_ALPHA, MM.Int);
-	pkgAddConstInt(th, system, "GL_DONT_CARE", GL_DONT_CARE, MM.Int);
-	pkgAddConstInt(th, system, "GL_BLEND", GL_BLEND, MM.Int);
-	pkgAddConstInt(th, system, "GL_TEXTURE_2D", GL_TEXTURE_2D, MM.Int);
-	pkgAddConstInt(th, system, "GL_TEXTURE_MAG_FILTER", GL_TEXTURE_MAG_FILTER, MM.Int);
-	pkgAddConstInt(th, system, "GL_LINEAR", GL_LINEAR, MM.Int);
-	pkgAddConstInt(th, system, "GL_TEXTURE_MIN_FILTER", GL_TEXTURE_MIN_FILTER, MM.Int);
-	pkgAddConstInt(th, system, "GL_NEAREST", GL_NEAREST, MM.Int);
-	pkgAddConstInt(th, system, "GL_FRONT_AND_BACK", GL_FRONT_AND_BACK, MM.Int);
-	pkgAddConstInt(th, system, "GL_POINTS", GL_POINTS, MM.Int);
-	pkgAddConstInt(th, system, "GL_LINES", GL_LINES, MM.Int);
-	pkgAddConstInt(th, system, "GL_LINE_STRIP", GL_LINE_STRIP, MM.Int);
-	pkgAddConstInt(th, system, "GL_TRIANGLE_STRIP", GL_TRIANGLE_STRIP, MM.Int);
-	pkgAddConstInt(th, system, "GL_TRIANGLE_FAN", GL_TRIANGLE_FAN, MM.Int);
-	pkgAddConstInt(th, system, "GL_FRONT", GL_FRONT, MM.Int);
-	pkgAddConstInt(th, system, "GL_BACK", GL_BACK, MM.Int);
-	pkgAddConstInt(th, system, "GL_RGB", GL_RGB, MM.Int);
-	pkgAddConstInt(th, system, "GL_RGBA", GL_RGBA, MM.Int);
-	pkgAddConstInt(th, system, "GL_LUMINANCE", GL_LUMINANCE, MM.Int);
-	pkgAddConstInt(th, system, "GL_CULL_FACE", GL_CULL_FACE, MM.Int);
-	pkgAddConstInt(th, system, "GL_DEPTH_TEST", GL_DEPTH_TEST, MM.Int);
-	pkgAddConstInt(th, system, "GL_LESS", GL_LESS, MM.Int);
-	pkgAddConstInt(th, system, "GL_GREATER", GL_GREATER, MM.Int);
-	pkgAddConstInt(th, system, "GL_LEQUAL", GL_LEQUAL, MM.Int);
-	pkgAddConstInt(th, system, "GL_GEQUAL", GL_GEQUAL, MM.Int);
-	pkgAddConstInt(th, system, "GL_NOTEQUAL", GL_NOTEQUAL, MM.Int);
-	pkgAddConstInt(th, system, "GL_EQUAL", GL_EQUAL, MM.Int);
-	pkgAddConstInt(th, system, "GL_TEXTURE_WRAP_S", GL_TEXTURE_WRAP_S, MM.Int);
-	pkgAddConstInt(th, system, "GL_TEXTURE_WRAP_T", GL_TEXTURE_WRAP_T, MM.Int);
-	pkgAddConstInt(th, system, "GL_REPEAT", GL_REPEAT, MM.Int);
-	pkgAddConstInt(th, system, "GL_CLAMP_TO_EDGE", GL_CLAMP_TO_EDGE, MM.Int);
-	pkgAddConstInt(th, system, "GL_NEAREST_MIPMAP_NEAREST", GL_NEAREST_MIPMAP_NEAREST, MM.Int);
-	pkgAddConstInt(th, system, "GL_NEAREST_MIPMAP_LINEAR", GL_NEAREST_MIPMAP_LINEAR, MM.Int);
-	pkgAddConstInt(th, system, "GL_LINEAR_MIPMAP_NEAREST", GL_LINEAR_MIPMAP_NEAREST, MM.Int);
-	pkgAddConstInt(th, system, "GL_LINEAR_MIPMAP_LINEAR", GL_LINEAR_MIPMAP_LINEAR, MM.Int);
-	pkgAddConstInt(th, system, "GL_REPLACE", GL_REPLACE, MM.Int);
-	pkgAddConstInt(th, system, "GL_ALWAYS", GL_ALWAYS, MM.Int);
-	pkgAddConstInt(th, system, "GL_DEPTH_BUFFER_BIT", GL_DEPTH_BUFFER_BIT, MM.Int);
-	pkgAddConstInt(th, system, "GL_NICEST", GL_NICEST, MM.Int);
-	pkgAddConstInt(th, system, "GL_DITHER", GL_DITHER, MM.Int);
-	pkgAddConstInt(th, system, "GL_FASTEST", GL_FASTEST, MM.Int);
-	pkgAddConstInt(th, system, "GL_ONE", GL_ONE, MM.Int);
-	pkgAddConstInt(th, system, "GL_ZERO", GL_ZERO, MM.Int);
-	pkgAddConstInt(th, system, "GL_DST_COLOR", GL_DST_COLOR, MM.Int);
-	pkgAddConstInt(th, system, "GL_ONE_MINUS_DST_COLOR", GL_ONE_MINUS_DST_COLOR, MM.Int);
-	pkgAddConstInt(th, system, "GL_DST_ALPHA", GL_DST_ALPHA, MM.Int);
-	pkgAddConstInt(th, system, "GL_ONE_MINUS_DST_ALPHA", GL_ONE_MINUS_DST_ALPHA, MM.Int);
-	pkgAddConstInt(th, system, "GL_SRC_ALPHA_SATURATE", GL_SRC_ALPHA_SATURATE, MM.Int);
-	pkgAddConstInt(th, system, "GL_SRC_COLOR", GL_SRC_COLOR, MM.Int);
-	pkgAddConstInt(th, system, "GL_ONE_MINUS_SRC_COLOR", GL_ONE_MINUS_SRC_COLOR, MM.Int);
-	pkgAddConstInt(th, system, "GL_SCISSOR_TEST", GL_SCISSOR_TEST, MM.Int);
-	pkgAddConstInt(th, system, "GL_TRUE", GL_TRUE, MM.Int);
-	pkgAddConstInt(th, system, "GL_FALSE", GL_FALSE, MM.Int);
-	pkgAddConstInt(th, system, "GL_VERSION", GL_VERSION, MM.Int);
-	pkgAddConstInt(th, system, "GL_FRAGMENT_SHADER", GL_FRAGMENT_SHADER, MM.Int);
-	pkgAddConstInt(th, system, "GL_VERTEX_SHADER", GL_VERTEX_SHADER, MM.Int);
-	pkgAddConstInt(th, system, "GL_TEXTURE0", GL_TEXTURE0, MM.Int);
-	pkgAddConstInt(th, system, "GL_ARRAY_BUFFER", GL_ARRAY_BUFFER, MM.Int);
-	pkgAddConstInt(th, system, "GL_STATIC_DRAW", GL_STATIC_DRAW, MM.Int);
-	pkgAddConstInt(th, system, "GL_FRAMEBUFFER", GL_FRAMEBUFFER, MM.Int);
-	pkgAddConstInt(th, system, "GL_VENDOR", GL_VENDOR, MM.Int);
-	pkgAddConstInt(th, system, "GL_RENDERER", GL_RENDERER, MM.Int);
-	pkgAddConstInt(th, system, "GL_SHADING_LANGUAGE_VERSION", GL_SHADING_LANGUAGE_VERSION, MM.Int);
-	pkgAddConstInt(th, system, "GL_EXTENSIONS", GL_EXTENSIONS, MM.Int);
-	pkgAddConstInt(th, system, "GL_CW", GL_CW, MM.Int);
-	pkgAddConstInt(th, system, "GL_CCW", GL_CCW, MM.Int);
+	static const Native nativeDefs[] = {
+		{ NATIVE_INT, "GL_COLOR_BUFFER_BIT", (void*)GL_COLOR_BUFFER_BIT, "Int"},
+		{ NATIVE_INT, "GL_TRIANGLES", (void*)GL_TRIANGLES, "Int"},
+		{ NATIVE_INT, "GL_LINE_LOOP", (void*)GL_LINE_LOOP, "Int"},
+		{ NATIVE_INT, "GL_SRC_ALPHA", (void*)GL_SRC_ALPHA, "Int"},
+		{ NATIVE_INT, "GL_ONE_MINUS_SRC_ALPHA", (void*)GL_ONE_MINUS_SRC_ALPHA, "Int"},
+		{ NATIVE_INT, "GL_DONT_CARE", (void*)GL_DONT_CARE, "Int"},
+		{ NATIVE_INT, "GL_BLEND", (void*)GL_BLEND, "Int"},
+		{ NATIVE_INT, "GL_TEXTURE_2D", (void*)GL_TEXTURE_2D, "Int"},
+		{ NATIVE_INT, "GL_TEXTURE_MAG_FILTER", (void*)GL_TEXTURE_MAG_FILTER, "Int"},
+		{ NATIVE_INT, "GL_LINEAR", (void*)GL_LINEAR, "Int"},
+		{ NATIVE_INT, "GL_TEXTURE_MIN_FILTER", (void*)GL_TEXTURE_MIN_FILTER, "Int"},
+		{ NATIVE_INT, "GL_NEAREST", (void*)GL_NEAREST, "Int"},
+		{ NATIVE_INT, "GL_FRONT_AND_BACK", (void*)GL_FRONT_AND_BACK, "Int"},
+		{ NATIVE_INT, "GL_POINTS", (void*)GL_POINTS, "Int"},
+		{ NATIVE_INT, "GL_LINES", (void*)GL_LINES, "Int"},
+		{ NATIVE_INT, "GL_LINE_STRIP", (void*)GL_LINE_STRIP, "Int"},
+		{ NATIVE_INT, "GL_TRIANGLE_STRIP", (void*)GL_TRIANGLE_STRIP, "Int"},
+		{ NATIVE_INT, "GL_TRIANGLE_FAN", (void*)GL_TRIANGLE_FAN, "Int"},
+		{ NATIVE_INT, "GL_FRONT", (void*)GL_FRONT, "Int"},
+		{ NATIVE_INT, "GL_BACK", (void*)GL_BACK, "Int"},
+		{ NATIVE_INT, "GL_RGB", (void*)GL_RGB, "Int"},
+		{ NATIVE_INT, "GL_RGBA", (void*)GL_RGBA, "Int"},
+		{ NATIVE_INT, "GL_LUMINANCE", (void*)GL_LUMINANCE, "Int"},
+		{ NATIVE_INT, "GL_CULL_FACE", (void*)GL_CULL_FACE, "Int"},
+		{ NATIVE_INT, "GL_DEPTH_TEST", (void*)GL_DEPTH_TEST, "Int"},
+		{ NATIVE_INT, "GL_LESS", (void*)GL_LESS, "Int"},
+		{ NATIVE_INT, "GL_GREATER", (void*)GL_GREATER, "Int"},
+		{ NATIVE_INT, "GL_LEQUAL", (void*)GL_LEQUAL, "Int"},
+		{ NATIVE_INT, "GL_GEQUAL", (void*)GL_GEQUAL, "Int"},
+		{ NATIVE_INT, "GL_NOTEQUAL", (void*)GL_NOTEQUAL, "Int"},
+		{ NATIVE_INT, "GL_EQUAL", (void*)GL_EQUAL, "Int"},
+		{ NATIVE_INT, "GL_TEXTURE_WRAP_S", (void*)GL_TEXTURE_WRAP_S, "Int"},
+		{ NATIVE_INT, "GL_TEXTURE_WRAP_T", (void*)GL_TEXTURE_WRAP_T, "Int"},
+		{ NATIVE_INT, "GL_REPEAT", (void*)GL_REPEAT, "Int"},
+		{ NATIVE_INT, "GL_CLAMP_TO_EDGE", (void*)GL_CLAMP_TO_EDGE, "Int"},
+		{ NATIVE_INT, "GL_NEAREST_MIPMAP_NEAREST", (void*)GL_NEAREST_MIPMAP_NEAREST, "Int"},
+		{ NATIVE_INT, "GL_NEAREST_MIPMAP_LINEAR", (void*)GL_NEAREST_MIPMAP_LINEAR, "Int"},
+		{ NATIVE_INT, "GL_LINEAR_MIPMAP_NEAREST", (void*)GL_LINEAR_MIPMAP_NEAREST, "Int"},
+		{ NATIVE_INT, "GL_LINEAR_MIPMAP_LINEAR", (void*)GL_LINEAR_MIPMAP_LINEAR, "Int"},
+		{ NATIVE_INT, "GL_REPLACE", (void*)GL_REPLACE, "Int"},
+		{ NATIVE_INT, "GL_ALWAYS", (void*)GL_ALWAYS, "Int"},
+		{ NATIVE_INT, "GL_DEPTH_BUFFER_BIT", (void*)GL_DEPTH_BUFFER_BIT, "Int"},
+		{ NATIVE_INT, "GL_NICEST", (void*)GL_NICEST, "Int"},
+		{ NATIVE_INT, "GL_DITHER", (void*)GL_DITHER, "Int"},
+		{ NATIVE_INT, "GL_FASTEST", (void*)GL_FASTEST, "Int"},
+		{ NATIVE_INT, "GL_ONE", (void*)GL_ONE, "Int"},
+		{ NATIVE_INT, "GL_ZERO", (void*)GL_ZERO, "Int"},
+		{ NATIVE_INT, "GL_DST_COLOR", (void*)GL_DST_COLOR, "Int"},
+		{ NATIVE_INT, "GL_ONE_MINUS_DST_COLOR", (void*)GL_ONE_MINUS_DST_COLOR, "Int"},
+		{ NATIVE_INT, "GL_DST_ALPHA", (void*)GL_DST_ALPHA, "Int"},
+		{ NATIVE_INT, "GL_ONE_MINUS_DST_ALPHA", (void*)GL_ONE_MINUS_DST_ALPHA, "Int"},
+		{ NATIVE_INT, "GL_SRC_ALPHA_SATURATE", (void*)GL_SRC_ALPHA_SATURATE, "Int"},
+		{ NATIVE_INT, "GL_SRC_COLOR", (void*)GL_SRC_COLOR, "Int"},
+		{ NATIVE_INT, "GL_ONE_MINUS_SRC_COLOR", (void*)GL_ONE_MINUS_SRC_COLOR, "Int"},
+		{ NATIVE_INT, "GL_SCISSOR_TEST", (void*)GL_SCISSOR_TEST, "Int"},
+		{ NATIVE_INT, "GL_TRUE", (void*)GL_TRUE, "Int"},
+		{ NATIVE_INT, "GL_FALSE", (void*)GL_FALSE, "Int"},
+		{ NATIVE_INT, "GL_VERSION", (void*)GL_VERSION, "Int"},
+		{ NATIVE_INT, "GL_FRAGMENT_SHADER", (void*)GL_FRAGMENT_SHADER, "Int"},
+		{ NATIVE_INT, "GL_VERTEX_SHADER", (void*)GL_VERTEX_SHADER, "Int"},
+		{ NATIVE_INT, "GL_TEXTURE0", (void*)GL_TEXTURE0, "Int"},
+		{ NATIVE_INT, "GL_ARRAY_BUFFER", (void*)GL_ARRAY_BUFFER, "Int"},
+		{ NATIVE_INT, "GL_STATIC_DRAW", (void*)GL_STATIC_DRAW, "Int"},
+		{ NATIVE_INT, "GL_FRAMEBUFFER", (void*)GL_FRAMEBUFFER, "Int"},
+		{ NATIVE_INT, "GL_VENDOR", (void*)GL_VENDOR, "Int"},
+		{ NATIVE_INT, "GL_RENDERER", (void*)GL_RENDERER, "Int"},
+		{ NATIVE_INT, "GL_SHADING_LANGUAGE_VERSION", (void*)GL_SHADING_LANGUAGE_VERSION, "Int"},
+		{ NATIVE_INT, "GL_EXTENSIONS", (void*)GL_EXTENSIONS, "Int"},
+		{ NATIVE_INT, "GL_CW", (void*)GL_CW, "Int"},
+		{ NATIVE_INT, "GL_CCW", (void*)GL_CCW, "Int"}, 
+		// generic functions
+		{ NATIVE_FUN, "glFlush", fun_glFlush, "fun -> Int"},
+		{ NATIVE_FUN, "glClear", fun_glClear, "fun Int -> Int"},
+		{ NATIVE_FUN, "glEnable", fun_glEnable, "fun Int -> Int"},
+		{ NATIVE_FUN, "glDisable", fun_glDisable, "fun Int -> Int"},
+		{ NATIVE_FUN, "glCullFace", fun_glCullFace, "fun Int -> Int"},
+		{ NATIVE_FUN, "glDepthFunc", fun_glDepthFunc, "fun Int -> Int"},
+		{ NATIVE_FUN, "glDepthMask", fun_glDepthMask, "fun Int -> Int"},
+		{ NATIVE_FUN, "glBlendFunc", fun_glBlendFunc, "fun Int Int -> Int"},
+		{ NATIVE_FUN, "glHint", fun_glHint, "fun Int Int -> Int"},
+		{ NATIVE_FUN, "glTexParameteri", fun_glTexParameteri, "fun Int Int Int -> Int"},
+		{ NATIVE_FUN, "glDrawArrays", fun_glDrawArrays, "fun Int Int Int -> Int"},
+		{ NATIVE_FUN, "glViewport", fun_glViewport, "fun Int Int Int Int -> Int"},
+		{ NATIVE_FUN, "glScissor", fun_glScissor, "fun Int Int Int Int -> Int"},
+		{ NATIVE_FUN, "glCopyTexImage2D", fun_glCopyTexImage2D, "fun Int Int Int Int Int Int Int Int -> Int"},
+		{ NATIVE_FUN, "glCopyTexSubImage2D", fun_glCopyTexSubImage2D, "fun Int Int Int Int Int Int Int Int -> Int"},
+		{ NATIVE_FUN, "glLineWidth", fun_glLineWidth, "fun Float -> Int"},
+		{ NATIVE_FUN, "glClearColor", fun_glClearColor, "fun Float Float Float Float -> Int"},
+		{ NATIVE_FUN, "glTexParameterf", fun_glTexParameterf, "fun Int Int Float -> Int"},
+		{ NATIVE_FUN, "glEnableVertexAttribArray", fun_glEnableVertexAttribArray, "fun Int -> Int"},
+		{ NATIVE_FUN, "glActiveTexture", fun_glActiveTexture, "fun Int -> Int"},
+		{ NATIVE_FUN, "glDisableVertexAttribArray", fun_glDisableVertexAttribArray, "fun Int -> Int"},
+		{ NATIVE_FUN, "glFrontFace", fun_glFrontFace, "fun Int -> Int"},
+		{ NATIVE_FUN, "glUseProgram", fun_glUseProgram, "fun GlProgram -> Int"},
+		{ NATIVE_FUN, "glLinkProgram", fun_glLinkProgram, "fun GlProgram -> Int"},
+		{ NATIVE_FUN, "glGetString", fun_glGetString, "fun Int -> Str"},
+		{ NATIVE_FUN, "glGetUniformLocation", fun_glGetUniformLocation, "fun GlProgram Str -> Int"},
+		{ NATIVE_FUN, "glGetAttribLocation", fun_glGetAttribLocation, "fun GlProgram Str -> Int"},
+		{ NATIVE_FUN, "glUniform1fv", fun_glUniform1fv, "fun Int Int Floats -> Int"},
+		{ NATIVE_FUN, "glUniform2fv", fun_glUniform2fv, "fun Int Int Floats -> Int"},
+		{ NATIVE_FUN, "glUniform3fv", fun_glUniform3fv, "fun Int Int Floats -> Int"},
+		{ NATIVE_FUN, "glUniform4fv", fun_glUniform4fv, "fun Int Int Floats -> Int"},
+		{ NATIVE_FUN, "glUniformMatrix2fv", fun_glUniformMatrix2fv, "fun Int Int Int Floats -> Int"},
+		{ NATIVE_FUN, "glUniformMatrix3fv", fun_glUniformMatrix3fv, "fun Int Int Int Floats -> Int"},
+		{ NATIVE_FUN, "glUniformMatrix4fv", fun_glUniformMatrix4fv, "fun Int Int Int Floats -> Int"},
+		// non generic functions
+		{ NATIVE_FUN, "glES", fun_glES, "fun -> Bool" },
+		{ NATIVE_FUN, "glSwapBuffers", fun_glSwapBuffers, "fun -> Int" },
+		{ NATIVE_FUN, "_glMakeContext", fun_glMakeContext, "fun -> Int" },
+		{ NATIVE_FUN, "_glRefreshContext", fun_glRefreshContext, "fun -> Int" },
+		{ NATIVE_FUN, "glCreateShader", fun_glCreateShader, "fun Int -> GlShader" },
+		{ NATIVE_FUN, "glCreateProgram", fun_glCreateProgram, "fun -> GlProgram" },
+		{ NATIVE_FUN, "glCreateTexture", fun_glCreateTexture, "fun -> GlTexture" },
+		{ NATIVE_FUN, "glAttachShader", fun_glAttachShader, "fun GlProgram GlShader -> Int" },
+		{ NATIVE_FUN, "glShaderSource", fun_glShaderSource, "fun GlShader Str -> Int" },
+		{ NATIVE_FUN, "glCompileShader", fun_glCompileShader, "fun GlShader -> Bool" },
+		{ NATIVE_FUN, "glVertexAttribPointer", fun_glVertexAttribPointer, "fun Int Int Int Int Floats Int -> Int" },
+		{ NATIVE_FUN, "glBindTexture", fun_glBindTexture, "fun Int GlTexture -> Int" },
+		{ NATIVE_FUN, "glTexImage2D", fun_glTexImage2D, "fun GlTexture Int Int Int Int Bitmap -> Int" },
+		{ NATIVE_FUN, "glTexSubImage2D", fun_glTexSubImage2D, "fun GlTexture Int Int Int Int Int Int Bitmap -> Int" },
+		{ NATIVE_FUN, "glTexImage2DUpdate", fun_glTexImage2DUpdate, "fun GlTexture Bytes Int Int Int Int Int Int Bitmap -> Int" },
+		{ NATIVE_FUN, "floatsFromArray", fun_floatsFromArray, "fun array Float -> Floats" },
+		{ NATIVE_FUN, "floatsLength", fun_floatsLength, "fun Floats -> Int" },
+		{ NATIVE_FUN, "floatsGet", fun_floatsGet, "fun Floats Int -> Float" },
+	};
+	NATIVE_DEF(nativeDefs);
 
-	// generic functions
-	pkgAddFun(th, system, "glFlush", fun_glFlush, GLNONE);
-	pkgAddFun(th, system, "glClear", fun_glClear, GLI);
-	pkgAddFun(th, system, "glEnable", fun_glEnable, GLI);
-	pkgAddFun(th, system, "glDisable", fun_glDisable, GLI);
-	pkgAddFun(th, system, "glCullFace", fun_glCullFace, GLI);
-	pkgAddFun(th, system, "glDepthFunc", fun_glDepthFunc, GLI);
-	pkgAddFun(th, system, "glDepthMask", fun_glDepthMask, GLI);
-	pkgAddFun(th, system, "glBlendFunc", fun_glBlendFunc, GLII);
-	pkgAddFun(th, system, "glHint", fun_glHint, GLII);
-	pkgAddFun(th, system, "glTexParameteri", fun_glTexParameteri, GLIII);
-	pkgAddFun(th, system, "glDrawArrays", fun_glDrawArrays, GLIII);
-	pkgAddFun(th, system, "glViewport", fun_glViewport, GLIIII);
-	pkgAddFun(th, system, "glScissor", fun_glScissor, GLIIII);
-	pkgAddFun(th, system, "glCopyTexImage2D", fun_glCopyTexImage2D, GLIIIIIIII);
-	pkgAddFun(th, system, "glCopyTexSubImage2D", fun_glCopyTexSubImage2D, GLIIIIIIII);
-	pkgAddFun(th, system, "glLineWidth", fun_glLineWidth, GLF);
-	pkgAddFun(th, system, "glClearColor", fun_glClearColor, GLFFFF);
-	pkgAddFun(th, system, "glTexParameterf", fun_glTexParameterf, GLIIF);
-	pkgAddFun(th, system, "glEnableVertexAttribArray", fun_glEnableVertexAttribArray, GLI);
-	pkgAddFun(th, system, "glActiveTexture", fun_glActiveTexture, GLI);
-	pkgAddFun(th, system, "glDisableVertexAttribArray", fun_glDisableVertexAttribArray, GLI);
-	pkgAddFun(th, system, "glFrontFace", fun_glFrontFace, GLI);
-	pkgAddFun(th, system, "glUseProgram", fun_glUseProgram, GLP);
-	pkgAddFun(th, system, "glLinkProgram", fun_glLinkProgram, GLP);
-	pkgAddFun(th, system, "glGetString", fun_glGetString, GLIs);
-	pkgAddFun(th, system, "glGetUniformLocation", fun_glGetUniformLocation, GLPSi);
-	pkgAddFun(th, system, "glGetAttribLocation", fun_glGetAttribLocation, GLPSi);
-	pkgAddFun(th, system, "glUniform1fv", fun_glUniform1fv, GLIIFloats);
-	pkgAddFun(th, system, "glUniform2fv", fun_glUniform2fv, GLIIFloats);
-	pkgAddFun(th, system, "glUniform3fv", fun_glUniform3fv, GLIIFloats);
-	pkgAddFun(th, system, "glUniform4fv", fun_glUniform4fv, GLIIFloats);
-	pkgAddFun(th, system, "glUniformMatrix2fv", fun_glUniformMatrix2fv, GLIIIFloats);
-	pkgAddFun(th, system, "glUniformMatrix3fv", fun_glUniformMatrix3fv, GLIIIFloats);
-	pkgAddFun(th, system, "glUniformMatrix4fv", fun_glUniformMatrix4fv, GLIIIFloats);
+	return 0;
+}
+#else
+int fun_glMakeContext(Thread* th) FUN_RETURN_NIL
+int fun_glRefreshContext(Thread* th) FUN_RETURN_NIL
 
-	// non generic functions
-	pkgAddFun(th, system, "glES", fun_glES, GLBOOL);
-	pkgAddFun(th, system, "glSwapBuffers", fun_glSwapBuffers, GLNONE);
-	pkgAddFun(th, system, "_glMakeContext", fun_glMakeContext, GLNONE);
-	pkgAddFun(th, system, "_glRefreshContext", fun_glRefreshContext, GLNONE);
+int coreUiGLInit(Pkg* system)
+{
+	static const Native nativeDefs[] = {
+		{ NATIVE_FUN, "_glMakeContext", fun_glMakeContext, "fun -> Int" },
+		{ NATIVE_FUN, "_glRefreshContext", fun_glRefreshContext, "fun -> Int" },
+	};
+	NATIVE_DEF(nativeDefs);
 
-	pkgAddFun(th, system, "glCreateShader", fun_glCreateShader, typeAlloc(th, TYPECODE_FUN, NULL, 2, MM.Int, shader->type));
-	pkgAddFun(th, system, "glCreateProgram", fun_glCreateProgram, typeAlloc(th, TYPECODE_FUN, NULL, 1, program->type));
-	pkgAddFun(th, system, "glCreateTexture", fun_glCreateTexture, typeAlloc(th, TYPECODE_FUN, NULL, 1, texture->type));
-
-	pkgAddFun(th, system, "glAttachShader", fun_glAttachShader, typeAlloc(th, TYPECODE_FUN, NULL, 3, program->type, shader->type,MM.Int));
-	pkgAddFun(th, system, "glShaderSource", fun_glShaderSource, typeAlloc(th, TYPECODE_FUN, NULL, 3, shader->type, MM.Str, MM.Int));
-	pkgAddFun(th, system, "glCompileShader", fun_glCompileShader, typeAlloc(th, TYPECODE_FUN, NULL, 2, shader->type, MM.Boolean));
-
-	pkgAddFun(th, system, "glVertexAttribPointer", fun_glVertexAttribPointer, typeAlloc(th, TYPECODE_FUN, NULL, 7, MM.Int, MM.Int, MM.Int, MM.Int, floats->type, MM.Int, MM.Int));
-
-	pkgAddFun(th, system, "glBindTexture", fun_glBindTexture, typeAlloc(th, TYPECODE_FUN, NULL, 3, MM.Int, texture->type, MM.Int));
-	pkgAddFun(th, system, "glTexImage2D", fun_glTexImage2D, typeAlloc(th, TYPECODE_FUN, NULL, 7, texture->type, MM.Int, MM.Int, MM.Int, MM.Int, MM.Bitmap, MM.Int));
-	pkgAddFun(th, system, "glTexSubImage2D", fun_glTexSubImage2D, typeAlloc(th, TYPECODE_FUN, NULL, 9, texture->type, MM.Int, MM.Int, MM.Int, MM.Int, MM.Int, MM.Int, MM.Bitmap, MM.Int));
-	pkgAddFun(th, system, "glTexImage2DUpdate", fun_glTexImage2DUpdate, typeAlloc(th, TYPECODE_FUN, NULL, 10, texture->type, MM.Bytes, MM.Int, MM.Int, MM.Int, MM.Int, MM.Int, MM.Int, MM.Bitmap, MM.Int));
-
-	pkgAddFun(th, system, "floatsFromArray", fun_floatsFromArray, typeAlloc(th, TYPECODE_FUN, NULL, 2, typeAlloc(th, TYPECODE_ARRAY, NULL, 1, MM.Float), floats->type));
-	pkgAddFun(th, system, "floatsLength", fun_floatsLength, typeAlloc(th, TYPECODE_FUN, NULL, 2, floats->type, MM.Int));
-	pkgAddFun(th, system, "floatsGet", fun_floatsGet, GLFloatsI);
 	return 0;
 }
 #endif

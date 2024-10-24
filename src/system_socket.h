@@ -85,13 +85,13 @@ struct Socket
 
 void lambdaPipe(SOCKET fds[2]);
 void lambdaPipeClose(SOCKET fds[2]);
-Socket* _socketCreate(Thread* th, SOCKET sock);
+Socket* _socketCreate(SOCKET sock);
 void internalSend(char* src, int len);
 
 int fun_socketRead(Thread* th);
 int fun_socketWrite(Thread* th);
 int fun_socketClose(Thread* th);
 
-int sysSocketInit(Thread* th, Pkg* system);
+int sysSocketInit(Pkg* system);
 void sysSocketClose(void);
 #endif

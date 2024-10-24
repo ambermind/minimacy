@@ -16,11 +16,11 @@ fun sha512 msg= sha512Output sha512Process sha512Create msg 0 nil;;
 fun sha1 msg= sha1Output sha1Process sha1Create msg 0 nil;;
 fun md5 msg= md5Output md5Process md5Create msg 0 nil;;
 
-fun sha512double msg1 msg2= sha512Output sha512Process (sha512ProcessBytes sha512Create msg1 0 nil) msg2 0 nil;;
-fun sha256double msg1 msg2= sha256Output sha256Process (sha256ProcessBytes sha256Create msg1 0 nil) msg2 0 nil;;
-fun sha384double msg1 msg2= sha384Output sha384Process (sha384ProcessBytes sha384Create msg1 0 nil) msg2 0 nil;;
-fun sha1double msg1 msg2= sha1Output sha1Process (sha1ProcessBytes sha1Create msg1 0 nil) msg2 0 nil;;
-fun md5double msg1 msg2= md5Output md5Process (md5ProcessBytes md5Create msg1 0 nil) msg2 0 nil;;
+fun _sha512double msg1 msg2= sha512Output sha512Process (sha512ProcessBytes sha512Create msg1 0 nil) msg2 0 nil;;
+fun _sha256double msg1 msg2= sha256Output sha256Process (sha256ProcessBytes sha256Create msg1 0 nil) msg2 0 nil;;
+fun _sha384double msg1 msg2= sha384Output sha384Process (sha384ProcessBytes sha384Create msg1 0 nil) msg2 0 nil;;
+fun _sha1double msg1 msg2= sha1Output sha1Process (sha1ProcessBytes sha1Create msg1 0 nil) msg2 0 nil;;
+fun _md5double msg1 msg2= md5Output md5Process (md5ProcessBytes md5Create msg1 0 nil) msg2 0 nil;;
 
 fun _hmacCommon inLen key data hash hashdouble=
 	let if (strLength key)>inLen then (call hash key) else key -> key in
@@ -37,9 +37,9 @@ fun _hmacCommon inLen key data hash hashdouble=
 		call hashdouble k_opad mac
 	);;
 
-fun hmacSha512 key data= _hmacCommon 128 key data #sha512 #sha512double;;	// see bouncycastle\crypto\macs\HMac.java
-fun hmacSha384 key data= _hmacCommon 128 key data #sha384 #sha384double;;	// see bouncycastle\crypto\macs\HMac.java
-fun hmacSha256 key data= _hmacCommon 64 key data #sha256 #sha256double;;
-fun hmacSha1 key data= _hmacCommon 64 key data #sha1 #sha1double;;
-fun hmacMd5 key data= _hmacCommon 64 key data #md5 #md5double;;
+fun hmacSha512 key data= _hmacCommon 128 key data #sha512 #_sha512double;;	// see bouncycastle\crypto\macs\HMac.java
+fun hmacSha384 key data= _hmacCommon 128 key data #sha384 #_sha384double;;	// see bouncycastle\crypto\macs\HMac.java
+fun hmacSha256 key data= _hmacCommon 64 key data #sha256 #_sha256double;;
+fun hmacSha1 key data= _hmacCommon 64 key data #sha1 #_sha1double;;
+fun hmacMd5 key data= _hmacCommon 64 key data #md5 #_md5double;;
 

@@ -31,23 +31,23 @@ fun _systemDirFromFile file=
 	[dir pkg];;
 
 fun _getBootPkg lArgs =
-	if lArgs==nil then ["boot" nil MAX_MEMORY_STANDALONE]
+	if lArgs==nil then ["boot" nil]
 	else
 	if !strEndsWith (head lArgs) SOURCE_EXTENSION then _getBootPkg tail lArgs
 	else
 	let _systemDirFromFile head lArgs -> [dir pkg] in
 	(
 		set _Args=tail lArgs;
-		[pkg dir MAX_MEMORY_BOOT]
+		[pkg dir]
 	);;	
 
 fun _start compile=
 	echoEnable true;
-	let _getBootPkg args ->[pkg programDir maxMemory] in
+	let _getBootPkg args ->[pkg programDir] in
 	(
 		if _systemLogIsEnabled then echoLn ["> current time: " fullDate time];
 		_fsInit programDir;
-		_launchApp pkg maxMemory compile caller
+		_launchApp pkg compile caller
 	);
 	_schedulerStart;;
 

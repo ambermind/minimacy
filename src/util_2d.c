@@ -15,38 +15,18 @@
 #define min(a,b) (((a) < (b)) ? (a) : (b))
 #endif
 
-lchar ColorAdd[256 * 256];
-lchar ColorSub[256 * 256];
-lchar ColorMul[256 * 256];
-lchar ColorClip[256 * 3];
+#include "util_2d_const.h"
 
-//https://en.wikipedia.org/wiki/YUV#Converting_between_Y%E2%80%B2UV_and_RGB
-int yuv_rv[256];
-int yuv_gu[256];
-int yuv_gv[256];
-int yuv_bu[256];
-
-int yuv_yr[256];
-int yuv_yg[256];
-int yuv_yb[256];
-int yuv_ur[256];
-int yuv_ug[256];
-int yuv_ub[256];
-int yuv_vr[256];
-int yuv_vg[256];
-int yuv_vb[256];
-
-
-#define COLORADD(x,y) (ColorAdd[(x)+((y)<<8)])
-#define COLORSUB(x,y) (ColorSub[(x)+((y)<<8)])
-#define COLORMUL(x,y) (ColorMul[(x)+((y)<<8)])
+#define COLORADD(x,y) (ColorClip[256+(x)+(y)])
+#define COLORSUB(x,y) (ColorClip[256+(x)-(y)])
+#define COLORMUL(x,y) (((x)*(y)>65535)?255:(((x)*(y))>>8))
 #define COLORALPHA(a,src,dst) (COLORADD(COLORMUL(a,src),COLORMUL(255-(a),dst)))
 
 // IDCT : from https://membres-ljk.imag.fr/Valerie.Perrier/SiteWeb/node9.html
 // C * Ct = I
 // Pixels = Ct * DCT * C
 // preComputation of C for JPG decoding:
-LFLOAT IDCT88[64] = {
+const LFLOAT IDCT88[64] = {
 	0.3535533906, 0.3535533906, 0.3535533906, 0.3535533906, 0.3535533906, 0.3535533906, 0.3535533906, 0.3535533906,
 	0.4903926402, 0.4157348062, 0.2777851165, 0.09754516101, -0.09754516101, -0.2777851165, -0.4157348062, -0.4903926402,
 	0.4619397663, 0.1913417162, -0.1913417162, -0.4619397663, -0.4619397663, -0.1913417162, 0.1913417162, 0.4619397663,
@@ -56,51 +36,6 @@ LFLOAT IDCT88[64] = {
 	0.1913417162, -0.4619397663, 0.4619397663, -0.1913417162, -0.1913417162, 0.4619397663, -0.4619397663, 0.1913417162,
 	0.09754516101, -0.2777851165, 0.4157348062, -0.4903926402, 0.4903926402, -0.4157348062, 0.2777851165, -0.09754516101
 };
-
-void _colorInit(void)
-{
-	double x;
-	int i, j, k;
-	for (i = 0; i < 256; i++)
-		for (j = 0; j < 256; j++)
-		{
-			k = i + j;
-			ColorAdd[i + (j << 8)] = (k <= 255) ? k : 255;
-
-			k = j - i;
-			ColorSub[i + (j << 8)] = (k >=0) ? k : 0;
-
-			k = i * j / 255;
-			ColorMul[i + (j << 8)] = k;
-		}
-	for (i = 0; i < 256; i++)
-	{
-		int j;
-		ColorClip[i] = 0;
-		ColorClip[i + 256] = i;
-		ColorClip[i + 512] = 255;
-
-		//https://en.wikipedia.org/wiki/YCbCr#JPEG_conversion
-		x = .299 * i; j = (int)x; yuv_yr[i] = (int)j;
-		x = .587 * i; j = (int)x; yuv_yg[i] = (int)j;
-		x = .114 * i; j = (int)x; yuv_yb[i] = (int)j;
-
-		x = -.168736 * i; j = (int)x; yuv_ur[i] = (int)j;
-		x = -.331264 * i; j = (int)x; yuv_ug[i] = (int)j;
-		x = .5 * i; j = (int)x; yuv_ub[i] = (int)j;
-
-		x = .5 * i; j = (int)x; yuv_vr[i] = (int)j;
-		x = -.418688 * i; j = (int)x; yuv_vg[i] = (int)j;
-		x = -.081312 * i; j = (int)x; yuv_vb[i] = (int)j;
-
-		x = 1.402 * (i - 128); yuv_rv[i] = (int)x;
-
-		x = -0.344136 * (i - 128); yuv_gu[i] = (int)x;
-		x = -0.714136 * (i - 128); yuv_gv[i] = (int)x;
-
-		x = 1.772 * (i - 128); yuv_bu[i] = (int)x;
-	}
-}
 
 int _blendXor(int src, int dst) { return src ^ dst; }
 int _blendOr(int src, int dst) { return src | dst; }
@@ -149,7 +84,7 @@ int _blendAlpha(int src, int dst) {
 int _blendDestination(int src, int dst) { return dst; }
 
 #define NB_BLEND_FUNCTIONS 11
-BLEND_FUNCTION BlendFunctions[NB_BLEND_FUNCTIONS] =
+const BLEND_FUNCTION BlendFunctions[NB_BLEND_FUNCTIONS] =
 {
 	NULL, _blendXor, _blendOr, _blendAnd,
 	_blendMax, _blendMin, _blendAdd, _blendSub,
@@ -175,7 +110,7 @@ LINT _clip1D(LINT targetX, LINT targetW, LINT* x, LINT* w, LINT* dx)
 	return 0;
 }
 
-int _bitmapCopy(Thread* th, LBitmap* b, LINT x, LINT y, LINT w, LINT h, LBitmap** result)
+int _bitmapCopy(LBitmap* b, LINT x, LINT y, LINT w, LINT h, LBitmap** result)
 {
 	LINT j;
 	LBitmap* d;
@@ -185,7 +120,7 @@ int _bitmapCopy(Thread* th, LBitmap* b, LINT x, LINT y, LINT w, LINT h, LBitmap*
 	if (_clip1D(0, b->w, &x, &w, NULL)) return 0;
 	if (_clip1D(0, b->h, &y, &h, NULL)) return 0;
 	if ((w <= 0) || (h <= 0)) return 0;
-	d = _bitmapCreate(th, w, h); if (!d) return EXEC_OM;
+	d = _bitmapCreate(w, h); if (!d) return EXEC_OM;
 	*result = d;
 	dst = d->start32;
 	src = &b->start32[y * b->next32 + x];
@@ -568,15 +503,15 @@ void _bitmapResizeNearest(LBitmap* dst, LBitmap* src)
 	}
 }
 
-int SrcComponent[] = {
+const int SrcComponent[] = {
 	16,8,0,24,0,
 	16,8,0,24,0,
 };
-int DstInv[] = {
+const int DstInv[] = {
 	0,0,0,0,0,
 	255,255,255,255,255,
 };
-int SrcAnd[] = {
+const int SrcAnd[] = {
 	255,255,255,255,0,
 	255,255,255,255,0,
 };
@@ -648,6 +583,7 @@ void _bitmapFromYCrCb(LBitmap* b)
 		p0 += b->next8;
 	}
 }
+
 void _bitmapToYCrCb(LBitmap* b)
 {
 	LINT i, j;

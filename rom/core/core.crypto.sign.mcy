@@ -13,7 +13,7 @@ use core.crypto.hash;;
 use core.crypto.pkcs1;;
 use core.crypto.rsapss;;
 use core.crypto.ec;;
-use core.crypto.asn1;;
+use core.crypto.key;;
 
 const RSA_PKCS1_SHA1   = 0x201;;
 const RSA_PKCS1_SHA256 = 0x401;;
@@ -33,43 +33,52 @@ const ANS1_SHA256_MAGIC="3031300d060960864801650304020105000420";;
 const ANS1_SHA384_MAGIC="3041300d060960864801650304020205000430";;
 const ANS1_SHA512_MAGIC="3051300d060960864801650304020305000440";;
 
-fun rsaSignAlgoByOID algo=
-	match algo with
-		OID_RSA_PKCS1_SHA1 -> RSA_PKCS1_SHA1,
+fun signAlgoByOID oid=
+	match oid with
+		OID_RSA_PKCS1_SHA1   -> RSA_PKCS1_SHA1,
 		OID_RSA_PKCS1_SHA256 -> RSA_PKCS1_SHA256,
 		OID_RSA_PKCS1_SHA384 -> RSA_PKCS1_SHA384,
 		OID_RSA_PKCS1_SHA512 -> RSA_PKCS1_SHA512;;
 
-fun signatureCheckEc ec certificate data signature fHash=
-	let listFromAsn1 head asn1Unpack signature -> x:y:_ in
-	ecVerifyStr ec (oidHashmapPUBKEY certificate) (bigFromStr strFromAsn1 x) (bigFromStr strFromAsn1 y) data fHash;;
+fun signOIDByAlgo algo=
+	match algo with
+		RSA_PKCS1_SHA1   -> OID_RSA_PKCS1_SHA1,
+		RSA_PKCS1_SHA512 -> OID_RSA_PKCS1_SHA512,
+		RSA_PKCS1_SHA384 -> OID_RSA_PKCS1_SHA384,
+		RSA_PKCS1_SHA256 -> OID_RSA_PKCS1_SHA256;;
 
 // return :
 // - nil : unknown algorithm
 // - true : good signature
 // - false : wrong signature
-fun signatureCheck algo certificate data signature=
+fun signatureCheck algo key data signature=
 	match algo with
-		RSA_PSS_RSAE_SHA256 -> rsaPssVerify certificate data #sha256 32 signature,
-		RSA_PSS_RSAE_SHA384 -> rsaPssVerify certificate data #sha384 48 signature,
-		RSA_PSS_RSAE_SHA512 -> rsaPssVerify certificate data #sha512 64 signature,
-		RSA_PKCS1_SHA1 -> rsaPkcs1SignatureCheck certificate data signature ANS1_SHA1_MAGIC #sha1,
-		RSA_PKCS1_SHA256 -> rsaPkcs1SignatureCheck certificate data signature ANS1_SHA256_MAGIC #sha256,
-		RSA_PKCS1_SHA384 -> rsaPkcs1SignatureCheck certificate data signature ANS1_SHA384_MAGIC #sha384,
-		RSA_PKCS1_SHA512 -> rsaPkcs1SignatureCheck certificate data signature ANS1_SHA512_MAGIC #sha512,
-		ECDSA_SECP256R1_SHA256 -> signatureCheckEc ecSecp256r1 certificate data signature #sha256,
-		ECDSA_SECP384R1_SHA384 -> signatureCheckEc ecSecp384r1 certificate data signature #sha384,	// not tested
+		RSA_PSS_RSAE_SHA256 -> rsaPssVerify (rsaFromKey key) data #sha256 32 signature,
+		RSA_PSS_RSAE_SHA384 -> rsaPssVerify (rsaFromKey key) data #sha384 48 signature,
+		RSA_PSS_RSAE_SHA512 -> rsaPssVerify (rsaFromKey key) data #sha512 64 signature,
+		RSA_PKCS1_SHA1 -> rsaPkcs1SignatureCheck (rsaFromKey key) data signature ANS1_SHA1_MAGIC #sha1,
+		RSA_PKCS1_SHA256 -> rsaPkcs1SignatureCheck (rsaFromKey key) data signature ANS1_SHA256_MAGIC #sha256,
+		RSA_PKCS1_SHA384 -> rsaPkcs1SignatureCheck (rsaFromKey key) data signature ANS1_SHA384_MAGIC #sha384,
+		RSA_PKCS1_SHA512 -> rsaPkcs1SignatureCheck (rsaFromKey key) data signature ANS1_SHA512_MAGIC #sha512,
+		ECDSA_SECP256R1_SHA256 -> ecVerify (ecFromKey key) (ecPointFromAsn1 signature) data #sha256,
+		ECDSA_SECP384R1_SHA384 -> ecVerify (ecFromKey key) (ecPointFromAsn1 signature) data #sha384,	// not tested
 		_ -> (echoLn ["unknown signature check " hexFromInt algo] ; nil);;
 
-fun signatureGenerate algo rsa data=
+fun signatureCheckFromCertificate algo certificate data signature=
+	let publicKeyFromCertificate certificate -> key in
+	signatureCheck algo key data signature;;
+
+fun signatureGenerate algo key data=
 	match algo with
-		RSA_PSS_RSAE_SHA256 -> rsaPssSign rsa data #sha256 32,
-		RSA_PSS_RSAE_SHA384 -> rsaPssSign rsa data #sha384 48,
-		RSA_PSS_RSAE_SHA512 -> rsaPssSign rsa data #sha512 64,
-		RSA_PKCS1_SHA1 -> rsaPkcs1Sign rsa data ANS1_SHA1_MAGIC #sha1,
-		RSA_PKCS1_SHA256 -> rsaPkcs1Sign rsa data ANS1_SHA256_MAGIC #sha256,
-		RSA_PKCS1_SHA384 -> rsaPkcs1Sign rsa data ANS1_SHA384_MAGIC #sha384,
-		RSA_PKCS1_SHA512 -> rsaPkcs1Sign rsa data ANS1_SHA512_MAGIC #sha512,
+		RSA_PSS_RSAE_SHA256 -> rsaPssSign (rsaFromKey key) data #sha256 32,
+		RSA_PSS_RSAE_SHA384 -> rsaPssSign (rsaFromKey key) data #sha384 48,
+		RSA_PSS_RSAE_SHA512 -> rsaPssSign (rsaFromKey key) data #sha512 64,
+		RSA_PKCS1_SHA1 -> rsaPkcs1Sign (rsaFromKey key) data ANS1_SHA1_MAGIC #sha1,
+		RSA_PKCS1_SHA256 -> rsaPkcs1Sign (rsaFromKey key) data ANS1_SHA256_MAGIC #sha256,
+		RSA_PKCS1_SHA384 -> rsaPkcs1Sign (rsaFromKey key) data ANS1_SHA384_MAGIC #sha384,
+		RSA_PKCS1_SHA512 -> rsaPkcs1Sign (rsaFromKey key) data ANS1_SHA512_MAGIC #sha512,
+		ECDSA_SECP256R1_SHA256 -> asn1EcPoint ecSign (ecFromKey key) data #sha256,
+		ECDSA_SECP384R1_SHA384 -> asn1EcPoint ecSign (ecFromKey key) data #sha384,	// not tested
 		_ -> (echoLn ["unknown signature generate " hexFromInt algo] ; nil);;
 
 fun signatureForRsa algo =
@@ -81,4 +90,6 @@ fun signatureForRsa algo =
 	(algo==RSA_PKCS1_SHA384)||
 	(algo==RSA_PKCS1_SHA512);;
 
-fun signatureForEc algo = (algo==ECDSA_SECP256R1_SHA256)||(algo==ECDSA_SECP384R1_SHA384);;
+fun signatureForEc algo =
+	(algo==ECDSA_SECP256R1_SHA256)||
+	(algo==ECDSA_SECP384R1_SHA384);;

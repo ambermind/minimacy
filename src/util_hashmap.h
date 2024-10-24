@@ -33,19 +33,19 @@ struct HashSlots
 	LB* table;
 };
 
-HashSlots* hashSlotsCreate(Thread* th, LINT nbits, LW type);
+HashSlots* hashSlotsCreate(LINT nbits, LW type);
 LINT hashSlotsComputeString(LINT nbits, char* key, LINT len);
 LINT hashSlotsBitSize(HashSlots* h);
 LB* hashSlotsGet(HashSlots* h, LINT index);
 
 int hashmapAdd(Thread* th, int i, HashSlots* hashmap,LW key, int type);
 void hashmapGet(Thread* th, int i, HashSlots* h,LW key, int type);
-int hashmapDictAdd(Thread* th, HashSlots* h, LB* key, LB* value);
+int hashmapDictAdd(HashSlots* h, LB* key, LB* value);
 LB* hashmapDictGet(HashSlots* h,char* key);
 LB* hashmapDictGetOpti(HashSlots* h,char* key,LINT len,LINT index);
 
 int hashsetContains(HashSlots* h, LW key, int type);
 int hashsetRemove(HashSlots* h, LW key, int type);
-int hashsetAdd(Thread* th, HashSlots* h, LW key, int type);
+int hashsetAdd(HashSlots* h, LW key, int type);
 
 #endif

@@ -15,7 +15,7 @@ Type* compileMatchNext(Compiler* c,Type* tval,Type* tresult,LINT* end,LINT bc_el
 {
 	LINT bc_goto;
 	Type* t;
-	if (bufferAddChar(c->th, c->bytecode,OPgoto)) return NULL;
+	if (bufferAddChar(c->bytecode,OPgoto)) return NULL;
 	bc_goto=bytecodeAddEmptyJump(c);
 	if (bc_goto < 0) return NULL;
 	bytecodeSetJump(c,bc_else,bytecodePin(c));
@@ -28,12 +28,12 @@ Type* compileMatchNext(Compiler* c,Type* tval,Type* tresult,LINT* end,LINT bc_el
 	parserGiveback(c);
 	if (trycatch)
 	{
-		if (bufferAddChar(c->th, c->bytecode,OPthrow)) return NULL;
+		if (bufferAddChar(c->bytecode,OPthrow)) return NULL;
 	}
 	else
 	{
-		if (bufferAddChar(c->th, c->bytecode,OPdrop)) return NULL;
-		if (bufferAddChar(c->th, c->bytecode,OPnil)) return NULL;
+		if (bufferAddChar(c->bytecode,OPdrop)) return NULL;
+		if (bufferAddChar(c->bytecode,OPnil)) return NULL;
 	}
 	*end=bytecodePin(c);
 	bytecodeSetJump(c,bc_goto,*end);
@@ -44,17 +44,17 @@ Type* compileMatchValue(Compiler* c,Type* tval,Type* tresult,LINT* end,int tryca
 	Type* t;
 	LINT bc_else;
 	parserGiveback(c);
-	if (bufferAddChar(c->th, c->bytecode,OPdup)) return NULL;
+	if (bufferAddChar(c->bytecode,OPdup)) return NULL;
 	if (!(t=compileExpression(c))) return NULL;	// read the expression
 	if (typeUnify(c,t,tval)) return NULL;
 
-	if (bufferAddChar(c->th, c->bytecode,OPeq)) return NULL;
-	if (bufferAddChar(c->th, c->bytecode,OPelse)) return NULL;
+	if (bufferAddChar(c->bytecode,OPeq)) return NULL;
+	if (bufferAddChar(c->bytecode,OPelse)) return NULL;
 	bc_else= bytecodeAddEmptyJump(c);
 	if (bc_else < 0) return NULL;
 
 	if (parserAssume(c,"->")) return NULL;
-	if (bufferAddChar(c->th, c->bytecode,OPdrop)) return NULL;
+	if (bufferAddChar(c->bytecode,OPdrop)) return NULL;
 	if (!(t= compileExpression(c))) return NULL;
 	if (typeUnify(c,t,tresult)) return NULL;
 
@@ -76,14 +76,14 @@ Type* compileMatchStruct(Compiler* c, Type* tval, Type* tresult, LINT* end, Def*
 	while (root->parent) root = root->parent;
 	if (def->type->nb!=root->type->nb) return compileError(c,"no cast between %s and %s (different number of parameters)\n", defName(def), defName(root));
 
-	t0 = typeCopy(c->th, root->type); if (!t0) return NULL;
-	tchild = typeCopy(c->th, def->type); if (!tchild) return NULL;
+	t0 = typeCopy(root->type); if (!t0) return NULL;
+	tchild = typeCopy(def->type); if (!tchild) return NULL;
 	for (i = 0; i < tchild->nb; i++) if (typeUnify(c, tchild->child[i], t0->child[i])) return NULL;
 
-	t0 = typeDerivate(c->th, t0); if (!t0) return NULL;
+	t0 = typeDerivate(t0); if (!t0) return NULL;
 	if (typeUnify(c, t0, tval)) return NULL;
 
-	if (bufferAddChar(c->th, c->bytecode, OPdup)) return NULL;
+	if (bufferAddChar(c->bytecode, OPdup)) return NULL;
 
 	root = def;
 	while (root->parent)
@@ -92,9 +92,9 @@ Type* compileMatchStruct(Compiler* c, Type* tval, Type* tresult, LINT* end, Def*
 		if (bc_byte_or_int(c, root->dI, OPcastb, OPcast)) return NULL;
 		root = root->parent;
 	}
-	if (bufferAddChar(c->th, c->bytecode, OPnil)) return NULL;
-	if (bufferAddChar(c->th, c->bytecode, OPne)) return NULL;
-	if (bufferAddChar(c->th, c->bytecode, OPelse)) return NULL;
+	if (bufferAddChar(c->bytecode, OPnil)) return NULL;
+	if (bufferAddChar(c->bytecode, OPne)) return NULL;
+	if (bufferAddChar(c->bytecode, OPelse)) return NULL;
 	bc_else = bytecodeAddEmptyJump(c);
 	if (bc_else < 0) return NULL;
 
@@ -121,17 +121,17 @@ Type* compileMatchCons0(Compiler* c, Type* tval, Type* tresult, LINT* end, Def* 
 	Type* t0;
 	LINT bc_else;
 
-	if (bufferAddChar(c->th, c->bytecode, OPdup)) return NULL;
+	if (bufferAddChar(c->bytecode, OPdup)) return NULL;
 	t0 = compileCons0(c,def);
 
 	if (typeUnify(c, t0, tval)) return NULL;
-	if (bufferAddChar(c->th, c->bytecode, OPeq)) return NULL;
-	if (bufferAddChar(c->th, c->bytecode, OPelse)) return NULL;
+	if (bufferAddChar(c->bytecode, OPeq)) return NULL;
+	if (bufferAddChar(c->bytecode, OPelse)) return NULL;
 	bc_else = bytecodeAddEmptyJump(c);
 	if (bc_else < 0) return NULL;
 
 	if (parserAssume(c, "->")) return NULL;
-	if (bufferAddChar(c->th, c->bytecode, OPdrop)) return NULL;
+	if (bufferAddChar(c->bytecode, OPdrop)) return NULL;
 	if (!(t = compileExpression(c))) return NULL;
 	if (typeUnify(c, t, tresult)) return NULL;
 
@@ -147,10 +147,10 @@ Type* compileMatchCons(Compiler* c,Type* tval,Type* tresult,LINT* end, Def* def,
 	argc=def->type->nb-1;	// remove result
 	t0= typeInstance(c, def); if (!t0) return NULL;
 
-	if (bufferAddChar(c->th, c->bytecode,OPfirst)) return NULL;
+	if (bufferAddChar(c->bytecode,OPfirst)) return NULL;
 	if (bcint_byte_or_int(c,def->index)) return NULL;
-	if (bufferAddChar(c->th, c->bytecode,OPeq)) return NULL;
-	if (bufferAddChar(c->th, c->bytecode,OPelse)) return NULL;
+	if (bufferAddChar(c->bytecode,OPeq)) return NULL;
+	if (bufferAddChar(c->bytecode,OPelse)) return NULL;
 	bc_else= bytecodeAddEmptyJump(c);
 	if (bc_else < 0) return NULL;
 
@@ -163,15 +163,15 @@ Type* compileMatchCons(Compiler* c,Type* tval,Type* tresult,LINT* end, Def* def,
 		if (strcmp(c->parser->token,"_"))
 		{
 			parserGiveback(c);
-			if (bufferAddChar(c->th, c->bytecode,OPdup)) return NULL;
-			if (bufferAddChar(c->th, c->bytecode,OPfetchb)) return NULL;
-			if (bufferAddChar(c->th, c->bytecode,(char)i+1)) return NULL;	// skip index
+			if (bufferAddChar(c->bytecode,OPdup)) return NULL;
+			if (bufferAddChar(c->bytecode,OPfetchb)) return NULL;
+			if (bufferAddChar(c->bytecode,(char)i+1)) return NULL;	// skip index
 
 			t = compileLocals(c,NULL); if (!t) return NULL;
 			if (typeUnify(c, t0->child[i], t)) return NULL;
 		}
 	}
-	bufferAddChar(c->th, c->bytecode,OPdrop);
+	bufferAddChar(c->bytecode,OPdrop);
 	if (typeUnify(c, t0->child[t0->nb - 1],tval)) return NULL;
 
 	if (parserAssume(c,"->")) return NULL;
@@ -221,7 +221,7 @@ Type* compileMatch(Compiler* c)
 	LINT end;
 
 	if (!(tval=compileExpression(c))) return NULL;
-	tresult = typeAllocUndef(c->th); if (!tresult) return NULL;
+	tresult = typeAllocUndef(); if (!tresult) return NULL;
 
 	if (parserAssume(c,"with")) return NULL;
 

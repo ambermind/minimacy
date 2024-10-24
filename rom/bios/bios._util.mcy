@@ -36,6 +36,7 @@ fun _listlen l n= if l==nil then n else _listlen (tail l) n+1;;
 fun listLength l= _listlen l 0;;
 fun listGet l n= if n<=0 then head l else listGet (tail l) n-1;;
 fun listLast l= if nil==tail l then head l else listLast tail l;;
+fun listCut l n = if l<>nil && n>0 then (head l):listCut (tail l) n-1;;
 
 /*
 quicksort l f : fun list a0 (fun a0 a0 -> Bool) -> list a0
@@ -224,14 +225,15 @@ fun decNFromInt N i=
 	if len<N then strConcat (strLeft _Zeros N-len) str
 	else str;;
 
-fun _dec3FromInt str i res=
-	if i>0 then _dec3FromInt str i-3 (strSlice str i 3):res
-	else (strLeft str i+3):res;;
+fun _dec3FromInt str res=
+	let strLength str -> len in
+	if len>3 then _dec3FromInt (strLeft str len-3) (strSlice str len-3 3):res
+	else str:res;;
 
 fun dec3FromInt sep val=
 	if val<>nil then
 	let decFromInt val -> str in
-	strJoin sep _dec3FromInt str (strLength str) nil;;
+	strJoin sep _dec3FromInt str nil;;
 
 fun _intAbbrev v div l=
 	if v<div || nil==tail l then strConcat (decFromInt v) head l

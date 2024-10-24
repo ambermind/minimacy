@@ -32,6 +32,7 @@ extern int interpreterTRON;
 	globals=(ARRAY_PNT(th->fun,FUN_USER_GLOBALS)); \
 	bytecode=(ARRAY_PNT(th->fun,FUN_USER_BC)); \
 	locals=th->callstack-(CALLSTACK_LENGTH-1+BC_ARGS(bytecode)+BC_LOCALS(bytecode)); \
+	MM.currentPkg=th->fun->pkg; \
 	pc=BC_START(bytecode)+th->pc; 
 
 

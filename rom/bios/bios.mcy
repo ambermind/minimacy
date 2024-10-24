@@ -13,19 +13,6 @@ extend Exception with msgException _;;
 
 sum _State= _THREAD_RUN, _THREAD_WAIT, _THREAD_DONE, _THREAD_IDLE;;
 
-struct Partition=[
-	nameP
-	volumeP
-	typeP
-	indexP
-	writableP
-	mountP
-	rootP
-	openP
-	diskListP
-	fileDeleteP
-//	dirDeleteP
-];;
 struct Thread=[
 	_threadT
 	_nameT
@@ -55,10 +42,6 @@ struct Stream=[
 
 
 fun stateName s= match s with _THREAD_IDLE-> "IDLE", _THREAD_DONE -> "DONE", _THREAD_WAIT -> "WAIT", _THREAD_RUN -> "RUN";;
-
-const MAX_MEMORY_STANDALONE=nil;;
-const MAX_MEMORY_CONSOLE=1024*1024*1024;;
-const MAX_MEMORY_BOOT=1024*1024*1024;;
 
 const _MAX_THREAD_EXEC=1000*1000;;	// queens16@thinkpad -> 25M in 170ms -> 150M opcodes per second. 1M -> at least 150 tasks switch/s
 const _MAX__THREAD_TASKS=10;;	// postMessage will freeze the caller if there are too many tasks in the callee's queue 

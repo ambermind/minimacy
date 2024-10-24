@@ -99,14 +99,14 @@ int cAbs(int p);
 #define vsnprintf cVsnprintf
 #endif
 #define snprintf cSnprintf
-LINT cStrlen(char* p);
-int cStrcmp(char* p, char* q);
-void cStrcpy(char* p, char* q);
-void cStrncpy(char* p, char* q, LINT n);
-int cMemcmp(char* p, char* q, LINT n);
+LINT cStrlen(const char* p);
+int cStrcmp(const char* p, const char* q);
+void cStrcpy(char* p, const char* q);
+void cStrncpy(char* p, const char* q, LINT n);
+int cMemcmp(const void* p, const void* q, LINT n);
 void cMemcpy(void* p, const void* q, LINT n);
 void cMemset(void* p, char val, LINT n);
-char* cStrstr(char* p, char* q);
+char* cStrstr(const char* p, const char* q);
 LINT cVsnprintf(char* dst, LINT size, const char* format, va_list arglist);
 LINT cSnprintf(char* dst, LINT size, const char* format, ...);
 #endif

@@ -19,6 +19,6 @@ typedef struct {
 }FileModes;
 extern FileModes FM;
 
-int sysFileInit(Thread* th, Pkg* system);
+int sysFileInit(Pkg* system);
 
 #endif

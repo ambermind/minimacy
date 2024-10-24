@@ -11,7 +11,7 @@
 
 struct _Console=[_pkgC];;
 
-var _PromptBuffer;;
+var _PromptBuffer="";;
 var _PromptIndex=0;;	// index in promptBuffer, always at the beginning of a utf8 char
 var _PromptTmp;;
 var _PromptHistoryPrev;;
@@ -104,7 +104,7 @@ fun _tmpComplete str c=
 
 fun _promptSend fOnInput str=
 	echo "\n";
-	if (!strEmpty str) && (str<>head _PromptHistoryPrev) then set _PromptHistoryPrev=str:_PromptHistoryPrev;
+	if (!strEmpty str) && (str<>head _PromptHistoryPrev) then set _PromptHistoryPrev= listCut str:_PromptHistoryPrev 32;
 	set _PromptBuffer="";
 	set _PromptIndex=0;
 	call fOnInput str;
@@ -147,14 +147,15 @@ fun onPrompt name fOnInput=
 	) (lambda = echoLn ""; echo name; echo "] ");;
 
 fun consoleStart p0=
-	let if p0==_SystemPkg || p0==nil then (pkgCreate nil nil) else p0 -> p in
+	let if p0==_SystemPkg || p0==nil then (pkgCreate nil) else p0 -> p in
 	let [_pkgC=p] -> csl in
-	_threadNew "console" MAX_MEMORY_CONSOLE caller (lambda =
+	_threadNew "console" caller (lambda =
 		echo "\n\nMinimacy Top-level\nReady\n";
 		onPrompt (pkgName p0) (lambda input=
 			if input==nil then (exit; nil)
 			else (
-				if input=="new" then (set csl._pkgC=pkgCreate nil nil; nil)
+				if input=="new" then (set csl._pkgC=pkgCreate nil; nil)
+				else if input=="history" then (echoLn strJoin "\n" _PromptHistoryPrev; nil)
 				else if !strEmpty input then _promptTry input csl._pkgC;
 				true
 			)

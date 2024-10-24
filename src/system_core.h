@@ -18,14 +18,14 @@
 #define SUFFIX_CODE ".mcy"
 #define SUFFIX_NONE ""
 
-int coreCryptoInit(Thread* th, Pkg *system);
-int coreStrInit(Thread* th, Pkg *system);
-int coreBytesInit(Thread* th, Pkg *system);
-int coreBinaryInit(Thread* th, Pkg *system);
-int coreConvertInit(Thread* th, Pkg *system);
-int coreBufferInit(Thread* th, Pkg *system);
-int coreLzwInit(Thread* th, Pkg* system);
-int coreInflateInit(Thread* th, Pkg* system);
-int coreInit(Thread* th, Pkg *system);
+int coreCryptoInit(Pkg *system);
+int coreStrInit(Pkg *system);
+int coreBytesInit(Pkg *system);
+int coreBinaryInit(Pkg *system);
+int coreConvertInit(Pkg *system);
+int coreBufferInit(Pkg *system);
+int coreLzwInit(Pkg* system);
+int coreInflateInit(Pkg* system);
+int coreInit(Pkg *system);
 
 #endif

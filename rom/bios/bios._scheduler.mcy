@@ -47,7 +47,7 @@ fun _schedulerStart=
 					EXEC_PREEMPTION -> (_scheduleThread th;nil),
 					EXEC_WAIT -> _THREAD_WAIT,//nil,
 					EXEC_EXIT -> (threadStop th; _THREAD_DONE),
-					EXEC_OM -> (echoLn "!!!!! OM error";threadStop th; _THREAD_DONE)
+					EXEC_OM -> (echoLn "> Out of memory";threadStop th; _THREAD_DONE)
 				-> state in if state<>nil then set th._stateT= state;
 				_threadNeedCheck th;
 

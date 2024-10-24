@@ -112,7 +112,8 @@ MTHREAD_START _ansiDiskList(Thread* th)
 	LB* path = STACK_PNT(th, 0);
 	Buffer* out = (Buffer*)STACK_PNT(th, 1);
 	if ((!path) || (!out)) return workerDoneNil(th);
-	return workerDoneInt(th,ansiDirectoryList(th,out,STR_START(path)));
+	bufferSetWorkerThread(out, th);
+	return workerDoneInt(th,ansiDirectoryList(out,STR_START(path)));
 }
 int fun_ansiDiskList(Thread* th) { return workerStart(th, 2, _ansiDiskList); }
 
@@ -157,7 +158,7 @@ int _uefiFileForget(LB* p)
 
 File* _uefiFileCreate(Thread* th, void* file)
 {
-	File* f = (File*)memoryAllocExt(th, sizeof(File), DBG_BIN, _uefiFileForget, NULL); if (!f) return NULL;
+	File* f = (File*)memoryAllocExt(sizeof(File), DBG_BIN, _uefiFileForget, NULL); if (!f) return NULL;
 	f->file = file;
 	return f;
 }
@@ -235,7 +236,7 @@ int fun_uefiDiskList(Thread* th)
 	Buffer* out = (Buffer*)STACK_PNT(th, 1);
 	LINT index= STACK_INT(th,2);
 	if ((!path) || (!out)) FUN_RETURN_NIL;
-	FUN_RETURN_INT(uefiDirectoryList(th,index,out,STR_START(path)));
+	FUN_RETURN_INT(uefiDirectoryList(index,out,STR_START(path)));
 }
 
 int fun_uefiFileDelete(Thread* th)
@@ -272,7 +273,7 @@ int fun_romdiskLoad(Thread* th)
 	LB* path = STACK_PNT(th, 0);
 	LINT romdiskId = STACK_INT(th, 1);
 	if ((!path) || (romdiskId < 0)) FUN_RETURN_NIL;
-	content = romdiskReadContent(th, (int)romdiskId, STR_START(path), NULL);
+	content = romdiskReadContent((int)romdiskId, STR_START(path), NULL);
 	FUN_RETURN_PNT(content);
 }
 
@@ -282,7 +283,7 @@ int fun_romdiskList(Thread* th)
 	Buffer* out = (Buffer*)STACK_PNT(th, 1);
 	LINT romdiskId = STACK_INT(th, 2);
 	if ((!path) || (!out)) FUN_RETURN_NIL;
-	FUN_RETURN_INT(romdiskDirectoryList(th, (int)romdiskId, out, STR_START(path)));
+	FUN_RETURN_INT(romdiskDirectoryList((int)romdiskId, out, STR_START(path)));
 }
 int fun_romdiskImport(Thread* th)
 {
@@ -309,76 +310,53 @@ int fun_setPartitions(Thread* th)
 	return 0;
 }
 
-int sysFileInit(Thread* th, Pkg *system)
+int sysFileInit(Pkg *system)
 {
-	Def* FileMode = pkgAddSum(th, system, "FileMode");
-	Def* AnsiFile = pkgAddType(th, system, "_AnsiFile");
-	Def* UefiFile = pkgAddType(th, system, "_UefiFile");
-	Def* VolumeType = pkgAddSum(th, system, "VolumeType");
+	Def* FileMode = pkgAddSum(system, "FileMode");
+	Def* VolumeType = pkgAddSum(system, "VolumeType");
+	pkgAddType(system, "_AnsiFile");
+	pkgAddType(system, "_UefiFile");
 
-	Type* fun_AFile_I = typeAlloc(th, TYPECODE_FUN, NULL, 2, AnsiFile->type, MM.Int);
-	Type* fun_AFile_B = typeAlloc(th, TYPECODE_FUN, NULL, 2, AnsiFile->type, MM.Boolean);
-	Type* fun_S_FM_AFile = typeAlloc(th, TYPECODE_FUN, NULL, 3, MM.Str,FileMode->type, AnsiFile->type);
-	Type* fun_AFile_I_B_I_I_I = typeAlloc(th, TYPECODE_FUN, NULL, 6, AnsiFile->type, MM.Int, MM.Bytes, MM.Int, MM.Int, MM.Int);
-	Type* fun_AFile_I_S_I_I_I = typeAlloc(th, TYPECODE_FUN, NULL, 6, AnsiFile->type, MM.Int, MM.Str, MM.Int, MM.Int, MM.Int);
+	MM.ansiVolume = (LB*)pkgAddCons0(system, "ansiVolume", VolumeType);
+	MM.uefiVolume = (LB*)pkgAddCons0(system, "uefiVolume", VolumeType);
+	MM.romdiskVolume = (LB*)pkgAddCons0(system, "romdiskVolume", VolumeType);
 
-	Type* fun_UFile_I = typeAlloc(th, TYPECODE_FUN, NULL, 2, UefiFile->type, MM.Int);
-	Type* fun_UFile_B = typeAlloc(th, TYPECODE_FUN, NULL, 2, UefiFile->type, MM.Boolean);
-	Type* fun_I_S_FM_UFile = typeAlloc(th, TYPECODE_FUN, NULL, 4, MM.Int, MM.Str,FileMode->type, UefiFile->type);
-	Type* fun_UFile_I_B_I_I_I = typeAlloc(th, TYPECODE_FUN, NULL, 6, UefiFile->type, MM.Int, MM.Bytes, MM.Int, MM.Int, MM.Int);
-	Type* fun_UFile_I_S_I_I_I = typeAlloc(th, TYPECODE_FUN, NULL, 6, UefiFile->type, MM.Int, MM.Str, MM.Int, MM.Int, MM.Int);
+	FM.READ_ONLY = pkgAddCons0(system, "FILE_READ_ONLY", FileMode);
+	FM.REWRITE = pkgAddCons0(system, "FILE_REWRITE", FileMode);
+	FM.READ_WRITE = pkgAddCons0(system, "FILE_READ_WRITE", FileMode);
+	FM.APPEND = pkgAddCons0(system, "FILE_APPEND", FileMode);
 
-	Type* fun_S_I = typeAlloc(th, TYPECODE_FUN, NULL, 2, MM.Str, MM.Int);
-	Type* fun_I_S_Bool = typeAlloc(th, TYPECODE_FUN, NULL, 3, MM.Int, MM.Str, MM.Boolean);
-	Type* fun_B_S_I = typeAlloc(th, TYPECODE_FUN, NULL, 3, MM.Buffer, MM.Str, MM.Int);
-	Type* fun_I_B_S_I = typeAlloc(th, TYPECODE_FUN, NULL, 4, MM.Int, MM.Buffer, MM.Str, MM.Int);
-	Type* fun_I_S_S = typeAlloc(th, TYPECODE_FUN, NULL, 3, MM.Int, MM.Str, MM.Str);
-	Type* fun_S_Bool = typeAlloc(th, TYPECODE_FUN, NULL, 2, MM.Str, MM.Boolean);
-	Type* list_S_FS_I_Boolean = typeAlloc(th, TYPECODE_LIST, NULL, 1,
-		typeAlloc(th, TYPECODE_TUPLE, NULL, 4, MM.Str, VolumeType->type, MM.Int, MM.Boolean));
-	Type* list_FS_I_S = typeAlloc(th, TYPECODE_LIST, NULL, 1,
-		typeAlloc(th, TYPECODE_TUPLE, NULL, 3, VolumeType->type, MM.Int, MM.Str));
+	static const Native nativeDefs[] = {
+		{ NATIVE_FUN, "_volumes", fun_volumes, "fun -> list [VolumeType Int Bool]"},
+		{ NATIVE_FUN, "_partitions", fun_partitions, "fun -> list [VolumeType Int Str]" },
+		{ NATIVE_FUN, "_setPartitions", fun_setPartitions, "fun list [VolumeType Int Str] -> list [VolumeType Int Str]" },
+		{ NATIVE_FUN, "_ansiFileOpen", fun_ansiFileOpen, "fun Str FileMode -> _AnsiFile" },
+		{ NATIVE_FUN, "_ansiFileSize", fun_ansiFileSize, "fun _AnsiFile -> Int" },
+		{ NATIVE_FUN, "_ansiFileTell", fun_ansiFileTell, "fun _AnsiFile -> Int" },
+		{ NATIVE_FUN, "_ansiFileRead", fun_ansiFileRead, "fun _AnsiFile Int Bytes Int Int -> Int" },
+		{ NATIVE_FUN, "_ansiFileWrite", fun_ansiFileWrite, "fun _AnsiFile Int Str Int Int -> Int" },
+		{ NATIVE_FUN, "_ansiFileClose", fun_ansiFileClose, "fun _AnsiFile -> Bool" },
+		{ NATIVE_FUN, "_ansiDiskList", fun_ansiDiskList, "fun Buffer Str -> Int" },
+		{ NATIVE_FUN, "_ansiFileDelete", fun_ansiFileDelete, "fun Str -> Bool" },
+		{ NATIVE_FUN, "_ansiDirDelete", fun_ansiDirDelete, "fun Str -> Bool" },
+		{ NATIVE_FUN, "_uefiFileOpen", fun_uefiFileOpen, "fun Int Str FileMode -> _UefiFile" },
+		{ NATIVE_FUN, "_uefiFileSize", fun_uefiFileSize, "fun _UefiFile -> Int" },
+		{ NATIVE_FUN, "_uefiFileTell", fun_uefiFileTell, "fun _UefiFile -> Int" },
+		{ NATIVE_FUN, "_uefiFileRead", fun_uefiFileRead, "fun _UefiFile Int Bytes Int Int -> Int" },
+		{ NATIVE_FUN, "_uefiFileWrite", fun_uefiFileWrite, "fun _UefiFile Int Str Int Int -> Int" },
+		{ NATIVE_FUN, "_uefiFileClose", fun_uefiFileClose, "fun _UefiFile -> Bool" },
+		{ NATIVE_FUN, "_uefiDiskList", fun_uefiDiskList, "fun Int Buffer Str -> Int" },
+		{ NATIVE_FUN, "_uefiFileDelete", fun_uefiFileDelete, "fun Int Str -> Bool" },
+		{ NATIVE_FUN, "_uefiDirDelete", fun_uefiDirDelete, "fun Int Str -> Bool" },
+		{ NATIVE_FUN, "_romdiskLoad", fun_romdiskLoad, "fun Int Str -> Str" },
+		{ NATIVE_FUN, "_romdiskList", fun_romdiskList, "fun Int Buffer Str -> Int" },
+		{ NATIVE_FUN, "_romdiskImport", fun_romdiskImport, "fun Str -> Int" },
+	};
+	NATIVE_DEF(nativeDefs);
 
-	MM.VolumeType = VolumeType->type;
-	MM.ansiVolume = (LB*)pkgAddCons0(th, system, "ansiVolume", VolumeType);
-	MM.uefiVolume = (LB*)pkgAddCons0(th, system, "uefiVolume", VolumeType);
-	MM.romdiskVolume = (LB*)pkgAddCons0(th, system, "romdiskVolume", VolumeType);
+	pkgAddConstPnt(system, "_currentDir", memoryAllocStr(fsCurrentDir(), -1), MM.Str);
+	pkgAddConstPnt(system, "userDir", memoryAllocStr(fsUserDir(), -1), MM.Str);
 
-	FM.READ_ONLY = pkgAddCons0(th, system, "FILE_READ_ONLY", FileMode);
-	FM.REWRITE = pkgAddCons0(th, system, "FILE_REWRITE", FileMode);
-	FM.READ_WRITE = pkgAddCons0(th, system, "FILE_READ_WRITE", FileMode);
-	FM.APPEND = pkgAddCons0(th, system, "FILE_APPEND", FileMode);
-
-	pkgAddFun(th, system, "_volumes", fun_volumes, typeAlloc(th, TYPECODE_FUN, NULL, 1, list_S_FS_I_Boolean));
-	pkgAddFun(th, system, "_partitions", fun_partitions, typeAlloc(th, TYPECODE_FUN, NULL, 1, list_FS_I_S));
-	pkgAddFun(th, system, "_setPartitions", fun_setPartitions, typeAlloc(th, TYPECODE_FUN, NULL, 2, list_FS_I_S, list_FS_I_S));
-
-	pkgAddConstPnt(th, system, "_currentDir", memoryAllocStr(th, fsCurrentDir(), -1), MM.Str);
-	pkgAddConstPnt(th, system, "userDir", memoryAllocStr(th, fsUserDir(), -1), MM.Str);
-
-	pkgAddFun(th, system, "_ansiFileOpen", fun_ansiFileOpen, fun_S_FM_AFile);
-	pkgAddFun(th, system, "_ansiFileSize", fun_ansiFileSize, fun_AFile_I);
-	pkgAddFun(th, system, "_ansiFileTell", fun_ansiFileTell, fun_AFile_I);
-	pkgAddFun(th, system, "_ansiFileRead", fun_ansiFileRead, fun_AFile_I_B_I_I_I);
-	pkgAddFun(th, system, "_ansiFileWrite", fun_ansiFileWrite, fun_AFile_I_S_I_I_I);
-	pkgAddFun(th, system, "_ansiFileClose", fun_ansiFileClose, fun_AFile_B);
-	pkgAddFun(th, system, "_ansiDiskList", fun_ansiDiskList, fun_B_S_I);
-	pkgAddFun(th, system, "_ansiFileDelete", fun_ansiFileDelete, fun_S_Bool);
-	pkgAddFun(th, system, "_ansiDirDelete", fun_ansiDirDelete, fun_S_Bool);
-
-	pkgAddFun(th, system, "_uefiFileOpen", fun_uefiFileOpen, fun_I_S_FM_UFile);
-	pkgAddFun(th, system, "_uefiFileSize", fun_uefiFileSize, fun_UFile_I);
-	pkgAddFun(th, system, "_uefiFileTell", fun_uefiFileTell, fun_UFile_I);
-	pkgAddFun(th, system, "_uefiFileRead", fun_uefiFileRead, fun_UFile_I_B_I_I_I);
-	pkgAddFun(th, system, "_uefiFileWrite", fun_uefiFileWrite, fun_UFile_I_S_I_I_I);
-	pkgAddFun(th, system, "_uefiFileClose", fun_uefiFileClose, fun_UFile_B);
-	pkgAddFun(th, system, "_uefiDiskList", fun_uefiDiskList, fun_I_B_S_I);
-	pkgAddFun(th, system, "_uefiFileDelete", fun_uefiFileDelete, fun_I_S_Bool);
-	pkgAddFun(th, system, "_uefiDirDelete", fun_uefiDirDelete, fun_I_S_Bool);
-
-	pkgAddFun(th, system, "_romdiskLoad", fun_romdiskLoad, fun_I_S_S);
-	pkgAddFun(th, system, "_romdiskList", fun_romdiskList, fun_I_B_S_I);
-	pkgAddFun(th, system, "_romdiskImport", fun_romdiskImport, fun_S_I);
 
 	return 0;
 }

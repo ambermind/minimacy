@@ -82,7 +82,6 @@ char* interpreterCurrentFun(Thread* th)
 // tfc is either 0 (no tfc) or the index of locals (always >0).
 LINT interpreterExec(Thread* th,LINT argc,LINT tfc)	// fun arg0 ... 0:argn-1 
 {
-	int k;
 	LINT i,nlocals;
 	LB* bytecode;
 	LB* fun=STACK_PNT(th,argc);
@@ -102,6 +101,7 @@ LINT interpreterExec(Thread* th,LINT argc,LINT tfc)	// fun arg0 ... 0:argn-1
 		for(i=-1;i<argc;i++) STACK_COPY_TO_REF(th,tfc,-i,argc-1-i);
 
 		STACK_DROPN(th,th->sp-(tfc+argc)+1);
+
 //		threadDump(LOG_SYS,th,10); PRINTF(LOG_DEV,">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>after tfc\n"); getchar();
 	}
 
@@ -123,40 +123,13 @@ LINT interpreterExec(Thread* th,LINT argc,LINT tfc)	// fun arg0 ... 0:argn-1
 	}
 	else if (ARRAY_LENGTH(fun)==FUN_NATIVE_LENGTH)
 	{
-		NATIVE native;
-		LINT fastAlloc= memoryGetFast();
-		LINT def=STACK_REF(th)-argc;	// def is the position of the native function in the stack
-		LINT skip;
-
-		if (!ARRAY_IS_PNT(fun,FUN_NATIVE_POINTER))
-		{
-			LINT i;
-			for(i=argc-1;i>=0;i--) STACK_INTERNAL_COPY(th,i+1,i);
-			STACK_DROP(th);
-			th->forceOpcode=(char)ARRAY_INT(fun,FUN_NATIVE_POINTER);
+		LINT i;
+		for(i=argc-1;i>=0;i--) STACK_INTERNAL_COPY(th,i+1,i);
+		STACK_DROP(th);
+		th->forceOpcode=ARRAY_INT(fun,FUN_NATIVE_OPCODE);
+//			printf("th->forceOpcode=%x", th->forceOpcode & 0xffff);
 //			return tfc?-1:0;
-			return 0;
-		}
-//		if (MM.gcTrace) PRINTF(LOG_DEV,"%s",STR_START((ARRAY_PNT(fun,FUN_NATIVE_NAME))));
-		native=(NATIVE)ARRAY_GET(ARRAY_PNT(fun,FUN_NATIVE_POINTER),0);
-		k=(*native)(th);
-//		if (MM.gcTrace) PRINTF(LOG_DEV, "/");
-		while(memoryGetFast()>fastAlloc) memoryLeaveFast();	// this simplifies a lot how to write native functions which need "fastAlloc"
-//		if (k) {
-//			PRINTF(LOG_DEV,"native %s returns %d\n", STR_START((ARRAY_PNT(fun, FUN_NATIVE_NAME))), k);
-//			threadDump(LOG_SYS, th, 3);
-//		}
-		if (k) return k;
-		skip = STACK_REF(th) - def;
-		if (skip<0)
-		{
-			PRINTF(LOG_SYS,"> Error: NATIVE sp=" LSD ", should be at least " LSD " in %s\n",STACK_REF(th),def,STR_START((ARRAY_PNT(fun,FUN_NATIVE_NAME))));
-//			threadDump(LOG_SYS,th,5);
-			return -1;  // wrong implementation
-		}
-		else if (skip >0) STACK_SKIP(th, skip);
-		// now the returned value of the native function has replaced the native function in the stack
-		return tfc ? -1: 0;
+		return 0;
 	}
 
 	bytecode=(ARRAY_PNT(fun,FUN_USER_BC));
@@ -201,25 +174,15 @@ int interpreterBreakThrow(Thread* th,LINT type, LW data, int dataType)
 		th->callstack=STACK_REF_INT(th,th->callstack,CALLSTACK_PREV);
 	}
 	PRINTF(LOG_SYS,"> Uncaught exception!\n");
-	itemDump(th, LOG_SYS,data, dataType);
+	itemDump(LOG_SYS,data, dataType);
 	return 0;
 }
 LINT interpreterEnd(Thread* th,LINT count, LINT result)
 {
 	th->count += count;
 //	stackReset(th);
+	if (result == EXEC_OM || MM.OM) return EXEC_OM;
 	if (result == EXEC_IDLE) th->sp--;
-//	if (result == EXEC_OM) PRINTF(LOG_DEV,"EXEC_OM "LSX":" LSD" / "LSX" :" LSD"\n", th,th->uid, MM.thread, MM.thread->uid);
-	if (result == EXEC_OM)
-	{
-		if (th->header.mem == th->memDelegate) th->OM = 1;
-		else
-		{
-			result = interpreterBreakThrow(th, MARK_TYPE_TRY, MM.MemoryException, VAL_TYPE_PNT ); if (result) return result;
-			if (th->callstack < 0) return EXEC_EXIT;  // Exception uncaught, should not happen if _memoryAssign is called only from Bios memoryUse function
-			result = EXEC_PREEMPTION;	// the easiest : return to the scheduler
-		}
-	}
 	return result;
 }
 LINT interpreterCount0(Thread* th, LINT maxCycles, LINT cyclesToGo)
@@ -239,10 +202,10 @@ LINT interpreterRun(Thread* th,LINT maxCycles)
 	LB* bytecode;
 	LINT locals,result;
 	char* pc;
-	char op;
+	LINT op;
 	LINT cyclesToGo = maxCycles;
 	LINT preemptiveCount = th->count + maxCycles;
-
+	stackReset(MM.tmpStack);
 	if (th->callstack<0) return EXEC_IDLE;	// nothing to execute
 
 	BC_PRECOMPUTE
@@ -261,7 +224,8 @@ LINT interpreterRun(Thread* th,LINT maxCycles)
 		count = nloop;
 		while ((count--) > 0)
 		{
-			op = *(pc++);
+			op = (*(pc++))&255;
+			if (op & 0x80) op = (op<< 8) + ((*(pc++)) & 255);
 		processOpCode:
 			/*			if (th->count==0x6ba-3)
 						{
@@ -270,8 +234,11 @@ LINT interpreterRun(Thread* th,LINT maxCycles)
 							interpreterTRON=1;
 						}
 			*/
-			//			if (op==OPtry) interpreterTRON=1;
-			/*			if (runtimeCheckAddress && (runtimeCheckValue!=HEADER_SIZE(runtimeCheckAddress)))
+/*			if (op == OPprompt) {
+				PRINTF(LOG_USER, "#before OPprompt\n");
+				interpreterTRON = 1;
+			}
+*/			/*			if (runtimeCheckAddress && (runtimeCheckValue!=HEADER_SIZE(runtimeCheckAddress)))
 						{
 							PRINTF(LOG_DEV,"--------VALUE HAS CHANGED\n");
 							PRINTF(LOG_DEV, LSX ": " LSX "-> " LSX "\n",runtimeCheckAddress, runtimeCheckValue, HEADER_SIZE(runtimeCheckAddress));
@@ -286,17 +253,19 @@ LINT interpreterRun(Thread* th,LINT maxCycles)
 /*			if (interpreterTRON)
 			{
 				LINT pci=(LINT)(pc-1-BC_START(bytecode));
-				threadDump(LOG_USER,th,10);
+				threadDump(LOG_USER,th,20);
 				PRINTF(LOG_USER,"#" LSD " (sp=" LSD " locals=" LSD " callstack=" LSD ") %s -> ",th->uid,th->sp, STACK_REF(th)-locals,STACK_REF(th)-th->callstack,interpreterCurrentFun(th));
 				PRINTF(LOG_USER,"count=" LSD "/" LSD " pc=" LSD " op=%2d:",th->count+nloop-count, maxCycles,pci,op);
-				opcodePrint(th, LOG_USER,op,pc,pci);
+				opcodePrint(LOG_USER,op,pc,pci);
 //				if (1) PRINTF(LOG_DEV,"");
 				getchar();
 			}
-*/
+			*/
 //			PRINTF(LOG_DEV,"$");
 //			{LINT pci = (LINT)(pc - 1 - BC_START(bytecode));
-//			opcodePrint(th, LOG_USER, op, pc, pci); }
+//			opcodePrint(LOG_USER, op, pc, pci); }
+//			PRINTF(LOG_USER, "#" LSD " (sp=" LSD " locals=" LSD " callstack=" LSD ") %s: ", th->uid, th->sp, STACK_REF(th) - locals, STACK_REF(th) - th->callstack, interpreterCurrentFun(th));
+//			opcodePrint(LOG_USER, op, pc, (LINT)(pc - 1 - BC_START(bytecode)));
 			switch (op) {
 			case OPabs: BCINT1FUN(absint)
 			case OPabsf: BCFLOAT1FUN(fabs)
@@ -382,11 +351,11 @@ LINT interpreterRun(Thread* th,LINT maxCycles)
 				break;
 			case OPdump:
 				PRINTF(LOG_USER, "->");
-				itemDump(th, LOG_USER, STACK_GET(th, 0), STACK_TYPE(th, 0));
+				itemDump(LOG_USER, STACK_GET(th, 0), STACK_TYPE(th, 0));
 				break;
 			case OPdumpd:
 				//PRINTF(LOG_USER, "->");
-				itemDumpDirect(th, LOG_USER, STACK_GET(th, 0), STACK_TYPE(th, 0));
+				itemDumpDirect(LOG_USER, STACK_GET(th, 0), STACK_TYPE(th, 0));
 				break;
 			case OPdup:
 				 STACK_PUSH_NIL_ERR(th, INTERPRETER_OM);
@@ -404,11 +373,11 @@ LINT interpreterRun(Thread* th,LINT maxCycles)
 			case OPexec:// [fonction, argn, ..., arg1]
 				n = STACK_PULL_INT(th);
 				EXEC_COMMON
-					break;
+				break;
 			case OPexecb:
 				n = (*(pc++)) & 255;
 				EXEC_COMMON
-					break;
+				break;
 			case OPexp: BCFLOAT1FUN(exp)
 			case OPfalse:
 				STACK_PUSH_PNT_ERR(th, MM._false, INTERPRETER_OM);
@@ -469,6 +438,11 @@ LINT interpreterRun(Thread* th,LINT maxCycles)
 			case OPhd:
 				if (STACK_PNT(th, 0)) STACK_LOAD(th, 0, STACK_PNT(th, 0), 0);
 				break;
+			case OPhide:
+				def = (Def*)ARRAY_PNT(globals, STACK_INT(th, 0));
+				def->public = DEF_HIDDEN;
+				STACK_SET_BOOL(th, 0, 1);
+				break;
 			case OPholdon:
 				th->pc = pc - BC_START(bytecode);
 				th->atomic = 0;
@@ -514,7 +488,7 @@ LINT interpreterRun(Thread* th,LINT maxCycles)
 			case OPlt:	BCINT2BOOL(< )
 			case OPltf: BCFLOAT2BOOL(< )
 			case OPmark:
-				p = memoryAllocArray(th, MARK_LENGTH, DBG_TUPLE);
+				p = memoryAllocArray(MARK_LENGTH, DBG_TUPLE);
 				if (!p) return INTERPRETER_OM;
 				ARRAY_SET_INT(p, MARK_TYPE, MARK_TYPE_BREAK);
 				ARRAY_SET_INT(p, MARK_PC, (pc + bytecodeGetJump(pc) - BC_START(bytecode)));
@@ -550,7 +524,7 @@ LINT interpreterRun(Thread* th,LINT maxCycles)
 			case OPneg: BCINT1(-)
 			case OPnegf: BCFLOAT1(-)
 			case OPnil:
-				 STACK_PUSH_NIL_ERR(th, INTERPRETER_OM);
+				STACK_PUSH_NIL_ERR(th, INTERPRETER_OM);
 				break;
 			case OPnon:
 				STACK_SET_BOOL(th, 0, STACK_PNT(th, 0) != MM._true);
@@ -584,6 +558,9 @@ LINT interpreterRun(Thread* th,LINT maxCycles)
 			case OPpowint: BCINT2FUN(powerInt)
 			case OPprompt:
 				if (promptOnThread(th)) return INTERPRETER_OM;
+//				PRINTF(LOG_SYS, "> ----return from OPprompt\n");
+//				interpreterTRON = 1;
+//				threadDump(LOG_SYS, th, 20);
 				break;
 			case OPret:
 				if (STACK_REF(th) - th->callstack != 1)
@@ -597,9 +574,8 @@ LINT interpreterRun(Thread* th,LINT maxCycles)
 				th->callstack = STACK_REF_INT(th, th->callstack, CALLSTACK_PREV);
 				STACK_SKIP(th, BC_ARGS(bytecode) + BC_LOCALS(bytecode) + CALLSTACK_LENGTH + 1);
 				if (th->callstack < 0) return INTERPRETER_END(EXEC_IDLE);  // successful end of bytecode execution
-
 				BC_PRECOMPUTE
-					break;
+				break;
 			case OPrglob:
 				def = (Def*)ARRAY_PNT(globals, STACK_INT(th, 0));
 				STACK_SET_TYPE(th, 0, def->val, def->valType);
@@ -607,7 +583,7 @@ LINT interpreterRun(Thread* th,LINT maxCycles)
 			case OPrglobb:
 				n = (*(pc++)) & 255;
 				def = (Def*)ARRAY_PNT(globals, n);
-				 STACK_PUSH_NIL_ERR(th, INTERPRETER_OM);
+				STACK_PUSH_NIL_ERR(th, INTERPRETER_OM);
 				STACK_SET_TYPE(th, 0, def->val, def->valType);
 				break;
 			case OPrloc:
@@ -615,7 +591,7 @@ LINT interpreterRun(Thread* th,LINT maxCycles)
 				break;
 			case OPrlocb:
 				n = (*(pc++)) & 255;
-				 STACK_PUSH_NIL_ERR(th, INTERPRETER_OM);
+				STACK_PUSH_NIL_ERR(th, INTERPRETER_OM);
 				STACK_COPY_FROM_REF(th, 0, locals, -n);
 				break;
 			case OPround: BCFLOAT1FUN(roundls)
@@ -716,7 +692,7 @@ LINT interpreterRun(Thread* th,LINT maxCycles)
 				STACK_PUSH_PNT_ERR(th, MM._true, INTERPRETER_OM);
 				break;
 			case OPtry:
-				p = memoryAllocArray(th, MARK_LENGTH, DBG_TUPLE);
+				p = memoryAllocArray(MARK_LENGTH, DBG_TUPLE);
 				if (!p) return INTERPRETER_OM;
 				ARRAY_SET_INT(p, MARK_TYPE, MARK_TYPE_TRY);
 				ARRAY_SET_INT(p, MARK_PC, (pc + bytecodeGetJump(pc) - BC_START(bytecode)));
@@ -741,9 +717,54 @@ LINT interpreterRun(Thread* th,LINT maxCycles)
 				STACK_DROP(th);
 				break;
 			default:
-				PRINTF(LOG_SYS, "\n> Error: Illegal Opcode %d in %s\n", 255 & op, interpreterCurrentFun(th));
-				//					memoryAbort(m,1);
-				return EXEC_EXIT;
+//				printf("default %d\n", op);
+				if (op & 0x8000) {
+					Native* n;
+					NATIVE native;
+					int k,argc;
+					LINT skip, def;
+					LINT fastAlloc = memoryGetFast();
+					int opext = op&0x7fff;
+					if (opext >= NATIVE_DEF_LENGTH) {
+						bytecodePrint(LOG_SYS, bytecode);
+						_hexDump(LOG_SYS, BC_START(bytecode), STR_LENGTH(bytecode)-BC_OFFSET, 0);
+						PRINTF(LOG_SYS, "> Error: NATIVE pc=" LSD" ("LSX") opcode = %d (%x) is out of range in '%s'\n", pc - BC_START(bytecode), pc - BC_START(bytecode), opext, opext|0x8000, interpreterCurrentFun(th));
+						return EXEC_EXIT;
+					}
+					n = NativeDefs[opext];
+					if (!n) {
+						PRINTF(LOG_SYS, "> Error: NATIVE pc=" LSD" ("LSX") opcode = %d (%x) is NULL in '%s'\n", pc - BC_START(bytecode), pc - BC_START(bytecode), opext, opext | 0x8000, interpreterCurrentFun(th));
+						return EXEC_EXIT;
+					}
+					native = (NATIVE)n->value;
+					argc = NativeDefsArgc[opext];
+					if (!argc) {	// we add a fake nil argument for function without arg
+						STACK_PUSH_NIL_ERR(th, INTERPRETER_OM);
+						argc = 1;
+					}
+					def = STACK_REF(th) - argc +1;	// def is the position of the first arg
+					th->pc = pc - BC_START(bytecode);
+					MM.tmpRoot = NULL;
+					k = (*native)(th);
+					//		if (MM.gcTrace) PRINTF(LOG_DEV, "/");
+					MM.tmpRoot = NULL;
+					while (memoryGetFast() > fastAlloc) memoryLeaveFast();	// this simplifies a lot how to write native functions which need "fastAlloc"
+					if (k>0) return INTERPRETER_END(k);
+					skip = STACK_REF(th) - def;
+					if (skip < 0)
+					{
+						PRINTF(LOG_SYS, "> Error: NATIVE sp=" LSD ", should be at least " LSD " in %s\n", STACK_REF(th), def, n->name);
+						//			threadDump(LOG_SYS,th,5);
+						return EXEC_EXIT;  // wrong implementation
+					}
+					else if (skip > 0) STACK_SKIP(th, skip);
+
+				}
+				else {
+					PRINTF(LOG_SYS, "\n> Error: Illegal Opcode %d in %s\n", 255 & op, interpreterCurrentFun(th));
+					//					memoryAbort(m,1);
+					return EXEC_EXIT;
+				}
 			}
 		}
 //		PRINTF(LOG_DEV,"N");

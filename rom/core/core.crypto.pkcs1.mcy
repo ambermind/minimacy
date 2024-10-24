@@ -10,7 +10,6 @@
    with this program. If not, see <https://www.gnu.org/licenses/>. */
 use core.crypto.hash;;
 use core.crypto.rsa;;
-use core.crypto.oid;;
 
 // pkcs1
 const _HEADER=10;;
@@ -84,7 +83,7 @@ fun rsaPkcs1Sign rsa data magic fHash=
 	let strConcat (strFromHex magic) call fHash data -> hash in
 	pkcs1EncryptPrivRsa rsa hash;;
 
-fun rsaPkcs1SignatureCheck certificate data signature magic fHash=
+fun rsaPkcs1SignatureCheck rsa data signature magic fHash=
 /*	echoLn "=======================rsaPkcs1SignatureCheck";
 	dump certificate;
 	hexDump data;
@@ -92,7 +91,5 @@ fun rsaPkcs1SignatureCheck certificate data signature magic fHash=
 */
 	let strConcat (strFromHex magic) call fHash data -> hash in
 	if hash<>nil then
-	let bigFromHex oidHashmapMODULUS certificate -> modulus in
-	let bigFromHex oidHashmapPUBEXP certificate -> pubExp in
-	let pkcs1DecryptPub modulus pubExp signature -> decode in
+	let pkcs1DecryptPubRsa rsa signature -> decode in
 	hash==decode;;

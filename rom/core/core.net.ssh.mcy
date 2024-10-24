@@ -468,7 +468,8 @@ fun _sshCheckSignRSA dh keyType signType signVal=
 	let sshParseVals dh.hostKeyDH 0 3 -> (type:rsaE:rsaN:_) in
 	let sshParseVals dh.signDH 0 2 -> (signType2:signCrypt:_) in
 	if keyType==type && signType==signType2 then
-	let pkcs1DecryptPub (bigFromStr rsaN) (bigFromStr rsaE) signCrypt -> signVal2 in
+	let rsaFromPublic (bigFromStr rsaN) (bigFromStr rsaE) -> rsa in
+	let pkcs1DecryptPubRsa rsa signCrypt -> signVal2 in
 	signVal==signVal2;;
 
 fun sshCheckSign h=

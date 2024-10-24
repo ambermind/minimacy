@@ -84,7 +84,7 @@ typedef struct {
 
 	AudioSound* sounds;
 	int noSound;
-	char playBuffer[AUDIO_BUFFER];
+	LB* playBuffer;
 #ifdef USE_OPENSLES
 	SLEngineItf engineEngine;
 	SLObjectItf outputMixObject;
@@ -113,8 +113,8 @@ AudioEngine* AE=NULL;
 void audioSampleMark(LB* user)
 {
 	AudioSound* as = (AudioSound*)user;
-	MEMORY_MARK(user, (LB*)as->buffer);
-	MEMORY_MARK(user, (LB*)as->next);
+	MEMORY_MARK(as->buffer);
+	MEMORY_MARK(as->next);
 }
 int audioSystemForget(LB* user)
 {
@@ -126,7 +126,7 @@ int audioSystemForget(LB* user)
 void audioSystemMark(LB* user)
 {
 	AudioEngine* as = (AudioEngine*)user;
-	MEMORY_MARK(user, (LB*)as->sounds);
+	MEMORY_MARK(as->sounds);
 }
 
 int haudioPlayStop(AudioEngine* t);
@@ -201,8 +201,8 @@ void bqPlayerCallback(SLAndroidSimpleBufferQueueItf bq, void *user)
 	AudioEngine* t=(AudioEngine*)user;
 
 	lockEnter(&t->lock);
-	haudioPlayNextBuffer(t,t->playBuffer);
-	(*bq)->Enqueue(bq, t->playBuffer, AUDIO_BUFFER);
+	haudioPlayNextBuffer(t,BIN_START(t->playBuffer));
+	(*bq)->Enqueue(bq, BIN_START(t->playBuffer), AUDIO_BUFFER);
 	lockLeave(&t->lock);
 }
 int sysPlayStart(AudioEngine* t)
@@ -254,7 +254,7 @@ int sysPlayStart(AudioEngine* t)
     // set the player's state to playing
     result = (*bqPlayerPlay)->SetPlayState(bqPlayerPlay, SL_PLAYSTATE_PLAYING);
 	if (result!=SL_RESULT_SUCCESS) return audioerror("#ERR SetPlayState",result);
-	for (i=0;i<AUDIO_NB_BUFFERS;i++) (*bqPlayerBufferQueue)->Enqueue(bqPlayerBufferQueue, t->playBuffer, AUDIO_BUFFER);
+	for (i=0;i<AUDIO_NB_BUFFERS;i++) (*bqPlayerBufferQueue)->Enqueue(bqPlayerBufferQueue, BIN_START(t->playBuffer), AUDIO_BUFFER);
 
 	return 0;
 }
@@ -298,8 +298,8 @@ void* sysPlayAlsaThread(void* param)
 		else if (k>=AUDIO_SLICE)
 		{
 			lockEnter(&t->lock);
-			haudioPlayNextBuffer(t,t->playBuffer);
-			if (t->player) snd_pcm_writei(t->player, t->playBuffer, AUDIO_SLICE);
+			haudioPlayNextBuffer(t,BIN_START(t->playBuffer));
+			if (t->player) snd_pcm_writei(t->player, BIN_START(t->playBuffer), AUDIO_SLICE);
 			lockLeave(&t->lock);
 		}
 //		PRINTF(LOG_DEV,"cb\n");
@@ -673,7 +673,10 @@ int haudioPlayNextBuffer(AudioEngine* t, char* output)
 int haudioPlayStart(AudioEngine* t)
 {
 //    printf("haudioPlayStart\n");
-	memset(t->playBuffer, AUDIO_ZERO_VALUE, AUDIO_BUFFER);
+	if (!t->playBuffer) {
+		t->playBuffer = memoryAllocBin(NULL, AUDIO_BUFFER, DBG_BIN); if (!t->playBuffer) return -1;
+	}
+	memset(BIN_START(t->playBuffer), AUDIO_ZERO_VALUE, AUDIO_BUFFER);
 
 	t->noSound = 0;
 	if (sysPlayStart(t)) return -1;
@@ -699,17 +702,15 @@ int fun_soundStart(Thread* th)
 	volume *= 255;
 	if (volume < 0) volume = 0;
 	if (volume >255) volume = 255;
-	as = (AudioSound*)memoryAllocExt(th, sizeof(AudioSound), DBG_BIN, NULL, audioSampleMark); if (!as) return EXEC_OM;
+	as = (AudioSound*)memoryAllocExt(sizeof(AudioSound), DBG_BIN, NULL, audioSampleMark); if (!as) return EXEC_OM;
 	as->buffer = src;
 	as->len = len / 4;
 	as->volume = (int)volume;
 	as->i = 0;
 	as->loop = loopIsNil ? -1 : loop;
 	if (as->loop > as->len) as->loop = -1;
-	MEMORY_MARK(NULL, (LB*)as->buffer);
 	lockEnter(&AE->lock);
     startNow = AE->playing?0:1;
-	MEMORY_MARK(NULL, (LB*)AE->sounds);
 	as->next = AE->sounds;
 	AE->sounds = as;
 	lockLeave(&AE->lock);
@@ -756,18 +757,21 @@ int fun_soundPosition(Thread* th) FUN_RETURN_NIL
 int fun_soundSetVolume(Thread* th) FUN_RETURN_NIL
 int fun_soundPlaying(Thread* th) FUN_RETURN_NIL
 #endif	//WITH_AUDIO
-int coreAudioInit(Thread* th, Pkg *system)
+int coreAudioInit(Pkg *system)
 {
-	Def* Sample= pkgAddType(th, system, "Sample");
-	Type* fun_S_F_I_Sample = typeAlloc(th, TYPECODE_FUN, NULL, 4, MM.Str, MM.Float, MM.Int, Sample->type);
-	Type* fun_Sample_Sample = typeAlloc(th, TYPECODE_FUN, NULL, 2, Sample->type, Sample->type);
-	Type* fun_Bool = typeAlloc(th, TYPECODE_FUN, NULL, 1, MM.Boolean);
-	Type* fun_Sample_I = typeAlloc(th, TYPECODE_FUN, NULL, 2, Sample->type, MM.Int);
-	Type* fun_Sample_F_Sample = typeAlloc(th, TYPECODE_FUN, NULL, 3, Sample->type, MM.Float, Sample->type);
-
+	pkgAddType(system, "Sample");
+	static const Native nativeDefs[] = {
+		{ NATIVE_FUN, "soundStart", fun_soundStart, "fun Str Float Int -> Sample"},
+		{ NATIVE_FUN, "soundAbort", fun_soundAbort, "fun Sample -> Sample" },
+		{ NATIVE_FUN, "soundPosition", fun_soundPosition, "fun Sample -> Int" },
+		{ NATIVE_FUN, "soundSetVolume", fun_soundSetVolume, "fun Sample Float -> Sample" },
+		{ NATIVE_FUN, "soundPlaying", fun_soundPlaying, "fun -> Bool" },
+	};
+	NATIVE_DEF(nativeDefs);
 #ifdef WITH_AUDIO
-	AE= (AudioEngine*)memoryAllocExt(th, sizeof(AudioEngine), DBG_BIN, audioSystemForget, audioSystemMark);
+	AE= (AudioEngine*)memoryAllocExt(sizeof(AudioEngine), DBG_BIN, audioSystemForget, audioSystemMark);
 	AE->sounds = NULL;
+	AE->playBuffer = NULL;
 	AE->noSound = 0;
 
 	AE->masterVolume = 0x8000;
@@ -776,11 +780,6 @@ int coreAudioInit(Thread* th, Pkg *system)
 	memoryAddRoot((LB*)AE);
 	sysAudioInit(AE);
 #endif
-	pkgAddFun(th, system, "soundStart", fun_soundStart, fun_S_F_I_Sample);
-	pkgAddFun(th, system, "soundAbort", fun_soundAbort, fun_Sample_Sample);
-	pkgAddFun(th, system, "soundPosition", fun_soundPosition, fun_Sample_I);
-	pkgAddFun(th, system, "soundSetVolume", fun_soundSetVolume, fun_Sample_F_Sample);
-	pkgAddFun(th, system, "soundPlaying", fun_soundPlaying, fun_Bool);
 
 	return 0;
 }

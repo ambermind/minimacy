@@ -12,39 +12,28 @@
 
 Type* compilePrompt(Compiler* c)
 {
-	LINT global;
 	Type* t;
 	if (!(t = compileExpression(c))) return NULL;	// get source code
 	if (typeUnify(c, t, MM.Str)) return NULL;
 	if (!(t = compileExpression(c))) return NULL;	// get pkg
 	if (typeUnify(c, t, MM.Package)) return NULL;
-	t = typeAllocUndef(c->th); if (!t) return NULL;
-	if (funMakerAddGlobal(c->fmk, (LB*)t,&global)) return NULL;
-	if (bc_byte_or_int(c, global, OPconstb, OPconst)) return NULL;
 
-	if (bufferAddChar(c->th, c->bytecode, OPprompt)) return NULL;
-
-//	if (bufferAddChar(c->th, c->bytecode, OPdump)) return NULL;
-
+	if (bufferAddChar(c->bytecode, OPprompt)) return NULL;
 	if (bc_byte_or_int(c, 0, OPexecb, OPexec)) return NULL;
 	if (bc_byte_or_int(c, 2, OPdftupb, OPdftup)) return NULL;
-	return typeAlloc(c->th,TYPECODE_TUPLE, NULL, 2, MM.Type, t);
+	return typeAlloc(TYPECODE_TUPLE, NULL, 2, MM.Type, t);
 }
 
 Type* compileCompile(Compiler* c)
 {
-	LINT global;
 	Type* t;
 	if (!(t = compileExpression(c))) return NULL;	// get source code
 	if (typeUnify(c, t, MM.Str)) return NULL;
 	if (!(t = compileExpression(c))) return NULL;	// get pkg
 	if (typeUnify(c, t, MM.Package)) return NULL;
-	t = typeAllocUndef(c->th); if (!t) return NULL;
-	if (funMakerAddGlobal(c->fmk, (LB*)t, &global)) return NULL;
-	if (bc_byte_or_int(c, global, OPconstb, OPconst)) return NULL;
 
-	if (bufferAddChar(c->th, c->bytecode, OPprompt)) return NULL;
-	if (bufferAddChar(c->th, c->bytecode, OPdrop)) return NULL;
+	if (bufferAddChar(c->bytecode, OPprompt)) return NULL;
+	if (bufferAddChar(c->bytecode, OPdrop)) return NULL;
 	return MM.Type;
 }
 
@@ -57,12 +46,12 @@ Type* compileIf(Compiler* c)
 	if (typeUnify(c,t,MM.Boolean)) return NULL;
 
 	if (parserAssume(c,"then")) return NULL;
-	if (bufferAddChar(c->th, c->bytecode,OPelse)) return NULL;
+	if (bufferAddChar(c->bytecode,OPelse)) return NULL;
 	bc_else=bytecodeAddEmptyJump(c);
 	if (bc_else < 0) return NULL;
 	if (!(t=compileExpression(c))) return NULL;
 
-	if (bufferAddChar(c->th, c->bytecode,OPgoto)) return NULL;
+	if (bufferAddChar(c->bytecode,OPgoto)) return NULL;
 	bc_goto=bytecodeAddEmptyJump(c);
 	if (bc_goto < 0) return NULL;
 	bytecodeSetJump(c,bc_else,bytecodePin(c));
@@ -76,7 +65,7 @@ Type* compileIf(Compiler* c)
 	else
 	{
 		parserGiveback(c);
-		if (bufferAddChar(c->th, c->bytecode,OPnil)) return NULL;
+		if (bufferAddChar(c->bytecode,OPnil)) return NULL;
 	}
 	bytecodeSetJump(c,bc_goto,bytecodePin(c));
 	return t;
@@ -87,9 +76,9 @@ Type* compileReturn(Compiler* c)
 	Type* t;
 	if (!(t=compileExpression(c))) return NULL;
 	if (typeUnify(c,t,c->fmk->resultType)) return NULL;
-	if (bufferAddChar(c->th, c->bytecode,OPfinal)) return NULL;
-	if (bufferAddChar(c->th, c->bytecode,OPret)) return NULL;
-	return typeAllocUndef(c->th);
+	if (bufferAddChar(c->bytecode,OPfinal)) return NULL;
+	if (bufferAddChar(c->bytecode,OPret)) return NULL;
+	return typeAllocUndef();
 }
 
 Type* compileSpecial(Compiler* c)
@@ -100,11 +89,11 @@ Type* compileSpecial(Compiler* c)
 	if (!strcmp(c->parser->token, "atomic"))
 	{
 		if (c->pkg != MM.system) return compileError(c,"atomic is not allowed to simple users\n");
-		if (bufferAddChar(c->th, c->bytecode, OPatomic)) return NULL;
-		if (bufferAddChar(c->th, c->bytecode, 1)) return NULL;
+		if (bufferAddChar(c->bytecode, OPatomic)) return NULL;
+		if (bufferAddChar(c->bytecode, 1)) return NULL;
 		if (!(t = compileExpression(c))) return NULL;
-		if (bufferAddChar(c->th, c->bytecode, OPatomic)) return NULL;
-		if (bufferAddChar(c->th, c->bytecode, 0)) return NULL;
+		if (bufferAddChar(c->bytecode, OPatomic)) return NULL;
+		if (bufferAddChar(c->bytecode, 0)) return NULL;
 		return t;
 	}
 	if (!strcmp(c->parser->token, "float"))
@@ -218,11 +207,11 @@ Type* compileTerm(Compiler* c,int noPoint)
 			if (!strcmp(c->parser->token,"]"))
 			{
 				if (bc_byte_or_int(c,nval,OPdftupb,OPdftup)) return NULL;
-				return typeAllocFromStack(c->th, NULL, TYPECODE_TUPLE, nval);
+				return typeAllocFromStack(NULL, TYPECODE_TUPLE, nval);
 			}
 			parserGiveback(c);
 			if (!(t=compileExpression(c))) return NULL;
-			TYPE_PUSH_NULL(c,t);
+			TYPE_PUSH_NULL(t);
 			nval++;
 		}
 	}
@@ -230,8 +219,8 @@ Type* compileTerm(Compiler* c,int noPoint)
 	{
 		Type* type;
 		int nval=0;
-		Type* u = typeAllocUndef(c->th);  if (!u) return NULL;
-		type=typeAlloc(c->th,TYPECODE_ARRAY,NULL,1,u); if (!type) return NULL;
+		Type* u = typeAllocUndef();  if (!u) return NULL;
+		type=typeAlloc(TYPECODE_ARRAY,NULL,1,u); if (!type) return NULL;
 		while(1)
 		{
 			if (!parserNext(c)) return compileError(c,"'}' expected (found '%s')\n",compileToken(c));
@@ -281,19 +270,21 @@ Type* compileTerm(Compiler* c,int noPoint)
 		return compileThrow(c);
 	else if (!strcmp(c->parser->token,"nil"))
 	{
-		if (bufferAddChar(c->th, c->bytecode,OPnil)) return NULL;
-		return typeAllocUndef(c->th);
+		if (bufferAddChar(c->bytecode,OPnil)) return NULL;
+		return typeAllocUndef();
 	}
 	else if (!strcmp(c->parser->token, "true"))
 	{
-		if (bufferAddChar(c->th, c->bytecode, OPtrue)) return NULL;
+		if (bufferAddChar(c->bytecode, OPtrue)) return NULL;
 		return MM.Boolean;
 	}
 	else if (!strcmp(c->parser->token, "false"))
 	{
-		if (bufferAddChar(c->th, c->bytecode, OPfalse)) return NULL;
+		if (bufferAddChar(c->bytecode, OPfalse)) return NULL;
 		return MM.Boolean;
 	}
+	else if (!strcmp(c->parser->token, "hide"))
+		return compileDefHide(c);
 	else if (!strcmp(c->parser->token,"'"))
 	{
 		if (!parserNext(c)) return compileError(c,"'char expected (found '%s')\n",compileToken(c));
@@ -311,7 +302,7 @@ Type* compileTerm(Compiler* c,int noPoint)
 		if ((c->fmk->forceNumbers == FORCE_NUMBER_BIGNUM) || (c->fmk->forceNumbers == FORCE_NUMBER_MOD) || (c->fmk->forceNumbers == FORCE_NUMBER_MODOPTI))
 		{
 			LINT global;
-			LB* res = bigAlloc(c->th, bignumFromDec(c->parser->token));
+			LB* res = bigAlloc(bignumFromDec(c->parser->token));
 			if (!res) return NULL;
 			if (funMakerAddGlobal(c->fmk, res, &global)) return NULL;
 			if (bc_byte_or_int(c, global, OPconstb, OPconst)) return NULL;
@@ -321,8 +312,8 @@ Type* compileTerm(Compiler* c,int noPoint)
 		if (c->fmk->forceNumbers==FORCE_NUMBER_FLOAT)
 		{
 			LFLOAT f=(LFLOAT)i;
-			if (bufferAddChar(c->th, c->bytecode,OPfloat)) return NULL;
-			if (bufferAddInt(c->th, c->bytecode,*(LINT*)&f)) return NULL;
+			if (bufferAddChar(c->bytecode,OPfloat)) return NULL;
+			if (bufferAddInt(c->bytecode,*(LINT*)&f)) return NULL;
 			return MM.Float;
 		}
 		if (bcint_byte_or_int(c,i)) return NULL;
@@ -342,7 +333,8 @@ Type* compileTerm(Compiler* c,int noPoint)
 		if ((c->fmk->forceNumbers == FORCE_NUMBER_BIGNUM) || (c->fmk->forceNumbers == FORCE_NUMBER_MOD) || (c->fmk->forceNumbers == FORCE_NUMBER_MODOPTI))
 		{
 			LINT global;
-			LB* res = bigAlloc(c->th, bignumFromHex(c->th, c->parser->token+2));
+			LB* res;
+			res = bigAlloc(bignumFromHex(c->parser->token + 2));
 			if (!res) return NULL;
 			if (funMakerAddGlobal(c->fmk, res, &global)) return NULL;
 			if (bc_byte_or_int(c, global, OPconstb, OPconst)) return NULL;
@@ -359,13 +351,12 @@ Type* compileTerm(Compiler* c,int noPoint)
 		if (parserGetstring(c,MM.tmpBuffer)) // this function starts to reset the Buffer
 			return compileError(c,"string has no ending\n");
 		
-		data=memoryAllocFromBuffer(c->th,MM.tmpBuffer); if (!data) return NULL;
+		data=memoryAllocFromBuffer(MM.tmpBuffer); if (!data) return NULL;
 		if (funMakerAddGlobal(c->fmk,data, &global)) return NULL;
 		if (bc_byte_or_int(c,global,OPconstb,OPconst)) return NULL;
 		return MM.Str;
 	}
 	else if (!strcmp(c->parser->token,"#"))
 		return compilePointer(c);
-
 	return compileError(c,"unexpected term '%s'\n",compileToken(c));
 }	

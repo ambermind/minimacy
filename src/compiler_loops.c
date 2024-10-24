@@ -16,7 +16,7 @@ Type* compileBreak(Compiler* c)
 	if (!c->fmk->breakType) return compileError(c,"nothing to break!\n");
 	if (!(t=compileExpression(c))) return NULL;
 	if (typeUnify(c,t,c->fmk->breakType)) return NULL;
-	if (bufferAddChar(c->th, c->bytecode,OPbreak)) return NULL;
+	if (bufferAddChar(c->bytecode,OPbreak)) return NULL;
 	c->fmk->breakUse=1;
 	return t;
 }
@@ -29,9 +29,9 @@ Type* compileWhile(Compiler* c)
 	Type* backupTypeBreak;
 	int backupBreakUse;
 	LINT bc_break;
-	Type* tresult = typeAllocUndef(c->th); if (!tresult) return NULL;
+	Type* tresult = typeAllocUndef(); if (!tresult) return NULL;
 
-	if (bufferAddChar(c->th, c->bytecode,OPmark)) return NULL;
+	if (bufferAddChar(c->bytecode,OPmark)) return NULL;
 	bc_break= bytecodeAddEmptyJump(c);
 	if (bc_break < 0) return NULL;
 	backupTypeBreak = c->fmk->breakType;
@@ -39,7 +39,7 @@ Type* compileWhile(Compiler* c)
 	c->fmk->breakType = tresult;
 	c->fmk->breakUse = 0;
 
-	if (bufferAddChar(c->th, c->bytecode,OPnil)) return NULL;
+	if (bufferAddChar(c->bytecode,OPnil)) return NULL;
 
 	bc_while=bytecodePin(c);
 	if (!(t=compileExpression(c))) return NULL;
@@ -48,21 +48,21 @@ Type* compileWhile(Compiler* c)
 
 	if (parserAssume(c,"do")) return NULL;
 
-	if (bufferAddChar(c->th, c->bytecode,OPelse)) return NULL;
+	if (bufferAddChar(c->bytecode,OPelse)) return NULL;
 	bc_end=bytecodeAddEmptyJump(c);
 	if (bc_end < 0) return NULL;
-	if (bufferAddChar(c->th, c->bytecode,OPdrop)) return NULL;
+	if (bufferAddChar(c->bytecode,OPdrop)) return NULL;
 	if (!(t=compileExpression(c))) return NULL;
 	if (typeUnify(c,t,tresult)) return NULL;
 
-	if (bufferAddChar(c->th, c->bytecode,OPgoto)) return NULL;
+	if (bufferAddChar(c->bytecode,OPgoto)) return NULL;
 	if (bytecodeAddJump(c,bc_while)) return NULL;
 	
 	bytecodeSetJump(c,bc_end,bytecodePin(c));
 
 	if (c->fmk->breakUse)
 	{
-		if (bufferAddChar(c->th, c->bytecode, OPunmark)) return NULL;
+		if (bufferAddChar(c->bytecode, OPunmark)) return NULL;
 		bytecodeSetJump(c, bc_break, bytecodePin(c));
 	}
 	else
@@ -93,9 +93,9 @@ Type* compileFor(Compiler* c)
 	Type* backupTypeBreak;
 	int backupBreakUse;
 	LINT bc_break;
-	Type* tresult=typeAllocUndef(c->th); if (!tresult) return NULL;
+	Type* tresult=typeAllocUndef(); if (!tresult) return NULL;
 
-	if (bufferAddChar(c->th, c->bytecode, OPmark)) return NULL;
+	if (bufferAddChar(c->bytecode, OPmark)) return NULL;
 	bc_break = bytecodeAddEmptyJump(c);
 	if (bc_break < 0) return NULL;
 	backupTypeBreak = c->fmk->breakType;
@@ -111,7 +111,7 @@ Type* compileFor(Compiler* c)
 	// parse and isolate locals retrieving bytecode
 	bc_locals = bufferSize(c->bytecode);
 	localsType = compileLocals(c,NULL); if (!localsType) return NULL;
-	localsBytecode = memoryAllocBin(c->th, bufferStart(c->bytecode) + bc_locals, bufferSize(c->bytecode) - bc_locals, DBG_BYTECODE); if (!localsBytecode) return NULL;
+	localsBytecode = memoryAllocBin(bufferStart(c->bytecode) + bc_locals, bufferSize(c->bytecode) - bc_locals, DBG_BYTECODE); if (!localsBytecode) return NULL;
 	bufferCut(c->bytecode, bc_locals);
 
 	if ((!parserNext(c))||( strcmp(c->parser->token,"in") && strcmp(c->parser->token,"=") && strcmp(c->parser->token, "of") && strcmp(c->parser->token, ",")))
@@ -128,7 +128,7 @@ Type* compileFor(Compiler* c)
 	}
 	if (!strcmp(c->parser->token,"in"))
 	{
-		Type* tlist = typeAlloc(c->th, TYPECODE_LIST, NULL, 1, localsType); if (!tlist) return NULL;
+		Type* tlist = typeAlloc(TYPECODE_LIST, NULL, 1, localsType); if (!tlist) return NULL;
 
 		if (!iterator) {
 			iterator = funMakerAddLocal(c, ""); if (!iterator) return NULL;	// this one for the list iterator (type list u0), we need to keep it
@@ -142,35 +142,35 @@ Type* compileFor(Compiler* c)
 		c->fmk->locals=localsAfter;
 		if (bc_byte_or_int(c, iterator->index,OPslocb,OPsloc)) return NULL;	// set list iterator
 
-		if (bufferAddChar(c->th, c->bytecode,OPnil)) return NULL;
+		if (bufferAddChar(c->bytecode,OPnil)) return NULL;
 		bc_cond=bytecodePin(c);
 		if (bc_byte_or_int(c, iterator->index,OPrlocb,OPrloc)) return NULL;
-		if (bufferAddChar(c->th, c->bytecode,OPnil)) return NULL;
-		if (bufferAddChar(c->th, c->bytecode,OPne)) return NULL;
+		if (bufferAddChar(c->bytecode,OPnil)) return NULL;
+		if (bufferAddChar(c->bytecode,OPne)) return NULL;
 	
-		if (bufferAddChar(c->th, c->bytecode,OPelse)) return NULL;
+		if (bufferAddChar(c->bytecode,OPelse)) return NULL;
 		bc_end=bytecodeAddEmptyJump(c);
 		if (bc_end < 0) return NULL;
 		if (parserAssume(c,"do")) return NULL;
-		if (bufferAddChar(c->th, c->bytecode,OPdrop)) return NULL;
+		if (bufferAddChar(c->bytecode,OPdrop)) return NULL;
 
 		if (bc_byte_or_int(c, iterator->index, OPrlocb, OPrloc)) return NULL;
-		if (bufferAddChar(c->th, c->bytecode, OPhd)) return NULL;
-		if (bufferAddBin(c->th, c->bytecode, BIN_START(localsBytecode),BIN_LENGTH(localsBytecode))) return NULL;
+		if (bufferAddChar(c->bytecode, OPhd)) return NULL;
+		if (bufferAddBin(c->bytecode, BIN_START(localsBytecode),BIN_LENGTH(localsBytecode))) return NULL;
 
 		if (!(t=compileExpression(c))) return NULL;
 		if (typeUnify(c,t,tresult)) return NULL;
 
 		if (bc_byte_or_int(c, iterator->index,OPrlocb,OPrloc)) return NULL;
-		if (bufferAddChar(c->th, c->bytecode,OPtl)) return NULL;
+		if (bufferAddChar(c->bytecode,OPtl)) return NULL;
 		if (bc_byte_or_int(c, iterator->index,OPslocb,OPsloc)) return NULL;	// update list iterator
-		if (bufferAddChar(c->th, c->bytecode,OPgoto)) return NULL;
+		if (bufferAddChar(c->bytecode,OPgoto)) return NULL;
 		if (bytecodeAddJump(c,bc_cond)) return NULL;
 	}
 	else if (!strcmp(c->parser->token, "of"))
 	{
 		Locals* array, * arrayLen;
-		Type* tarray = typeAlloc(c->th, TYPECODE_ARRAY, NULL, 1, localsType); if (!tarray) return NULL;
+		Type* tarray = typeAlloc(TYPECODE_ARRAY, NULL, 1, localsType); if (!tarray) return NULL;
 
 		if (!iterator) {
 			iterator = funMakerAddLocal(c, ""); if (!iterator) return NULL;	// this one for the list iterator (type list u0), we need to keep it
@@ -188,40 +188,40 @@ Type* compileFor(Compiler* c)
 
 		c->fmk->locals = localsAfter;
 
-		if (bufferAddChar(c->th, c->bytecode, OPdup)) return NULL;	// so that we can chain sloc and len
+		if (bufferAddChar(c->bytecode, OPdup)) return NULL;	// so that we can chain sloc and len
 		if (bc_byte_or_int(c, array->index, OPslocb, OPsloc)) return NULL;	// set array iterator
-		if (bufferAddChar(c->th, c->bytecode, OParraylen)) return NULL;
+		if (bufferAddChar(c->bytecode, OParraylen)) return NULL;
 		if (bc_byte_or_int(c, arrayLen->index, OPslocb, OPsloc)) return NULL;	// set array len
 
 		if (bcint_byte_or_int(c, 0)) return NULL;	// set array index
 		if (bc_byte_or_int(c, iterator->index, OPslocb, OPsloc)) return NULL;	// set array index
 
-		if (bufferAddChar(c->th, c->bytecode, OPnil)) return NULL;
+		if (bufferAddChar(c->bytecode, OPnil)) return NULL;
 		bc_cond = bytecodePin(c);
 		if (bc_byte_or_int(c, iterator->index, OPrlocb, OPrloc)) return NULL;
 		if (bc_byte_or_int(c, arrayLen->index, OPrlocb, OPrloc)) return NULL;
-		if (bufferAddChar(c->th, c->bytecode, OPlt)) return NULL;
+		if (bufferAddChar(c->bytecode, OPlt)) return NULL;
 
-		if (bufferAddChar(c->th, c->bytecode, OPelse)) return NULL;
+		if (bufferAddChar(c->bytecode, OPelse)) return NULL;
 		bc_end = bytecodeAddEmptyJump(c);
 		if (bc_end < 0) return NULL;
 		if (parserAssume(c, "do")) return NULL;
-		if (bufferAddChar(c->th, c->bytecode, OPdrop)) return NULL;
+		if (bufferAddChar(c->bytecode, OPdrop)) return NULL;
 		if (bc_byte_or_int(c, array->index, OPrlocb, OPrloc)) return NULL;	// set array index
 		if (bc_byte_or_int(c, iterator->index, OPrlocb, OPrloc)) return NULL;
-		if (bufferAddChar(c->th, c->bytecode, OPfetch)) return NULL;
+		if (bufferAddChar(c->bytecode, OPfetch)) return NULL;
 
-		if (bufferAddBin(c->th, c->bytecode, BIN_START(localsBytecode), BIN_LENGTH(localsBytecode))) return NULL;
+		if (bufferAddBin(c->bytecode, BIN_START(localsBytecode), BIN_LENGTH(localsBytecode))) return NULL;
 		
 		if (!(t = compileExpression(c))) return NULL;
 		if (typeUnify(c, t, tresult)) return NULL;
 
 		if (bc_byte_or_int(c, iterator->index, OPrlocb, OPrloc)) return NULL;	// i+1
-		if (bufferAddChar(c->th, c->bytecode, OPintb)) return NULL;
-		if (bufferAddChar(c->th, c->bytecode, 1)) return NULL;
-		if (bufferAddChar(c->th, c->bytecode, OPadd)) return NULL;
+		if (bufferAddChar(c->bytecode, OPintb)) return NULL;
+		if (bufferAddChar(c->bytecode, 1)) return NULL;
+		if (bufferAddChar(c->bytecode, OPadd)) return NULL;
 		if (bc_byte_or_int(c, iterator->index, OPslocb, OPsloc)) return NULL;
-		if (bufferAddChar(c->th, c->bytecode, OPgoto)) return NULL;
+		if (bufferAddChar(c->bytecode, OPgoto)) return NULL;
 		if (bytecodeAddJump(c, bc_cond)) return NULL;
 	}
 	else
@@ -236,16 +236,16 @@ Type* compileFor(Compiler* c)
 		if (typeUnify(c, tlb, localsType)) return NULL;
 		c->fmk->locals = localsAfter;
 
-		if (bufferAddBin(c->th, c->bytecode, BIN_START(localsBytecode), BIN_LENGTH(localsBytecode))) return NULL;
+		if (bufferAddBin(c->bytecode, BIN_START(localsBytecode), BIN_LENGTH(localsBytecode))) return NULL;
 
-		if (bufferAddChar(c->th, c->bytecode, OPnil)) return NULL;
+		if (bufferAddChar(c->bytecode, OPnil)) return NULL;
 		bc_cond = bytecodePin(c);
 		if ((!parserNext(c)) || strcmp(c->parser->token, ";")) return compileError(c,"';' expected (found %s)\n", compileToken(c));
 
 		if (!(t = compileExpression(c))) return NULL;
 		if (typeUnify(c, t, MM.Boolean)) return NULL;
 
-		if (bufferAddChar(c->th, c->bytecode, OPelse)) return NULL;
+		if (bufferAddChar(c->bytecode, OPelse)) return NULL;
 		bc_end = bytecodeAddEmptyJump(c);
 		if (bc_end < 0) return NULL;
 
@@ -255,7 +255,7 @@ Type* compileFor(Compiler* c)
 		{
 			Type* tinc;
 			LINT bc_expr, bc_next;
-			if (bufferAddChar(c->th, c->bytecode, OPgoto)) return NULL;
+			if (bufferAddChar(c->bytecode, OPgoto)) return NULL;
 			bc_expr = bytecodeAddEmptyJump(c);
 			if (bc_expr < 0) return NULL;
 
@@ -263,20 +263,20 @@ Type* compileFor(Compiler* c)
 			if (!(tinc = compileExpression(c))) return NULL;
 
 			if (typeUnify(c, localsType, tinc)) return NULL;
-			if (bufferAddBin(c->th, c->bytecode, BIN_START(localsBytecode), BIN_LENGTH(localsBytecode))) return NULL;
+			if (bufferAddBin(c->bytecode, BIN_START(localsBytecode), BIN_LENGTH(localsBytecode))) return NULL;
 
-			if (bufferAddChar(c->th, c->bytecode, OPgoto)) return NULL;
+			if (bufferAddChar(c->bytecode, OPgoto)) return NULL;
 			if (bytecodeAddJump(c, bc_cond)) return NULL;
 
 			if (parserAssume(c, "do")) return NULL;
 
 			bytecodeSetJump(c, bc_expr, bytecodePin(c));
-			if (bufferAddChar(c->th, c->bytecode, OPdrop)) return NULL;
+			if (bufferAddChar(c->bytecode, OPdrop)) return NULL;
 
 			if (!(t = compileExpression(c))) return NULL;
 			if (typeUnify(c, t, tresult)) return NULL;
 
-			if (bufferAddChar(c->th, c->bytecode, OPgoto)) return NULL;
+			if (bufferAddChar(c->bytecode, OPgoto)) return NULL;
 			if (bytecodeAddJump(c, bc_next)) return NULL;
 		}
 		else	// without "next" expression: for i=v0; cond do ...
@@ -285,17 +285,17 @@ Type* compileFor(Compiler* c)
 			parserGiveback(c);
 			if (typeUnify(c, localsType, MM.Int)) return NULL;
 			if (parserAssume(c, "do")) return NULL;
-			if (bufferAddChar(c->th, c->bytecode, OPdrop)) return NULL;
+			if (bufferAddChar(c->bytecode, OPdrop)) return NULL;
 
 			if (!(t = compileExpression(c))) return NULL;
 			if (typeUnify(c, t, tresult)) return NULL;
 
 			if (bc_byte_or_int(c, iterator->index, OPrlocb, OPrloc)) return NULL;	// i+1
-			if (bufferAddChar(c->th, c->bytecode, OPintb)) return NULL;
-			if (bufferAddChar(c->th, c->bytecode, 1)) return NULL;
-			if (bufferAddChar(c->th, c->bytecode, OPadd)) return NULL;
+			if (bufferAddChar(c->bytecode, OPintb)) return NULL;
+			if (bufferAddChar(c->bytecode, 1)) return NULL;
+			if (bufferAddChar(c->bytecode, OPadd)) return NULL;
 			if (bc_byte_or_int(c, iterator->index, OPslocb, OPsloc)) return NULL;
-			if (bufferAddChar(c->th, c->bytecode, OPgoto)) return NULL;
+			if (bufferAddChar(c->bytecode, OPgoto)) return NULL;
 			if (bytecodeAddJump(c, bc_cond)) return NULL;
 		}
 	}
@@ -304,7 +304,7 @@ Type* compileFor(Compiler* c)
 
 	if (c->fmk->breakUse)
 	{
-		if (bufferAddChar(c->th, c->bytecode, OPunmark)) return NULL;
+		if (bufferAddChar(c->bytecode, OPunmark)) return NULL;
 		bytecodeSetJump(c, bc_break, bytecodePin(c));
 	}
 	else

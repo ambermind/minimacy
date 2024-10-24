@@ -13,24 +13,25 @@
 void hashmapMark(LB* user)
 {
 	HashSlots* h=(HashSlots*)user;
-	MEMORY_MARK(user,h->table);
+	MEMORY_MARK(h->table);
 }
 
-HashSlots* hashSlotsCreate(Thread* th, LINT nbits, LW type)
+HashSlots* hashSlotsCreate(LINT nbits, LW type)
 {
 	HashSlots* h;
 	LINT one=1;
 	LINT size;
+	LB* table;
 
+	memoryEnterFast();
 	if (nbits==0) nbits=HASH_DEFAULT;
 	size = one << nbits;
-	memoryEnterFast();
-	h=(HashSlots*)memoryAllocExt(th, sizeof(HashSlots),type,NULL,hashmapMark); if (!h) return NULL;
+	h=(HashSlots*)memoryAllocExt(sizeof(HashSlots),type,NULL,hashmapMark); if (!h) return NULL;
 	h->nb=0;
 	h->nbits=nbits;
 	h->table = NULL;	// required because the following memoryAlloc may fire a GC
-	h->table= memoryAllocArray(th, size,DBG_ARRAY);
-	if (!h->table) return NULL;
+	table= memoryAllocArray(size,DBG_ARRAY); if (!table) return NULL;
+	h->table = table;
 	//	PRINTF(LOG_DEV,"hashmap %llx nbits %lld -> %llx #%lld \n", h, nbits, h->table,size);
 	memoryLeaveFast();
 	return h;
@@ -135,7 +136,7 @@ int hashmapAdd(Thread* th, int i, HashSlots* h, LW key, int type)
 		}
 		next=ARRAY_PNT(next,HASH_LIST_NEXT);
 	}
-	p= memoryAllocArray(th, HASH_LIST_NB, DBG_HASH_LIST_LIST);
+	p= memoryAllocArray(HASH_LIST_NB, DBG_HASH_LIST_LIST);
 	if (!p) return EXEC_OM;
 	ARRAY_SET_TYPE(p, HASH_LIST_KEY,key,type);
 	STACK_STORE(p, HASH_LIST_VAL, th, i);
@@ -163,13 +164,13 @@ void hashmapGet(Thread* th, int i, HashSlots* h,LW key, int type)
 }
 
 
-int hashmapDictAdd(Thread* th, HashSlots* h, LB* key, LB* value)
+int hashmapDictAdd(HashSlots* h, LB* key, LB* value)
 {
 	LB* p=NULL;
 	if (h && key)
 	{
 		LINT index= hashmapComputeIndex(h->nbits, VAL_FROM_PNT(key), VAL_TYPE_PNT);
-		p = memoryAllocArray(th, HASH_LIST_NB, DBG_HASH_LIST_LIST);
+		p = memoryAllocArray(HASH_LIST_NB, DBG_HASH_LIST_LIST);
 		if (!p) return EXEC_OM;
 		ARRAY_SET_PNT(p, HASH_LIST_KEY, key);
 		ARRAY_SET_PNT(p, HASH_LIST_VAL, value);
@@ -237,19 +238,18 @@ int hashsetRemove(HashSlots* h, LW key, int type)
 	return 0;
 }
 
-int hashsetAdd(Thread* th, HashSlots* h, LW key, int type)
+int hashsetAdd(HashSlots* h, LW key, int type)
 {
 	LB* p;
 	LINT index = hashmapComputeIndex(h->nbits, key, type);
 	LB* table = h->table;
 	LB* next = (ARRAY_PNT(table, index));
-	if (!th) return 0;
 	while (next)
 	{
 		if (lwEquals(ARRAY_GET(next, LIST_VAL), ARRAY_TYPE(next, LIST_VAL), key, type)) return 0;
 		next = ARRAY_PNT(next, LIST_NXT);
 	}
-	p = memoryAllocArray(th, LIST_LENGTH, DBG_LIST);
+	p = memoryAllocArray(LIST_LENGTH, DBG_LIST);
 	if (!p) return EXEC_OM;
 	ARRAY_SET_TYPE(p, LIST_VAL, key, type);
 	ARRAY_SET_PNT(p, LIST_NXT, ARRAY_PNT(table, index));

@@ -32,6 +32,6 @@ enum UIevent {
 
 void internalPoke(void);
 void eventNotify(int c, int x, int y, int v);
-int coreEventInit(Thread* th, Pkg* system);
+int coreEventInit(Pkg* system);
 
 #endif

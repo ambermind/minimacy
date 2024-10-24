@@ -12,73 +12,69 @@
 
 
 Memory MM;
-int gcTRON = 0;
-extern Mem* MemCheck;
 
-int memoryChainTest(Mem* mem, LINT total)
+void memoryOptimize(int nbGc)
 {
-	while (mem)
-	{
-		if (mem->maxBytes &&((mem->bytes + total) > mem->maxBytes)) return 0;
-		mem = mem->header.mem;
-	}
-	return 1;
+	int i;
+	for (i = 0; i < nbGc; i++) memoryFinalizeGC();
+#ifdef USE_MEMORY_C
+	bmmRebuildTree();
+	if (MM.gcTrace) PRINTF(LOG_SYS, "> Larger block: %d\n", bmmMaxSize());
+#endif
 }
-
-LB* memoryAlloc(Thread* th, LINT size,LINT type,LW dbg)
+LB* memoryAlloc(LINT size,LINT type,LW dbg)
 {
 	LB *p=NULL;
-	Mem* mem = th?th->memDelegate:MM.mem;
-	LINT total = sizeof(LB) + (((size+ LWLEN - 1)>>LSHIFT)<<LSHIFT);
-#ifdef USE_ALL_BITS
-	if (type == TYPE_ARRAY) total += (((size >> LSHIFT) + LWLEN - 1) >> LSHIFT) << LSHIFT;
-#endif
-	if (mem)
-	{
-		if (!memoryChainTest(mem, total))
-		{
-//			PRINTF(LOG_DEV, "Force gc for thread " LSD /*" current0=" LSX*/ "\n", th->uid);// , mem);
-			memoryFullGC();
-			if (!memoryChainTest(mem, total))
-			{
-				memoryFullGC();
-				if (!memoryChainTest(mem, total))
-				{
-					PRINTF(LOG_SYS, "> Error: Out of memory\n");
-					MM.OM = 1;
-					if (th) th->OM=1;
-					goto cleanup;	// no more memory for this thread
-				}
-			}
-		}
-		else if ((MM.blocs_length > 16*1024 * 1024) && (MM.blocs_nb > (MM.gc_nb0 << 1)))
-		{
-//			PRINTF(LOG_DEV, "==========>force gc\n");
-			memoryFullGC();
-			memoryFullGC();
-		}
-	}
+	LINT total = BLOCK_TOTAL_MEMORY(type, size);
+
+// simulate memory limit:
+	//if (0) {
+	//	const LINT MAX_SIMU_MEM = (512 * 1024);
+	//	if (MM.blocs_length > MAX_SIMU_MEM) {
+	//		memoryFinalizeGC();
+	//		memoryFinalizeGC();
+	//		if (MM.blocs_length > MAX_SIMU_MEM) {
+	//			PRINTF(LOG_SYS, "> Error: malloc " LSD " returns simulated OM error\n", size);
+	//			MM.OM = 1;
+	//			goto cleanup;
+	//		}
+	//	}
+	//}
+	if ((MM.blocs_length > MEMORY_SAFE_SIZE) && (MM.blocs_nb > (MM.gc_nb0 << 1))) memoryOptimize(2);
+//	memoryFinalizeGC(); memoryFinalizeGC();
 	p=(LB*)VM_MALLOC(total);
 //	PRINTF(LOG_DEV,">>>>>>malloc %d bytes -> %llx\n", (int)total, p);
 	if (!p) 
 	{
-//		PRINTF(LOG_DEV,"x");
-		PRINTF(LOG_SYS,"> Error: malloc " LSD " returns null\n",size);
-//		threadDump(LOG_SYS, th, 10);
-		goto cleanup;
+		memoryOptimize(1);
+		p = (LB*)VM_MALLOC(total);
+		if (!p) {
+			memoryOptimize(1);
+			p = (LB*)VM_MALLOC(total);
+#ifdef USE_MEMORY_C
+			if (!p) {
+				bmmMayday();
+				p = (LB*)VM_MALLOC(total);
+//				if (!p) bmmDump();
+			}
+#endif
+			if (!p) {
+				MM.OM = 1;
+				//				PRINTF(LOG_DEV,"x");
+				
+				PRINTF(LOG_SYS, "> Error: malloc " LSD " returns null\n", size);
+				//				threadDump(LOG_SYS, th, 10);
+				goto cleanup;
+			}
+		}
 	}
+//	PRINTF(LOG_DEV, "%d,"LSX","LSD" ", (int)total, p, (INT_FROM_VAL(HEADER_DBG(p)) - 1) / 2);
+
 	HEADER_SET_SIZE_AND_TYPE(p,size,type);
-	p->mem = mem;
+	p->pkg = MM.currentPkg;
 	p->data[0]=dbg;
 
-/*	if ((!th) && (dbg == DBG_MEMCOUNT))
-	{
-		MemoryCheck = p;
-//		PRINTF(LOG_DEV,"ALLOC " LSX " / " LSD " (type " LSD ")(size " LSD ")(total " LSD ")\n", p, INT_FROM_VAL(HEADER_DBG(p)), type, size, total);
-	}
-	if (!th) PRINTF(LOG_DEV,"ALLOC " LSX " / " LSD " (type " LSD ")(size " LSD ")(total " LSD ")\n", p, INT_FROM_VAL(HEADER_DBG(p)), type, size, total);
-	if ((total==72)&& (p->mem == MemoryCheck)) PRINTF(LOG_DEV,"MemoryCheck (%lld) %llx +=%lld\n", INT_FROM_VAL(dbg), p, 72);
-*/	p->lifo = MM.USEFUL;
+	p->lifo = MM.lifo; MM.lifo = p;
 
 	if (MM.fastAlloc>0)
 	{
@@ -92,21 +88,13 @@ LB* memoryAlloc(Thread* th, LINT size,LINT type,LW dbg)
 	}
 	MM.blocs_nb++;
 	MM.blocs_length+=total;
-
-	if (mem) mem->count++;
-//	if (MemCheck && mem == MemCheck) PRINTF(LOG_DEV,"memCountIncrement "LSX" from "LSX" count:%lld\n", mem, p, mem->count);
-	while(mem)
-	{
-		mem->bytes += total;
-		mem = mem->header.mem;
-	}
 cleanup:
 	return p;
 }
 
-LB* memoryAllocArray(Thread* th, LINT size, LW dbg)
+LB* memoryAllocArray(LINT size, LW dbg)
 {
-	LB* p=memoryAlloc(th, size<< LSHIFT, TYPE_ARRAY, dbg);
+	LB* p=memoryAlloc(size<< LSHIFT, TYPE_ARRAY, dbg);
 	if (!p) return NULL;
 #ifdef USE_ALL_BITS
 	memset(BIN_START(p), 0, size + (size << LSHIFT));
@@ -119,10 +107,10 @@ LB* memoryAllocArray(Thread* th, LINT size, LW dbg)
 	return p;
 }
 
-LB* memoryAllocExt(Thread* th, LINT sizeofExt,LW dbg,FORGET forget,MARK mark)
+LB* memoryAllocExt(LINT sizeofExt,LW dbg,FORGET forget,MARK mark)
 {
 	void** q;
-	LB* p=memoryAlloc(th,sizeofExt- sizeof(LB),TYPE_NATIVE,dbg);
+	LB* p=memoryAlloc(sizeofExt- sizeof(LB),TYPE_NATIVE,dbg);
 	if (!p) return NULL;
 	memset((void*)(&p->data[1]),0,sizeofExt-sizeof(LB));
 
@@ -132,7 +120,7 @@ LB* memoryAllocExt(Thread* th, LINT sizeofExt,LW dbg,FORGET forget,MARK mark)
 	return p;
 }
 
-LB* memoryAllocStr(Thread* th, char* src, LINT size)
+LB* memoryAllocStr(char* src, LINT size)
 {
 	LB* p;
 	if (size < 0) {
@@ -140,24 +128,24 @@ LB* memoryAllocStr(Thread* th, char* src, LINT size)
 		size = strlen(src);
 	}
 	
-	p=memoryAlloc(th,size+1,TYPE_BINARY,DBG_S);
+	p=memoryAlloc(size+1,TYPE_BINARY,DBG_S);
 	if (!p) return NULL;
 	if (src) memcpy(STR_START(p),src,size);
 	STR_START(p)[size]=0;
 	return p;
 }
 
-LB* memoryAllocBin(Thread* th, char* src, LINT size,LW dbg)
+LB* memoryAllocBin(char* src, LINT size,LW dbg)
 {
-	LB* p=memoryAlloc(th,size,TYPE_BINARY,dbg);
+	LB* p=memoryAlloc(size,TYPE_BINARY,dbg);
 	if (!p) return NULL;
 	if (src) memcpy(BIN_START(p),src,size);
 	return p;
 }
 
-LB* memoryAllocFromBuffer(Thread* th, Buffer* b)
+LB* memoryAllocFromBuffer(Buffer* b)
 {
-	return memoryAllocStr(th,bufferStart(b), bufferSize(b));
+	return memoryAllocStr(bufferStart(b), bufferSize(b));
 }
 
 char* errorName(int err)
@@ -167,62 +155,11 @@ char* errorName(int err)
 	else return "Unknown error";
 }
 
-void memoryTake(Mem* m, LB* p)
-{
-	if ((!p) || (p->mem == m)) return;
-	else
-	{
-		LINT size = HEADER_SIZE(p);
-		LINT total = sizeof(LB) + (((size + LWLEN - 1) >> LSHIFT) << LSHIFT);
-		Mem* mem = p->mem;
-
-		while (mem)
-		{
-			mem->bytes -= total;
-			mem = mem->header.mem;
-		}
-//		if (MemCheck && p->mem == MemCheck) PRINTF(LOG_DEV,"memCountDecrement from memoryTake "LSX" by "LSX"\n", p, m);
-		memCountDecrement(p->mem);
-
-		p->mem = m;
-		if (m) m->count++;
-//		if (MemCheck && m == MemCheck) PRINTF(LOG_DEV,"memCountIncrement "LSX" from "LSX" count:%lld\n", m, p, m->count);
-		while (m)
-		{
-			m->bytes += total;
-			m = m->header.mem;
-		}
-	}
-}
-
 void memoryDesalloc(LB* p)
 {
 	LINT size=HEADER_SIZE(p);
 	LINT type = HEADER_TYPE(p);
-	LINT total = sizeof(LB) + (((size + LWLEN - 1) >> LSHIFT) << LSHIFT);
-	Mem* mem = p->mem;
-#ifdef USE_ALL_BITS
-	if (type == TYPE_ARRAY) total += (((size >> LSHIFT) + LWLEN - 1) >> LSHIFT) << LSHIFT;
-#endif
-	//	if (MemoryCheck == p) PRINTF(LOG_DEV,"try desalloc MemoryCheck\n");
-//	if ((total == 72) && (p->mem == MemoryCheck)) PRINTF(LOG_DEV,"MemoryCheck (%lld) %llx -=%lld\n", INT_FROM_VAL(HEADER_DBG(p)), p, 72);
-	while (mem)
-	{
-//		if (MemCheck && mem == MemCheck) PRINTF(LOG_DEV,"memBytesDecrement from memoryDesalloc "LSX" by "LSX"\n", mem, p);
-		mem->bytes -= total;
-		mem = mem->header.mem;
-	}
-
-//	if (MemCheck && p->mem == MemCheck) PRINTF(LOG_DEV,"memCountDecrement from memoryDesalloc "LSX" by "LSX"\n", p->mem, p);
-
-// following line : if we let the Mem block decrement its parent, it might cause an issue
-// ex: during a GC, B -> M1 -> M2 have to be desalloc, and the GC proceeds in following order : M2, M1, B
-// M2 : decrement, but still referenced by M1
-// M1 : decrement M2 therefore free it
-// B  : fill try to substract it total to M1->bytes and M2->bytes
-// --> solution:
-// decrement the parent of a Mem block only when we actually free the block : see recursion in memCountDecrement(...)
-	if (HEADER_DBG(p) != DBG_MEMCOUNT) memCountDecrement(p->mem);
+	LINT total = BLOCK_TOTAL_MEMORY(type, size);
 
 	if (type==TYPE_NATIVE)
 	{
@@ -230,7 +167,6 @@ void memoryDesalloc(LB* p)
 		FORGET forget = (FORGET)q[NATIVE_FORGET];
 		if (forget && (*forget)(p)) goto cleanup;
 	}
-	//	if (MemoryCheck == p) PRINTF(LOG_DEV,"ready to desalloc MemoryCheck\n");
 	MM.blocs_nb--;
 	MM.blocs_length-=total;
 	
@@ -238,7 +174,6 @@ void memoryDesalloc(LB* p)
 	VM_FREE((void*)p);
 cleanup:
 	return;
-//	PRINTF(LOG_DEV,"DONE\n");
 }
 
 void memoryGCinit(void)
@@ -256,20 +191,21 @@ void memoryGCinit(void)
 //	lockEnter(&MM.lock);
 	p = MM.USEFUL; MM.USEFUL = MM.USELESS; MM.USELESS = p;
 
-	MEMORY_MARK(NULL, (LB*)MM.system);
-	MEMORY_MARK(NULL, (LB*)MM.scheduler);
-	MEMORY_MARK(NULL, (LB*)MM.tmpStack);
-	MEMORY_MARK(NULL, (LB*)MM.tmpBuffer);
-	MEMORY_MARK(NULL, MM.args);
-	MEMORY_MARK(NULL, (LB*)MM.fun_u0_list_u0_list_u0);
-	MEMORY_MARK(NULL, (LB*)MM.fun_array_u0_I_u0);
-	MEMORY_MARK(NULL, MM.funStart);
-	MEMORY_MARK(NULL, MM.roots);
-	MEMORY_MARK(NULL, MM.partitionsFS);
+	MEMORY_MARK(MM.system);
+	MEMORY_MARK(MM.scheduler);
+	MEMORY_MARK(MM.tmpStack);
+	MEMORY_MARK(MM.tmpBuffer);
+	MEMORY_MARK(MM.args);
+	MEMORY_MARK(MM.fun_u0_list_u0_list_u0);
+	MEMORY_MARK(MM.fun_array_u0_I_u0);
+	MEMORY_MARK(MM.funStart);
+	MEMORY_MARK(MM.roots);
+	MEMORY_MARK(MM.tmpRoot);
+	MEMORY_MARK(MM.partitionsFS);
 	p = MM.listFast;
 	while (p)
 	{
-		if (HEADER_DBG(p) != DBG_STACK) MEMORY_MARK(NULL, p);
+		if (HEADER_DBG(p) != DBG_STACK) MEMORY_MARK(p);
 		p = p->nextBlock;
 	}
 //	lockLeave(&MM.lock);
@@ -287,20 +223,6 @@ void memoryCleanListThreads(void)
 			th->listNext = NULL;	// useless yet clean
 		}
 		else previous = &th->listNext;
-	}
-}
-void memoryCleanListMems(void)
-{
-	Mem** previous = &MM.listMems;
-	while (*previous)
-	{
-		Mem* m = *previous;
-		if (m->header.lifo == MM.USELESS)
-		{
-			*previous = m->listNext;
-			m->listNext = NULL;	// useless yet clean
-		}
-		else previous = &m->listNext;
 	}
 }
 void memoryCleanPkgs(void)
@@ -322,11 +244,6 @@ void memoryGC(LINT period)
 {
 	MM.gc_time+=period;
 //	PRINTF(LOG_DEV,LSD,MM.step);
-/*	if (gcTRON) PRINTF(LOG_DEV,LSD, gcTRON++);
-	if (gcTRON == 4681) {
-		PRINTF(LOG_DEV,"now!\n");
-	}
-	*/
 	if (MM.step==1)
 	{
 //		PRINTF(LOG_DEV,"$");
@@ -335,12 +252,12 @@ void memoryGC(LINT period)
 			LB* p=MM.lifo; MM.lifo=p->lifo;
 			p->lifo=MM.USEFUL;
 
-			MEMORY_MARK((LB*)p,(LB*)p->mem);
-			if (HEADER_TYPE(p)==TYPE_ARRAY)
+			MEMORY_MARK(p->pkg);
+			if ((HEADER_TYPE(p)==TYPE_ARRAY)&&(HEADER_DBG(p)!= DBG_STACK))	// stack content is marked by threadMark
 			{
 				LINT i,l;
 				l=ARRAY_LENGTH(p);
-				for(i=0;i<l;i++) if (ARRAY_IS_PNT(p,i)) MEMORY_MARK(p, ARRAY_PNT(p,i));
+				for(i=0;i<l;i++) if (ARRAY_IS_PNT(p,i)) MEMORY_MARK(ARRAY_PNT(p,i));
 			}
 			else if (HEADER_TYPE(p)==TYPE_NATIVE)
 			{
@@ -353,7 +270,6 @@ void memoryGC(LINT period)
 		else
 		{
 			memoryCleanListThreads();
-			memoryCleanListMems();
 			memoryCleanPkgs();
 //			threadDumpLoop("go step 2");
 			MM.step=2;
@@ -413,20 +329,52 @@ void memoryGC(LINT period)
 	}
 }
 
-void memoryFullGC(void)
+void memoryFinalizeGC(void)
 {
-//	if (gcTRON) PRINTF(LOG_DEV,"memoryFullGC\n");
+//	if (MM.gcTrace) PRINTF(LOG_DEV,"> memoryFinalizeGC\n");
 
 	if (MM.step==0) memoryGCinit();
 	if (MM.step==1) while(MM.step==1) memoryGC(1);
 	while(MM.step==2) memoryGC(1);
 }
 
+void memoryRecount(void)
+{
+	int i;
+	LB* p;
+	Pkg* pkg;
+	LINT slots[32];
+	for (i = 0; i < 32; i++) slots[i] = 0;
+
+	memoryFinalizeGC();
+	if (MM.gcTrace) PRINTF(LOG_SYS, "> number of bios definitions=%d\n", MM.system->defs->nb);
+
+	for (pkg = MM.listPkgs; pkg; pkg = pkg->listNext) pkg->memory = 0;
+
+	for(i=0;i<2;i++) {
+		p = i?MM.listCheck:MM.listFast;
+		while (p) {
+			LINT total = BLOCK_TOTAL_MEMORY(HEADER_TYPE(p), HEADER_SIZE(p));
+			if (DBG_IS_PNT(HEADER_DBG(p))) slots[31] += total;
+			else slots[(INT_FROM_VAL(HEADER_DBG(p)) - 1) / 2] += total;
+//			if (total >= 500) {
+//				printf("recount "LSD" ("LSD")\n", total, (INT_FROM_VAL(HEADER_DBG(p))-1)/2);
+//				if (HEADER_DBG(p) == DBG_BIN) _hexDump(LOG_DEV, BIN_START(p), BIN_LENGTH(p),0);
+//			}
+			pkg = p->pkg ? p->pkg : MM.system;
+			pkg->memory += total;
+			p = p->nextBlock;
+		}
+	}
+//	if (MM.gcTrace) {
+//		for (i = 0; i < 32; i++) if (slots[i]) PRINTF(LOG_SYS,"> slot %2d: "LSD"\n",i,slots[i]);
+//	}
+}
 LB* memoryPrintBuffer(Thread* th, Buffer* buffer)
 {
 	LB* p;
 	if (!bufferSize(buffer)) return NULL;
-	p = memoryAllocFromBuffer(th, buffer); if (!p) return NULL;
+	p = memoryAllocFromBuffer(buffer); if (!p) return NULL;
 	bufferReinit(buffer);
 	return p;
 }
@@ -443,7 +391,11 @@ int memoryAddRoot(LB* root)
 	MM.roots = STACK_PULL_PNT(MM.tmpStack);
 	return 0;
 }
-void memoryInit(int argc, char** argv)
+void memorySetTmpRoot(LB* p)
+{
+	MM.tmpRoot = p;
+}
+void memoryInit(int argc, const char** argv)
 {
 	int i;
 	LB* biosName;
@@ -458,10 +410,9 @@ void memoryInit(int argc, char** argv)
 	MM.lifo=MM.listCheck=MM.listBlocks=MM.listFast=NULL;
 
 
-	MM.mem = NULL;
 	MM.listThreads = NULL;
-	MM.listMems = NULL;
 	MM.listPkgs = NULL;
+	MM.currentPkg = NULL;
 
 	MM.gcTrace = 0;
 	MM.blocs_nb=0;
@@ -474,6 +425,7 @@ void memoryInit(int argc, char** argv)
 	MM.tmpStack = NULL;
 	MM.system = NULL;
 	MM.roots = NULL;
+	MM.tmpRoot = NULL;
 
 	MM._true = MM._false = NULL;
 
@@ -487,29 +439,34 @@ void memoryInit(int argc, char** argv)
 	MM.reboot = 0;
 	MM.OM = 0;
 
+
 	lockCreate(&MM.lock);
-	MM.mem = memCreate(NULL, NULL, 1024 * 1024 * 32, NULL); 
-	MM.scheduler=threadCreate(NULL, MM.mem);
 	memoryEnterFast();
-	biosName = memoryAllocStr(MM.scheduler, BOOT_FILE, -1);
-	MM.mem->name = biosName;
+	biosName = memoryAllocStr(BOOT_FILE, -1);
+	MM.system = pkgAlloc(biosName, 0, PKG_FROM_IMPORT);
+	MM.currentPkg = MM.system;
+	MM.scheduler = threadCreate(THREAD_STACK_LENGTH0);
+
 	MM.listThreads = MM.scheduler;
 	
-	MM.tmpBuffer = bufferCreate(MM.scheduler);
-	MM.tmpStack= threadCreate(MM.scheduler, NULL);
-	MM.system=pkgAlloc(MM.scheduler, biosName,8, PKG_FROM_IMPORT);
+	MM.tmpBuffer = bufferCreate();
+	MM.tmpStack= threadCreate(32);
 
-	for (i = 1; i < argc; i++) STACK_PUSH_STR_ERR(MM.tmpStack, argv[i], strlen(argv[i]),/*NOTHING*/);
+	for (i = 1; i < argc; i++) STACK_PUSH_STR_ERR(MM.tmpStack, (char*)argv[i], strlen(argv[i]),/*NOTHING*/);
 	STACK_PUSH_NIL_ERR(MM.tmpStack,/*NOTHING*/);
 	for (i = 1; i < argc; i++) STACK_PUSH_FILLED_ARRAY_ERR(MM.tmpStack, 2, DBG_LIST,/*NOTHING*/);
 	MM.args = (STACK_PULL_PNT(MM.tmpStack));
 
-	typesInit(MM.scheduler, MM.system);
-	systemInit(MM.scheduler, MM.system);
-
-	MM.funStart= memoryAllocStr(MM.scheduler,FUN_START_NAME, -1);
-
+	MM.funStart= memoryAllocStr(FUN_START_NAME, -1);
 	memoryLeaveFast();
+
+	systemInit(MM.system);
+
+//	memoryFinalizeGC();
+//	memoryFinalizeGC();
+//	memoryRecount();
+	if (MM.gcTrace) PRINTF(LOG_SYS, "> Memory after init : " LSD " bytes\n", MM.blocs_length);
+//	exit(0);
 }
 void memoryEnterFast(void)	// after this, newly allocated blocks cannot be GCized
 {
@@ -544,16 +501,16 @@ int memoryEnd(void)
 	MM.system=NULL;
 	MM.tmpBuffer = NULL;
 	MM.args = NULL;
-	MM.mem = NULL;
 	MM.fun_u0_list_u0_list_u0 = NULL;
 	MM.fun_array_u0_I_u0 = NULL;
 	MM.funStart = NULL;
 	MM.roots = NULL;
+	MM.tmpRoot = NULL;
 	MM.partitionsFS = NULL;
 	while(memoryGetFast()>0) memoryLeaveFast();
-	memoryFullGC();
-	memoryFullGC();
-//	memoryFullGC();
+	memoryFinalizeGC();
+	memoryFinalizeGC();
+//	memoryFinalizeGC();
 //	PRINTF(LOG_DEV,"MemoryCheck %lld %lld\n", ((Mem*)MemoryCheck)->bytes, ((Mem*)MemoryCheck)->parentMem);
 	if (MM.gcTrace) PRINTF(LOG_SYS, "> " LSD " blocks, " LSD " bytes, fast=" LSD "\n",MM.blocs_nb,MM.blocs_length,MM.fastAlloc);
 	systemTerminate();

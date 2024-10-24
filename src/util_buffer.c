@@ -13,9 +13,9 @@
 //#define DOUBLE_FORMAT "%.10g"
 #define DOUBLE_FORMAT "%g"
 
-int _bufferBiggerFinalize(Thread* th, Buffer* b, LINT newsize)
+int _bufferBiggerFinalize(Buffer* b, LINT newsize)
 {
-	LB* newbuffer = memoryAllocBin(th, NULL, newsize + 1, DBG_BIN);
+	LB* newbuffer = memoryAllocBin(NULL, newsize + 1, DBG_BIN);
 	if (!newbuffer) return EXEC_OM;
 	memcpy(BIN_START(newbuffer), b->buffer, b->size + 1);
 	b->bloc = newbuffer;
@@ -23,47 +23,56 @@ int _bufferBiggerFinalize(Thread* th, Buffer* b, LINT newsize)
 	b->size = newsize;
 	return 0;
 }
-int _bufferBigger(Thread* th,Buffer* b,LINT neededSize)
+int _bufferBigger(Buffer* b,LINT neededSize)
 {
 	LINT newsize = b->size;
 	neededSize += b->index;
+//	PRINTF(LOG_DEV, "_bufferBigger "LSX" current "LSD" needs "LSD" \n", (void*)b, b->size, neededSize);
 	while (newsize <= neededSize)
 	{
-		if (newsize < BUFFER_DOUBLE_UNTIL) newsize *= 2;
+		if (newsize < BUFFER_DOUBLE_UNTIL) newsize = newsize * 3/2;
 		else newsize = neededSize + BUFFER_FINAL_INCREMENT;
 	}
 //	PRINTF(LOG_DEV,"bigger buffer %lld -> %lld (mainthread? %d)\n", b->size, newsize, memoryIsMainThread());
-	if (memoryIsMainThread()) return _bufferBiggerFinalize(th, b, newsize);
-
-	if (workerBiggerBuffer(th, b, newsize)) return EXEC_OM;
+	if (memoryIsMainThread()) return _bufferBiggerFinalize(b, newsize);
+	if (workerBiggerBuffer(b->th, b, newsize)) return EXEC_OM;
 	return 0;
 }
 
 void bufferMark(LB* user)
 {
 	Buffer* buffer=(Buffer*)user;
-	MEMORY_MARK(user,buffer->bloc);
+	MEMORY_MARK(buffer->bloc);
+	MEMORY_MARK(buffer->th);
 }
 
-Buffer* bufferCreateWithSize(Thread* th, LINT size)
+Buffer* bufferCreateWithSize(LINT size)
 {
 	Buffer* b;
+	LB* p;
 	if (size < BUFFER_SIZE0) size = BUFFER_SIZE0;
 	memoryEnterFast();
-	b=(Buffer*)memoryAllocExt(th, sizeof(Buffer),DBG_BUFFER,NULL,bufferMark); if (!b) return NULL;
+	b=(Buffer*)memoryAllocExt(sizeof(Buffer),DBG_BUFFER,NULL,bufferMark); if (!b) return NULL;
 	b->index=0;
 	b->size=size;
+	b->th=NULL;
 	b->bloc = NULL;	// required because the following memoryAlloc may fire a GC
-	b->bloc= memoryAllocBin(th, NULL,size+1,DBG_BIN);
-	if (!b->bloc) return NULL;
+	p= memoryAllocBin(NULL,size+1,DBG_BIN); if (!p) return NULL;
+	b->bloc = p;
 	b->buffer=BIN_START(b->bloc);
+//	PRINTF(LOG_DEV, "_create Buffer "LSX" size "LSD"\n", (void*)b, b->size);
 	memoryLeaveFast();
 	return b;
 }
-Buffer* bufferCreate(Thread* th)
+Buffer* bufferCreate(void)
 {
-	return bufferCreateWithSize(th, 0);
+	return bufferCreateWithSize(0);
 }
+void bufferSetWorkerThread(Buffer* b, Thread* th)
+{
+	if (b) b->th = th;
+}
+
 void bufferReinit(Buffer* b)
 {
 	b->index=0;
@@ -74,38 +83,38 @@ void bufferRemove(Buffer* b, int delta)
 	b->index-=delta;
 	if (b->index<0) b->index=0;
 }
-int bufferAddChar(Thread* th, Buffer* b,char c)
+int bufferAddChar(Buffer* b,char c)
 {
 	int k;
-	if ((b->index>=b->size)&&(k= _bufferBigger(th,b,0))) return k;
+	if ((b->index>=b->size)&&(k= _bufferBigger(b,1))) return k;
 	b->buffer[b->index++]=c;
 	return 0;
 }
-int bufferAddZero(Thread* th, Buffer* b,LINT n)
+int bufferAddZero(Buffer* b,LINT n)
 {
 	int k;
-	if ((b->index+n>= b->size) && (k = _bufferBigger(th,b, n))) return k;
+	if ((b->index+n>= b->size) && (k = _bufferBigger(b, n))) return k;
 	while(n--) b->buffer[b->index++]=0;
 	return 0;
 }
 
-int bufferAddInt(Thread* th, Buffer* b,LINT i)
+int bufferAddInt(Buffer* b,LINT i)
 {
 	int k;
 	int j;
 	for(j=0;j<sizeof(LINT);j++)
 	{
-		if ((k = bufferAddChar(th, b, (char)i))) return k;
+		if ((k = bufferAddChar(b, (char)i))) return k;
 		i>>=8;
 	}
 	return 0;
 }
-int bufferAddIntN(Thread* th, Buffer* b,LINT i,LINT n)
+int bufferAddIntN(Buffer* b,LINT i,LINT n)
 {
 	int k;
 	while(n--)
 	{
-		if((k=bufferAddChar(th, b,(char)i))) return k;
+		if((k=bufferAddChar(b,(char)i))) return k;
 		i>>=8;
 	}
 	return 0;
@@ -148,32 +157,32 @@ void bufferSetIntN(Buffer* b,LINT index,LINT i,LINT n)
 		i>>=8;
 	}
 }
-char* bufferSkip(Thread* th, Buffer* b, LINT len)
+char* bufferRequire(Buffer* b, LINT len)
 {
 	char* result;
 	if (len < 0) return NULL;
-	while (b->index + len >= b->size) if (_bufferBigger(th,b, len)) return NULL;
+	while (b->index + len >= b->size) if (_bufferBigger(b, len)) return NULL;
 	result = b->buffer + b->index;
 	b->index += len;
 	return result;
 }
 
-int bufferAddBin(Thread* th, Buffer* b,char *src,LINT len)
+int bufferAddBin(Buffer* b,char *src,LINT len)
 {
 	int k;
 	if (len < 0) len = strlen(src);
-	while(b->index+len>=b->size) if ((k=_bufferBigger(th,b,len))) return k;
+	while(b->index+len>=b->size) if ((k=_bufferBigger(b,len))) return k;
 	memcpy(b->buffer+b->index,src,len);
 	b->index+=len;
 	return 0;
 }
 
-int bufferAddStr(Thread* th, Buffer* b, char* src)
+int bufferAddStr(Buffer* b, char* src)
 {
-	return bufferAddBin(th, b, src, strlen(src));
+	return bufferAddBin(b, src, strlen(src));
 }
 
-int bufferVPrintf(Thread* th, Buffer* b,char *format, va_list arglist)
+int bufferVPrintf(Buffer* b,char *format, va_list arglist)
 {
 	LINT sizeout;
 	va_list copy;
@@ -182,7 +191,7 @@ int bufferVPrintf(Thread* th, Buffer* b,char *format, va_list arglist)
 	// vsnprintf : arg=max bytes, 0 included | return needed bytes, 0 NOT included
 	while(((sizeout=vsnprintf(b->buffer+b->index,b->size-b->index+1,format,copy))<0)||(sizeout>b->size-b->index))
 	{
-		int k=_bufferBigger(th,b,sizeout);
+		int k=_bufferBigger(b,sizeout);
 		if (k) return k;
 		va_end(copy);
 		va_copy(copy, arglist);
@@ -191,12 +200,12 @@ int bufferVPrintf(Thread* th, Buffer* b,char *format, va_list arglist)
 	b->index+=sizeout;
 	return 0;
 }
-int bufferPrintf(Thread* th, Buffer* b, char* format, ...)
+int bufferPrintf(Buffer* b, char* format, ...)
 {
 	va_list arglist;
 	int k;
 	va_start(arglist, format);
-	k=bufferVPrintf(th, b, format, arglist);
+	k=bufferVPrintf(b, format, arglist);
 	va_end(arglist);
 	return k;
 }
@@ -214,16 +223,16 @@ char* bufferStart(Buffer* b)
 	return b->buffer;
 }
 
-int _bufferJoin(Thread* th, Buffer* b, LB* join, int* first)
+int _bufferJoin(Buffer* b, LB* join, int* first)
 {
 	if (!join) return 0;
 	if (*first) {
 		*first = 0;
 		return 0;
 	}
-	return bufferAddBin(th, b, STR_START(join), STR_LENGTH(join));
+	return bufferAddBin(b, STR_START(join), STR_LENGTH(join));
 }
-int _bufferItem(Thread* th, Buffer* b, LW v, int type, LB* join, int rec, int* first)
+int _bufferItem(Buffer* b, LW v, int type, LB* join, int rec, int* first)
 {
 	int k;
 	if (type==VAL_TYPE_PNT)
@@ -235,34 +244,33 @@ int _bufferItem(Thread* th, Buffer* b, LW v, int type, LB* join, int rec, int* f
 		if (DBG_IS_PNT(dbg))
 		{
 			Def* defType = (Def*)PNT_FROM_VAL(dbg);
-			if (defType->code == DEF_CODE_CONS0) return _bufferJoin(th, b,join, first)||bufferAddStr(th, b,STR_START(defType->name));
+			if (defType->code == DEF_CODE_CONS0) return _bufferJoin(b,join, first)||bufferAddStr(b,STR_START(defType->name));
 			return 0;
 		}
-		if (dbg == DBG_S) return _bufferJoin(th, b, join, first) || bufferAddBin(th, b, STR_START(p), STR_LENGTH(p));
+		if (dbg == DBG_S) return _bufferJoin(b, join, first) || bufferAddBin(b, STR_START(p), STR_LENGTH(p));
 		if (dbg == DBG_B)
 		{
-			int len= bignumToStr(th, (bignum)p,NULL);
-			char* dst;
-			if ((k=_bufferJoin(th, b, join, first))) return k;
-			dst= bufferSkip(th, b, len); if (!dst) return EXEC_OM;
-			bignumToStr(th, (bignum)p, dst);
+			TMP_PUSH(p,EXEC_OM);
+			if ((k=_bufferJoin(b, join, first))) return k;
+			if ((k = bignumDecToBuffer((bignum)p, b))) return k;
+			TMP_PULL();
 			return 0;
 		}
 		if (dbg == DBG_TUPLE)
 		{
 			LINT j;
 			LINT nb = ARRAY_LENGTH(p);
-			for (j = 0; j < nb; j++) if ((k = _bufferItem(th, b, ARRAY_GET(p, j), ARRAY_TYPE(p, j), join, rec, first))) return k;
+			for (j = 0; j < nb; j++) if ((k = _bufferItem(b, ARRAY_GET(p, j), ARRAY_TYPE(p, j), join, rec, first))) return k;
 			return 0;
 		}
 		if (dbg == DBG_ARRAY)
 		{
 			LINT i,j;
 			LINT nb = ARRAY_LENGTH(p);
-			for (i = 0; i < rec; i++) if (STACK_PNT(MM.tmpStack, i) == p) return bufferAddStr(th, b, "[loop]");
+			for (i = 0; i < rec; i++) if (STACK_PNT(MM.tmpStack, i) == p) return bufferAddStr(b, "[loop]");
 
 			STACK_PUSH_PNT_ERR(MM.tmpStack, p, EXEC_OM);	// this is done to check the loops
-			for (j = 0; j < nb; j++) if ((k = _bufferItem(th, b, ARRAY_GET(p, j), ARRAY_TYPE(p, j), join, rec + 1, first))) return k;
+			for (j = 0; j < nb; j++) if ((k = _bufferItem(b, ARRAY_GET(p, j), ARRAY_TYPE(p, j), join, rec + 1, first))) return k;
 			STACK_DROP(MM.tmpStack);
 
 			return 0;
@@ -270,14 +278,14 @@ int _bufferItem(Thread* th, Buffer* b, LW v, int type, LB* join, int rec, int* f
 		if (dbg == DBG_DEF)
 		{
 			Def* d = (Def*)p;
-			if (d->code == DEF_CODE_CONS0) return _bufferJoin(th, b, join, first) || bufferAddStr(th, b, STR_START(d->name));
+			if (d->code == DEF_CODE_CONS0) return _bufferJoin(b, join, first) || bufferAddStr(b, STR_START(d->name));
 			return 0;
 		}
 		if (dbg == DBG_LIST)
 		{
 			while (p)
 			{
-				if ((k = _bufferItem(th, b, ARRAY_GET(p, LIST_VAL), ARRAY_TYPE(p, LIST_VAL), join, rec, first))) return k;
+				if ((k = _bufferItem(b, ARRAY_GET(p, LIST_VAL), ARRAY_TYPE(p, LIST_VAL), join, rec, first))) return k;
 				p = (ARRAY_PNT(p, LIST_NXT));
 			}
 			return 0;
@@ -287,7 +295,7 @@ int _bufferItem(Thread* th, Buffer* b, LW v, int type, LB* join, int rec, int* f
 			p = (ARRAY_PNT(p, FIFO_START));
 			while (p)
 			{
-				if ((k = _bufferItem(th, b, ARRAY_GET(p, LIST_VAL), ARRAY_TYPE(p, LIST_VAL), join, rec, first))) return k;
+				if ((k = _bufferItem(b, ARRAY_GET(p, LIST_VAL), ARRAY_TYPE(p, LIST_VAL), join, rec, first))) return k;
 				p = (ARRAY_PNT(p, LIST_NXT));
 			}
 			return 0;
@@ -295,20 +303,20 @@ int _bufferItem(Thread* th, Buffer* b, LW v, int type, LB* join, int rec, int* f
 		if (dbg == DBG_TYPE)
 		{
 			Type* t = (Type*)p;
-			return _bufferJoin(th, b, join, first) || typeBuffer(th, b, t);
+			return _bufferJoin(b, join, first) || typeBuffer(b, t);
 		}
-		if (p == MM._true) return _bufferJoin(th, b, join, first) || bufferAddStr(th, b, "true");
-		if (p == MM._false) return _bufferJoin(th, b, join, first) || bufferAddStr(th, b, "false");
+		if (p == MM._true) return _bufferJoin(b, join, first) || bufferAddStr(b, "true");
+		if (p == MM._false) return _bufferJoin(b, join, first) || bufferAddStr(b, "false");
 		return 0;
 	}
-	if (type==VAL_TYPE_INT) return _bufferJoin(th, b, join, first) || bufferPrintf(th, b,LSD, INT_FROM_VAL(v));
-	if (type==VAL_TYPE_FLOAT) return _bufferJoin(th, b, join, first) || bufferPrintf(th, b, DOUBLE_FORMAT, FLOAT_FROM_VAL(v));
+	if (type==VAL_TYPE_INT) return _bufferJoin(b, join, first) || bufferPrintf(b,LSD, INT_FROM_VAL(v));
+	if (type==VAL_TYPE_FLOAT) return _bufferJoin(b, join, first) || bufferPrintf(b, DOUBLE_FORMAT, FLOAT_FROM_VAL(v));
 	return 0;
 }
-int bufferItem(Thread* th, Buffer* b, LW v, int type, LB* join)
+int bufferItem(Buffer* b, LW v, int type, LB* join)
 {
 	int first = 1;
-	return _bufferItem(th, b, v, type, join, 0, &first);
+	return _bufferItem(b, v, type, join, 0, &first);
 }
 
 int bufferFormat(Buffer* b, Thread* th, LINT argc)
@@ -327,9 +335,9 @@ int bufferFormat(Buffer* b, Thread* th, LINT argc)
 		{
 			int k;
 			argc--;
-			if ((argc>=0)&&((k=bufferItem(th, b, STACK_GET(th, argc), STACK_TYPE(th, argc),NULL)))) return k;
+			if ((argc>=0)&&((k=bufferItem(b, STACK_GET(th, argc), STACK_TYPE(th, argc),NULL)))) return k;
 		} 
-		else bufferAddChar(th, b, f[i]);
+		else bufferAddChar(b, f[i]);
 	}
 	FUN_RETURN_BUFFER(b);
 }

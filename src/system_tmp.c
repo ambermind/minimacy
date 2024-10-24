@@ -29,6 +29,7 @@ MTHREAD_START _mp3Decode(Thread* th)
 	LB* src = STACK_PNT(th, 0);
 	Buffer* out = (Buffer*)STACK_PNT(th, 1);
 	if ((!src) || (!out)) return workerDonePnt(th, MM._false);
+	bufferSetWorkerThread(out, th);
 	input_buf = STR_START(src);
 	buf_size = (int)STR_LENGTH(src);
 	mp3dec_init(&mp3d);
@@ -38,21 +39,28 @@ MTHREAD_START _mp3Decode(Thread* th)
 		input_buf += info.frame_bytes;
 		buf_size -= info.frame_bytes;
 		if (samples) {
-			if (bufferAddBin(th, out, (char*)pcm, 2 * info.channels * samples)) return workerDoneNil(th);
+			if (bufferAddBin(out, (char*)pcm, 2 * info.channels * samples)) {
+				bufferSetWorkerThread(out, NULL);
+				return workerDoneNil(th);
+			}
 		}
 	} while (samples || info.frame_bytes);
-
+	bufferSetWorkerThread(out, NULL);
 	return workerDonePnt(th, MM._true);
 }
 
 int fun_mp3Decode(Thread* th) { return workerStart(th, 2, _mp3Decode); }
-int usrMp3Init(Thread* th, Pkg* system)
+int usrMp3Init(Pkg* system)
 {
-	pkgAddFun(th, system, "_mp3Decode", fun_mp3Decode, typeAlloc(th, TYPECODE_FUN, NULL, 3, MM.Buffer, MM.Str, MM.Boolean));
+	static const Native nativeDefs[] = {
+		{ NATIVE_FUN, "_mp3Decode", fun_mp3Decode, "fun Buffer Str -> Bool"},
+	};
+	NATIVE_DEF(nativeDefs);
+
 	return 0;
 }
 #else
-int usrMp3Init(Thread* th, Pkg* system)
+int usrMp3Init(Pkg* system)
 {
 	return 0;
 }
@@ -92,14 +100,17 @@ int fun_storageWrite(Thread* th)
 	FUN_RETURN_INT(len);
 }
 
-int usrSdInit(Thread* th, Pkg* system)
+int usrSdInit(Pkg* system)
 {
-	pkgAddFun(th, system, "storageRead", fun_storageRead, typeAlloc(th, TYPECODE_FUN, NULL, 6, MM.Int, MM.Bytes, MM.Int,  MM.Int, MM.Int, MM.Int));
-	pkgAddFun(th, system, "storageWrite", fun_storageWrite, typeAlloc(th, TYPECODE_FUN, NULL, 6, MM.Int, MM.Bytes, MM.Int, MM.Int, MM.Int, MM.Int));
+	static const Native nativeDefs[] = {
+		{ NATIVE_FUN, "storageRead", fun_storageRead, "fun Int Bytes Int Int Int -> Int"},
+		{ NATIVE_FUN, "storageWrite", fun_storageWrite, "fun Int Bytes Int Int Int -> Int"},
+	};
+	NATIVE_DEF(nativeDefs);
 	return 0;
 }
 #else
-int usrSdInit(Thread* th, Pkg* system){ return 0; }
+int usrSdInit(Pkg* system){ return 0; }
 #endif
 
 #ifdef WITH_ACTIVITY_LED
@@ -113,25 +124,25 @@ int fun_activityLed(Thread* th)
 int fun_activityLed(Thread* th) FUN_RETURN_NIL;
 #endif
 
-int usrActivityLedInit(Thread* th, Pkg* system)
+int usrActivityLedInit(Pkg* system)
 {
-	pkgAddFun(th, system, "activityLed", fun_activityLed, typeAlloc(th, TYPECODE_FUN, NULL, 2, MM.Boolean, MM.Boolean));
+	static const Native nativeDefs[] = {
+		{ NATIVE_FUN, "activityLed", fun_activityLed, "fun Bool -> Bool"},
+	};
+	NATIVE_DEF(nativeDefs);
+
 	return 0;
 }
 
-int usrUefiInit(Thread* th, Pkg* system);
-int usrRpiInit(Thread* th, Pkg* system);
+int hostOnlyFunctionsInit(Pkg* system);
 
-int tmpInit(Thread* th, Pkg* system)
+int tmpInit(Pkg* system)
 {
-	usrSdInit(th, system);
-	usrActivityLedInit(th, system);
-	usrMp3Init(th, system);
-#ifdef ON_UEFI
-	usrUefiInit(th, system);
-#endif
-#ifdef GROUP_RPI
-	usrRpiInit(th, system);
+	usrSdInit(system);
+	usrActivityLedInit(system);
+	usrMp3Init(system);
+#ifdef USE_HOST_ONLY_FUNCTIONS
+	hostOnlyFunctionsInit(system);
 #endif
 	return 0;
 }

@@ -582,7 +582,7 @@ int fun_cursorCreate(Thread* th)
 	if ((!bmp)||(!UI.win)) FUN_RETURN_NIL;	// we need a window before creating the cursor
 
 //printf("alloc cursor %d\n",sizeof(LCursor));
-	d = (LCursor*)memoryAllocExt(th, sizeof(LCursor), DBG_BIN, _cursorForget, NULL); if (!d) return EXEC_OM;
+	d = (LCursor*)memoryAllocExt(sizeof(LCursor), DBG_BIN, _cursorForget, NULL); if (!d) return EXEC_OM;
 //printf("alloc cursor done\n");
 	d->cursor=0;
 	w = 32;
@@ -674,7 +674,7 @@ int fun_nativeFontCreate(Thread* th)
 	if (hwindowStartX(NULL)) FUN_RETURN_NIL;
 	hfont = XLoadQueryFont(_nativeFontDisplay(),STR_START(name));
 	if (!hfont) FUN_RETURN_NIL;
-	f = (NativeFont*)memoryAllocExt(th, sizeof(NativeFont), DBG_BIN, _nativeFontForget, NULL);
+	f = (NativeFont*)memoryAllocExt(sizeof(NativeFont), DBG_BIN, _nativeFontForget, NULL);
 	if (!f) {
 		XFreeFont(_nativeFontDisplay(),hfont);
 		return EXEC_OM;
@@ -766,7 +766,7 @@ int fun_nativeFontList(Thread* th)
 	while (fontNumber--) FUN_MAKE_ARRAY(LIST_LENGTH, DBG_LIST);
 	return 0;
 }
-int coreUiHwInit(Thread* th, Pkg* system)
+int coreUiHwInit(Pkg* system)
 {
 	UI.display=NULL;
 	UI.win = 0;

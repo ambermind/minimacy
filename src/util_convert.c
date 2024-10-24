@@ -21,7 +21,7 @@
 // see https://en.wikipedia.org/wiki/List_of_Unicode_characters
 
 // replace accented and/or uppercase with unaccented lowercase to simplify search functions
-char SearchCase[256] = {
+const char SearchCase[256] = {
 	0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,
 	32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47,48,49,50,51,52,53,54,55,56,57,58,59,60,61,62,63,
 	64,97,98,99,100,101,102,103,104,105,106,107,108,109,110,111,112,113,114,115,116,117,118,119,120,121,122,91,92,93,94,95,
@@ -31,7 +31,7 @@ char SearchCase[256] = {
 	97,97,97,97,97,97,97,99,101,101,101,101,105,105,105,105,100,110,111,111,111,111,111,215,111,117,117,117,117,121,116,223,
 	97,97,97,97,97,97,97,99,101,101,101,101,105,105,105,105,100,110,111,111,111,111,111,247,111,117,117,117,117,121,116,121,
 };
-char LowerCase[256]={
+const char LowerCase[256]={
 	0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,
 	32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47,48,49,50,51,52,53,54,55,56,57,58,59,60,61,62,63,
 	64,97,98,99,100,101,102,103,104,105,106,107,108,109,110,111,112,113,114,115,116,117,118,119,120,121,122,91,92,93,94,95,
@@ -41,7 +41,7 @@ char LowerCase[256]={
 	224,225,226,227,228,229,230,231,232,233,234,235,236,237,238,239,240,241,242,243,244,245,246,215,248,249,250,251,252,253,254,223,
 	224,225,226,227,228,229,230,231,232,233,234,235,236,237,238,239,240,241,242,243,244,245,246,247,248,249,250,251,252,253,254,255,
 };
-char UpperCase[256]={
+const char UpperCase[256]={
 	0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,
 	32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47,48,49,50,51,52,53,54,55,56,57,58,59,60,61,62,63,
 	64,65,66,67,68,69,70,71,72,73,74,75,76,77,78,79,80,81,82,83,84,85,86,87,88,89,90,91,92,93,94,95,
@@ -52,7 +52,7 @@ char UpperCase[256]={
 	192,193,194,195,196,197,198,199,200,201,202,203,204,205,206,207,208,209,210,211,212,213,214,247,216,217,218,219,220,221,222,255,
 };
 // replace accented with unaccented
-char Unaccented[256]={
+const char Unaccented[256]={
 	0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,
 	32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47,48,49,50,51,52,53,54,55,56,57,58,59,60,61,62,63,
 	64,65,66,67,68,69,70,71,72,73,74,75,76,77,78,79,80,81,82,83,84,85,86,87,88,89,90,91,92,93,94,95,
@@ -151,71 +151,71 @@ LINT u8Next(char* src)
 	if ((c & 0xf8) == 0xf0) return 4;
 	return 1;
 }
-int u16LeFromLatin(Thread* th, Buffer* tmp, char* src, LINT len)
+int u16LeFromLatin(Buffer* tmp, char* src, LINT len)
 {
 	LINT i;
 	int k;
 	bufferReinit(tmp);
 	for (i = 0; i < len; i++)
 	{
-		if ((k = bufferAddChar(th, tmp, src[i]))) return k;
-		if ((k = bufferAddChar(th, tmp, 0))) return k;
+		if ((k = bufferAddChar(tmp, src[i]))) return k;
+		if ((k = bufferAddChar(tmp, 0))) return k;
 	}
 	return 0;
 }
 
-int latinFromU16Le(Thread* th, Buffer* tmp, char* src, LINT len)
+int latinFromU16Le(Buffer* tmp, char* src, LINT len)
 {
 	LINT i;
 	int k;
 	if (len & 1) return EXEC_FORMAT;
 	bufferReinit(tmp);
-	for (i = 0; i < len; i+=2) if (!src[i + 1]) if ((k = bufferAddChar(th, tmp, src[i]))) return k;
+	for (i = 0; i < len; i+=2) if (!src[i + 1]) if ((k = bufferAddChar(tmp, src[i]))) return k;
 	return 0;
 }
 
-int u16BeFromLatin(Thread* th, Buffer* tmp, char* src, LINT len)
+int u16BeFromLatin(Buffer* tmp, char* src, LINT len)
 {
 	LINT i;
 	int k;
 	bufferReinit(tmp);
 	for (i = 0; i < len; i++)
 	{
-		if ((k = bufferAddChar(th, tmp, 0))) return k;
-		if ((k = bufferAddChar(th, tmp, src[i]))) return k;
+		if ((k = bufferAddChar(tmp, 0))) return k;
+		if ((k = bufferAddChar(tmp, src[i]))) return k;
 	}
 	return 0;
 }
 
-int latinFromU16Be(Thread* th, Buffer* tmp, char* src, LINT len)
+int latinFromU16Be(Buffer* tmp, char* src, LINT len)
 {
 	LINT i;
 	int k;
 	if (len & 1) return EXEC_FORMAT;
 	bufferReinit(tmp);
-	for (i = 0; i < len; i += 2) if (!src[i]) if ((k = bufferAddChar(th, tmp, src[i+1]))) return k;
+	for (i = 0; i < len; i += 2) if (!src[i]) if ((k = bufferAddChar(tmp, src[i+1]))) return k;
 	return 0;
 }
 
-int u8Write(Thread* th, Buffer* tmp, int c)
+int u8Write(Buffer* tmp, int c)
 {
 	int k;
 	if (c >= 2048)
 	{
-		if ((k = bufferAddChar(th, tmp, 0xe0 + ((c >> 12) & 0x0f)))) return k;
-		if ((k = bufferAddChar(th, tmp, 0x80 + ((c >> 6) & 0x3f)))) return k;
-		if ((k = bufferAddChar(th, tmp, 0x80 + (c & 0x3f)))) return k;
+		if ((k = bufferAddChar(tmp, 0xe0 + ((c >> 12) & 0x0f)))) return k;
+		if ((k = bufferAddChar(tmp, 0x80 + ((c >> 6) & 0x3f)))) return k;
+		if ((k = bufferAddChar(tmp, 0x80 + (c & 0x3f)))) return k;
 	}
 	else if (c >= 128)
 	{
-		if ((k = bufferAddChar(th, tmp, 0xc0 + ((c >> 6) & 0x1f)))) return k;
-		if ((k = bufferAddChar(th, tmp, 0x80 + (c & 0x3f)))) return k;
+		if ((k = bufferAddChar(tmp, 0xc0 + ((c >> 6) & 0x1f)))) return k;
+		if ((k = bufferAddChar(tmp, 0x80 + (c & 0x3f)))) return k;
 	}
-	else if ((k = bufferAddChar(th, tmp, c))) return k;
+	else if ((k = bufferAddChar(tmp, c))) return k;
 	return 0;
 
 }
-int u8FromU16Le(Thread* th, Buffer* tmp, char* src, LINT len)
+int u8FromU16Le(Buffer* tmp, char* src, LINT len)
 {
 	LINT i;
 	int k;
@@ -225,11 +225,11 @@ int u8FromU16Le(Thread* th, Buffer* tmp, char* src, LINT len)
 	for(i=0;i<len;i+=2)
 	{
 		int c=(src[i]&255)+((src[i+1]&255)<<8);
-		if ((k=u8Write(th,tmp,c))) return k;
+		if ((k=u8Write(tmp,c))) return k;
 	}
 	return 0;
 }
-int u16LeFromU8(Thread* th, Buffer* tmp, char* src, LINT len)
+int u16LeFromU8(Buffer* tmp, char* src, LINT len)
 {
 	LINT i;
 	int k;
@@ -253,13 +253,13 @@ int u16LeFromU8(Thread* th, Buffer* tmp, char* src, LINT len)
 			i += 3;
 			continue;
 		}
-		if ((k = bufferAddChar(th, tmp, c))) return k;
+		if ((k = bufferAddChar(tmp, c))) return k;
 		c >>= 8;
-		if ((k = bufferAddChar(th, tmp, c))) return k;
+		if ((k = bufferAddChar(tmp, c))) return k;
 	}
 	return 0;
 }
-int u8FromU16Be(Thread* th, Buffer* tmp, char* src, LINT len)
+int u8FromU16Be(Buffer* tmp, char* src, LINT len)
 {
 	LINT i;
 	int k;
@@ -269,11 +269,11 @@ int u8FromU16Be(Thread* th, Buffer* tmp, char* src, LINT len)
 	for (i = 0; i < len; i += 2)
 	{
 		int c = (src[i+1] & 255) + ((src[i] & 255) << 8);
-		if ((k = u8Write(th, tmp, c))) return k;
+		if ((k = u8Write(tmp, c))) return k;
 	}
 	return 0;
 }
-int u16BeFromU8(Thread* th, Buffer* tmp, char* src, LINT len)
+int u16BeFromU8(Buffer* tmp, char* src, LINT len)
 {
 	LINT i;
 	int k;
@@ -299,13 +299,13 @@ int u16BeFromU8(Thread* th, Buffer* tmp, char* src, LINT len)
 			continue;
 		}
 		d = c >> 8;
-		if ((k = bufferAddChar(th, tmp, d))) return k;
-		if ((k = bufferAddChar(th, tmp, c))) return k;
+		if ((k = bufferAddChar(tmp, d))) return k;
+		if ((k = bufferAddChar(tmp, c))) return k;
 	}
 	return 0;
 }
 
-int latinFromU8(Thread* th, Buffer* tmp, char* src, LINT len)
+int latinFromU8(Buffer* tmp, char* src, LINT len)
 {
 	LINT i;
 	int k;
@@ -317,7 +317,7 @@ int latinFromU8(Thread* th, Buffer* tmp, char* src, LINT len)
 		if ((c & 0xe0) == 0xc0)
 		{
 			c = ((c & 0x1f) << 6) + (src[i + 1] & 0x3f);
-			if (c <= 255) if ((k = bufferAddChar(th, tmp, c))) return k;
+			if (c <= 255) if ((k = bufferAddChar(tmp, c))) return k;
 			i++;
 		}
 		else if ((c & 0xf0) == 0xe0)
@@ -330,13 +330,13 @@ int latinFromU8(Thread* th, Buffer* tmp, char* src, LINT len)
 		}
 		else if (c < 0xc2)
         {
-            if ((k = bufferAddChar(th, tmp, c))) return k;
+            if ((k = bufferAddChar(tmp, c))) return k;
         }
         else return EXEC_FORMAT;
 	}
 	return 0;
 }
-int u8FromLatin(Thread* th, Buffer* tmp, char* src, LINT len)
+int u8FromLatin(Buffer* tmp, char* src, LINT len)
 {
 	LINT i;
 	int k;
@@ -344,16 +344,16 @@ int u8FromLatin(Thread* th, Buffer* tmp, char* src, LINT len)
 	for (i = 0; i < len; i++) if (src[i] & 128)
 	{
 		int c = src[i] & 255;
-		if ((k = bufferAddChar(th, tmp, 0xc0 + ((c >> 6) & 0x1f)))) return k;
-		if ((k = bufferAddChar(th, tmp, 0x80 + (c & 0x3f)))) return k;
+		if ((k = bufferAddChar(tmp, 0xc0 + ((c >> 6) & 0x1f)))) return k;
+		if ((k = bufferAddChar(tmp, 0x80 + (c & 0x3f)))) return k;
 	}
-	else if ((k = bufferAddChar(th, tmp, src[i]))) return k;
+	else if ((k = bufferAddChar(tmp, src[i]))) return k;
 	return 0;
 }
 
 
 // parse a string (src points on the first double quote)
-int strFromSource(Thread* th, Buffer* tmp, char* src, LINT len)
+int strFromSource(Buffer* tmp, char* src, LINT len)
 {
 	int c, i,k;
 	char separator = *(src++);
@@ -410,7 +410,7 @@ int strFromSource(Thread* th, Buffer* tmp, char* src, LINT len)
 					}
 					c = i;
 				}
-				if ((k=bufferAddChar(th, tmp, c))) return k;
+				if ((k=bufferAddChar(tmp, c))) return k;
 			}
 		}
 		else if (c == separator)
@@ -419,22 +419,22 @@ int strFromSource(Thread* th, Buffer* tmp, char* src, LINT len)
 			return 0;
 		}
 		else if (c == 0) return EXEC_FORMAT;
-		else if ((k=bufferAddChar(th, tmp, c))) return k;
+		else if ((k=bufferAddChar(tmp, c))) return k;
 	}
 }
 
-int sourceFromStr(Thread* th, Buffer* tmp, char* src, LINT len)
+int sourceFromStr(Buffer* tmp, char* src, LINT len)
 {
 	LINT i;
 	int c,k;
 	bufferReinit(tmp);
-	if ((k=bufferAddChar(th, tmp, 0x22))) return k;
+	if ((k=bufferAddChar(tmp, 0x22))) return k;
 	for (i = 0; i < len;i++)
 	{
 		c = src[i]&255;
 		if ((c < 32) || (c >= 128))
 		{
-			if ((k=bufferAddChar(th, tmp, '\\'))) return k;
+			if ((k=bufferAddChar(tmp, '\\'))) return k;
 			if (c == 0) c = 'z';
 			else if (c == 10) c = 'n';
 			else if (c == 13) c = 'r';
@@ -442,22 +442,22 @@ int sourceFromStr(Thread* th, Buffer* tmp, char* src, LINT len)
 
 			if ((c >= 32) && (c < 128))
 			{
-				if ((k=bufferAddChar(th, tmp, c))) return k;
+				if ((k=bufferAddChar(tmp, c))) return k;
 			}
-			else if ((k=bufferPrintf(th, tmp, "$%02x", c))) return k;
+			else if ((k=bufferPrintf(tmp, "$%02x", c))) return k;
 		}
 		else
 		{
-			if (c == '\\' || c == '"') if ((k = bufferAddChar(th, tmp, '\\'))) return k;
-			if ((k = bufferAddChar(th, tmp, c))) return k;
+			if (c == '\\' || c == '"') if ((k = bufferAddChar(tmp, '\\'))) return k;
+			if ((k = bufferAddChar(tmp, c))) return k;
 		}
 	}
-	if ((k=bufferAddChar(th, tmp, 0x22))) return k;
+	if ((k=bufferAddChar(tmp, 0x22))) return k;
 	return 0;
 }
 
 
-int u8FromJson(Thread* th, Buffer* tmp, char* src, LINT len)
+int u8FromJson(Buffer* tmp, char* src, LINT len)
 {
 	int k, c;
 	if (*(src++) != 0x22) return EXEC_FORMAT;
@@ -469,25 +469,25 @@ int u8FromJson(Thread* th, Buffer* tmp, char* src, LINT len)
 		{
 			src++; c = *src;
 			if (c == 0x22) {
-				if ((k = bufferAddChar(th, tmp, 0x22))) return k;
+				if ((k = bufferAddChar(tmp, 0x22))) return k;
 			}
 			else if (c == '\\') {
-				if ((k = bufferAddChar(th, tmp, '\\'))) return k;
+				if ((k = bufferAddChar(tmp, '\\'))) return k;
 			}
 			else if (c == 'b') {
-				if ((k = bufferAddChar(th, tmp, '\b'))) return k;
+				if ((k = bufferAddChar(tmp, '\b'))) return k;
 			}
 			else if (c == 'f') {
-				if ((k = bufferAddChar(th, tmp, '\f'))) return k;
+				if ((k = bufferAddChar(tmp, '\f'))) return k;
 			}
 			else if (c == 'n') {
-				if ((k = bufferAddChar(th, tmp, '\n'))) return k;
+				if ((k = bufferAddChar(tmp, '\n'))) return k;
 			}
 			else if (c == 'r') {
-				if ((k = bufferAddChar(th, tmp, '\r'))) return k;
+				if ((k = bufferAddChar(tmp, '\r'))) return k;
 			}
 			else if (c == 't') {
-				if ((k = bufferAddChar(th, tmp, '\t'))) return k;
+				if ((k = bufferAddChar(tmp, '\t'))) return k;
 			}
 			else if (c == 'u')
 			{
@@ -496,23 +496,23 @@ int u8FromJson(Thread* th, Buffer* tmp, char* src, LINT len)
 				c = (htoc(src[0]) << 12) + (htoc(src[1]) << 8) + (htoc(src[2]) << 4) + htoc(src[3]);
 				src += 3;
 				if (c < 0x80) {
-					if ((k = bufferAddChar(th, tmp, c))) return k;
+					if ((k = bufferAddChar(tmp, c))) return k;
 				}
 				else if (c < 0x800)
 				{
-					if ((k = bufferAddChar(th, tmp, 0xc0 + ((c >> 6) & 0x1f)))) return k;
-					if ((k = bufferAddChar(th, tmp, 0x80 + (c & 0x3f)))) return k;
+					if ((k = bufferAddChar(tmp, 0xc0 + ((c >> 6) & 0x1f)))) return k;
+					if ((k = bufferAddChar(tmp, 0x80 + (c & 0x3f)))) return k;
 				}
 				else
 				{
-					if ((k = bufferAddChar(th, tmp, 0xe0 + ((c >> 12) & 0x0f)))) return k;
-					if ((k = bufferAddChar(th, tmp, 0x80 + ((c >> 6) & 0x3f)))) return k;
-					if ((k = bufferAddChar(th, tmp, 0x80 + (c & 0x3f)))) return k;
+					if ((k = bufferAddChar(tmp, 0xe0 + ((c >> 12) & 0x0f)))) return k;
+					if ((k = bufferAddChar(tmp, 0x80 + ((c >> 6) & 0x3f)))) return k;
+					if ((k = bufferAddChar(tmp, 0x80 + (c & 0x3f)))) return k;
 				}
 			}
-			else if ((k = bufferAddChar(th, tmp, c))) return k;
+			else if ((k = bufferAddChar(tmp, c))) return k;
 		}
-		else if ((k = bufferAddChar(th, tmp, c))) return k;
+		else if ((k = bufferAddChar(tmp, c))) return k;
 		src++;
 	}
 	src++;
@@ -520,12 +520,12 @@ int u8FromJson(Thread* th, Buffer* tmp, char* src, LINT len)
 	return 0;
 }
 
-int jsonFromU8(Thread* th, Buffer* tmp, char* src, LINT len)
+int jsonFromU8(Buffer* tmp, char* src, LINT len)
 {
 	int k;
 	LINT i;
 	bufferReinit(tmp);
-	if ((k = bufferAddChar(th, tmp, 0x22))) return k;
+	if ((k = bufferAddChar(tmp, 0x22))) return k;
 	for (i = 0; i < len; i++)
 	{
 		int c = src[i] & 255;
@@ -548,32 +548,32 @@ int jsonFromU8(Thread* th, Buffer* tmp, char* src, LINT len)
 				i += 3;
 				continue;	// would require more than 4 hex digits
 			}
-			if ((k = bufferPrintf(th, tmp, "\\u%04x", c & 0xffff))) return k;
+			if ((k = bufferPrintf(tmp, "\\u%04x", c & 0xffff))) return k;
 		}
 		else if ((c == 0x22) || (c == '\\') || (c < 32))
 		{
-			if ((k = bufferAddChar(th, tmp, '\\'))) return k;
-			if (c == 0x22) { if ((k = bufferAddChar(th, tmp, 0x22))) return k; }
-			else if (c == '\\') { if ((k = bufferAddChar(th, tmp, '\\'))) return k; }
-			else if (c == '\b') { if ((k = bufferAddChar(th, tmp, 'b'))) return k; }
-			else if (c == '\f') { if ((k = bufferAddChar(th, tmp, 'f'))) return k; }
-			else if (c == '\n') { if ((k = bufferAddChar(th, tmp, 'n'))) return k; }
-			else if (c == '\r') { if ((k = bufferAddChar(th, tmp, 'r'))) return k; }
-			else if (c == '\t') { if ((k = bufferAddChar(th, tmp, 't'))) return k; }
-			else if (bufferPrintf(th, tmp, "u%04x", c & 0xffff)) return k;
+			if ((k = bufferAddChar(tmp, '\\'))) return k;
+			if (c == 0x22) { if ((k = bufferAddChar(tmp, 0x22))) return k; }
+			else if (c == '\\') { if ((k = bufferAddChar(tmp, '\\'))) return k; }
+			else if (c == '\b') { if ((k = bufferAddChar(tmp, 'b'))) return k; }
+			else if (c == '\f') { if ((k = bufferAddChar(tmp, 'f'))) return k; }
+			else if (c == '\n') { if ((k = bufferAddChar(tmp, 'n'))) return k; }
+			else if (c == '\r') { if ((k = bufferAddChar(tmp, 'r'))) return k; }
+			else if (c == '\t') { if ((k = bufferAddChar(tmp, 't'))) return k; }
+			else if (bufferPrintf(tmp, "u%04x", c & 0xffff)) return k;
 		}
 		else if (c < 0x80)
 		{
-			if ((k = bufferAddChar(th, tmp, c))) return k;
+			if ((k = bufferAddChar(tmp, c))) return k;
 		}
 		else return EXEC_FORMAT;
 	}
-	if ((k = bufferAddChar(th, tmp, 0x22))) return k;
+	if ((k = bufferAddChar(tmp, 0x22))) return k;
 	return 0;
 }
 
 
-int xmlToStr(Thread* th, Buffer* tmp, char* src, LINT len, int latin)
+int xmlToStr(Buffer* tmp, char* src, LINT len, int latin)
 {
 	int k;
 	bufferReinit(tmp);
@@ -586,10 +586,10 @@ int xmlToStr(Thread* th, Buffer* tmp, char* src, LINT len, int latin)
 		src = strstr(from, "&");
 		if (!src)
 		{
-			if ((k = bufferAddStr(th, tmp, from))) return k;
+			if ((k = bufferAddStr(tmp, from))) return k;
 			return 0;
 		}
-		if ((k = bufferAddBin(th, tmp, from, src - from))) return k;
+		if ((k = bufferAddBin(tmp, from, src - from))) return k;
 		src++;
 		semicolumn = strstr(src, ";");
 		if (!semicolumn) return EXEC_FORMAT;
@@ -604,32 +604,32 @@ int xmlToStr(Thread* th, Buffer* tmp, char* src, LINT len, int latin)
 		{
 			if ((c >= 0) && (c <= 255))
 			{
-				if ((k = bufferAddChar(th, tmp, (char)c))) return k;
+				if ((k = bufferAddChar(tmp, (char)c))) return k;
 			}
 		}
 		else
 		{
 			if (c >= 2048)
 			{
-				if ((k = bufferAddChar(th, tmp, (char)(0xe0 + ((c >> 12) & 0x0f))))) return k;
-				if ((k = bufferAddChar(th, tmp, (char)(0x80 + ((c >> 6) & 0x3f))))) return k;
-				if ((k = bufferAddChar(th, tmp, (char)(0x80 + (c & 0x3f))))) return k;
+				if ((k = bufferAddChar(tmp, (char)(0xe0 + ((c >> 12) & 0x0f))))) return k;
+				if ((k = bufferAddChar(tmp, (char)(0x80 + ((c >> 6) & 0x3f))))) return k;
+				if ((k = bufferAddChar(tmp, (char)(0x80 + (c & 0x3f))))) return k;
 			}
 			else if (c >= 128)
 			{
-				if ((k = bufferAddChar(th, tmp, (char)(0xc0 + ((c >> 6) & 0x1f))))) return k;
-				if ((k = bufferAddChar(th, tmp, (char)((c & 0x3f))))) return k;
+				if ((k = bufferAddChar(tmp, (char)(0xc0 + ((c >> 6) & 0x1f))))) return k;
+				if ((k = bufferAddChar(tmp, (char)((c & 0x3f))))) return k;
 			}
-			else if ((k = bufferAddChar(th, tmp, (char)(c)))) return k;
+			else if ((k = bufferAddChar(tmp, (char)(c)))) return k;
 		}
 		src = semicolumn + 1;
 	}
 }
 
-int u8FromXml(Thread* th, Buffer* tmp, char* src, LINT len) { return xmlToStr(th, tmp, src, len, 0);  }
-int latinFromXml(Thread* th, Buffer* tmp, char* src, LINT len) { return xmlToStr(th, tmp, src, len, 1); }
+int u8FromXml(Buffer* tmp, char* src, LINT len) { return xmlToStr(tmp, src, len, 0);  }
+int latinFromXml(Buffer* tmp, char* src, LINT len) { return xmlToStr(tmp, src, len, 1); }
 
-int xmlFromStr(Thread* th, Buffer* tmp, char* src, LINT len)
+int xmlFromStr(Buffer* tmp, char* src, LINT len)
 {
 	LINT i;
 	int k;
@@ -638,26 +638,26 @@ int xmlFromStr(Thread* th, Buffer* tmp, char* src, LINT len)
 	{
 		char c = src[i];
 		if (c == '&') {
-			if ((k = bufferAddStr(th, tmp, "&amp;"))) return k;
+			if ((k = bufferAddStr(tmp, "&amp;"))) return k;
 		}
 		else if (c == '"') {
-			if ((k = bufferAddStr(th, tmp, "&quot;"))) return k;
+			if ((k = bufferAddStr(tmp, "&quot;"))) return k;
 		}
 		else if (c == 39) {
-			if ((k = bufferAddStr(th, tmp, "&apos;"))) return k;
+			if ((k = bufferAddStr(tmp, "&apos;"))) return k;
 		}
 		else if (c == '<') {
-			if ((k = bufferAddStr(th, tmp, "&lt;"))) return k;
+			if ((k = bufferAddStr(tmp, "&lt;"))) return k;
 		}
 		else if (c == '>') {
-			if ((k = bufferAddStr(th, tmp, "&gt;"))) return k;
+			if ((k = bufferAddStr(tmp, "&gt;"))) return k;
 		}
-		else if ((k = bufferAddChar(th, tmp, c))) return k;
+		else if ((k = bufferAddChar(tmp, c))) return k;
 	}
 	return 0;
 }
 
-int strWithLF(Thread* th, Buffer* tmp, char* src, LINT len)
+int strWithLF(Buffer* tmp, char* src, LINT len)
 {
 	LINT i;
 	int k;
@@ -665,14 +665,14 @@ int strWithLF(Thread* th, Buffer* tmp, char* src, LINT len)
 	for (i = 0; i < len; i++)
 	{
 		char c = src[i];
-		if (c != 13) k = bufferAddChar(th, tmp, c);
-		else if (src[i + 1] != 10) k = bufferAddChar(th, tmp, 10);
+		if (c != 13) k = bufferAddChar(tmp, c);
+		else if (src[i + 1] != 10) k = bufferAddChar(tmp, 10);
 		else k = 0;
 		if (k) return k;
 	}
 	return 0;
 }
-int strWithCR(Thread* th, Buffer* tmp, char* src, LINT len)
+int strWithCR(Buffer* tmp, char* src, LINT len)
 {
 	LINT i;
 	int k;
@@ -681,15 +681,15 @@ int strWithCR(Thread* th, Buffer* tmp, char* src, LINT len)
 	for (i = 0; i < len; i++)
 	{
 		char c = src[i];
-		if (c != 10) k = bufferAddChar(th, tmp, c);
-		else if (last != 13) k = bufferAddChar(th, tmp, 13);
+		if (c != 10) k = bufferAddChar(tmp, c);
+		else if (last != 13) k = bufferAddChar(tmp, 13);
 		else k = 0;
 		if (k) return k;
 		last = c;
 	}
 	return 0;
 }
-int strWithCRLF(Thread* th, Buffer* tmp, char* src, LINT len)
+int strWithCRLF(Buffer* tmp, char* src, LINT len)
 {
 	LINT i;
 	int k;
@@ -700,15 +700,15 @@ int strWithCRLF(Thread* th, Buffer* tmp, char* src, LINT len)
 		char c = src[i];
 		if (c == 10)
 		{
-			if ((last!=13)&&((k = bufferAddChar(th, tmp, 13)))) return k;
-			k = bufferAddChar(th, tmp, 10);
+			if ((last!=13)&&((k = bufferAddChar(tmp, 13)))) return k;
+			k = bufferAddChar(tmp, 10);
 		}
 		else if (c == 13)
 		{
-			if ((k = bufferAddChar(th, tmp, 13))) return k;
-			if (src[i + 1] != 10) k = bufferAddChar(th, tmp, 10);
+			if ((k = bufferAddChar(tmp, 13))) return k;
+			if (src[i + 1] != 10) k = bufferAddChar(tmp, 10);
 		}
-		else k = bufferAddChar(th, tmp, c);
+		else k = bufferAddChar(tmp, c);
 		if (k) return k;
 		last = c;
 	}
@@ -716,7 +716,7 @@ int strWithCRLF(Thread* th, Buffer* tmp, char* src, LINT len)
 }
 
 #define STRCASE(fun,table) \
-int fun(Thread* th, Buffer* tmp, char* src, LINT len)	\
+int fun(Buffer* tmp, char* src, LINT len)	\
 {	\
 	LINT i;	\
 	int k;	\
@@ -724,14 +724,14 @@ int fun(Thread* th, Buffer* tmp, char* src, LINT len)	\
 	for (i = 0; i < len; i++)	\
 	{	\
 		unsigned char c = (unsigned char)src[i];	\
-		if ((k = bufferAddChar(th, tmp, table[c]))) return k;	\
+		if ((k = bufferAddChar(tmp, table[c]))) return k;	\
 	}	\
 	return 0;	\
 }
 
 
 #define STRCASEU8(fun,table) \
-int fun(Thread* th, Buffer* tmp, char* src, LINT len)	\
+int fun(Buffer* tmp, char* src, LINT len)	\
 {	\
 	LINT i = 0;	\
 	int k;	\
@@ -741,14 +741,14 @@ int fun(Thread* th, Buffer* tmp, char* src, LINT len)	\
 		int size;	\
 		int val = (int)u8Value(&src[i], &size);	\
 		if (val < 256) val = table[val];	\
-		if ((k = u8Write(th, tmp, val))) return k;	\
+		if ((k = u8Write(tmp, val))) return k;	\
 		i += size;	\
 	}	\
 	return 0;	\
 }
 
 #define STRCASEU16LE(fun,table) \
-int fun(Thread* th, Buffer* tmp, char* src, LINT len)	\
+int fun(Buffer* tmp, char* src, LINT len)	\
 {	\
 	LINT i;	\
 	int k;	\
@@ -758,13 +758,13 @@ int fun(Thread* th, Buffer* tmp, char* src, LINT len)	\
 	{	\
 		unsigned char cl = (unsigned char)src[i];	\
 		unsigned char ch = (unsigned char)src[i+1];	\
-		if ((k = bufferAddChar(th, tmp, ch?cl:table[cl]))) return k;	\
-		if ((k = bufferAddChar(th, tmp, ch))) return k;	\
+		if ((k = bufferAddChar(tmp, ch?cl:table[cl]))) return k;	\
+		if ((k = bufferAddChar(tmp, ch))) return k;	\
 	}	\
 	return 0;	\
 }
 #define STRCASEU16BE(fun,table) \
-int fun(Thread* th, Buffer* tmp, char* src, LINT len)	\
+int fun(Buffer* tmp, char* src, LINT len)	\
 {	\
 	LINT i;	\
 	int k;	\
@@ -774,8 +774,8 @@ int fun(Thread* th, Buffer* tmp, char* src, LINT len)	\
 	{	\
 		unsigned char ch = (unsigned char)src[i];	\
 		unsigned char cl = (unsigned char)src[i+1];	\
-		if ((k = bufferAddChar(th, tmp, ch))) return k;	\
-		if ((k = bufferAddChar(th, tmp, ch?cl:table[cl]))) return k;	\
+		if ((k = bufferAddChar(tmp, ch))) return k;	\
+		if ((k = bufferAddChar(tmp, ch?cl:table[cl]))) return k;	\
 	}	\
 	return 0;	\
 }

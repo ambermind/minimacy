@@ -10,7 +10,7 @@
    with this program. If not, see <https://www.gnu.org/licenses/>. */
 
 use core.crypto.pem;;
-use core.crypto.rsa;;
+use core.crypto.key;;
 use core.crypto.sign;;
 use core.crypto.oid;;
 use core.crypto.asn1;;
@@ -19,24 +19,26 @@ use core.crypto.asn1;;
 //-------------CSR-----------------------------
 // https://datatracker.ietf.org/doc/html/rfc2986
 
-fun _csrFromAsn1 asn1=
+
+fun _csrFromAsn1 info asn1=
 //	asn1Echo "" asn1;
 	let hashmapCreate 4 -> h in
 	let listFromAsn1 asn1 ->(certificationRequestInfo:signatureAlgorithm:signature:_) in
 	let listFromAsn1 certificationRequestInfo ->(version:subject:pkInfo:attributes:_) in
 	(
+		hashmapSet h OID_INFO hexFromStr info;
 		hashmapSet h "VERSION" strFromAsn1 version;
 		hashmapSet h OID_SUBJECT subjectFromAsn1 subject;
 		commonFromAsn1 h pkInfo signatureAlgorithm signature
 	);;
 
-fun _csrInfoAsn1 subject modulus pubExp=
+fun _csrInfoAsn1 subject key=
 	let listFromAsn1Subject subject -> subjectList in
 	let head tail listFind subjectList (lambda a= "CN"==head a) -> domain in
 	asn1Seq
 	(asn1Integer "\0"):
 	(asn1Subject subjectList):
-	(asn1RsaEncryption modulus pubExp):
+	(asn1KeyEncryption key):
 	(asn1ClassConstructed ASN1_CONTEXT_SPECIFIC 0
 		(asn1Seq
 			(asn1ObjectIdentifier OID_id_ExtensionReq):
@@ -63,19 +65,12 @@ fun _csrInfoAsn1 subject modulus pubExp=
 	):
 	nil;;
 
-fun _asn1EncryptionAlgo algo=
-	match algo with
-		RSA_PKCS1_SHA1 -> OID_RSA_PKCS1_SHA512,
-		RSA_PKCS1_SHA512 -> OID_RSA_PKCS1_SHA512,
-		RSA_PKCS1_SHA384 -> OID_RSA_PKCS1_SHA384,
-		RSA_PKCS1_SHA256 -> OID_RSA_PKCS1_SHA256;;
 
-fun _asn1RsaSign algo rsa asn1=
-	let _asn1EncryptionAlgo algo -> algoOid in
+fun _asn1Sign algo key asn1=
+	let signOIDByAlgo algo -> algoOid in
 	let asn1Pack asn1 -> data in
-	let signatureGenerate algo rsa data -> signature in
+	let signatureGenerate algo key data -> signature in
 	asn1Seq
-//		(asn1Raw data):
 		asn1:
 		(asn1Seq
 			(asn1ObjectIdentifier algoOid):
@@ -86,11 +81,8 @@ fun _asn1RsaSign algo rsa asn1=
 		nil;;
 
 fun _csrAsn1 key algo subject=
-	let hashmapGet key OID_MODULUS -> modulus in
-	let hashmapGet key OID_PUBEXP -> pubExp in
-	let rsaImport key -> rsa in
-	let _csrInfoAsn1 subject modulus pubExp -> infos in
-	_asn1RsaSign algo rsa infos;;
+	let _csrInfoAsn1 subject key -> infos in
+	_asn1Sign algo key infos;;
 
 fun csrDER key algo subject=
 	let _csrAsn1 key algo subject -> csr in

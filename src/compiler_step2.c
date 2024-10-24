@@ -13,15 +13,15 @@
 
 Def* compileParseDef(Compiler* c, char* what)
 {
-	Def* def;
+	Def* d;
 	if ((!parserNext(c)) || (!islabel(c->parser->token)))
 	{
 		compileError(c,"%s expected (found '%s')\n", what, compileToken(c));
 		return NULL;
 	}
-	def = pkgFirstGet(c->pkg, compileToken(c));
-	if (!def) compileError(c,"cannot find prototype of '%s'\n", compileToken(c));
-	return def;
+	d = pkgFirstGet(c->pkg, compileToken(c));
+	if (!d) compileError(c,"cannot find prototype of '%s'\n", compileToken(c));
+	return d;
 }
 
 LINT compileTypeParams(Compiler* c, Locals** labels)
@@ -38,7 +38,7 @@ LINT compileTypeParams(Compiler* c, Locals** labels)
 				compileError(c,"parameter or '}' expected (found '%s')\n", compileToken(c));
 				return -1;
 			}
-			lb = localsCreate(c->th, c->parser->token, 0, NULL, lb); if (!lb) return -1;
+			lb = localsCreate(c->parser->token, 0, NULL, lb); if (!lb) return -1;
 			n++;
 			if (!parserNext(c))
 			{
@@ -73,36 +73,37 @@ Type* compileType2(Compiler* c, Def* typeDef,char* separator,int sum)
 	return compileStructure2(c, typeDef, labels);
 }
 
-Type* compileRecDefs2(Compiler* c, Def* def)
+Type* compileDefs2(Compiler* c)
 {
-	if (!def) return MM.Boolean;	// anything not null
-	if (!compileRecDefs2(c, def->next)) return NULL;
-
-	if (def->parser && def->proto)
+	Def* d;
+	for(d = c->pkg->first; d; d=d->next) if (d->parser && d->proto)
 	{
-		//		PRINTF(LOG_DEV,"Compile step2 '%s.%s'\n", defPkgName(def), defName(def));
-		if (def->code == DEF_CODE_SUM)
+		memoryEnterFast();
+		//		PRINTF(LOG_DEV,"Compile step2 %llx '%s.%s'\n", d, defPkgName(d), defName(d));
+		if (d->code == DEF_CODE_SUM)
 		{
-			parserRestoreFromDef(c, def);
-			if (!compileType2(c, def, "=", 1)) return compileError(c,"error compiling type '%s'\n", defName(def));
+			parserRestoreFromDef(c, d);
+			if (!compileType2(c, d, "=", 1)) return compileError(c,"error compiling type '%s'\n", defName(d));
 			parserReset(c);
 		}
-		else if (def->code == DEF_CODE_STRUCT)
+		else if (d->code == DEF_CODE_STRUCT)
 		{
-			parserRestoreFromDef(c, def);
-			if (!compileType2(c, def, "=", 0)) return compileError(c,"error compiling type '%s'\n", defName(def));
+			parserRestoreFromDef(c, d);
+			if (!compileType2(c, d, "=", 0)) return compileError(c,"error compiling type '%s'\n", defName(d));
 			parserReset(c);
 		}
-		else if (def->code == DEF_CODE_EXTEND)
+		else if (d->code == DEF_CODE_EXTEND)
 		{
-			parserRestoreFromDef(c, def);
+			Def* dsum;
+			parserRestoreFromDef(c, d);
 			if (!parserNext(c)) return compileError(c,"uncomplete extend definition (found EOF)\n");
-			def = compileGetDef(c);
+			dsum = compileGetDef(c);
 
-			if ((!def) || (def->code != DEF_CODE_SUM)) return compileError(c,"'%s' is not a sum type\n", compileToken(c));
-			if (!compileType2(c, def, "with", 1)) return compileError(c,"error compiling type '%s'\n", defName(def));
+			if ((!dsum) || (dsum->code != DEF_CODE_SUM)) return compileError(c,"'%s' is not a sum type\n", compileToken(c));
+			if (!compileType2(c, dsum, "with", 1)) return compileError(c,"error compiling type '%s'\n", defName(dsum));
 			parserReset(c);
 		}
+		memoryLeaveFast();
 	}
 	return MM.Boolean;	// anything not null
 }
@@ -125,8 +126,11 @@ void cleanExtendDef(Compiler* c)
 
 Type* compileStep2(Compiler* c)
 {
-	if (!parserFromIncludes(c, pkgName(c->pkg))) return NULL;
-	if (!compileRecDefs2(c, c->pkg->first)) return NULL;
+	Type* t;
+	defReverse(c->pkg);
+	t = compileDefs2(c);
+	defReverse(c->pkg);
+	if (!t) return NULL;
 	cleanExtendDef(c);
 	return MM.Boolean;	// anything except NIL
 }

@@ -17,6 +17,7 @@ Type* compilePointer(Compiler* c)
 	if (!parserNext(c)) return compileError(c,"function name expected (found '%s')\n",compileToken(c));
 
 	def=compileGetDef(c);
+	if (def && def->code >= 0 && def->index == DEF_INDEX_STATIC) def = systemGetNative((char*)def->name);
 	if (def && def->code>=0)
 	{
 		LINT global;
@@ -27,6 +28,31 @@ Type* compilePointer(Compiler* c)
 		return typeInstance(c,def);
 	}
 	return compileError(c,"function not found or hidden ('%s')\n",compileToken(c));
+}
+
+Type* compileDefHide(Compiler* c)
+{
+	LINT global;
+	Def* def;
+
+	if (bufferAddChar(c->bytecode, OPnil)) return NULL;
+	while (1) {
+		if (!parserNext(c)) return compileError(c, "definition name expected (found '%s')\n", compileToken(c));
+		if (!islabel(c->parser->token)) {
+			parserGiveback(c);
+			return MM.Boolean;
+		}
+		if (bufferAddChar(c->bytecode, OPdrop)) return NULL;
+		def = compileGetDef(c);
+		if (def && def->code >= 0 && def->index == DEF_INDEX_STATIC) def = systemMakeNative(0x7fff & INT_FROM_VAL(def->val));
+		if (!def) return compileError(c, "definition not found or hidden ('%s')\n", compileToken(c));
+
+		if (funMakerNeedGlobal(c->fmk, (LB*)def, &global)) return NULL;
+
+		if (bufferAddChar(c->bytecode, OPint)) return NULL;
+		if (bufferAddInt(c->bytecode, global)) return NULL;
+		if (bufferAddChar(c->bytecode, OPhide)) return NULL;
+	}
 }
 
 Type* compileCall(Compiler* c)
@@ -45,13 +71,13 @@ Type* compileCall(Compiler* c)
 	{
 		parserGiveback(c);
 		if (!(t=compileExpression(c))) return NULL;
-		TYPE_PUSH_NULL(c,t);
+		TYPE_PUSH_NULL(t);
 		argc++;
 	}
 	parserGiveback(c);
-	result = typeAllocUndef(c->th); if (!result) return NULL;
-	TYPE_PUSH_NULL(c,result);	// push the type of the result
-	callType = typeAllocFromStack(c->th, NULL, TYPECODE_FUN, argc + 1); if (!callType) return NULL;
+	result = typeAllocUndef(); if (!result) return NULL;
+	TYPE_PUSH_NULL(result);	// push the type of the result
+	callType = typeAllocFromStack(NULL, TYPECODE_FUN, argc + 1); if (!callType) return NULL;
 
 	if (typeUnify(c,funType,callType)) return NULL;
 	if (bc_byte_or_int(c,argc,OPexecb,OPexec)) return NULL;
@@ -69,11 +95,10 @@ int compileBindRec(Compiler* c, Locals* locals, LINT level)
 		locals->level=level;
 		return bc_byte_or_int(c, locals->index, OPrlocb, OPrloc);
 	}
-	return bufferAddChar(c->th, c->bytecode,OPnil);
+	return bufferAddChar(c->bytecode,OPnil);
 }
 Type* compileLambda(Compiler* c)
 {
-	FunMaker Fmk;
 	LB* fun;
 	LINT global;
 	Type* type;
@@ -85,7 +110,7 @@ Type* compileLambda(Compiler* c)
 	LINT argc= argc0;
 	int indexBc = parserIndex(c);
 
-	if (funMakerInit(c,&Fmk,c->fmk->locals,c->fmk->typeLabels,c->fmk->level+1,NULL,c->fmk->defForInstances)) return NULL;
+	if (funMakerInit(c,c->fmk->locals,c->fmk->typeLabels,c->fmk->level+1,NULL,c->fmk->defForInstances)) return NULL;
 	while (parserNext(c) && strcmp(c->parser->token, "="))
 	{
 		parserGiveback(c);
@@ -115,17 +140,17 @@ Type* compileLambda(Compiler* c)
 			}
 			bufferCut(c->bytecode, firstOpcode);
 		}
-		STACK_PUSH_PNT_ERR(c->th, (LB*)(argType), NULL);
+		TYPE_PUSH_NULL((LB*)(argType));
 		i++;
 	}
 	parserGiveback(c);
 	if (parserAssume(c, "=")) return NULL;
 
 	// prepare the type structure of the function (fun arg0 arg1 ... argn-1 result)
-	resultType=typeAllocUndef(c->th); if (!resultType) return NULL;
-	TYPE_PUSH_NULL(c,resultType);	// push the type of the result
+	resultType=typeAllocUndef(); if (!resultType) return NULL;
+	TYPE_PUSH_NULL(resultType);	// push the type of the result
 
-	type=typeAllocFromStack(c->th, NULL, TYPECODE_FUN, argc+1-argc0); if (!type) return NULL;
+	type=typeAllocFromStack(NULL, TYPECODE_FUN, argc+1-argc0); if (!type) return NULL;
 
 	c->fmk->resultType=resultType;
 	// now we are ready...

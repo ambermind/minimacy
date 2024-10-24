@@ -484,7 +484,7 @@ fun _clientParseCertificateVerify tls data=
 	let cerCheckChain t0 siteCertificate lCertificates -> error in
 	if error<>nil then _setError tls error
 	else
-	let signatureCheck signAlgo siteCertificate (strConcat TLS_CERTIFICATE_VERIFY_SERVER_PREFIX payload_hash) sign -> result in
+	let signatureCheckFromCertificate signAlgo siteCertificate (strConcat TLS_CERTIFICATE_VERIFY_SERVER_PREFIX payload_hash) sign -> result in
 	if !result then
 		let if result==false then "WRONG SIGNATURE " else strFormat "UNKNOWN ALGO " -> txt in
 		_setError tls [txt hexFromInt signAlgo]
@@ -722,7 +722,7 @@ fun _serverParseCertificateVerify tls data=
 		_setError tls "INVALID AUTHORITY"
 	)
 	else
-	let signatureCheck signAlgo certificate (strConcat TLS_CERTIFICATE_VERIFY_CLIENT_PREFIX payload_hash) sign -> result in
+	let signatureCheckFromCertificate signAlgo certificate (strConcat TLS_CERTIFICATE_VERIFY_CLIENT_PREFIX payload_hash) sign -> result in
 	if !result then _setError tls "CLIENT CERTIFICATE NOT ACCEPTED"
 	else (
 		set tls.clientValidatedCertificateTLS=certificate;
@@ -932,7 +932,7 @@ fun _importCert l=
 
 fun _addHost hosts host=
 	let host ->[privateKey pwd certList authForClientCert] in
-	let rsaFromPEM privateKey pwd -> serverKey in
+	let keyFromPEM privateKey pwd -> serverKey in
 	let _importCert certList -> derList in
 	let listMap derList (lambda bin= cerFromDER bin) -> certificatesList in
 	let head certificatesList -> certificate in
@@ -958,7 +958,7 @@ fun tlsMakeHosts hostList=
 
 fun tlsCreateCli serverName cipherSuites clientCertificate clientKey= 
 	let _create-> tls in
-	let rsaFromPEM clientKey nil -> clientKey in
+	let keyFromPEM clientKey nil -> clientKey in
 	let head pemRead clientCertificate -> [name headers clientCertificate] in
 	(
 		if cipherSuites<>nil then set tls.cipherSuitesTLS= cipherSuites;

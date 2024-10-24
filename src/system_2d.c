@@ -13,20 +13,22 @@
 void bitmapMark(LB* user)
 {
 	LBitmap* b = (LBitmap*)user;
-	MEMORY_MARK(user, b->bytes);
+	MEMORY_MARK(b->bytes);
 }
 
-LBitmap* _bitmapCreate(Thread* th, LINT w, LINT h)
+LBitmap* _bitmapCreate(LINT w, LINT h)
 {
 	LBitmap* b;
+	LB* p;
 	memoryEnterFast();
-	b = (LBitmap*)memoryAllocExt(th, sizeof(LBitmap), DBG_LOCALS, NULL, bitmapMark); if (!b) return NULL;
+	b = (LBitmap*)memoryAllocExt(sizeof(LBitmap), DBG_LOCALS, NULL, bitmapMark); if (!b) return NULL;
 	b->w = w;
 	b->h = h;
 	b->next8 = w * 4;
 	b->next32 = w;
 	b->bytes = NULL;
-	b->bytes = memoryAllocStr(th, NULL, h * b->next8); if (!b->bytes) return NULL;
+	p = memoryAllocStr(NULL, h * b->next8); if (!p) return NULL;
+	b->bytes = p;
 	b->start8 = (lchar*)STR_START(b->bytes);
 	b->start32 = (int*)b->start8;
 #ifdef ON_WINDOWS
@@ -45,7 +47,7 @@ int fun_bitmapCreate(Thread* th)
 	LINT h = STACK_PULL_INT(th);
 	LINT w = STACK_INT(th,0);
 	if ((h < 0) || (w < 0) || (w> BITMAP_MAX_LENGTH)||(h> BITMAP_MAX_LENGTH)) FUN_RETURN_NIL;
-	b = _bitmapCreate(th, w, h); if (!b) return EXEC_OM;
+	b = _bitmapCreate(w, h); if (!b) return EXEC_OM;
 	_bitmapFill(b, (int)color, NULL);
 	FUN_RETURN_PNT((LB*)b);
 }
@@ -220,7 +222,7 @@ int fun_bitmapCopy(Thread* th)
 	if (!b) FUN_RETURN_NIL;
 	if (wIsNil) w= b->w - x;
 	if (hIsNil) h= b->h - y;
-	if ((k= _bitmapCopy(th, b, x, y, w, h, &d))) return k;
+	if ((k= _bitmapCopy(b, x, y, w, h, &d))) return k;
 	FUN_RETURN_PNT((LB*)d);
 }
 int fun_rgbFromYCrCb(Thread* th)
@@ -259,69 +261,59 @@ int fun_dct88(Thread* th)
 	if (ARRAY_LENGTH(array) == 64) dct88(array);
 	return 0;
 }
-int core2dInit(Thread* th, Pkg *system)
+int core2dInit(Pkg *system)
 {
-	Def* BlendFunction=pkgAddType(th, system, "BlendFunction");
-	Def* Component=pkgAddType(th, system, "Component");
-	Type* fun_I_I = typeAlloc(th, TYPECODE_FUN, NULL, 2, MM.Int, MM.Int);
-	Type* fun_B_I = typeAlloc(th, TYPECODE_FUN, NULL, 2, MM.Bitmap, MM.Int);
-	Type* fun_B_I_I_I_I_Blend_B = typeAlloc(th, TYPECODE_FUN, NULL, 7, MM.Bitmap, MM.Int, MM.Int, MM.Int, MM.Int, BlendFunction->type, MM.Bitmap);
-	Type* fun_B_I_I_I_I_I_Blend_B = typeAlloc(th, TYPECODE_FUN, NULL, 8, MM.Bitmap, MM.Int, MM.Int, MM.Int, MM.Int, MM.Int, BlendFunction->type, MM.Bitmap);
-	Type* fun_B_I_I_B_I_I_I_I_Blend_B = typeAlloc(th, TYPECODE_FUN, NULL, 10, MM.Bitmap, MM.Int, MM.Int, MM.Bitmap, MM.Int, MM.Int, MM.Int, MM.Int, BlendFunction->type, MM.Bitmap);
-	Type* fun_B_I_I_B_I_I_I_I_Blend_I_Blend_B = typeAlloc(th, TYPECODE_FUN, NULL, 12, MM.Bitmap, MM.Int, MM.Int, MM.Bitmap, MM.Int, MM.Int, MM.Int, MM.Int, BlendFunction->type, MM.Int, BlendFunction->type, MM.Bitmap);
-	Type* arrayF = typeAlloc(th, TYPECODE_ARRAY, NULL, 1, MM.Float);
-	_colorInit();
+	pkgAddType(system, "BlendFunction");
+	pkgAddType(system, "Component");
 
-	pkgAddConstInt(th, system, "COMP_R", 0, Component->type);
-	pkgAddConstInt(th, system, "COMP_G", 1, Component->type);
-	pkgAddConstInt(th, system, "COMP_B", 2, Component->type);
-	pkgAddConstInt(th, system, "COMP_A", 3, Component->type);
-	pkgAddConstInt(th, system, "COMP_0", 4, Component->type);
-	pkgAddConstInt(th, system, "COMP_R_INV", 5, Component->type);
-	pkgAddConstInt(th, system, "COMP_G_INV", 6, Component->type);
-	pkgAddConstInt(th, system, "COMP_B_INV", 7, Component->type);
-	pkgAddConstInt(th, system, "COMP_A_INV", 8, Component->type);
-	pkgAddConstInt(th, system, "COMP_255", 9, Component->type);
-
-	pkgAddConstInt(th, system,"BLEND_NONE",0,BlendFunction->type);
-	pkgAddConstInt(th, system,"BLEND_XOR",1,BlendFunction->type);
-	pkgAddConstInt(th, system,"BLEND_OR",2,BlendFunction->type);
-	pkgAddConstInt(th, system,"BLEND_AND",3,BlendFunction->type);
-	pkgAddConstInt(th, system,"BLEND_MAX",4,BlendFunction->type);
-	pkgAddConstInt(th, system,"BLEND_MIN",5,BlendFunction->type);
-	pkgAddConstInt(th, system,"BLEND_ADD",6,BlendFunction->type);
-	pkgAddConstInt(th, system,"BLEND_SUB",7,BlendFunction->type);
-	pkgAddConstInt(th, system,"BLEND_MUL",8,BlendFunction->type);
-	pkgAddConstInt(th, system,"BLEND_ALPHA",9,BlendFunction->type);
-	pkgAddConstInt(th, system,"BLEND_DESTINATION",10,BlendFunction->type);
-
-	pkgAddFun(th, system, "bitmapCreate",fun_bitmapCreate,typeAlloc(th, TYPECODE_FUN,NULL,4,MM.Int, MM.Int,MM.Int, MM.Bitmap));
-	pkgAddFun(th, system, "bitmapW", fun_bitmapW, fun_B_I);
-	pkgAddFun(th, system, "bitmapH", fun_bitmapH, fun_B_I);
-	pkgAddFun(th, system, "bitmapCopy", fun_bitmapCopy, typeAlloc(th, TYPECODE_FUN, NULL, 6, MM.Bitmap, MM.Int, MM.Int, MM.Int, MM.Int, MM.Bitmap));
-	pkgAddFun(th, system, "bitmapGet", fun_bitmapGet, typeAlloc(th, TYPECODE_FUN, NULL, 4, MM.Bitmap, MM.Int, MM.Int, MM.Int));
-	pkgAddFun(th, system, "bitmapSet", fun_bitmapSet, typeAlloc(th, TYPECODE_FUN, NULL, 5, MM.Bitmap, MM.Int, MM.Int, MM.Int, MM.Bitmap));
-	pkgAddFun(th, system, "bitmapPlot", fun_bitmapPlot, typeAlloc(th, TYPECODE_FUN, NULL, 6, MM.Bitmap, MM.Int, MM.Int, MM.Int, BlendFunction->type, MM.Bitmap));
-	pkgAddFun(th, system, "bitmapFill", fun_bitmapFill, typeAlloc(th, TYPECODE_FUN, NULL, 4, MM.Bitmap, MM.Int, BlendFunction->type, MM.Bitmap));
-	pkgAddFun(th, system, "bitmapMakeColorTransparent", fun_bitmapMakeColorTransparent, typeAlloc(th, TYPECODE_FUN, NULL, 3, MM.Bitmap, MM.Int, MM.Bitmap));
-	pkgAddFun(th, system, "bitmapRectangle", fun_bitmapRectangle, fun_B_I_I_I_I_I_Blend_B);
-	pkgAddFun(th, system, "bitmapFillRectangle", fun_bitmapFillRectangle, fun_B_I_I_I_I_I_Blend_B);
-	pkgAddFun(th, system, "bitmapScanline", fun_bitmapScanline, fun_B_I_I_I_I_Blend_B);
-	pkgAddFun(th, system, "bitmapLine", fun_bitmapLine, fun_B_I_I_I_I_I_Blend_B);
-	pkgAddFun(th, system, "bitmapFillCircle", fun_bitmapFillCircle, fun_B_I_I_I_I_I_Blend_B);
-	pkgAddFun(th, system, "bitmapCircle", fun_bitmapCircle, fun_B_I_I_I_I_I_Blend_B);
-	pkgAddFun(th, system, "bitmapBlit", fun_bitmapBlit, fun_B_I_I_B_I_I_I_I_Blend_B);
-	pkgAddFun(th, system, "bitmapColoredBlit", fun_bitmapColoredBlit, fun_B_I_I_B_I_I_I_I_Blend_I_Blend_B);
-	pkgAddFun(th, system, "bitmapResize", fun_bitmapResize, typeAlloc(th, TYPECODE_FUN, NULL, 4, MM.Bitmap, MM.Bitmap, MM.Boolean, MM.Bitmap));
-	pkgAddFun(th, system, "bitmapComponents", fun_bitmapComponents, typeAlloc(th, TYPECODE_FUN, NULL, 6, MM.Bitmap, Component->type, Component->type, Component->type, Component->type, MM.Bitmap));
-
-	pkgAddFun(th, system, "rgbFromYCrCb", fun_rgbFromYCrCb, fun_I_I);
-	pkgAddFun(th, system, "yCrCbFromRgb", fun_yCrCbFromRgb, fun_I_I);
-	pkgAddFun(th, system, "bitmapFromYCrCb", fun_bitmapFromYCrCb, fun_B_I);
-	pkgAddFun(th, system, "bitmapToYCrCb", fun_bitmapToYCrCb, fun_B_I);
-	pkgAddFun(th, system, "idct88", fun_idct88, typeAlloc(th, TYPECODE_FUN, NULL, 2, arrayF, arrayF));
-	pkgAddFun(th, system, "dct88", fun_dct88, typeAlloc(th, TYPECODE_FUN, NULL, 2, arrayF, arrayF));
-
-	
+	static const Native nativeDefs[] = {
+		{ NATIVE_INT, "COMP_R", (void*)0, "Component"},
+		{ NATIVE_INT, "COMP_G", (void*)1, "Component"},
+		{ NATIVE_INT, "COMP_B", (void*)2, "Component"},
+		{ NATIVE_INT, "COMP_A", (void*)3, "Component"},
+		{ NATIVE_INT, "COMP_0", (void*)4, "Component"},
+		{ NATIVE_INT, "COMP_R_INV", (void*)5, "Component"},
+		{ NATIVE_INT, "COMP_G_INV", (void*)6, "Component"},
+		{ NATIVE_INT, "COMP_B_INV", (void*)7, "Component"},
+		{ NATIVE_INT, "COMP_A_INV", (void*)8, "Component"},
+		{ NATIVE_INT, "COMP_255", (void*)9, "Component"},
+		{ NATIVE_INT, "BLEND_NONE", (void*)0, "BlendFunction"},
+		{ NATIVE_INT, "BLEND_XOR", (void*)1, "BlendFunction"},
+		{ NATIVE_INT, "BLEND_OR", (void*)2, "BlendFunction"},
+		{ NATIVE_INT, "BLEND_AND", (void*)3, "BlendFunction"},
+		{ NATIVE_INT, "BLEND_MAX", (void*)4, "BlendFunction"},
+		{ NATIVE_INT, "BLEND_MIN", (void*)5, "BlendFunction"},
+		{ NATIVE_INT, "BLEND_ADD", (void*)6, "BlendFunction"},
+		{ NATIVE_INT, "BLEND_SUB", (void*)7, "BlendFunction"},
+		{ NATIVE_INT, "BLEND_MUL", (void*)8, "BlendFunction"},
+		{ NATIVE_INT, "BLEND_ALPHA", (void*)9, "BlendFunction"},
+		{ NATIVE_INT, "BLEND_DESTINATION", (void*)10, "BlendFunction"},
+		{ NATIVE_FUN, "bitmapCreate", fun_bitmapCreate, "fun Int Int Int -> Bitmap"},
+		{ NATIVE_FUN, "bitmapW", fun_bitmapW, "fun Bitmap -> Int"},
+		{ NATIVE_FUN, "bitmapH", fun_bitmapH, "fun Bitmap -> Int"},
+		{ NATIVE_FUN, "bitmapCopy", fun_bitmapCopy, "fun Bitmap Int Int Int Int -> Bitmap"},
+		{ NATIVE_FUN, "bitmapGet", fun_bitmapGet, "fun Bitmap Int Int -> Int"},
+		{ NATIVE_FUN, "bitmapSet", fun_bitmapSet, "fun Bitmap Int Int Int -> Bitmap"},
+		{ NATIVE_FUN, "bitmapPlot", fun_bitmapPlot, "fun Bitmap Int Int Int BlendFunction -> Bitmap"},
+		{ NATIVE_FUN, "bitmapFill", fun_bitmapFill, "fun Bitmap Int BlendFunction -> Bitmap"},
+		{ NATIVE_FUN, "bitmapMakeColorTransparent", fun_bitmapMakeColorTransparent, "fun Bitmap Int -> Bitmap"},
+		{ NATIVE_FUN, "bitmapRectangle", fun_bitmapRectangle, "fun Bitmap Int Int Int Int Int BlendFunction -> Bitmap"},
+		{ NATIVE_FUN, "bitmapFillRectangle", fun_bitmapFillRectangle, "fun Bitmap Int Int Int Int Int BlendFunction -> Bitmap"},
+		{ NATIVE_FUN, "bitmapScanline", fun_bitmapScanline, "fun Bitmap Int Int Int Int BlendFunction -> Bitmap"},
+		{ NATIVE_FUN, "bitmapLine", fun_bitmapLine, "fun Bitmap Int Int Int Int Int BlendFunction -> Bitmap"},
+		{ NATIVE_FUN, "bitmapFillCircle", fun_bitmapFillCircle, "fun Bitmap Int Int Int Int Int BlendFunction -> Bitmap"},
+		{ NATIVE_FUN, "bitmapCircle", fun_bitmapCircle, "fun Bitmap Int Int Int Int Int BlendFunction -> Bitmap"},
+		{ NATIVE_FUN, "bitmapBlit", fun_bitmapBlit, "fun Bitmap Int Int Bitmap Int Int Int Int BlendFunction -> Bitmap"},
+		{ NATIVE_FUN, "bitmapColoredBlit", fun_bitmapColoredBlit, "fun Bitmap Int Int Bitmap Int Int Int Int BlendFunction Int BlendFunction -> Bitmap"},
+		{ NATIVE_FUN, "bitmapResize", fun_bitmapResize, "fun Bitmap Bitmap Bool -> Bitmap"},
+		{ NATIVE_FUN, "bitmapComponents", fun_bitmapComponents, "fun Bitmap Component Component Component Component -> Bitmap"},
+		{ NATIVE_FUN, "rgbFromYCrCb", fun_rgbFromYCrCb, "fun Int -> Int"},
+		{ NATIVE_FUN, "yCrCbFromRgb", fun_yCrCbFromRgb, "fun Int -> Int"},
+		{ NATIVE_FUN, "bitmapFromYCrCb", fun_bitmapFromYCrCb, "fun Bitmap -> Int"},
+		{ NATIVE_FUN, "bitmapToYCrCb", fun_bitmapToYCrCb, "fun Bitmap -> Int"},
+		{ NATIVE_FUN, "idct88", fun_idct88, "fun array Float -> array Float"},
+		{ NATIVE_FUN, "dct88", fun_dct88, "fun array Float -> array Float"},
+	};
+	NATIVE_DEF(nativeDefs);
 	return 0;
 }

@@ -11,7 +11,7 @@
 #ifndef _CORE_BIGNUM_
 #define _CORE_BIGNUM_
 
-#define BIGNUM_MAXWORDS 512
+#define BIGNUM_MAXWORDS 256
 
 typedef unsigned int uint;
 typedef unsigned long long ulonglong;
@@ -46,12 +46,10 @@ typedef struct
 LINT bignumEquals(bignum a, bignum b);
 LINT bignumStringHex(bignum b,char* dst);
 bignum bignumFromDec(char* src);
-bignum bignumFromHex(Thread* th, char* src);
+bignum bignumFromHex(char* src);
+int bignumDecToBuffer(bignum b, Buffer* buffer);
 
-int bignumToBuffer(Thread* th, bignum b, Buffer* buffer);
-int bignumToStr(Thread* th, bignum b, char* dest);
-
-LB* bigAlloc(Thread* th, bignum b0);
+LB* bigAlloc(bignum b0);
 //----------------------------------------
 
 #define _bignumGet(p,i) (bignum)STACK_PNT(p,i)
@@ -61,7 +59,7 @@ LB* bigAlloc(Thread* th, bignum b0);
 	bignum big=bigSrc;	\
 	if (!big) return EXEC_OM;	\
 	bigLen=sizeof(Bignum) - sizeof(LB) + sizeof(uint) * (((LINT)big->len) - 1);	\
-	bigResult=memoryAllocBin(th, (char*)&big->len, bigLen, DBG_B); if (!bigResult) return EXEC_OM;	\
+	bigResult=memoryAllocBin((char*)&big->len, bigLen, DBG_B); if (!bigResult) return EXEC_OM;	\
 	bignumRelease(big);	\
 	FUN_RETURN_PNT(bigResult);	\
 }
@@ -216,14 +214,14 @@ int name(Thread* th)	\
 	if ((!mod)||(!exp)||(!data)) FUN_RETURN_NIL;	\
 	len=ope(mod,exp,STR_START(data),STR_LENGTH(data),NULL);	\
 	if (!len) FUN_RETURN_NIL;	\
-	p=memoryAllocStr(th, NULL,len); if(!p) return EXEC_OM;	\
+	p=memoryAllocStr(NULL,len); if(!p) return EXEC_OM;	\
 	len=ope(mod,exp,STR_START(data),STR_LENGTH(data),STR_START(p));	\
 	if (!len) FUN_RETURN_NIL;	\
 	FUN_RETURN_PNT(p);	\
 }
 
 void coreBignumReset(void);
-int coreBignumInit(Thread* th, Pkg *system);
+int coreBignumInit(Pkg *system);
 
 
 #endif

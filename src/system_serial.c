@@ -66,7 +66,7 @@ int fun_serialOpen(Thread* th)
 	tcsetattr(fd, TCSANOW, &options);
 	PRINTF(LOG_SYS, "> Serial '%s' %d ready\n", STR_START(v), fd);
 	
-	socket=_socketCreate(th, fd); if (!socket) goto cleanup;
+	socket=_socketCreate(fd); if (!socket) goto cleanup;
 	
 	FUN_RETURN_PNT((LB*)socket);
 
@@ -150,7 +150,7 @@ int _serialForget(LB* p)
 void _serialMark(LB* user)
 {
 	Serial* f = (Serial*)user;
-	MEMORY_MARK(user, (LB*)f->socket);
+	MEMORY_MARK(f->socket);
 }
 
 MTHREAD_START _serialThread(void* param)
@@ -215,15 +215,15 @@ MTHREAD_START _serialThread(void* param)
 	return MTHREAD_RETURN;
 }
 
-Serial* _serialCreate(Thread* th, int slot, HANDLE hCom)
+Serial* _serialCreate(int slot, HANDLE hCom)
 {
 	Serial* f;
-	f = (Serial*)memoryAllocExt(th, sizeof(Serial), DBG_BIN, _serialForget, _serialMark); if (!f) return NULL;
+	f = (Serial*)memoryAllocExt(sizeof(Serial), DBG_BIN, _serialForget, _serialMark); if (!f) return NULL;
 	f->slot = slot;
 	SerialSlots[slot].running = 1;
 	lambdaPipe(SerialSlots[slot].pipe);
 	SerialSlots[slot].hCom = hCom;
-	f->socket = _socketCreate(th, SerialSlots[slot].pipe[PIPE_READ]); if (!f->socket) return NULL;
+	f->socket = _socketCreate(SerialSlots[slot].pipe[PIPE_READ]); if (!f->socket) return NULL;
 	hwThreadCreate(_serialThread, &SerialSlots[slot]);
 	return f;
 }
@@ -295,7 +295,7 @@ int fun_serialOpen(Thread* th)
 		goto cleanup;
 	}
 	PRINTF(LOG_SYS, "> Serial '%s' ready\n", STR_START(v));
-	FUN_RETURN_PNT((LB*)_serialCreate(th, slot, hCom));
+	FUN_RETURN_PNT((LB*)_serialCreate(slot, hCom));
 
 cleanup:
 	if (hCom) CloseHandle(hCom);
@@ -356,39 +356,32 @@ int fun_serialWrite(Thread* th) FUN_RETURN_NIL
 int fun_serialRead(Thread* th) FUN_RETURN_NIL
 int fun_serialSocket(Thread* th) FUN_RETURN_NIL
 #endif
-int sysSerialInit(Thread* th, Pkg* system)
+int sysSerialInit(Pkg* system)
 {
-	Def* Serial = pkgAddType(th, system, "Serial");
-	Def* Bits = pkgAddType(th, system, "SerialBits");
-	Def* Speed = pkgAddType(th, system, "SerialSpeed");
-	Def* Parity = pkgAddType(th, system, "Parity");
-	Def* Stop = pkgAddType(th, system, "Stop");
-	Type* fun_Serial_S = typeAlloc(th, TYPECODE_FUN, NULL, 2, Serial->type, MM.Str);
-	Type* fun_Serial_Socket = typeAlloc(th, TYPECODE_FUN, NULL, 2, Serial->type, MM.Socket);
-	Type* fun_Serial_Serial = typeAlloc(th, TYPECODE_FUN, NULL, 2, Serial->type, Serial->type);
-	Type* fun_Serial_S_I_I = typeAlloc(th, TYPECODE_FUN, NULL, 4, Serial->type, MM.Str, MM.Int, MM.Int);
-	Type* fun_S_Speed_Bits_I_I_Serial = typeAlloc(th, TYPECODE_FUN, NULL, 6, MM.Str, Speed->type, Bits->type, Parity->type, Stop->type, Serial->type);
-
-	pkgAddFun(th, system, "_serialOpen", fun_serialOpen, fun_S_Speed_Bits_I_I_Serial);
-	pkgAddFun(th, system, "_serialClose", fun_serialClose, fun_Serial_Serial);
-	pkgAddFun(th, system, "_serialWrite", fun_serialWrite, fun_Serial_S_I_I);
-	pkgAddFun(th, system, "_serialRead", fun_serialRead, fun_Serial_S);
-	pkgAddFun(th, system, "_serialSocket", fun_serialSocket, fun_Serial_Socket);
-
-	pkgAddConstInt(th, system, "SERIAL_8BITS", 8, Bits->type);
-	pkgAddConstInt(th, system, "SERIAL_7BITS", 7, Bits->type);
-
-	pkgAddConstInt(th, system, "SERIAL_115200", B115200, Speed->type);
-	pkgAddConstInt(th, system, "SERIAL_57600", B57600, Speed->type);
-	pkgAddConstInt(th, system, "SERIAL_38400", B38400, Speed->type);
-	pkgAddConstInt(th, system, "SERIAL_19200", B19200, Speed->type);
-
-	pkgAddConstInt(th, system, "SERIAL_ONESTOPBIT", 0, Stop->type);
-	pkgAddConstInt(th, system, "SERIAL_TWOSTOPBITS", 2, Stop->type);
-
-	pkgAddConstInt(th, system, "SERIAL_NOPARITY", 0, Parity->type);
-	pkgAddConstInt(th, system, "SERIAL_ODDPARITY", 1, Parity->type);
-	pkgAddConstInt(th, system, "SERIAL_EVENPARITY", 2, Parity->type);
+	static const Native nativeDefs[] = {
+		{ NATIVE_FUN, "_serialOpen", fun_serialOpen, "fun Str SerialSpeed SerialBits Parity Stop -> Serial"},
+		{ NATIVE_FUN, "_serialClose", fun_serialClose, "fun Serial -> Serial" },
+		{ NATIVE_FUN, "_serialWrite", fun_serialWrite, "fun Serial Str Int -> Int" },
+		{ NATIVE_FUN, "_serialRead", fun_serialRead, "fun Serial -> Str" },
+		{ NATIVE_FUN, "_serialSocket", fun_serialSocket, "fun Serial -> Socket" },
+		{ NATIVE_INT, "SERIAL_8BITS", (void*)8, "SerialBits" },
+		{ NATIVE_INT, "SERIAL_7BITS", (void*)7, "SerialBits" },
+		{ NATIVE_INT, "SERIAL_115200", (void*)B115200, "SerialSpeed" },
+		{ NATIVE_INT, "SERIAL_57600", (void*)B57600, "SerialSpeed" },
+		{ NATIVE_INT, "SERIAL_38400", (void*)B38400, "SerialSpeed" },
+		{ NATIVE_INT, "SERIAL_19200", (void*)B19200, "SerialSpeed" },
+		{ NATIVE_INT, "SERIAL_ONESTOPBIT", (void*)0, "Stop" },
+		{ NATIVE_INT, "SERIAL_TWOSTOPBITS", (void*)2, "Stop" },
+		{ NATIVE_INT, "SERIAL_NOPARITY", (void*)0, "Parity" },
+		{ NATIVE_INT, "SERIAL_ODDPARITY", (void*)1, "Parity" },
+		{ NATIVE_INT, "SERIAL_EVENPARITY", (void*)2, "Parity" },
+	};
+	pkgAddType(system, "Serial");
+	pkgAddType(system, "SerialBits");
+	pkgAddType(system, "SerialSpeed");
+	pkgAddType(system, "Parity");
+	pkgAddType(system, "Stop");
+	NATIVE_DEF(nativeDefs);
 
 #ifdef USE_SERIAL_WIN
 	{

@@ -18,7 +18,7 @@
 
 void systemCleanDir(char* p);
 void systemRemoveLast(char* p);
-void systemMainDir(char* path, int len, int argc, char** argv);
+void systemMainDir(char* path, int len, const char* argv0);
 void systemUserDir(char* userDir, int len);
 void systemCurrentDir(char* curDir, int len);
 
@@ -33,11 +33,11 @@ int ansiCreateDirs(char* filename);
 int ansiFileDelete(char* path);
 int ansiDirDelete(char* path);
 
-LB* ansiReadContent(Thread* th, char* path, int* size);
-LINT ansiDirectoryList(Thread* th, Buffer* out, char* dir);
+LB* ansiReadContent(char* path, int* size);
+LINT ansiDirectoryList(Buffer* out, char* dir);
 int ansiVolumeList(Thread* th, int* n);
 void ansiHelpBiosFinder(void);
-int ansiFsMount(Thread* th, int argc, char** argv, int standalone);
+int ansiFsMount(const char* argv0, int standalone);
 void ansiFsInit(void);
 void ansiFsRelease(void);
 
@@ -51,32 +51,32 @@ LINT uefiFileRead(void* file, char* start, LINT len);
 int uefiFileDelete(int index, char* path);
 int uefiDirDelete(int index, char* path);
 
-LB* uefiReadContent(Thread* th, int index, char* path, int* size);
-LINT uefiDirectoryList(Thread* th, int index, Buffer* out, char* dir);
+LB* uefiReadContent(int index, char* path, int* size);
+LINT uefiDirectoryList(int index, Buffer* out, char* dir);
 int uefiVolumeList(Thread* th, int* n);
-int uefiFsMount(Thread* th, int argc, char** argv, int standalone);
+int uefiFsMount(int standalone);
 void uefiFsInit(void);
 void uefiFsRelease(void);
 
 int romdiskVolumeList(Thread* th, int* n);
-LB* romdiskReadContent(Thread* th, int romdiskId, char* path, int* size);
-LINT romdiskDirectoryList(Thread* th, int romdiskId, Buffer* out, char* dir);
+LB* romdiskReadContent(int romdiskId, char* path, int* size);
+LINT romdiskDirectoryList(int romdiskId, Buffer* out, char* dir);
 int romdiskImport(char* src, LINT len);
-int romdiskMount(Thread* th, int argc, char** argv, int standalone);
+int romdiskMount(int standalone);
 void romdiskReleaseUserDisk(void);
 void romdiskInit(void);
 void romdiskRelease(void);
 
-void _fsAddFileInfo(Thread* th, Buffer* out, char* path, LINT len, char* tmpAttr);
-LB* fsReadPackage(Thread* th, char* pkg, int* size, int verbose);
+void _fsAddFileInfo(Buffer* out, char* path, LINT len, char* tmpAttr);
+LB* fsReadPackage(char* pkg, int* size, int verbose);
 
 int _partitionAdd(LB* type, LINT index, char* physicalPath);
-int _volumeList(Thread* th, char* name, LB* type, LINT index, int writable);
+int _volumeList(Thread* th, LB* type, LINT index, int writable);
 int volumeList(Thread* th);
 
 char* fsCurrentDir(void);
 char* fsUserDir(void);
-int fsMount(Thread* th, int argc, char** argv, int standalone);
+int fsMount(const char* argv0, int standalone);
 void fsInit(void);
 void fsRelease(void);
 

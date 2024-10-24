@@ -10,7 +10,6 @@
    with this program. If not, see <https://www.gnu.org/licenses/>. */
 
 use core.crypto.pem;;
-use core.crypto.rsa;;
 use core.crypto.sign;;
 use core.crypto.oid;;
 use core.crypto.asn1;;
@@ -106,13 +105,14 @@ fun _x509ExtExtract h ext=
 	-> value in hashmapSet h field strJoin OID_SEP value;;
 
 
-fun cerFromAsn1 asn1=
+fun cerFromAsn1 info asn1=
 //	asn1Echo "" asn1;
 	let hashmapCreate 4 -> h in
 	let listFromAsn1 asn1 ->(certificateInfo:signatureAlgorithm:signature:_) in
 	let cerDefaultVersion certificateInfo-> certificateInfo in
 	let listFromAsn1 certificateInfo -> (version:serial:signatureAlgorithm2:issuer:times:subject:pkInfo:ext:_) in
 	(
+		hashmapSet h OID_INFO hexFromStr info;
 		hashmapSet h "VERSION" decFromInt 1+intFromAsn1 head listFromAsn1 version;
 		hashmapSet h "SERIAL" hexFromStr strFromAsn1 serial;
 		hashmapSet h OID_ISSUER subjectFromAsn1 issuer;
@@ -154,7 +154,7 @@ fun cerCheckByAuth certificate certAuth=
 //	dump certAuth;
 //	dump oidHashmapSIGNALGO certificate;
 	if certAuth<>nil then
-	signatureCheck (rsaSignAlgoByOID oidHashmapSIGNALGO certificate) certAuth (strFromHex oidHashmapINFO certificate) (strFromHex oidHashmapSIGNATURE certificate);;
+	signatureCheckFromCertificate (signAlgoByOID oidHashmapSIGNALGO certificate) certAuth (strFromHex oidHashmapINFO certificate) (strFromHex oidHashmapSIGNATURE certificate);;
 
 fun rootCertificateRegister cer=
 	if !cerCheckTime cer time then (
@@ -170,7 +170,7 @@ fun _cerCheckChain hChain t0 cer =
 	let oidHashmapISSUER cer -> issuer in
 	let hashmapGet _RootCertificates issuer -> root in
 	if cerCheckByAuth cer root then (
-	if _DEBUG then echoLn ["--find root " issuer];
+		if _DEBUG then echoLn ["--find root " issuer];
 		nil
 	)
 	else 
@@ -202,3 +202,4 @@ fun cerByServerName serverName lCertificates=
 
 fun cerKeyIsRSA cer = (oidHashmapENCRYPTION cer)==OID_rsaEncryption;;
 fun cerKeyIsEC cer = (oidHashmapENCRYPTION cer)==OID_ecPublicKey;;
+

@@ -38,15 +38,15 @@ void termWrite(int mask, char* src, LINT len);
 void termPrintfv(int mask,char *format,va_list arglist);
 void termPrintf(int mask, char* format, ...);
 
-void itemDump(Thread* th, int mask,LW v, int type);
-void itemDumpDirect(Thread* th, int mask,LW v, int type);
+void itemDump(int mask,LW v, int type);
+void itemDumpDirect(int mask,LW v, int type);
 void threadDump(int mask,Thread* th,LINT n);
-void itemEcho(Thread* th, int mask, LW v, int type, int ln);
-void itemHeader(Thread* th, int mask,LB* p);
+void itemEcho(int mask, LW v, int type, int ln);
+void itemHeader(int mask,LB* p);
 
-void termEchoSourceLine(Pkg* pkg, Thread* th, int mask,char* srcName, char* src, int index);
+void termEchoSourceLine(Pkg* pkg, int mask,char* srcName, char* src, int index);
 
-void _hexDump(Thread* th, int mask, char* src, LINT len, LINT offsetDisplay);
+void _hexDump(int mask, char* src, LINT len, LINT offsetDisplay);
 #define PRINTF termPrintf
 
 #endif

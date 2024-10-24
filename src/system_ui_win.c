@@ -223,7 +223,7 @@ int uiReleasekey(int scan)
 }
 
 
-int KeyCodes[160] =
+const int KeyCodes[160] =
 {
 0,0,0,0,0,0,0,0, /*0.*/
 0,0,0,0,0,0,0,0,
@@ -742,7 +742,7 @@ int fun_cursorCreate(Thread* th)
 			if (color&0xff0000) txor[(i >> 3) + ((w + 7) >> 3) * j] |= 128 >> (i & 7);
 		}
 	hc = CreateCursor(UI.thisInstance,(int)xhot, (int)yhot, w, h, tand, txor);
-	d = (Cursor*)memoryAllocExt(th, sizeof(Cursor), DBG_BIN, _cursorForget, NULL);
+	d = (Cursor*)memoryAllocExt(sizeof(Cursor), DBG_BIN, _cursorForget, NULL);
 	if (!d) {
 		DestroyCursor(hc);
 		return EXEC_OM;
@@ -810,7 +810,7 @@ int fun_nativeFontCreate(Thread* th)
 		(flags & FONT_UNDERLINE) ? 1 : 0, (flags & FONT_STRIKED) ? 1 : 0,
 		DEFAULT_CHARSET, 0, 0, 0, 0, STR_START(name));
 	if (!hfont) FUN_RETURN_NIL;
-	f = (NativeFont*)memoryAllocExt(th, sizeof(NativeFont), DBG_BIN, _nativeFontForget, NULL);
+	f = (NativeFont*)memoryAllocExt(sizeof(NativeFont), DBG_BIN, _nativeFontForget, NULL);
 	if (!f) {
 		DeleteObject(hfont);
 		return EXEC_OM;
@@ -961,7 +961,7 @@ int fun_nativeFontList(Thread* th)
 	return 0;
 }
 
-int coreUiHwInit(Thread* th, Pkg* system)
+int coreUiHwInit(Pkg* system)
 {
 	UI.thisInstance = GetModuleHandle(NULL);
 	UI.classRegistered = 0;

@@ -11,5 +11,5 @@
 #ifndef _SYSTEM_AUDIO_
 #define _SYSTEM_AUDIO_
 
-int coreAudioInit(Thread* th, Pkg* system);
+int coreAudioInit(Pkg* system);
 #endif

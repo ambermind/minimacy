@@ -648,7 +648,7 @@ const BOOT_FIELDS_FAT32=
 	4:2:2:4:2:2:12:1:1:1:4:	//0x24 - 0x47 : DOS 7.1 EBPB		
 	nil;;
 
-fun _partitionInitFat32 bootSector partitionStart fRead fWrite=
+fun _partitionInitFat32 bootSector partitionStart volume=
 	let _intParser bootSector 0 BOOT_FIELDS_FAT32 -> 
 		jmp:_:bytesPerSector:sectorsPerCluster:reservedSectors:	// 0x00 - 0x10
 		numberOfFats:rootDirEntries:_:mediaDescriptor:_:	// 0x10 - 0x18
@@ -669,9 +669,9 @@ fun _partitionInitFat32 bootSector partitionStart fRead fWrite=
 		cacheDirP= (hashmapCreate CACHE_LOG_DIR)
 		lockP=lockCreate
 	] -> p in (
-		set p.fReadP= (lambda sector nbSectors = call fRead partitionStart+sector nbSectors);
+		set p.fReadP= (lambda sector nbSectors = call volume.fReadV partitionStart+sector nbSectors);
 		set p.fWriteP= (lambda sector data offset nbSectors=
-			(nbSectors*bytesPerSector)==call fWrite partitionStart+sector data offset nbSectors
+			(nbSectors*bytesPerSector)==call volume.fWriteV partitionStart+sector data offset nbSectors
 		);
 		let listFind (_partitionDir p "") (lambda d= isVolumeName d) -> d in
 		if d<>nil then set p.volumeLabelP=d.fullNameDF;
@@ -685,7 +685,7 @@ const BOOT_FIELDS_EFI=
 	8:4:4:4:
 	nil;;
 
-fun _partitionEfiLoop fRead fWrite partitionData partitionCount partitionSize i=
+fun _partitionEfiLoop volume partitionData partitionCount partitionSize i=
 	if i<partitionCount then
 	let bytesSlice partitionData i*partitionSize partitionSize -> data in
 	let _intParser data 32 8:8:8:nil -> 
@@ -693,33 +693,33 @@ fun _partitionEfiLoop fRead fWrite partitionData partitionCount partitionSize i=
 	let if firstLba<>0 then (
 //		hexDump data;
 //		dump firstLba:lastLba:attributes:nil;
-		_partitionInit fRead fWrite firstLba lastLba+1-firstLba
+		_partitionInit volume firstLba lastLba+1-firstLba
 	 ) -> p in
-	listConcat p _partitionEfiLoop fRead fWrite partitionData partitionCount partitionSize i+1;;
+	listConcat p _partitionEfiLoop volume partitionData partitionCount partitionSize i+1;;
 
-fun _partitionInitEFI fRead fWrite bootSector=
+fun _partitionInitEFI volume bootSector=
 	echoLn strFormat "-> found EFI partitioning";
 	let _intParser bootSector 0 BOOT_FIELDS_EFI -> 
 		_:revision:headerSize:headerCrc32:_:
 		currentLba:backupLba:firstUsableLba:lastUsableLba:_:
 		partitionListLba:partitionCount:partitionSize:partitionCrc:_ in
-	let call fRead partitionListLba (partitionCount*partitionSize+SECTOR_SIZE-1)/SECTOR_SIZE -> partitionData in
-	_partitionEfiLoop fRead fWrite partitionData partitionCount partitionSize 0;;
+	let call volume.fReadV partitionListLba (partitionCount*partitionSize+SECTOR_SIZE-1)/SECTOR_SIZE -> partitionData in
+	_partitionEfiLoop volume partitionData partitionCount partitionSize 0;;
 
-fun _partitionInit fRead fWrite partitionStart partitionLength=
-	let call fRead partitionStart 1 -> bootSector in
-	if partitionStart==1 && (bytesSliceOfStr bootSector 0 8)=="EFI PART" then _partitionInitEFI fRead fWrite bootSector
+fun _partitionInit volume partitionStart partitionLength=
+	let call volume.fReadV partitionStart 1 -> bootSector in
+	if partitionStart==1 && (bytesSliceOfStr bootSector 0 8)=="EFI PART" then _partitionInitEFI volume bootSector
 	else
 	let bytesRead16Lsb bootSector 510 -> magic in
 	if magic==0xaa55 then
-	if (bytesSliceOfStr bootSector 0x52 8)== "FAT32   " then _partitionInitFat32 bootSector partitionStart fRead fWrite;;
+	if (bytesSliceOfStr bootSector 0x52 8)== "FAT32   " then _partitionInitFat32 bootSector partitionStart volume;;
 
-fun storageInit fRead fWrite=
-	let call fRead 0 1 -> mbr in
+fun storageInit volume=
+	let call volume.fReadV 0 1 -> mbr in
 	let bytesRead16Lsb mbr 510 -> magic in
 	if magic==0xaa55 then
 	if (bytesSliceOfStr mbr 0x36 3)=="FAT" || (bytesSliceOfStr mbr 0x52 3)=="FAT" then (	// only one partition
-		_partitionInit fRead fWrite 0 nil
+		_partitionInit volume 0 nil
 	)
 	else listReduce 0:1:2:3:nil nil (lambda result number =
 		let 0x01BE+number*16 -> offset in
@@ -727,7 +727,7 @@ fun storageInit fRead fWrite=
 		let bytesRead32Lsb mbr offset+12 -> partitionLength in
 		if partitionStart<>0 && partitionLength<>0 then (
 			echoLn strFormat "> check partition *" number;
-			let _partitionInit fRead fWrite partitionStart partitionLength -> partition in
+			let _partitionInit volume partitionStart partitionLength -> partition in
 			if partition<>nil then listConcat partition result
 			else (
 				echoLn "-> partition not supported";
@@ -737,14 +737,11 @@ fun storageInit fRead fWrite=
 		else result
 	);;
 
-fun _mkPartition p name index writable mount root = 
+fun _mkPartition volume p writable = 
 [
-	nameP=name
-	typeP=sdVolume
-	indexP=index
+	volumeP=volume
+	nameP=p.volumeLabelP
 	writableP=writable
-	mountP=mount
-	rootP=root
 	openP=(lambda path mode = lockSync p.lockP (lambda =
 		cacheCheck p;
 		if (!_writeRequired mode) || writable then 
@@ -768,56 +765,9 @@ fun _mkPartition p name index writable mount root =
 ];;
 
 fun storageMount volumeType fRead fWrite writable mount root=
-	let storageInit fRead fWrite -> partitions in
-	let fifoCreate -> fifo in (
-		listReduce (listReverse partitions) 0 (lambda index p=
-			volumeCreate p.volumeLabelP volumeType index writable;
-			fifoIn fifo partitionAdd _mkPartition p p.volumeLabelP index writable mount root;
-			index+1
-		);
-		fifoList fifo
+	let fsAddVolume volumeType nil writable fRead fWrite nil nil -> volume in
+	let storageInit volume -> partitions in
+	listMap (listReverse partitions) (lambda p=
+		let volumeAddPartition volume (_mkPartition volume p writable) -> partition in
+		partitionMount partition writable mount root
 	);;
-
-//------------------------------------------------------------------------------------
-
-//#ifndef storageRead
-
-////------------ simulated sd card reader
-//const SRC="sdpi3.img";;
-////const SRC="hdimage.gpt";;
-//const Data=bytesFromStr load SRC;;
-
-//fun storageRead id buffer offset sector nbSectors= 
-////	echoLn strFormat "======read * sectors from * (*)" nbSectors start (hexFromInt start*SECTOR_SIZE);
-//	let nbSectors*SECTOR_SIZE -> len in
-//	if offset>=0 && offset+len<=bytesLength buffer then
-//	if sector>=0 && (sector*SECTOR_SIZE+len)<=bytesLength Data then (
-//		bytesCopyBytes buffer offset Data sector*SECTOR_SIZE nbSectors*SECTOR_SIZE;
-//		nbSectors*SECTOR_SIZE
-//	);;
-
-//fun storageWrite id buffer offset sector nbSectors= 
-////	echoLn strFormat "======read * sectors from * (*)" nbSectors start (hexFromInt start*SECTOR_SIZE);
-//	let nbSectors*SECTOR_SIZE -> len in
-//	if offset>=0 && offset+len<=bytesLength buffer then
-//	if sector>=0 && (sector*SECTOR_SIZE+len)<=bytesLength Data then (
-//		bytesCopyBytes Data sector*SECTOR_SIZE buffer offset nbSectors*SECTOR_SIZE;
-//		nbSectors*SECTOR_SIZE
-//	);;
-//#endif	
-
-fun _mkFread fRead id = 
-	lambda sector nbSectors=
-		let bytesCreate SECTOR_SIZE*nbSectors 0 -> buffer in
-		let call fRead id buffer 0 sector nbSectors -> len in
-		bytesSlice buffer 0 len;;
-
-fun _mkFwrite fWrite id = 
-	lambda sector data offset nbSectors= call fWrite id data offset sector nbSectors;;
-
-extend VolumeType with sdVolume;;
-
-fun sdMount fRead fWrite =
-	storageMount sdVolume (_mkFread fRead 0) (_mkFwrite fWrite 0) true "" "/";;
-
-

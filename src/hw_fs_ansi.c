@@ -28,12 +28,12 @@
 #endif
 
 #ifdef USE_FS_SYSTEMDIR_STUB
-void systemMainDir(char* path, int len, int argc, char** argv) { path[0] = 0; }
+void systemMainDir(char* path, int len, const char* argv0) { path[0] = 0; }
 void systemCurrentDir(char* path, int len) { path[0] = 0; }
 void systemUserDir(char* path, int len) { path[0] = 0; }
 #endif
 #ifdef USE_FS_SYSTEMDIR_WINDOWS
-void systemMainDir(char* path, int len, int argc, char** argv)
+void systemMainDir(char* path, int len, const char* argv0)
 {
 	GetModuleFileNameA(NULL, path, len);
 	systemCleanDir(path);
@@ -56,7 +56,7 @@ void systemUserDir(char* userDir, int len)
 }
 #endif
 #ifdef USE_FS_SYSTEMDIR_UNIX
-int systemCheckFile(char* execpath, int len, char* argv0)
+int systemCheckFile(char* execpath, int len, const char* argv0)
 {
 	char realp[1024];
 	char* p;
@@ -79,7 +79,7 @@ int systemCheckFile(char* execpath, int len, char* argv0)
 	return 0;
 }
 
-int _systemExecPath(char* execpath, int len, char* argv0)
+int _systemExecPath(char* execpath, int len, const char* argv0)
 {
 	char* envpath;
 	int i,j;
@@ -106,7 +106,7 @@ int _systemExecPath(char* execpath, int len, char* argv0)
 	}
 	return -1;
 }
-void systemMainDir(char* path, int len,int argc, char** argv)
+void systemMainDir(char* path, int len, const char* argv0)
 {
 	// https://stackoverflow.com/questions/933850/how-do-i-find-the-location-of-the-executable-in-c
 	ssize_t result = readlink("/proc/self/exe", path, len); // linux
@@ -114,7 +114,7 @@ void systemMainDir(char* path, int len,int argc, char** argv)
 	if (result < 0) result = readlink("/proc/self/path/a.out", path, len); // solaris
 	path[(result < 0) ? 0 : result] = 0;
 // on Mac we need to search further, from the current directory and from the PATH environment value
-	if (result <0 && argc>0) result=_systemExecPath(path,len,argv[0]);
+	if (result <0 && argv0) result=_systemExecPath(path,len,argv0);
 	if (result<0) {
 		path[0]=0;
 		return;
@@ -206,7 +206,7 @@ LINT ansiFileRead(void* file, char* start, LINT len)
 	return res;
 }
 
-LB* ansiReadContent(Thread* th, char* path, int* size)
+LB* ansiReadContent(char* path, int* size)
 {
 	LB* p;
 	char* data;
@@ -215,7 +215,7 @@ LB* ansiReadContent(Thread* th, char* path, int* size)
 	//	PRINTF(LOG_DEV,"try open %s\n", path);
 	if (file == NULL) return NULL;
 	sz = ansiFileSize(file);
-	p = memoryAllocStr(th, NULL, sz); if (!p) return NULL;
+	p = memoryAllocStr(NULL, sz); if (!p) return NULL;
 	data = STR_START(p);
 	sz=(int)fread((void*)data, 1, sz, file);
 	data[sz] = 0;
@@ -225,7 +225,7 @@ LB* ansiReadContent(Thread* th, char* path, int* size)
 }
 
 #ifdef USE_FS_ANSI_WIN
-LINT ansiDirectoryList(Thread* th, Buffer* out, char* dir)	// we expect dir to end with '/'
+LINT ansiDirectoryList(Buffer* out, char* dir)	// we expect dir to end with '/'
 {
 	char search[MAX_PATH + 2];
 	char tmpAttr[32];
@@ -240,7 +240,7 @@ LINT ansiDirectoryList(Thread* th, Buffer* out, char* dir)	// we expect dir to e
 	{
 //		PRINTF(LOG_DEV, "filename: %s\n", fileinfo.name);
 		snprintf(tmpAttr, 32, LSX" "LSX" %c", (LINT)fileinfo.size, (LINT)fileinfo.time_write, (fileinfo.attrib & _A_SUBDIR) ? 'd' : '-');
-		_fsAddFileInfo(th, out, fileinfo.name, -1, tmpAttr);
+		_fsAddFileInfo(out, fileinfo.name, -1, tmpAttr);
 
 		res = _findnext(h, &fileinfo);
 	}
@@ -266,7 +266,7 @@ int ansiDirDelete(char* path)
 }
 #endif
 #ifdef USE_FS_ANSI_UNIX
-LINT ansiDirectoryList(Thread* th, Buffer* out, char* dir)	// we expect dir to end with '/'
+LINT ansiDirectoryList(Buffer* out, char* dir)	// we expect dir to end with '/'
 {
 	char search[MAX_PATH + 2];
 	char tmpAttr[32];
@@ -284,7 +284,7 @@ LINT ansiDirectoryList(Thread* th, Buffer* out, char* dir)	// we expect dir to e
 		snprintf(candidate, MAX_PATH, "%s%s", dir, dp->d_name);
 		stat(candidate, &info);
 		snprintf(tmpAttr, 32, LSX" "LSX" %c", (LINT)info.st_size, (LINT)info.st_mtime, S_ISDIR(info.st_mode) ? 'd' : '-');
-		_fsAddFileInfo(th, out, dp->d_name, -1, tmpAttr);
+		_fsAddFileInfo(out, dp->d_name, -1, tmpAttr);
 	}
 	closedir(d);
 	return 0;
@@ -334,7 +334,7 @@ int ansiCreateDirs(char* filename)
 
 int ansiVolumeList(Thread* th, int* n)
 {
-	if (_volumeList(th, "Ansi", MM.ansiVolume, 0, 1)) return EXEC_OM;
+	if (_volumeList(th, MM.ansiVolume, 0, 1)) return EXEC_OM;
 	(*n)++;
 	return 0;
 }
@@ -349,13 +349,13 @@ void ansiHelpBiosFinder(void)
 	PRINTF(LOG_USER, "On some Unix system such as Macos commandline target, Minimacy may encounter trouble to get its actual path. Then you may launch the Minimacy executable providing its absolute path.\n");
 }
 
-int ansiFsMount(Thread* th, int argc, char** argv, int standalone)
+int ansiFsMount(const char* argv0, int standalone)
 {
 #ifndef BOOT_SKIP_FS_ANSI
 	char MinimacyDir[MAX_PATH + 2];
 
 	strcpy(MinimacyDir, "");
-	systemMainDir(MinimacyDir, MAX_PATH, argc, argv);
+	systemMainDir(MinimacyDir, MAX_PATH, argv0);
 	PRINTF(LOG_SYS, "> Minimacy directory       : %s\n", MinimacyDir);
 	snprintf(MinimacyDir+strlen(MinimacyDir), MAX_PATH-strlen(MinimacyDir), "rom/");
 	_partitionAdd(MM.ansiVolume, 0, MinimacyDir);

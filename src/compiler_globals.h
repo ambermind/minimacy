@@ -23,10 +23,10 @@ struct Globals
 	struct Globals* next;
 };
 
-Globals* globalsCreate(Thread* th, LB* data, Globals* next);
+Globals* globalsCreate(LB* data, Globals* next);
 LINT globalsGet(Globals* globals,LB* data);
 LINT globalsNb(Globals* globals);
 
-int globalsExtract(Thread* th, Globals* globals, LB** result);
+int globalsExtract(Globals* globals, LB** result);
 
 #endif

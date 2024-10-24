@@ -11,7 +11,7 @@
 #ifndef _PARSER_
 #define _PARSER_
 
-int parserFromData(Compiler* p, char* name,char *data);
+int parserFromData(Compiler* p, char* name, LB* data);
 Type* parserFromIncludes(Compiler* c, char* name);
 
 int parserNextchar(Compiler* p);

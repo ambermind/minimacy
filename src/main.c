@@ -13,11 +13,12 @@
 int boot(void)
 {
 	Thread* th = MM.scheduler;
-	LB* src = fsReadPackage(th, BOOT_FILE, NULL, 0);
+	LB* src = fsReadPackage(BOOT_FILE, NULL, 0);
+//	LB* src = fsReadPackage("listDefs", NULL, 0);
 	if (!src)
 	{
 		PRINTF(LOG_USER, "\n> Error: boot file '%s"SUFFIX_CODE"' not found\n", BOOT_FILE);
-		fsReadPackage(th, BOOT_FILE, NULL, 1);
+		fsReadPackage(BOOT_FILE, NULL, 1);
 #ifdef USE_FS_ANSI
 		ansiHelpBiosFinder();
 #endif
@@ -25,11 +26,10 @@ int boot(void)
 	}
 	FUN_PUSH_PNT(src);
 	FUN_PUSH_NIL;
-	FUN_PUSH_NIL;
 	return 0;
 }
 
-int start(int argc, char** argv)
+int start(int argc, const char** argv)
 {
 	int i;
 	int standalone = 1;
@@ -41,7 +41,7 @@ int start(int argc, char** argv)
 
 	for (i = 0; i < argc; i++)
 	{
-		char* arg = argv[i];
+		const char* arg = argv[i];
 		if ((!strcmp(arg, "-h"))|| (!strcmp(arg, "-?")) || (!strcmp(arg, "--help")))
 		{
 			termSetMask(LOG_ALL);
@@ -95,15 +95,15 @@ int start(int argc, char** argv)
 		goto cleanup;
 	}
 #ifdef USE_MEMORY_C
+//	bmmSetTotalSize(270* 1024);
 	cMallocInit();
 #endif
 	fsInit();
-	bytecodeInit();
 	if (hwInit()) goto cleanup;
 	do
 	{
 		memoryInit(argc,argv);
-		if (fsMount(NULL, argc, argv, standalone)) goto cleanup;
+		if (fsMount(argc?argv[0]:NULL, standalone)) goto cleanup;
 		if (boot())
 		{
 			memoryEnd();
@@ -131,15 +131,15 @@ cleanup:
 #endif
 	return 0;
 }
+#ifdef GROUP_UNIX
 int MTargc=0;
-char** MTargv=NULL;
+const char** MTargv=NULL;
 MTHREAD_START startThread(void* custom)
 {
-	start(MTargc,MTargv);
+	start(MTargc,(const char**)MTargv);
 	return MTHREAD_RETURN;
 }
-#ifdef GROUP_UNIX
-int startInThread(int argc, char** argv)
+int startInThread(int argc, const char** argv)
 {
 //    PRINTF(LOG_DEV,"sigpipe main thread\n");
 	signal(SIGPIPE,SIG_IGN);
@@ -150,8 +150,9 @@ int startInThread(int argc, char** argv)
 }
 #endif
 #if defined ON_UNIX || defined ON_MACOS_CMDLINE || defined ON_RPIOS
-int main(int argc, char** argv)
+int main(int argc, const char** argv)
 {
+	signal(SIGPIPE,SIG_IGN);
 	return start(argc,argv);
 }
 #endif

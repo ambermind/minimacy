@@ -10,6 +10,8 @@
    with this program. If not, see <https://www.gnu.org/licenses/>. */
 
 struct EllipticCurve=[_name _P _A _B _G _N _cofactor _muP _muN _add _Y2 _byteLength];;
+struct EcKey=[_curveEK _pubEK _privEK];;	// public key is a point, private key is a scalar
+
 // http://www.hyperelliptic.org/EFD/index.html
 
 // secp256k1 refers to the parameters of the elliptic curve used in Bitcoin's public-key cryptography
@@ -178,59 +180,69 @@ fun ecPointFromStr str =
 
 
 //------- KEYPAIR
-// generate a keypair for ecdh or ecdsa. Compute a random key if privAlice is nil
-fun ecKeyPair ec privAlice=
-	let if privAlice==nil then ecRandom ec else privAlice -> privAlice in
-	let ecMul ec privAlice ec._G -> pubAlice in
-	[privAlice pubAlice];;
 
-// generate a keypair for ecdh or ecdsa with privAlice and pubAlice being binary strings
-fun ecKeyPairStr ec privAlice=
-	let ecKeyPair ec if privAlice<>nil then bigFromStr privAlice -> [privAlice pubAlice] in
-	[(strFromBig privAlice ec._byteLength) ecStrFromPoint ec pubAlice];;
+fun ecKeyDump key=
+	let key._pubEK -> [x y] in	(
+		echoLn  "EC KEY :";
+		echoLn ["curve  : " ecName key._curveEK];
+		echoLn ["privKey: " hexFromBig key._privEK];
+		echoLn ["pubKey : " hexFromBig x];
+		echoLn ["       : " hexFromBig y];
+		key
+	);;
+
+// create an ec public key from a string ec point
+fun ecKeyFromPublic ec pubKey= [_curveEK=ec _pubEK=ecPointFromStr pubKey];;
+
+// create an ec key from a private key
+fun ecKeyFromPrivate ec privKey=
+	let ecMul ec privKey ec._G -> pubKey in
+	[_curveEK=ec _pubEK=pubKey _privEK=privKey];;
+
+// create an ec key by computing a random private key
+fun ecCreateKey ec =
+	if !randomHardware then echoLn "> Warning: generate EC key with pure software pseudorandom generator";
+	ecKeyFromPrivate ec (ecRandom ec);;
 
 // get the public key to communicate to Bob
-fun ecKeyPub keyAlice = let keyAlice -> [_ pubAlice] in pubAlice;;
+fun ecKeyPub key = key._pubEK;;
+fun ecKeyPubStr key = ecStrFromPoint key._curveEK key._pubEK;;
 
-
+fun ecIsPrivate key= key._privEK<>nil;;
 
 //------- ECDH
 
 // mix Alice Key with Bob public key to generate the shared secret
-fun ecEcdh ec keyAlice pubBob = let keyAlice -> [privAlice _] in ecMul ec privAlice pubBob;;
+fun ecEcdh keyAlice pubBob = 
+	ecMul keyAlice._curveEK keyAlice._privEK pubBob;;
 
-// idem with keyAlice and pubBob being binary strings
-fun ecEcdhStr ec keyAlice pubBob =
-	let keyAlice -> [privAlice _] in
-	let ecMul ec (bigFromStr privAlice) (ecPointFromStr pubBob) -> [x _] in
+// idem with pubBob and result being binary strings
+fun ecEcdhStr keyAlice pubBob =
+	let keyAlice._curveEK -> ec in
+	let ecMul ec keyAlice._privEK (ecPointFromStr pubBob) -> [x _] in
 	strFromBig x ec._byteLength;;
-
-
 
 //------- ECDSA
 
 // sign a message
-fun ecSign ec keyAlice msg fHash=
+fun ecSign key msg fHash=
+	let key._curveEK -> ec in
 \modBarrett ec._N ec._muN
-	let keyAlice -> [privAlice _] in
 	let (bigFromStr call fHash msg) % -> h in
 	let ecRandom ec -> k in
 	let ecMul ec k ec._G -> R in
 	let R -> [x y] in let x % -> r in
-	let (h+r*privAlice)/k
+	let (h+r*key._privEK)/k
 	-> s in
 	[r s];;
 
 // verify a signature
-fun ecVerify ec kPublic sign msg fHash=
+fun ecVerify key sign msg fHash=
+	let key._curveEK -> ec in
 \modBarrett ec._N ec._muN
 	let sign -> [r s] in
 	let (bigFromStr call fHash msg) % -> h in
 	let bigInv s ec._N -> w in
-	let ecAdd ec (ecMul ec h ecMul ec w ec._G) (ecMul ec r ecMul ec w kPublic) -> [a b] in
+	let ecAdd ec (ecMul ec h ecMul ec w ec._G) (ecMul ec r ecMul ec w key._pubEK) -> [a b] in
 	let a %-> rr in	// must be equal to r
 	r == rr;;
-
-fun ecVerifyStr ec pubKey signX signY msg fHash=
-	let ecPointFromStr strFromHex pubKey -> kPublic in
-	ecVerify ec kPublic [signX signY] msg fHash;;

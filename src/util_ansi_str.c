@@ -11,13 +11,13 @@
 #include"minimacy.h"
 #ifdef USE_STR_C
 
-LINT cStrlen(char* p)
+LINT cStrlen(const char* p)
 {
 	LINT i = 0;
 	while (*(p++)) i++;
 	return i;
 }
-int cStrcmp(char* p, char* q) {
+int cStrcmp(const char* p, const char* q) {
 	while (1) {
 		char a = *(p++);
 		char b = *(q++);
@@ -26,17 +26,19 @@ int cStrcmp(char* p, char* q) {
 		if (!b) return 0;
 	}
 }
-void cStrcpy(char* p, char* q)
+void cStrcpy(char* p, const char* q)
 {
 	while (*q) *(p++) = *(q++);
 	*p = 0;
 }
-void cStrncpy(char* p, char* q, LINT n)
+void cStrncpy(char* p, const char* q, LINT n)
 {
 	while ((*q) && ((n--) > 0)) *(p++) = *(q++);
 	while ((n--) > 0)*(p++) = 0;
 }
-int cMemcmp(char* p, char* q, LINT n) {
+int cMemcmp(const void* vp, const void* vq, LINT n) {
+	char* p = (char*)vp;
+	char* q = (char*)vq;
 	while ((n--) > 0) {
 		char a = *(p++);
 		char b = *(q++);
@@ -58,11 +60,11 @@ void cMemset(void* p, char val, LINT n)
 	char* pc = (char*)p;
 	while ((n--) > 0) *(pc++) = val;
 }
-char* cStrstr(char* p, char* q)
+char* cStrstr(const char* p, const char* q)
 {
 	LINT len = cStrlen(q);
 	while (*p) {
-		if (!cMemcmp(p, q, len)) return p;
+		if (!cMemcmp(p, q, len)) return (char*)p;
 		p++;
 	}
 	return NULL;
@@ -267,7 +269,7 @@ LINT cVsnprintf(char* dst, LINT size, const char* format, va_list arglist)
 				loop = 0;
 			}
 			else if (c == 'g') {
-				argF = va_arg(arglist, LFLOAT);
+				argF = va_arg(arglist, double);
 				len = myFtoa(buffer, argF, 64);
 #ifdef USE_CONSOLE_OUT_UART
 				if (!dst) uartPut(buffer,len);

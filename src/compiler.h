@@ -16,7 +16,10 @@ typedef struct Parser Parser;
 
 struct FunMaker
 {
-	Thread* th;
+	LB header;
+	FORGET forget;
+	MARK mark;
+
 	Def* def;
 	Def* defForInstances;
 	Locals* locals;
@@ -55,25 +58,26 @@ struct Parser
 	int again;
 	int index0;
 	int mayGetBackToParent;
-	Parser* parent;
-	Parser* nextLib;
 };
 
 struct Compiler
 {
-	LINT pastUid;	// counter of last package before compilation
-	Thread* th;	// we need a stack for some compiling operations
-	Pkg* pkg;	// current parser
+	LB header;
+	FORGET forget;
+	MARK mark;
+
+	Pkg* pkg;	// current package
 	FunMaker* fmk;	// current function maker
 
 	Buffer* bytecode;	// only for optimisation, it is a copy of fmk->bc
-
+	Buffer* firstBytecodeBuffer;	// to be used and reused for functions (not for lambda)
 	int displayed;
 
 	int nbDerivations;
 	Parser* parser;	// current parser
-	Parser* parserLib;	// library of parsers
+	Parser* mainParser;	// main parser (only main parser may include files)
 	LB* exports;
+	Def* def0;
 };
 
 #define COMPILER_ERR_SN -1
@@ -97,8 +101,8 @@ struct Compiler
 #define INSTANCE_LENGTH 5
 #define INSTANCE_DEF 0
 #define INSTANCE_TYPE 1
-#define INSTANCE_POSITION 2
-#define INSTANCE_PARSER 3
+#define INSTANCE_PARSER 2
+#define INSTANCE_POSITION 3
 #define INSTANCE_NEXT 4
 
 #define FUN_START_NAME "0000"
@@ -106,7 +110,7 @@ struct Compiler
 LB* exportLabelList(Compiler* c, char* name);
 int exportLabelListIsSingle(Compiler* c, char* name);
 
-int funMakerInit(Compiler *c,FunMaker *f,Locals* locals, Locals* typeLabels, LINT level, Def* def, Def* defForInstances);
+int funMakerInit(Compiler *c,Locals* locals, Locals* typeLabels, LINT level, Def* def, Def* defForInstances);
 void funMakerRelease(Compiler *c);
 int funMakerIsForVar(Compiler *c);
 Locals* funMakerAddLocal(Compiler* c,char* name);
@@ -115,6 +119,7 @@ int funMakerNeedGlobal(FunMaker *f,LB *data, LINT* index);
 
 int bc_byte_or_int(Compiler* c,LINT val,char opbyte,char opint);
 int bcint_byte_or_int(Compiler* c,LINT val);
+int bc_opcode(Compiler* c, LINT opcode);
 
 LINT bytecodePin(Compiler *c);
 int bytecodeAddJump(Compiler *c, LINT pin);
@@ -148,6 +153,7 @@ Type* compileLet(Compiler* c);
 Type* compileSet(Compiler* c);
 
 Type* compilePointer(Compiler* c);
+Type* compileDefHide(Compiler* c);
 Type* compileCall(Compiler* c);
 Type* compileLambda(Compiler* c);
 Type* compileFormat(Compiler* c, Type* returnedType);
@@ -175,7 +181,7 @@ Type* typeUnifyFromStack(Compiler* c,Type* fun);
 
 Type* typeInstance(Compiler* c, Def* def);
 LINT compileInstanceSolver(Compiler* c);
-Type* compile(Compiler* c, LB* psrc, Pkg* pkg, Type* expectedType);
+Type* compile(LB* psrc, Pkg* pkg, int fromImport, int* displayed);
 
 int compileDisplay(int mask,Compiler* c);
 char* compileToken(Compiler *c);

@@ -22,31 +22,31 @@ Type* compileA6(Compiler* c)
 		if (isfloat(c->parser->token))
 		{
 			LFLOAT i=-ls_atof(c->parser->token);
-			if (bufferAddChar(c->th, c->bytecode,OPfloat)) return NULL;
-			if (bufferAddInt(c->th, c->bytecode,*(LINT*)&i)) return NULL;
+			if (bufferAddChar(c->bytecode,OPfloat)) return NULL;
+			if (bufferAddInt(c->bytecode,*(LINT*)&i)) return NULL;
 			return MM.Float;
 		}
-		else if ((c->parser->token[0] == '0') && (c->parser->token[1] == 'd')
+		if ((c->parser->token[0] == '0') && (c->parser->token[1] == 'd')
 			&& (isdecimal(c->parser->token + 2)))
 		{
 			LINT i = -ls_atoi(c->parser->token + 2, 0);
 			if (bcint_byte_or_int(c, i)) return NULL;
 			return MM.Int;
 		}
-		else if ((c->parser->token[0] == '0') && (c->parser->token[1] == 'x')
+		if ((c->parser->token[0] == '0') && (c->parser->token[1] == 'x')
 			&& (ishexadecimal(c->parser->token + 2)))
 		{
 			LINT i = -ls_htoi(c->parser->token + 2);
 			if (bcint_byte_or_int(c, i)) return NULL;
 			return MM.Int;
 		}
-		else if (isdecimal(c->parser->token))
+		if (isdecimal(c->parser->token))
 		{
 			LINT i;
 			if ((c->fmk->forceNumbers == FORCE_NUMBER_BIGNUM)|| (c->fmk->forceNumbers == FORCE_NUMBER_MOD) || (c->fmk->forceNumbers == FORCE_NUMBER_MODOPTI))
 			{
 				LINT global;
-				bignum b = (bignum)bigAlloc(c->th, bignumFromDec(c->parser->token));
+				bignum b = (bignum)bigAlloc(bignumFromDec(c->parser->token));
 				if (!b) return NULL;
 				bignumSignSet(b, 1 - bignumSign(b));
 				if (funMakerAddGlobal(c->fmk, (LB*)b, &global)) return NULL;
@@ -58,51 +58,42 @@ Type* compileA6(Compiler* c)
 			if (c->fmk->forceNumbers==FORCE_NUMBER_FLOAT)
 			{
 				LFLOAT f=(LFLOAT)i;
-				if (bufferAddChar(c->th, c->bytecode,OPfloat)) return NULL;
-				if (bufferAddInt(c->th, c->bytecode,*(LINT*)&f)) return NULL;
+				if (bufferAddChar(c->bytecode,OPfloat)) return NULL;
+				if (bufferAddInt(c->bytecode,*(LINT*)&f)) return NULL;
 				return MM.Float;
 			}
 			if (bcint_byte_or_int(c,i)) return NULL;
 			return MM.Int;
 		}
 		parserGiveback(c);
-		if (c->fmk->forceNumbers == FORCE_NUMBER_BIGNUM) 
+		if (!(t = compileA6(c))) return NULL;
+		if (c->fmk->forceNumbers == FORCE_NUMBER_BIGNUM)
 		{
-			LINT global;
-			if (funMakerNeedGlobal(c->fmk, (LB*)MM.bigNeg, &global)) return NULL;
-			if (bc_byte_or_int(c, global, OPrglobb, OPrglob)) return NULL;
-			if (!(t = compileA6(c))) return NULL;
 			if (typeUnify(c, t, MM.BigNum)) return NULL;
-			if (bc_byte_or_int(c, 1, OPexecb, OPexec)) return NULL;
+			if (bc_opcode(c, MM.bigNeg)) return NULL;
 			return MM.BigNum;
 		}
 		if ((c->fmk->forceNumbers == FORCE_NUMBER_MOD) || (c->fmk->forceNumbers == FORCE_NUMBER_MODOPTI))
 		{
-			LINT global;
-			if (funMakerNeedGlobal(c->fmk, (LB*)MM.bigNegMod, &global)) return NULL;
-			if (bc_byte_or_int(c, global, OPrglobb, OPrglob)) return NULL;
-			if (!(t = compileA6(c))) return NULL;
 			if (typeUnify(c, t, MM.BigNum)) return NULL;
 			if (bc_byte_or_int(c, c->fmk->forceModulo, OPrlocb, OPrloc)) return NULL;
-			if (bc_byte_or_int(c, 2, OPexecb, OPexec)) return NULL;
+			if (bc_opcode(c, MM.bigNegMod)) return NULL;
 			return MM.BigNum;
 		}
 		if (c->fmk->forceNumbers == FORCE_NUMBER_FLOAT)
 		{
-			if (!(t = compileA6(c))) return NULL;
 			if (typeUnify(c, t, MM.Float)) return NULL;
-			if (bufferAddChar(c->th, c->bytecode, OPnegf)) return NULL;
+			if (bufferAddChar(c->bytecode, OPnegf)) return NULL;
 			return MM.Float;
 		}
-		if (!(t=compileA6(c))) return NULL;
 		if (typeUnify(c,t,MM.Int)) return NULL;
-		if (bufferAddChar(c->th, c->bytecode,OPneg)) return NULL;
+		if (bufferAddChar(c->bytecode,OPneg)) return NULL;
 		return MM.Int;
 	}
 	else if (!strcmp(c->parser->token,"~"))
 	{
 		if (!(t=compileA6(c))) return NULL;
-		if (bufferAddChar(c->th, c->bytecode,OPnot)) return NULL;
+		if (bufferAddChar(c->bytecode,OPnot)) return NULL;
 		if (typeUnify(c,t,MM.Int)) return NULL;
 		return MM.Int;
 	}
@@ -110,14 +101,14 @@ Type* compileA6(Compiler* c)
 	{
 		if (!(t=compileA6(c))) return NULL;
 		if (typeUnify(c,t,MM.Float)) return NULL;
-		if (bufferAddChar(c->th, c->bytecode,OPnegf)) return NULL;
+		if (bufferAddChar(c->bytecode,OPnegf)) return NULL;
 		return MM.Float;
 	}
 	else if (isfloat(c->parser->token))
 	{
 		LFLOAT i=ls_atof(c->parser->token);
-		if (bufferAddChar(c->th, c->bytecode,OPfloat)) return NULL;
-		if (bufferAddInt(c->th, c->bytecode,*(LINT*)&i)) return NULL;
+		if (bufferAddChar(c->bytecode,OPfloat)) return NULL;
+		if (bufferAddInt(c->bytecode,*(LINT*)&i)) return NULL;
 		return MM.Float;
 	}
 	parserGiveback(c);
@@ -148,7 +139,7 @@ Type* compileA5(Compiler* c)
 		if (typeUnify(c,t,MM.Int)) return NULL;
 		if (!(t=compileA6(c))) return NULL;
 		if (typeUnify(c,t,MM.Int)) return NULL;
-		if (bufferAddChar(c->th, c->bytecode,op)) return NULL;
+		if (bufferAddChar(c->bytecode,op)) return NULL;
     }
 }
 
@@ -157,7 +148,7 @@ Type* compileA4(Compiler* c)
 	Type* t;
 	Type* typ;
 	int op;
-	Def* opDef = NULL;
+	LINT opDef = -1;
 
 	if (!(t=compileA5(c))) return NULL;
 	while(1)
@@ -189,24 +180,12 @@ Type* compileA4(Compiler* c)
 			if (op == OPpowint) { opDef = MM.bigExp;  typ = MM.BigNum; }
 			if (op == OPdiv) { opDef = MM.bigDiv;  typ = MM.BigNum; }
 			if (op == OPmod) { opDef = MM.bigMod;  typ = MM.BigNum; }
-			if (opDef) {
-				LINT global;
-				if (funMakerNeedGlobal(c->fmk, (LB*)opDef, &global)) return NULL;
-				if (bc_byte_or_int(c, global, OPrglobb, OPrglob)) return NULL;
-				if (bufferAddChar(c->th, c->bytecode, OPswap)) return NULL;
-			}
 		}
 		if (c->fmk->forceNumbers == FORCE_NUMBER_MOD)
 		{
 			if (op == OPmul) { opDef = MM.bigMulMod;  typ = MM.BigNum; }
 			if (op == OPpowint) { opDef = MM.bigExpMod;  typ = MM.BigNum; }
 			if (op == OPdiv) { opDef = MM.bigDivMod;  typ = MM.BigNum; }
-			if (opDef) {
-				LINT global;
-				if (funMakerNeedGlobal(c->fmk, (LB*)opDef, &global)) return NULL;
-				if (bc_byte_or_int(c, global, OPrglobb, OPrglob)) return NULL;
-				if (bufferAddChar(c->th, c->bytecode, OPswap)) return NULL;
-			}
 		}
 		if (c->fmk->forceNumbers == FORCE_NUMBER_MODOPTI)
 		{
@@ -214,12 +193,6 @@ Type* compileA4(Compiler* c)
 			if (op == OPpowint) { opDef = MM.bigExpModBarrett;  typ = MM.BigNum; }
 			if (op == OPdiv) { opDef = MM.bigDivModBarrett;  typ = MM.BigNum; }
 			if (op == OPmod) { opDef = MM.bigModBarrett;  typ = MM.BigNum; }
-			if (opDef) {
-				LINT global;
-				if (funMakerNeedGlobal(c->fmk, (LB*)opDef, &global)) return NULL;
-				if (bc_byte_or_int(c, global, OPrglobb, OPrglob)) return NULL;
-				if (bufferAddChar(c->th, c->bytecode, OPswap)) return NULL;
-			}
 		}
 		if (typeUnify(c,t,typ)) return NULL;
 
@@ -227,28 +200,25 @@ Type* compileA4(Compiler* c)
 		{
 			if (bc_byte_or_int(c, c->fmk->forceModulo, OPrlocb, OPrloc)) return NULL;
 			if (bc_byte_or_int(c, c->fmk->forceMu, OPrlocb, OPrloc)) return NULL;
-			if (bc_byte_or_int(c, 3, OPexecb, OPexec)) return NULL;
+			if (bc_opcode(c, opDef)) return NULL;
 			continue;
 		}
 
 		if (!(t=compileA5(c))) return NULL;
 		if (typeUnify(c,t,typ)) return NULL;
-		if (opDef)
-		{
-			if (c->fmk->forceNumbers == FORCE_NUMBER_MOD)
+		if (opDef >= 0) {
+			if ((c->fmk->forceNumbers == FORCE_NUMBER_MOD) || (c->fmk->forceNumbers == FORCE_NUMBER_MODOPTI))
 			{
 				if (bc_byte_or_int(c, c->fmk->forceModulo, OPrlocb, OPrloc)) return NULL;
-				if (bc_byte_or_int(c, 3, OPexecb, OPexec)) return NULL;
+
+				if (c->fmk->forceNumbers == FORCE_NUMBER_MODOPTI)
+				{
+					if (bc_byte_or_int(c, c->fmk->forceMu, OPrlocb, OPrloc)) return NULL;
+				}
 			}
-			else if (c->fmk->forceNumbers == FORCE_NUMBER_MODOPTI)
-			{
-				if (bc_byte_or_int(c, c->fmk->forceModulo, OPrlocb, OPrloc)) return NULL;
-				if (bc_byte_or_int(c, c->fmk->forceMu, OPrlocb, OPrloc)) return NULL;
-				if (bc_byte_or_int(c, 4, OPexecb, OPexec)) return NULL;
-			}
-			else if (bc_byte_or_int(c, 2, OPexecb, OPexec)) return NULL;
+			if (bc_opcode(c, opDef)) return NULL;
 		}
-		else if (bufferAddChar(c->th, c->bytecode, op)) return NULL;
+		else if (bufferAddChar(c->bytecode, op)) return NULL;
 		t=typ;
     }
 }
@@ -258,7 +228,7 @@ Type* compileA3(Compiler* c)
 	Type* t;
 	Type* typ;
 	int op;
-	Def* opDef = NULL;
+	LINT opDef = -1;
 	
 	if (!(t=compileA4(c))) return NULL;
 	while(1)
@@ -282,37 +252,23 @@ Type* compileA3(Compiler* c)
 		{
 			if (op == OPadd) { opDef = MM.bigAdd;  typ = MM.BigNum; }
 			if (op == OPsub) { opDef = MM.bigSub;  typ = MM.BigNum; }
-			if (opDef) {
-				LINT global;
-				if (funMakerNeedGlobal(c->fmk, (LB*)opDef, &global)) return NULL;
-				if (bc_byte_or_int(c, global, OPrglobb, OPrglob)) return NULL;
-				if (bufferAddChar(c->th, c->bytecode, OPswap)) return NULL;
-			}
 		}
 		if ((c->fmk->forceNumbers == FORCE_NUMBER_MOD)|| (c->fmk->forceNumbers == FORCE_NUMBER_MODOPTI))
 		{
 			if (op == OPadd) { opDef = MM.bigAddMod;  typ = MM.BigNum; }
 			if (op == OPsub) { opDef = MM.bigSubMod;  typ = MM.BigNum; }
-			if (opDef) {
-				LINT global;
-				if (funMakerNeedGlobal(c->fmk, (LB*)opDef, &global)) return NULL;
-				if (bc_byte_or_int(c, global, OPrglobb, OPrglob)) return NULL;
-				if (bufferAddChar(c->th, c->bytecode, OPswap)) return NULL;
-			}
 		}
 		if (typeUnify(c,t,typ)) return NULL;
 		if (!(t=compileA4(c))) return NULL;
 		if (typeUnify(c,t,typ)) return NULL;
-		if (opDef)
-		{
+		if (opDef >= 0) {
 			if ((c->fmk->forceNumbers == FORCE_NUMBER_MOD) || (c->fmk->forceNumbers == FORCE_NUMBER_MODOPTI))
 			{
 				if (bc_byte_or_int(c, c->fmk->forceModulo, OPrlocb, OPrloc)) return NULL;
-				if (bc_byte_or_int(c, 3, OPexecb, OPexec)) return NULL;
 			}
-			else if (bc_byte_or_int(c, 2, OPexecb, OPexec)) return NULL;
+			if (bc_opcode(c, opDef)) return NULL;
 		}
-		else if (bufferAddChar(c->th, c->bytecode,op)) return NULL;
+		else if (bufferAddChar(c->bytecode, op)) return NULL;
 		t=typ;
     }
 }
@@ -322,7 +278,7 @@ Type* compileA2(Compiler* c)
 	Type* t;
 	Type* typ;
 	int op;
-	Def* opDef = NULL;
+	LINT opDef = -1;
 	
 	if (!(t=compileA3(c))) return NULL;
 	while(1)
@@ -358,12 +314,6 @@ Type* compileA2(Compiler* c)
 			if (op == OPge) { opDef = MM.bigGE;  typ = MM.BigNum; }
 			if (op == OPlt) { opDef = MM.bigLT;  typ = MM.BigNum; }
 			if (op == OPle) { opDef = MM.bigLE;  typ = MM.BigNum; }
-			if (opDef) {
-				LINT global;
-				if (funMakerNeedGlobal(c->fmk, (LB*)opDef, &global)) return NULL;
-				if (bc_byte_or_int(c, global, OPrglobb, OPrglob)) return NULL;
-				if (bufferAddChar(c->th, c->bytecode, OPswap)) return NULL;
-			}
 		}
 
 		if ((typ)&&(typeUnify(c,t,typ))) return NULL;
@@ -371,11 +321,10 @@ Type* compileA2(Compiler* c)
 		if (!(t2=compileA3(c))) return NULL;
 		if (typeUnify(c,t,t2)) return NULL;
 
-		if (opDef)
-		{
-			if (bc_byte_or_int(c, 2, OPexecb, OPexec)) return NULL;
+		if (opDef >= 0) {
+			if (bc_opcode(c, opDef)) return NULL;
 		}
-		else if (bufferAddChar(c->th, c->bytecode, op)) return NULL;
+		else if (bufferAddChar(c->bytecode, op)) return NULL;
 		t=MM.Boolean;
     }
 }
@@ -388,7 +337,7 @@ Type* compileA1(Compiler* c)
     {
 		if (!(t=compileA1(c))) return NULL;
 		if (typeUnify(c,t,MM.Boolean)) return NULL;
-		if (bufferAddChar(c->th, c->bytecode,OPnon)) return NULL;
+		if (bufferAddChar(c->bytecode,OPnon)) return NULL;
 		return t;
 	}
 	parserGiveback(c);
@@ -411,13 +360,13 @@ Type* compileArithm(Compiler* c)
         }
 		if (typeUnify(c,t,MM.Boolean)) return NULL;
 
-		if (bufferAddChar(c->th, c->bytecode,OPdup)) return NULL;
-		if (strcmp(c->parser->token,"&&")&& bufferAddChar(c->th, c->bytecode,OPnon)) return NULL;
-		if (bufferAddChar(c->th, c->bytecode,OPelse)) return NULL;
+		if (bufferAddChar(c->bytecode,OPdup)) return NULL;
+		if (strcmp(c->parser->token,"&&")&& bufferAddChar(c->bytecode,OPnon)) return NULL;
+		if (bufferAddChar(c->bytecode,OPelse)) return NULL;
 		bc_i=bytecodeAddEmptyJump(c);
 		if (bc_i < 0) return NULL;
 
-		if (bufferAddChar(c->th, c->bytecode,OPdrop)) return NULL;
+		if (bufferAddChar(c->bytecode,OPdrop)) return NULL;
 		if (!(t=compileA1(c))) return NULL;
 		if (typeUnify(c,t,MM.Boolean)) return NULL;
 		
@@ -438,13 +387,13 @@ Type* compileList(Compiler* c)
 		parserGiveback(c);
 		return t;
     }
-	TYPE_PUSH_NULL(c,t);
+	TYPE_PUSH_NULL(t);
 	if (!(t=compileExpression(c))) return NULL;
-	TYPE_PUSH_NULL(c,t);
-	u = typeCopy(c->th, MM.fun_u0_list_u0_list_u0); if (!u) return NULL;
+	TYPE_PUSH_NULL(t);
+	u = typeCopy(MM.fun_u0_list_u0_list_u0); if (!u) return NULL;
 	if (!(t=typeUnifyFromStack(c,u))) return NULL;
 
-	if (bufferAddChar(c->th, c->bytecode,OPmklist)) return NULL;
+	if (bufferAddChar(c->bytecode,OPmklist)) return NULL;
 	
 	return t;
 }
@@ -483,6 +432,6 @@ Type* compileProgram(Compiler* c)
 			return t;
 		}
 		parserGiveback(c);
-		if (bufferAddChar(c->th, c->bytecode,OPdrop)) return NULL;
+		if (bufferAddChar(c->bytecode,OPdrop)) return NULL;
 	}
 }

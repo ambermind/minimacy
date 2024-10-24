@@ -326,70 +326,56 @@ CORE_STRFROMINT24(fun_strInt24Lsb, LSB24)
 CORE_STRFROMINT24(fun_strInt24Msb, MSB24)
 
 
-int coreBinaryInit(Thread* th, Pkg *system)
+int coreBinaryInit(Pkg* system)
 {
-	Type* fun_I_S = typeAlloc(th,TYPECODE_FUN, NULL, 2, MM.Int, MM.Str);
-	Type* fun_S_I_I = typeAlloc(th,TYPECODE_FUN, NULL, 3, MM.Str, MM.Int, MM.Int);
-	Type* fun_S_I_F = typeAlloc(th,TYPECODE_FUN, NULL, 3, MM.Str, MM.Int, MM.Float);
-	Type* fun_B_I_I = typeAlloc(th,TYPECODE_FUN, NULL, 3, MM.Bytes, MM.Int, MM.Int);
-	Type* fun_B_I_F = typeAlloc(th,TYPECODE_FUN, NULL, 3, MM.Bytes, MM.Int, MM.Float);
-	Type* fun_B_I_I_I = typeAlloc(th,TYPECODE_FUN, NULL, 4, MM.Bytes, MM.Int, MM.Int, MM.Int);
-	Type* fun_B_I_I_B = typeAlloc(th,TYPECODE_FUN, NULL, 4, MM.Bytes, MM.Int, MM.Int, MM.Bytes);
-
-	pkgAddFun(th, system, "strU8Next", fun_strU8Next, fun_S_I_I);
-	pkgAddFun(th, system, "strU8Previous", fun_strU8Previous, fun_S_I_I);
-	pkgAddFun(th, system, "strReadU8", fun_strReadU8, fun_S_I_I);
-
-	pkgAddFun(th, system, "strVarIntNext", fun_strVarIntNext, fun_S_I_I);
-	pkgAddFun(th, system, "strVarUIntNext", fun_strVarIntNext, fun_S_I_I);	// same as strVarIntNext
-	pkgAddFun(th, system, "strReadVarInt", fun_strReadVarInt, fun_S_I_I);
-	pkgAddFun(th, system, "strReadVarUInt", fun_strReadVarUInt, fun_S_I_I);
-
-	pkgAddFun(th, system, "bytesVarIntNext", fun_strVarIntNext, fun_B_I_I);
-	pkgAddFun(th, system, "bytesVarUIntNext", fun_strVarIntNext, fun_B_I_I);	// same as bytesVarIntNext
-	pkgAddFun(th, system, "bytesReadVarInt", fun_strReadVarInt, fun_B_I_I);
-	pkgAddFun(th, system, "bytesReadVarUInt", fun_strReadVarUInt, fun_B_I_I);
-
-	pkgAddFun(th, system, "bytesWriteVarInt", fun_bytesWriteVarInt, fun_B_I_I_I);
-	pkgAddFun(th, system, "bytesWriteVarUInt", fun_bytesWriteVarUInt, fun_B_I_I_I);
-
-	pkgAddFun(th, system, "strVarInt", fun_strVarInt, fun_I_S);
-	pkgAddFun(th, system, "strVarUInt", fun_strVarUInt, fun_I_S);
-
-	pkgAddFun(th, system, "strRead32Lsb", fun_bytesRead32Lsb, fun_S_I_I);
-	pkgAddFun(th, system, "strRead32Msb", fun_bytesRead32Msb, fun_S_I_I);
-	pkgAddFun(th, system, "strRead24Lsb", fun_bytesRead24Lsb, fun_S_I_I);
-	pkgAddFun(th, system, "strRead24Msb", fun_bytesRead24Msb, fun_S_I_I);
-	pkgAddFun(th, system, "strRead16Lsb", fun_bytesRead16Lsb, fun_S_I_I);
-	pkgAddFun(th, system, "strRead16Msb", fun_bytesRead16Msb, fun_S_I_I);
-	pkgAddFun(th, system, "strReadFloat", fun_bytesReadFloat, fun_S_I_F);
-	pkgAddFun(th, system, "strRead8", fun_strGet, fun_S_I_I);
-
-	pkgAddFun(th, system, "bytesRead32Lsb", fun_bytesRead32Lsb, fun_B_I_I);
-	pkgAddFun(th, system, "bytesRead32Msb", fun_bytesRead32Msb, fun_B_I_I);
-	pkgAddFun(th, system, "bytesRead24Lsb", fun_bytesRead24Lsb, fun_B_I_I);
-	pkgAddFun(th, system, "bytesRead24Msb", fun_bytesRead24Msb, fun_B_I_I);
-	pkgAddFun(th, system, "bytesRead16Lsb", fun_bytesRead16Lsb, fun_B_I_I);
-	pkgAddFun(th, system, "bytesRead16Msb", fun_bytesRead16Msb, fun_B_I_I);
-	pkgAddFun(th, system, "bytesReadFloat", fun_bytesReadFloat, fun_B_I_F);
-	pkgAddFun(th, system, "bytesRead8", fun_strGet, fun_B_I_I);
-
-	pkgAddFun(th, system, "bytesWrite32Lsb", fun_bytesWrite32Lsb, fun_B_I_I_B);
-	pkgAddFun(th, system, "bytesWrite32Msb", fun_bytesWrite32Msb, fun_B_I_I_B);
-	pkgAddFun(th, system, "bytesWrite24Lsb", fun_bytesWrite24Lsb, fun_B_I_I_B);
-	pkgAddFun(th, system, "bytesWrite24Msb", fun_bytesWrite24Msb, fun_B_I_I_B);
-	pkgAddFun(th, system, "bytesWrite16Lsb", fun_bytesWrite16Lsb, fun_B_I_I_B);
-	pkgAddFun(th, system, "bytesWrite16Msb", fun_bytesWrite16Msb, fun_B_I_I_B);
-	pkgAddFun(th, system, "bytesWrite8", fun_bytesSet, fun_B_I_I_B);
-
-	pkgAddFun(th, system, "strInt32Lsb", fun_strInt32Lsb, fun_I_S);
-	pkgAddFun(th, system, "strInt32Msb", fun_strInt32Msb, fun_I_S);
-	pkgAddFun(th, system, "strInt24Lsb", fun_strInt24Lsb, fun_I_S);
-	pkgAddFun(th, system, "strInt24Msb", fun_strInt24Msb, fun_I_S);
-	pkgAddFun(th, system, "strInt16Lsb", fun_strInt16Lsb, fun_I_S);
-	pkgAddFun(th, system, "strInt16Msb", fun_strInt16Msb, fun_I_S);
-	pkgAddFun(th, system, "strInt8", fun_strFromChar, fun_I_S);
-
+	static const Native nativeDefs[] = {
+		{ NATIVE_FUN, "strU8Next", fun_strU8Next, "fun Str Int -> Int"},
+		{ NATIVE_FUN, "strU8Previous", fun_strU8Previous, "fun Str Int -> Int"},
+		{ NATIVE_FUN, "strReadU8", fun_strReadU8, "fun Str Int -> Int"},
+		{ NATIVE_FUN, "strVarIntNext", fun_strVarIntNext, "fun Str Int -> Int"},
+		{ NATIVE_FUN, "strVarUIntNext", fun_strVarIntNext, "fun Str Int -> Int"},	// same as strVarIntNext
+		{ NATIVE_FUN, "strReadVarInt", fun_strReadVarInt, "fun Str Int -> Int"},
+		{ NATIVE_FUN, "strReadVarUInt", fun_strReadVarUInt, "fun Str Int -> Int"},
+		{ NATIVE_FUN, "bytesVarIntNext", fun_strVarIntNext, "fun Bytes Int -> Int"},
+		{ NATIVE_FUN, "bytesVarUIntNext", fun_strVarIntNext, "fun Bytes Int -> Int"},	// same as bytesVarIntNext
+		{ NATIVE_FUN, "bytesReadVarInt", fun_strReadVarInt, "fun Bytes Int -> Int"},
+		{ NATIVE_FUN, "bytesReadVarUInt", fun_strReadVarUInt, "fun Bytes Int -> Int"},
+		{ NATIVE_FUN, "bytesWriteVarInt", fun_bytesWriteVarInt, "fun Bytes Int Int -> Int"},
+		{ NATIVE_FUN, "bytesWriteVarUInt", fun_bytesWriteVarUInt, "fun Bytes Int Int -> Int"},
+		{ NATIVE_FUN, "strVarInt", fun_strVarInt, "fun Int -> Str"},
+		{ NATIVE_FUN, "strVarUInt", fun_strVarUInt, "fun Int -> Str"},
+		{ NATIVE_FUN, "strRead32Lsb", fun_bytesRead32Lsb, "fun Str Int -> Int"},
+		{ NATIVE_FUN, "strRead32Msb", fun_bytesRead32Msb, "fun Str Int -> Int"},
+		{ NATIVE_FUN, "strRead24Lsb", fun_bytesRead24Lsb, "fun Str Int -> Int"},
+		{ NATIVE_FUN, "strRead24Msb", fun_bytesRead24Msb, "fun Str Int -> Int"},
+		{ NATIVE_FUN, "strRead16Lsb", fun_bytesRead16Lsb, "fun Str Int -> Int"},
+		{ NATIVE_FUN, "strRead16Msb", fun_bytesRead16Msb, "fun Str Int -> Int"},
+		{ NATIVE_FUN, "strReadFloat", fun_bytesReadFloat, "fun Str Int -> Float"},
+		{ NATIVE_FUN, "strRead8", fun_strGet, "fun Str Int -> Int"},
+		{ NATIVE_FUN, "bytesRead32Lsb", fun_bytesRead32Lsb, "fun Bytes Int -> Int"},
+		{ NATIVE_FUN, "bytesRead32Msb", fun_bytesRead32Msb, "fun Bytes Int -> Int"},
+		{ NATIVE_FUN, "bytesRead24Lsb", fun_bytesRead24Lsb, "fun Bytes Int -> Int"},
+		{ NATIVE_FUN, "bytesRead24Msb", fun_bytesRead24Msb, "fun Bytes Int -> Int"},
+		{ NATIVE_FUN, "bytesRead16Lsb", fun_bytesRead16Lsb, "fun Bytes Int -> Int"},
+		{ NATIVE_FUN, "bytesRead16Msb", fun_bytesRead16Msb, "fun Bytes Int -> Int"},
+		{ NATIVE_FUN, "bytesReadFloat", fun_bytesReadFloat, "fun Bytes Int -> Float"},
+		{ NATIVE_FUN, "bytesRead8", fun_strGet, "fun Bytes Int -> Int"},
+		{ NATIVE_FUN, "bytesWrite32Lsb", fun_bytesWrite32Lsb, "fun Bytes Int Int -> Bytes"},
+		{ NATIVE_FUN, "bytesWrite32Msb", fun_bytesWrite32Msb, "fun Bytes Int Int -> Bytes"},
+		{ NATIVE_FUN, "bytesWrite24Lsb", fun_bytesWrite24Lsb, "fun Bytes Int Int -> Bytes"},
+		{ NATIVE_FUN, "bytesWrite24Msb", fun_bytesWrite24Msb, "fun Bytes Int Int -> Bytes"},
+		{ NATIVE_FUN, "bytesWrite16Lsb", fun_bytesWrite16Lsb, "fun Bytes Int Int -> Bytes"},
+		{ NATIVE_FUN, "bytesWrite16Msb", fun_bytesWrite16Msb, "fun Bytes Int Int -> Bytes"},
+		{ NATIVE_FUN, "bytesWrite8", fun_bytesSet, "fun Bytes Int Int -> Bytes"},
+		{ NATIVE_FUN, "strInt32Lsb", fun_strInt32Lsb, "fun Int -> Str"},
+		{ NATIVE_FUN, "strInt32Msb", fun_strInt32Msb, "fun Int -> Str"},
+		{ NATIVE_FUN, "strInt24Lsb", fun_strInt24Lsb, "fun Int -> Str"},
+		{ NATIVE_FUN, "strInt24Msb", fun_strInt24Msb, "fun Int -> Str"},
+		{ NATIVE_FUN, "strInt16Lsb", fun_strInt16Lsb, "fun Int -> Str"},
+		{ NATIVE_FUN, "strInt16Msb", fun_strInt16Msb, "fun Int -> Str"},
+		{ NATIVE_FUN, "strInt8", fun_strFromChar, "fun Int -> Str"},
+	};
+	NATIVE_DEF(nativeDefs);
 	return 0;
 }
 

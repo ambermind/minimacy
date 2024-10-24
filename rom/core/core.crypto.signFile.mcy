@@ -1,0 +1,47 @@
+/* Copyright (c) 2022, Sylvain Huet, Ambermind
+   This program is free software: you can redistribute it and/or modify it
+   under the terms of the GNU General Public License, version 2.0, as
+   published by the Free Software Foundation.
+   This program is distributed in the hope that it will be useful, but WITHOUT
+   ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+   FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License,
+   version 2.0, for more details.
+   You should have received a copy of the GNU General Public License along
+   with this program. If not, see <https://www.gnu.org/licenses/>. */
+use core.crypto.sign;;
+use core.crypto.key;;
+use core.util.base64;;
+
+fun signFileData data pem pwd=
+	let keyFromPEM pem pwd -> key in
+	if key<>nil then
+	let if nil<>rsaFromKey key then RSA_PSS_RSAE_SHA512 else ECDSA_SECP256R1_SHA256 -> algo in
+	let signatureGenerate algo key data -> sign in
+	let strFormat "*:*" (hexFromInt algo) (b64Encode sign) -> signValue in
+	signValue;;
+
+fun signFile path pem pwd=
+	let load path -> data in
+	if data<>nil then
+	let signFileData data pem pwd -> signValue in
+	if signValue<>nil then
+	let strConcat path ".sign" -> signPath in
+	(
+		save signValue signPath;
+		signPath
+	);;
+
+fun signFileVerifyData data signValue pem=
+	let keyFromPEM pem nil -> key in
+	if key<>nil then
+	let strSplit ":" signValue -> hexAlgo:hexSign:_ in
+	let intFromHex hexAlgo -> algo in
+	let b64Decode hexSign -> signature in
+	signatureCheck algo key data signature;;
+
+fun signFileVerify path pem=
+	let load path -> data in
+	if data<>nil then
+	let load strConcat path ".sign" -> signValue in
+	if signValue<>nil then
+	signFileVerifyData data signValue pem;;

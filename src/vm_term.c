@@ -64,8 +64,8 @@ void termPrintf(int mask,char *format, ...)
 }
 
 char* MMTAB="                                ";
-void _itemDump(Thread* th, int mask, int skipHeader, LW v, int type, int rec, char* tab);
-void _globalsPrint(Thread* th, int mask, LB* g, int rec,char* tab)
+void _itemDump(int mask, int skipHeader, LW v, int type, int rec, char* tab);
+void _globalsPrint(int mask, LB* g, int rec,char* tab)
 {
 	LINT j;
 	if (!g) return;
@@ -78,20 +78,20 @@ void _globalsPrint(Thread* th, int mask, LB* g, int rec,char* tab)
 		{
 			Def* def = (Def*)q;
 			PRINTF(mask, "  %s %s.%s: ", tab - 2, defPkgName(def), defName(def));
-			typePrint(th, mask, def->type);
+			typePrint(mask, def->type);
 			PRINTF(mask, "\n");
 		}
 		else if (ARRAY_IS_PNT(g,j) && (HEADER_DBG(q) == DBG_FUN))
 		{
 			PRINTF(mask, "%s lambda:\n", tab-4);
-			_itemDump(th, mask, 0, ARRAY_GET(q, FUN_USER_BC), ARRAY_TYPE(q, FUN_USER_BC), rec - 1, tab - 6);
-			_globalsPrint(th, mask, ARRAY_PNT(q, FUN_USER_GLOBALS), rec - 1, tab - 6);
+			_itemDump(mask, 0, ARRAY_GET(q, FUN_USER_BC), ARRAY_TYPE(q, FUN_USER_BC), rec - 1, tab - 6);
+			_globalsPrint(mask, ARRAY_PNT(q, FUN_USER_GLOBALS), rec - 1, tab - 6);
 		}
-		else _itemDump(th, mask, 0, ARRAY_GET(g, j), ARRAY_TYPE(g, j), rec > 1 ? 2 : rec - 1, tab - 4);
+		else _itemDump(mask, 0, ARRAY_GET(g, j), ARRAY_TYPE(g, j), rec > 1 ? 2 : rec - 1, tab - 4);
 	}
 
 }
-void _hexDump(Thread* th,int mask, char* src, LINT len, LINT offsetDisplay)
+void _hexDump(int mask, char* src, LINT len, LINT offsetDisplay)
 {
 	LINT line;
 	LINT tmp = len + offsetDisplay;
@@ -109,7 +109,7 @@ void _hexDump(Thread* th,int mask, char* src, LINT len, LINT offsetDisplay)
 		PRINTF(mask, "\n");
 	}
 }
-void _itemDump(Thread* th, int mask, int skipHeader, LW v,int type,int rec,char* tab)
+void _itemDump(int mask, int skipHeader, LW v,int type,int rec,char* tab)
 {
 	LW dbg;
 	LB* p;
@@ -168,7 +168,7 @@ void _itemDump(Thread* th, int mask, int skipHeader, LW v,int type,int rec,char*
 				{
 //						PRINTF(mask, "  %s %s %lld/%lld:\n", tab, STR_START(next->name),next->index,ARRAY_LENGTH(p));
 					PRINTF(mask, "  %s %s:\n", tab, STR_START(next->name));
-					_itemDump(th, mask, 0, ARRAY_GET(p, next->index), ARRAY_TYPE(p, next->index), rec - 1, tab - 4);
+					_itemDump(mask, 0, ARRAY_GET(p, next->index), ARRAY_TYPE(p, next->index), rec - 1, tab - 4);
 					next = (Def*)PNT_FROM_VAL(next->val);;
 				}
 				def = def->parent;
@@ -185,7 +185,7 @@ void _itemDump(Thread* th, int mask, int skipHeader, LW v,int type,int rec,char*
 				PRINTF(mask, "constructor %s\n", STR_START(defType->name));
 				for (j = 1; j < ARRAY_LENGTH(p); j++) {
 					PRINTF(mask, "  %s " LSD " :\n", tab, j - 1);
-					_itemDump(th, mask, 0, ARRAY_GET(p, j), ARRAY_TYPE(p, j), rec - 1, tab - 4);
+					_itemDump(mask, 0, ARRAY_GET(p, j), ARRAY_TYPE(p, j), rec - 1, tab - 4);
 				}
 			}
 			else
@@ -214,9 +214,9 @@ void _itemDump(Thread* th, int mask, int skipHeader, LW v,int type,int rec,char*
 				{
 					if (!first) PRINTF(mask, "  %s ---\n", tab);
 					first = 0;
-					_itemDump(th, mask, 0, ARRAY_GET(next, HASH_LIST_KEY), ARRAY_TYPE(next, HASH_LIST_KEY), rec - 1, tab - 4);
+					_itemDump(mask, 0, ARRAY_GET(next, HASH_LIST_KEY), ARRAY_TYPE(next, HASH_LIST_KEY), rec - 1, tab - 4);
 					PRINTF(mask, "  %s ->\n", tab);
-					_itemDump(th, mask, 0, ARRAY_GET(next, HASH_LIST_VAL), ARRAY_TYPE(next, HASH_LIST_VAL), rec - 1, tab - 4);
+					_itemDump(mask, 0, ARRAY_GET(next, HASH_LIST_VAL), ARRAY_TYPE(next, HASH_LIST_VAL), rec - 1, tab - 4);
 				}
 				else if (i== TERM_LIMIT_ENUM) PRINTF(mask, "  %s ...skipping %d elements...\n", tab, end - TERM_LIMIT_ENUM);
 				i++;
@@ -244,7 +244,7 @@ void _itemDump(Thread* th, int mask, int skipHeader, LW v,int type,int rec,char*
 				{
 					if (!first) PRINTF(mask, "  %s ---\n", tab);
 					first = 0;
-					_itemDump(th, mask, 0, ARRAY_GET(next, LIST_VAL), ARRAY_TYPE(next, LIST_VAL), rec - 1, tab - 4);
+					_itemDump(mask, 0, ARRAY_GET(next, LIST_VAL), ARRAY_TYPE(next, LIST_VAL), rec - 1, tab - 4);
 				}
 				else if (i == TERM_LIMIT_ENUM) PRINTF(mask, "  %s ...skipping %d elements...\n", tab, end - TERM_LIMIT_ENUM);
 				i++;
@@ -256,11 +256,11 @@ void _itemDump(Thread* th, int mask, int skipHeader, LW v,int type,int rec,char*
 	else if (dbg==DBG_BYTECODE)
 	{
 		if (!skipHeader) PRINTF(mask,"%s bytecode:\n",tab);
-		bytecodePrint(th, mask,p);
+		bytecodePrint(mask,p);
 	}
 	else if (dbg==DBG_S)
 	{
-		if (sourceFromStr(th, MM.tmpBuffer, STR_START(p), STR_LENGTH(p))) return;
+		if (sourceFromStr(MM.tmpBuffer, STR_START(p), STR_LENGTH(p))) return;
 		if (!skipHeader) PRINTF(mask,"%s Str: ",tab);
 		PRINTF(mask,"%s\n",bufferStart(MM.tmpBuffer));
 	}
@@ -277,7 +277,7 @@ void _itemDump(Thread* th, int mask, int skipHeader, LW v,int type,int rec,char*
 	{
 		Type* t=(Type*)p;
 		if (!skipHeader) PRINTF(mask,"%s Type: ",tab);
-		typePrint(th, mask,t);
+		typePrint(mask,t);
 		PRINTF(mask,"\n");
 	}
 	else if (dbg==DBG_DEF)	// to be completed
@@ -288,28 +288,28 @@ void _itemDump(Thread* th, int mask, int skipHeader, LW v,int type,int rec,char*
 		PRINTF(mask,"%s %s\n",defCodeName(d->code), name);
 //		if (d->parser&& d->parser->name) PRINTF(mask, "%s File: %s at "LSD"\n", tab-4,STR_START(d->parser->name), d->parserIndex);
 //			PRINTF(mask,"%s %s (#" LSD " /" LSD ")\n",defCodeName(d->code), name, d->code,d->index);
-		_itemDump(th, mask, 0,VAL_FROM_PNT((LB*)d->type),VAL_TYPE_PNT, rec-1,tab-4);
+		_itemDump(mask, 0,VAL_FROM_PNT((LB*)d->type),VAL_TYPE_PNT, rec-1,tab-4);
 
 		if ((d->code!=DEF_CODE_CONS0)&& (d->code != DEF_CODE_CONS) && (d->code != DEF_CODE_SUM) && 
 			(d->code != DEF_CODE_STRUCT) && (d->code != DEF_CODE_FIELD) && (rec>0))
-				_itemDump(th, mask, 0,d->val, d->valType, rec-1,tab-4);
+				_itemDump(mask, 0,d->val, d->valType, rec-1,tab-4);
 	}
 	else if (dbg == DBG_LAMBDA)
 	{
 		LINT j;
 		LB* f = (ARRAY_PNT(p,0));
 		LB* fName = (ARRAY_PNT(f, FUN_USER_NAME));
-		Pkg* pkg = (Pkg*)(ARRAY_PNT(f, FUN_USER_PKG));
+		Pkg* pkg = f->pkg;
 		PRINTF(mask, "%s lambda function defined in function: %s.%s\n", tab, pkgName(pkg),STR_START(fName));
-		_itemDump(th, mask, 0, ARRAY_GET(f, FUN_USER_BC), ARRAY_TYPE(f, FUN_USER_BC), rec - 1, tab - 2);
-		_globalsPrint(th, mask,ARRAY_PNT(f, FUN_USER_GLOBALS),rec-1,tab-2);
+		_itemDump(mask, 0, ARRAY_GET(f, FUN_USER_BC), ARRAY_TYPE(f, FUN_USER_BC), rec - 1, tab - 2);
+		_globalsPrint(mask,ARRAY_PNT(f, FUN_USER_GLOBALS),rec-1,tab-2);
 		if (ARRAY_LENGTH(p) > 1)
 		{
 			PRINTF(mask, "%s curried locals:\n", tab-2);
 			for (j = 1; j < ARRAY_LENGTH(p); j++)
 			{
 				PRINTF(mask, "  %s " LSD ":\n", tab, j-1);
-				_itemDump(th, mask, 0, ARRAY_GET(p, j), ARRAY_TYPE(p, j), rec - 1, tab - 4);
+				_itemDump(mask, 0, ARRAY_GET(p, j), ARRAY_TYPE(p, j), rec - 1, tab - 4);
 			}
 		}
 	}
@@ -320,8 +320,8 @@ void _itemDump(Thread* th, int mask, int skipHeader, LW v,int type,int rec,char*
 		PRINTF(mask, "%s\n", name);
 		if (rec > 1)
 		{
-			_itemDump(th, mask, 0, ARRAY_GET(p, FUN_USER_BC), ARRAY_TYPE(p, FUN_USER_BC), rec - 1, tab - 2);
-			_globalsPrint(th, mask, (ARRAY_PNT(p, FUN_USER_GLOBALS)), rec-1, tab - 2);
+			_itemDump(mask, 0, ARRAY_GET(p, FUN_USER_BC), ARRAY_TYPE(p, FUN_USER_BC), rec - 1, tab - 2);
+			_globalsPrint(mask, (ARRAY_PNT(p, FUN_USER_GLOBALS)), rec-1, tab - 2);
 		}
 	}
 	else if (dbg==DBG_PKG)
@@ -329,7 +329,7 @@ void _itemDump(Thread* th, int mask, int skipHeader, LW v,int type,int rec,char*
 		Pkg* pkg=(Pkg*)p;
 		if (!skipHeader) PRINTF(mask, "%s Pkg ", tab);
 		PRINTF(mask, "%s\n", pkgName(pkg));
-		pkgDisplay(th, mask,pkg);
+		pkgDisplay(mask,pkg);
 	}
 	else if (dbg== DBG_SOCKET)
 	{
@@ -353,7 +353,7 @@ void _itemDump(Thread* th, int mask, int skipHeader, LW v,int type,int rec,char*
 			if (i< TERM_LIMIT_ENUM || i>end)
 			{
 //					PRINTF(mask,"%s   ->\n",tab);
-				_itemDump(th, mask, 0,ARRAY_GET(p,LIST_VAL), ARRAY_TYPE(p,LIST_VAL),rec-1,tab-2);
+				_itemDump(mask, 0,ARRAY_GET(p,LIST_VAL), ARRAY_TYPE(p,LIST_VAL),rec-1,tab-2);
 			}
 			else if (i == TERM_LIMIT_ENUM) PRINTF(mask, "  %s ...skipping %d elements...\n", tab, end - TERM_LIMIT_ENUM);
 			i++;
@@ -373,7 +373,7 @@ void _itemDump(Thread* th, int mask, int skipHeader, LW v,int type,int rec,char*
 			if (i< TERM_LIMIT_ENUM || i>end)
 			{
 //					PRINTF(mask, "%s   ->\n", tab);
-				_itemDump(th, mask, 0, ARRAY_GET(p, LIST_VAL), ARRAY_TYPE(p,LIST_VAL), rec - 1, tab - 2);
+				_itemDump(mask, 0, ARRAY_GET(p, LIST_VAL), ARRAY_TYPE(p,LIST_VAL), rec - 1, tab - 2);
 			}
 			else if (i == TERM_LIMIT_ENUM) PRINTF(mask, "  %s ...skipping %d elements...\n", tab, end - TERM_LIMIT_ENUM);
 			i++;
@@ -387,15 +387,10 @@ void _itemDump(Thread* th, int mask, int skipHeader, LW v,int type,int rec,char*
 /*			for(i=0;i<=th->sp;i++)
 		{
 			PRINTF(mask,"%s-- " LSD ":\n",tab,th->sp-i);
-			_itemDump(th, mask, 0,ARRAY_GET(th->stack,i),rec-1,tab-4);
+			_itemDump(mask, 0,ARRAY_GET(th->stack,i),rec-1,tab-4);
 		}
 */
-        //			_itemDump(th, mask, 0,VAL_FROM_PNT((LB*)th->next),rec,tab);
-	}
-	else if (dbg == DBG_MEMCOUNT)
-	{
-		Mem* m = (Mem*)p;
-		PRINTF(mask, "%s MEM " LSD "/" LSD" %s (%s)\n", tab, m->bytes, m->maxBytes, m->name?STR_START(m->name):"no name", m->header.mem?"child":"root");
+        //			_itemDump(mask, 0,VAL_FROM_PNT((LB*)th->next),rec,tab);
 	}
 	else if (HEADER_TYPE(p)==TYPE_ARRAY)
 	{
@@ -410,7 +405,7 @@ void _itemDump(Thread* th, int mask, int skipHeader, LW v,int type,int rec,char*
 			if (j< TERM_LIMIT_ENUM || j>end)
 			{
 				PRINTF(mask, "  %s " LSD ":\n", tab, j);
-				_itemDump(th, mask, 0, ARRAY_GET(p, j), ARRAY_TYPE(p, j), rec - 1, tab - 4);
+				_itemDump(mask, 0, ARRAY_GET(p, j), ARRAY_TYPE(p, j), rec - 1, tab - 4);
 			}
 			else if (j == TERM_LIMIT_ENUM) PRINTF(mask, "  %s ...skipping %d elements...\n", tab, end - TERM_LIMIT_ENUM);
 		}
@@ -426,20 +421,20 @@ void _itemDump(Thread* th, int mask, int skipHeader, LW v,int type,int rec,char*
 		if (!skipHeader) PRINTF(mask,"%s ",tab);
 		PRINTF(mask,"binary #" LSD " (0x" LSX ")\n",len,len);
 		if (lenDump >= TERM_LIMIT_BIN) lenDump = TERM_LIMIT_BIN;
-		_hexDump(th, mask, src, lenDump,0);
+		_hexDump(mask, src, lenDump,0);
 		if (lenDump<len) PRINTF(mask, "[hiding "LSD" (0x"LSX") bytes]\n", len-lenDump, len - lenDump);
 	}
 }
 
-void itemDump(Thread* th, int mask, LW v, int type)
+void itemDump(int mask, LW v, int type)
 {
 	if (!(mask & MainTerm.mask)) return;
-	_itemDump(th, mask, 0, v, type, 5, NULL);
+	_itemDump(mask, 0, v, type, 5, NULL);
 }
-void itemDumpDirect(Thread* th, int mask, LW v, int type)
+void itemDumpDirect(int mask, LW v, int type)
 {
 	if (!(mask & MainTerm.mask)) return;
-	_itemDump(th, mask, 1, v, type, 5, NULL);
+	_itemDump(mask, 1, v, type, 5, NULL);
 }
 
 void threadDump(int mask,Thread* th,LINT n)
@@ -451,26 +446,26 @@ void threadDump(int mask,Thread* th,LINT n)
 	for(i=n-1;i>=0;i--)
 	{
 		PRINTF(mask,">%3d: ",i);
-		itemDump(th, mask,STACK_GET(th,i),STACK_TYPE(th,i));
+		itemDump(mask,STACK_GET(th,i),STACK_TYPE(th,i));
 	}
 }
 
-void itemEcho(Thread* th, int mask, LW v, int type, int ln)
+void itemEcho(int mask, LW v, int type, int ln)
 {
 	Buffer* b = MM.tmpBuffer;
 	if (!(mask & MainTerm.mask)) return;
 	bufferReinit(b);
-	if (bufferItem(th, b, v, type, NULL)) return;
-	if (ln) bufferAddChar(th, b,10);
+	if (bufferItem(b, v, type, NULL)) return;
+	if (ln) bufferAddChar(b,10);
 	termWrite(mask, bufferStart(b), bufferSize(b));
 }
 
-void itemHeader(Thread* th, int mask,LB* p)
+void itemHeader(int mask,LB* p)
 {
 	PRINTF(mask, "header: " LSX " " LSX " " LSX "(%s) at " LSX "\n", p->sizeAndType, p->nextBlock, p->lifo, (p->lifo==MM.USELESS)?"useless":"useful", p);
 }
 
-void termEchoSourceLine(Pkg* pkg,Thread* th, int mask,char* srcName, char* src, int index)
+void termEchoSourceLine(Pkg* pkg,int mask,char* srcName, char* src, int index)
 {
 	int line = 1;
 	int lineStart = 0;

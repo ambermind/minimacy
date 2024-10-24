@@ -12,7 +12,6 @@
 #include "system_inflate.h"
 typedef struct
 {
-	Thread* th;
 	Buffer* out;
 
 	HuffNode* lenDecoder;
@@ -27,18 +26,18 @@ typedef struct
 	int bit;
 	int done;
 } Inflate;
-int LEN_ORDER[] = {	//19
+const int LEN_ORDER[] = {	//19
 	16, 17, 18, 0, 8, 7, 9, 6,
 	10, 5, 11, 4, 12, 3, 13, 2,
 	14, 1, 15,
 };
-int LENS257[] = {
+const int LENS257[] = {
 	0, 3, 0, 4, 0, 5, 0, 6, 0, 7, 0, 8, 0, 9, 0, 10,
 	1, 11, 1, 13, 1, 15, 1, 17, 2, 19, 2, 23, 2, 27, 2, 31,
 	3, 35, 3, 43, 3, 51, 3, 59, 4, 67, 4, 83, 4, 99, 4, 115,
 	5, 131, 5, 163, 5, 195, 5, 227, 0, 258
 };
-int DISTANCES[] = {
+const int DISTANCES[] = {
 	0, 1, 0, 2, 0, 3, 0, 4, 1, 5, 1, 7, 2, 9, 2, 13,
 	3, 17, 3, 25, 4, 33, 4, 49, 5, 65, 5, 97, 6, 129, 6, 193,
 	7, 257, 7, 385, 8, 513, 8, 769, 9, 1025, 9, 1537, 10, 2049, 10, 3073,
@@ -187,7 +186,7 @@ int _inflateData(Inflate* z)
 	while (1) {
 		code = huffmanDecodeCode0To7(z, z->codeDecoder);
 		if (code < 0) return -1;
-		else if (code < 256) bufferAddChar(z->th, z->out, code);
+		else if (code < 256) bufferAddChar(z->out, code);
 		else if (code == 256) return 0;
 		else {
 			code -= 257;
@@ -200,7 +199,7 @@ int _inflateData(Inflate* z)
 			offset = DISTANCES[dist * 2 + 1];
 			dist = brBitsLsb(z, extra); if (dist < 0) return -1;
 			dist += offset;
-			for (i = 0; i < len; i++) bufferAddChar(z->th, z->out, bufferGetChar(z->out, -dist));
+			for (i = 0; i < len; i++) bufferAddChar(z->out, bufferGetChar(z->out, -dist));
 		}
 	}
 }
@@ -302,7 +301,7 @@ int _inflateBlockNoCompression(Inflate* z)
 	if ((len + coLen) != 0xffff) return -1;
 
 	start = brBytesSkip(z, len); if (!start) return -1;
-	if (bufferAddBin(z->th, z->out, start, len)) return -1;	// should return OM
+	if (bufferAddBin(z->out, start, len)) return -1;	// should return OM
 	return 0;
 	//	PRINTF(LOG_DEV,"len=%x coLen=%x i=%d sum=%x\n", len, coLen,z->bit,len+coLen);
 }
@@ -333,9 +332,8 @@ int inflateLoop(Inflate* z)
 	z->done = 1;
 	return 0;
 }
-void inflateInit(Inflate* z,Thread* th, LB* src, Buffer* out)
+void inflateInit(Inflate* z, LB* src, Buffer* out)
 {
-	z->th = th;
 	z->out = out;
 
 	z->src = STR_START(src);
@@ -352,22 +350,25 @@ MTHREAD_START _inflate(Thread* th)
 	LB* src= STACK_PNT(th, 0);
 	Buffer* out = (Buffer*)STACK_PNT(th, 1);
 	if ((!src)||(!out)) return workerDonePnt(th,MM._false);
-	inflateInit(&z, th, src, out);
+	bufferSetWorkerThread(out, th);
+	inflateInit(&z, src, out);
 	if (inflateLoop(&z) || !z.done) {
+		bufferSetWorkerThread(out, NULL);
 		return workerDonePnt(th,MM._false);
 	}
+	bufferSetWorkerThread(out, NULL);
 	return workerDonePnt(th,MM._true);
 }
 
 int fun_inflate(Thread* th) { return workerStart(th, 2, _inflate); }
 
-int coreInflateInit(Thread* th, Pkg* system)
+int coreInflateInit(Pkg* system)
 {
-	Type* fun_B_S_Bool = typeAlloc(th, TYPECODE_FUN, NULL, 3, MM.Buffer, MM.Str, MM.Boolean);
-	Type* fun_B_Bytes_Bool = typeAlloc(th, TYPECODE_FUN, NULL, 3, MM.Buffer, MM.Bytes, MM.Boolean);
-
-	pkgAddFun(th, system, "_deflate", fun_deflate, fun_B_S_Bool);
-	pkgAddFun(th, system, "_deflateBytes", fun_deflate, fun_B_Bytes_Bool);
-	pkgAddFun(th, system, "_inflate", fun_inflate, fun_B_S_Bool);
+	static const Native nativeDefs[] = {
+		{ NATIVE_FUN, "_deflate", fun_deflate, "fun Buffer Str -> Bool"},
+		{ NATIVE_FUN, "_deflateBytes", fun_deflate, "fun Buffer Bytes -> Bool"},
+		{ NATIVE_FUN, "_inflate", fun_inflate, "fun Buffer Str -> Bool"},
+	};
+	NATIVE_DEF(nativeDefs);
 	return 0;
 }

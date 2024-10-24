@@ -23,9 +23,9 @@ int _socketForget(LB* p)
 	_socketClose((Socket*)p);
 	return 0;
 }
-Socket* _socketCreate(Thread* th, SOCKET sock)
+Socket* _socketCreate(SOCKET sock)
 {
-	Socket* s = (Socket*)memoryAllocExt(th, sizeof(Socket), DBG_SOCKET, _socketForget, NULL);
+	Socket* s = (Socket*)memoryAllocExt(sizeof(Socket), DBG_SOCKET, _socketForget, NULL);
 	if (!s) {
 		closesocket(sock);
 		return NULL;
@@ -40,7 +40,7 @@ Socket* _socketCreate(Thread* th, SOCKET sock)
 
 int fun_socketEmpty(Thread* th)
 {
-	Socket* s = _socketCreate(th,INVALID_SOCKET); if (!s) return EXEC_OM;
+	Socket* s = _socketCreate(INVALID_SOCKET); if (!s) return EXEC_OM;
 	FUN_RETURN_PNT((LB*)s);
 }
 
@@ -185,6 +185,7 @@ MTHREAD_START _ipByName(Thread* th)
 	LB* name = STACK_PNT(th, 0);
 	Buffer* out = (Buffer*)STACK_PNT(th, 1);
 	if ((!name) || (!out)) return workerDoneNil(th);
+	bufferSetWorkerThread(out, th);
 	hp = gethostbyname(STR_START(name));
 	if (hp)
 	{
@@ -195,11 +196,12 @@ MTHREAD_START _ipByName(Thread* th)
 			struct in_addr Addr;
 			Addr.s_addr = *(p[n]);	// warning on Macos should cast with (in_addr_t) not known on windows
 			ip = (char*)inet_ntoa(Addr);
-			if (n) bufferAddChar(th, out, 0);
-			bufferAddBin(th, out, ip, strlen(ip));
+			if (n) bufferAddChar(out, 0);
+			bufferAddBin(out, ip, strlen(ip));
 			n++;
 		}
 	}
+	bufferSetWorkerThread(out, NULL);
 	return workerDoneInt(th,n);
 }
 int fun_ipByName(Thread* th) { return workerStart(th, 2, _ipByName); }
@@ -212,12 +214,15 @@ MTHREAD_START _nameByIp(Thread* th)
 	LB* ip = STACK_PNT(th, 0);
 	Buffer* out = (Buffer*)STACK_PNT(th, 1);
 	if ((!ip) || (!out)) return workerDoneNil(th);
+	bufferSetWorkerThread(out, th);
 	addr = inet_addr(STR_START(ip));
 	if ((hp = gethostbyaddr((char*)&addr, sizeof(addr), AF_INET)))
 	{
-		bufferAddBin(th, out, hp->h_name, strlen(hp->h_name));
+		bufferAddBin(out, hp->h_name, strlen(hp->h_name));
+		bufferSetWorkerThread(out, NULL);
 		return workerDoneInt(th,1);
 	}
+	bufferSetWorkerThread(out, NULL);
 	return workerDoneNil(th);
 }
 int fun_nameByIp(Thread* th) { return workerStart(th, 2, _nameByIp); }
@@ -279,7 +284,7 @@ struct termios Term0;
 int fun_keyboardOpen(Thread* th)
 {
 	struct termios term;
-	Socket* s = _socketCreate(th,0); if (!s) return EXEC_OM;
+	Socket* s = _socketCreate(0); if (!s) return EXEC_OM;
 
 	if (!tcgetattr(0, &term)) {
 		term.c_lflag &= ~(ICANON | ECHO);
@@ -384,7 +389,7 @@ MTHREAD_START keyboardThread(void* param)
 
 int fun_keyboardOpen(Thread* th)
 {
-	Socket* s = _socketCreate(th,KeyboardPipe[PIPE_READ]); if (!s) return EXEC_OM;
+	Socket* s = _socketCreate(KeyboardPipe[PIPE_READ]); if (!s) return EXEC_OM;
 	if (!KeyboardThread)
 	{
 		long argp = 1;
@@ -403,7 +408,7 @@ int fun_keyboardRead(Thread* th) {
 
 int fun_internalOpen(Thread* th)
 {
-	Socket* s = _socketCreate(th,InternalPipe[PIPE_READ]); if (!s) return EXEC_OM;
+	Socket* s = _socketCreate(InternalPipe[PIPE_READ]); if (!s) return EXEC_OM;
 	FUN_RETURN_PNT((LB*)s);
 }
 int fun_internalRead(Thread* th) {
@@ -482,7 +487,7 @@ int fun_udpCreate(Thread* th)
 	setsockopt(sock, SOL_SOCKET, SO_LINGER, (const char*)&lin, sizeof(int));
 	setsockopt(sock, SOL_SOCKET, SO_BROADCAST, (char*)&opt, sizeof(opt));
 
-	s = _socketCreate(th,sock); if (!s) return EXEC_OM;
+	s = _socketCreate(sock); if (!s) return EXEC_OM;
 	FUN_RETURN_PNT((LB*)s);
 }
 
@@ -537,13 +542,14 @@ int fun_tcpOpen(Thread* th)
 	ina.sin_family = PF_INET;
 	ina.sin_port = htons((unsigned short)port);
 	ina.sin_addr.s_addr = ip;
-	if ((connect(sock, (struct sockaddr*)&ina, sizeof(ina)) != 0)
-		&& (!SOCKETWOULDBLOCK)) {
+	if (connect(sock, (struct sockaddr*)&ina, sizeof(ina)) != 0) {
+		if (!SOCKETWOULDBLOCK) {
 			closesocket(sock);
 			FUN_RETURN_NIL;
 		}
-	s = _socketCreate(th,sock); if (!s) return EXEC_OM;
-	//	PRINTF(LOG_DEV, "create socket %d to %s %d\n", s->fd, STR_START(ip_str),port);
+	}
+	s = _socketCreate(sock); if (!s) return EXEC_OM;
+//	PRINTF(LOG_DEV, "create socket %d to %s %d\n", s->fd, STR_START(ip_str),port);
 	FUN_RETURN_PNT((LB*)s);
 }
 int fun_tcpListen(Thread* th)
@@ -584,7 +590,7 @@ int fun_tcpListen(Thread* th)
 		closesocket(sock);
 		FUN_RETURN_NIL;
 	}
-	s = _socketCreate(th,sock); if (!s) return EXEC_OM;
+	s = _socketCreate(sock); if (!s) return EXEC_OM;
 	FUN_RETURN_PNT((LB*)s);
 }
 int fun_tcpAccept(Thread* th)
@@ -608,7 +614,7 @@ int fun_tcpAccept(Thread* th)
 	if (sock == INVALID_SOCKET) FUN_RETURN_NIL;
 	ioctlsocket(sock, FIONBIO, &argp);
 
-	s = _socketCreate(th,sock); if (!s) return EXEC_OM;
+	s = _socketCreate(sock); if (!s) return EXEC_OM;
 
 	ip = remote.sin_addr.s_addr;
 	port = ntohs(remote.sin_port);
@@ -733,7 +739,7 @@ int fun_ethCreate(Thread* th)
 		closesocket(sock);
 		FUN_RETURN_NIL;
 	}
-	s = _socketCreate(th,sock); if (!s) return EXEC_OM;
+	s = _socketCreate(sock); if (!s) return EXEC_OM;
 //	printf("socket ok %d on %d\n",sock,ifindex);
 	FUN_RETURN_PNT((LB*)s);
 }
@@ -916,7 +922,7 @@ int _keyboardCheckWritable(Socket* s)
 
 int fun_keyboardOpen(Thread* th)
 {
-	Socket* s = _socketCreate(th,0); if (!s) return EXEC_OM;
+	Socket* s = _socketCreate(0); if (!s) return EXEC_OM;
 	s->checkReadable= _keyboardCheckReadable;
 	s->checkWritable= _keyboardCheckWritable;
 	FUN_RETURN_PNT((LB*)s);
@@ -944,7 +950,7 @@ int _watcherCheckReadable(Socket* s)
 
 int fun_watcherOpen(Thread* th)
 {
-	Socket* s = _socketCreate(th, 0); if (!s) return EXEC_OM;
+	Socket* s = _socketCreate(0); if (!s) return EXEC_OM;
 	s->watchAddress = s->watchMask = s->watchValue = 0;
 	s->checkReadable = _watcherCheckReadable;
 	FUN_RETURN_PNT((LB*)s);
@@ -985,60 +991,48 @@ int fun_ipChecksumFinal(Thread* th)
 	FUN_RETURN_STR((char*)&checkSum, 2);
 }
 
-int sysSocketInit(Thread* th, Pkg* system)
+int sysSocketInit(Pkg* system)
 {
-	Type* list_Sock = typeAlloc(th,TYPECODE_LIST, NULL, 1, MM.Socket);
-	Type* list_Eth = typeAlloc(th,TYPECODE_LIST, NULL, 1, typeAlloc(th,TYPECODE_TUPLE, NULL, 6, MM.Int, MM.Str, MM.Int, MM.Str, MM.Int, MM.Str));
-
-	pkgAddFun(th, system, "socketEmpty", fun_socketEmpty, typeAlloc(th, TYPECODE_FUN, NULL, 1, MM.Socket));
-	
-	pkgAddFun(th, system, "_socketSetSelectRead", fun_socketSetSelectRead, typeAlloc(th,TYPECODE_FUN, NULL, 3, MM.Socket, MM.Boolean, MM.Socket));
-	pkgAddFun(th, system, "_socketSelectRead", fun_socketSelectRead, typeAlloc(th,TYPECODE_FUN, NULL, 2, MM.Socket, MM.Boolean));
-	pkgAddFun(th, system, "socketSetReadable", fun_socketSetReadable, typeAlloc(th,TYPECODE_FUN, NULL, 3, MM.Socket, MM.Boolean, MM.Socket));
-	pkgAddFun(th, system, "_socketReadable", fun_socketReadable, typeAlloc(th,TYPECODE_FUN, NULL, 2, MM.Socket, MM.Boolean));
-
-	pkgAddFun(th, system, "_socketSetSelectWrite", fun_socketSetSelectWrite, typeAlloc(th,TYPECODE_FUN, NULL, 3, MM.Socket, MM.Boolean, MM.Socket));
-	pkgAddFun(th, system, "_socketSelectWrite", fun_socketSelectWrite, typeAlloc(th,TYPECODE_FUN, NULL, 2, MM.Socket, MM.Boolean));
-	pkgAddFun(th, system, "socketSetWritable", fun_socketSetWritable, typeAlloc(th,TYPECODE_FUN, NULL, 3, MM.Socket, MM.Boolean, MM.Socket));
-	pkgAddFun(th, system, "_socketWritable", fun_socketWritable, typeAlloc(th,TYPECODE_FUN, NULL, 2, MM.Socket, MM.Boolean));
-
-	pkgAddFun(th, system, "_select", fun_select, typeAlloc(th, TYPECODE_FUN, NULL, 3, list_Sock, MM.Int, MM.Int));
-
-	pkgAddFun(th, system, "_keyboardOpen", fun_keyboardOpen, typeAlloc(th, TYPECODE_FUN, NULL, 1, MM.Socket));
-	pkgAddFun(th, system, "_keyboardRead", fun_keyboardRead, typeAlloc(th, TYPECODE_FUN, NULL, 2, MM.Socket, MM.Str));
-	
-	pkgAddFun(th, system, "_internalOpen", fun_internalOpen, typeAlloc(th, TYPECODE_FUN, NULL, 1, MM.Socket));
-	pkgAddFun(th, system, "_internalRead", fun_internalRead, typeAlloc(th, TYPECODE_FUN, NULL, 2, MM.Socket, MM.Str));
-
-	pkgAddFun(th, system, "_watcherOpen", fun_watcherOpen, typeAlloc(th, TYPECODE_FUN, NULL, 1, MM.Socket));
-	pkgAddFun(th, system, "_watcherUpdate", fun_watcherUpdate, typeAlloc(th, TYPECODE_FUN, NULL, 5, MM.Socket, MM.Int, MM.Int, MM.Int, MM.Socket));
-
-	pkgAddFun(th, system, "_socketClose", fun_socketClose, typeAlloc(th,TYPECODE_FUN, NULL, 2, MM.Socket, MM.Int));
-	pkgAddFun(th, system, "_socketRead", fun_socketRead, typeAlloc(th,TYPECODE_FUN, NULL, 2, MM.Socket, MM.Str));
-	pkgAddFun(th, system, "_socketWrite", fun_socketWrite, typeAlloc(th, TYPECODE_FUN, NULL, 4, MM.Socket, MM.Str, MM.Int, MM.Int));
-
-	pkgAddFun(th, system, "_tcpOpen", fun_tcpOpen, typeAlloc(th, TYPECODE_FUN, NULL, 3, MM.Str, MM.Int, MM.Socket));
-	pkgAddFun(th, system, "_tcpListen", fun_tcpListen, typeAlloc(th, TYPECODE_FUN, NULL, 3, MM.Str, MM.Int, MM.Socket));
-	pkgAddFun(th, system, "_tcpAccept", fun_tcpAccept, typeAlloc(th, TYPECODE_FUN, NULL, 2, MM.Socket, typeAlloc(th, TYPECODE_TUPLE, NULL, 3, MM.Socket, MM.Str, MM.Int)));
-	pkgAddFun(th, system, "_tcpNoDelay", fun_tcpNoDelay, typeAlloc(th, TYPECODE_FUN, NULL, 3, MM.Socket, MM.Boolean, MM.Socket));
-	pkgAddFun(th, system, "_tcpRead", fun_tcpRead, typeAlloc(th, TYPECODE_FUN, NULL, 2, MM.Socket, MM.Str));
-	pkgAddFun(th, system, "_tcpWrite", fun_tcpWrite, typeAlloc(th, TYPECODE_FUN, NULL, 4, MM.Socket, MM.Str, MM.Int, MM.Int));
-	
-	pkgAddFun(th, system, "_udpCreate", fun_udpCreate, typeAlloc(th,TYPECODE_FUN, NULL, 3, MM.Str, MM.Int, MM.Socket));
-	pkgAddFun(th, system, "_udpSend", fun_udpSend, typeAlloc(th,TYPECODE_FUN, NULL, 7, MM.Socket, MM.Str, MM.Int, MM.Str, MM.Int, MM.Str, MM.Int));
-	pkgAddFun(th, system, "_udpRead", fun_udpRead, typeAlloc(th, TYPECODE_FUN, NULL, 2, MM.Socket, typeAlloc(th, TYPECODE_TUPLE, NULL, 3, MM.Str, MM.Str, MM.Int)));
-	
-	pkgAddFun(th, system, "ethList", fun_ethList, typeAlloc(th,TYPECODE_FUN, NULL, 1, list_Eth));
-	pkgAddFun(th, system, "_ethCreate", fun_ethCreate, typeAlloc(th,TYPECODE_FUN, NULL, 2, MM.Int, MM.Socket));
-	pkgAddFun(th, system, "_ethSend", fun_ethSend, typeAlloc(th,TYPECODE_FUN, NULL, 4, MM.Socket, MM.Int, MM.Str, MM.Int));
-	pkgAddFun(th, system, "_ethRead", fun_ethRead, typeAlloc(th, TYPECODE_FUN, NULL, 2, MM.Socket, MM.Str));
-
-	pkgAddFun(th, system, "_ipByName", fun_ipByName, typeAlloc(th, TYPECODE_FUN, NULL, 3, MM.Buffer, MM.Str, MM.Int));
-	pkgAddFun(th, system, "_nameByIp", fun_nameByIp, typeAlloc(th, TYPECODE_FUN, NULL, 3, MM.Buffer, MM.Str, MM.Int));
-	pkgAddFun(th, system, "hostName", fun_hostName, typeAlloc(th, TYPECODE_FUN, NULL, 1, MM.Str));
-
-	pkgAddFun(th, system, "ipChecksum", fun_ipChecksum, typeAlloc(th, TYPECODE_FUN, NULL, 3, MM.Str, MM.Int, MM.Int));
-	pkgAddFun(th, system, "ipChecksumFinal", fun_ipChecksumFinal, typeAlloc(th, TYPECODE_FUN, NULL, 2, MM.Int, MM.Str));
+	static const Native nativeDefs[] = {
+		{ NATIVE_FUN, "socketEmpty", fun_socketEmpty, "fun -> Socket"},
+		{ NATIVE_FUN, "_socketSetSelectRead", fun_socketSetSelectRead, "fun Socket Bool -> Socket"},
+		{ NATIVE_FUN, "_socketSelectRead", fun_socketSelectRead, "fun Socket -> Bool"},
+		{ NATIVE_FUN, "socketSetReadable", fun_socketSetReadable, "fun Socket Bool -> Socket"},
+		{ NATIVE_FUN, "_socketReadable", fun_socketReadable, "fun Socket -> Bool"},
+		{ NATIVE_FUN, "_socketSetSelectWrite", fun_socketSetSelectWrite, "fun Socket Bool -> Socket"},
+		{ NATIVE_FUN, "_socketSelectWrite", fun_socketSelectWrite, "fun Socket -> Bool"},
+		{ NATIVE_FUN, "socketSetWritable", fun_socketSetWritable, "fun Socket Bool -> Socket"},
+		{ NATIVE_FUN, "_socketWritable", fun_socketWritable, "fun Socket -> Bool"},
+		{ NATIVE_FUN, "_select", fun_select, "fun list Socket Int -> Int"},
+		{ NATIVE_FUN, "_keyboardOpen", fun_keyboardOpen, "fun -> Socket"},
+		{ NATIVE_FUN, "_keyboardRead", fun_keyboardRead, "fun Socket -> Str"},
+		{ NATIVE_FUN, "_internalOpen", fun_internalOpen, "fun -> Socket"},
+		{ NATIVE_FUN, "_internalRead", fun_internalRead, "fun Socket -> Str"},
+		{ NATIVE_FUN, "_watcherOpen", fun_watcherOpen, "fun -> Socket"},
+		{ NATIVE_FUN, "_watcherUpdate", fun_watcherUpdate, "fun Socket Int Int Int -> Socket"},
+		{ NATIVE_FUN, "_socketClose", fun_socketClose, "fun Socket -> Int"},
+		{ NATIVE_FUN, "_socketRead", fun_socketRead, "fun Socket -> Str"},
+		{ NATIVE_FUN, "_socketWrite", fun_socketWrite, "fun Socket Str Int -> Int"},
+		{ NATIVE_FUN, "_tcpOpen", fun_tcpOpen, "fun Str Int -> Socket"},
+		{ NATIVE_FUN, "_tcpListen", fun_tcpListen, "fun Str Int -> Socket"},
+		{ NATIVE_FUN, "_tcpAccept", fun_tcpAccept, "fun Socket -> [Socket Str Int]"},
+		{ NATIVE_FUN, "_tcpNoDelay", fun_tcpNoDelay, "fun Socket Bool -> Socket"},
+		{ NATIVE_FUN, "_tcpRead", fun_tcpRead, "fun Socket -> Str"},
+		{ NATIVE_FUN, "_tcpWrite", fun_tcpWrite, "fun Socket Str Int -> Int"},
+		{ NATIVE_FUN, "_udpCreate", fun_udpCreate, "fun Str Int -> Socket"},
+		{ NATIVE_FUN, "_udpSend", fun_udpSend, "fun Socket Str Int Str Int Str -> Int"},
+		{ NATIVE_FUN, "_udpRead", fun_udpRead, "fun Socket -> [Str Str Int]"},
+		{ NATIVE_FUN, "ethList", fun_ethList, "fun -> list [Int Str Int Str Int Str]"},
+		{ NATIVE_FUN, "_ethCreate", fun_ethCreate, "fun Int -> Socket"},
+		{ NATIVE_FUN, "_ethSend", fun_ethSend, "fun Socket Int Str -> Int"},
+		{ NATIVE_FUN, "_ethRead", fun_ethRead, "fun Socket -> Str"},
+		{ NATIVE_FUN, "_ipByName", fun_ipByName, "fun Buffer Str -> Int"},
+		{ NATIVE_FUN, "_nameByIp", fun_nameByIp, "fun Buffer Str -> Int"},
+		{ NATIVE_FUN, "hostName", fun_hostName, "fun -> Str"},
+		{ NATIVE_FUN, "ipChecksum", fun_ipChecksum, "fun Str Int -> Int"},
+		{ NATIVE_FUN, "ipChecksumFinal", fun_ipChecksumFinal, "fun Int -> Str"},
+	};
+	NATIVE_DEF(nativeDefs);
 
 #ifdef USE_SOCKET
 #ifdef USE_SOCKET_WIN

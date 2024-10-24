@@ -82,7 +82,7 @@ int fun_strBuild(Thread* th)
 	if (STACK_IS_NIL(th,0)) FUN_RETURN_NIL;
 
 	bufferReinit(MM.tmpBuffer);
-	if (bufferItem(th, MM.tmpBuffer, STACK_GET(th, 0),STACK_TYPE(th, 0), NULL)) return EXEC_OM;
+	if (bufferItem(MM.tmpBuffer, STACK_GET(th, 0),STACK_TYPE(th, 0), NULL)) return EXEC_OM;
 	FUN_RETURN_BUFFER(MM.tmpBuffer);
 }
 
@@ -92,7 +92,7 @@ int fun_strJoin(Thread* th)
 	if (STACK_IS_NIL(th,0)) FUN_RETURN_NIL;
 
 	bufferReinit(MM.tmpBuffer);
-	if (bufferItem(th, MM.tmpBuffer, STACK_GET(th, 0),STACK_TYPE(th, 0), p_join)) return EXEC_OM;
+	if (bufferItem(MM.tmpBuffer, STACK_GET(th, 0),STACK_TYPE(th, 0), p_join)) return EXEC_OM;
 	FUN_RETURN_BUFFER(MM.tmpBuffer);
 }
 
@@ -288,48 +288,32 @@ int fun_strRand(Thread* th)
 	return 0;
 }
 
-int coreStrInit(Thread* th, Pkg *system)
+int coreStrInit(Pkg *system)
 {
-	Type* u0=typeAllocUndef(th);
-	Type* list_S=typeAlloc(th,TYPECODE_LIST,NULL,1,MM.Str);
-	Type* fun_I_S = typeAlloc(th,TYPECODE_FUN, NULL, 2, MM.Int, MM.Str);
-	Type* fun_S_I=typeAlloc(th,TYPECODE_FUN,NULL,2,MM.Str,MM.Int);
-	Type* fun_S_S_I=typeAlloc(th,TYPECODE_FUN,NULL,3,MM.Str,MM.Str,MM.Int);
-	Type* fun_S_I_S=typeAlloc(th,TYPECODE_FUN,NULL,3,MM.Str,MM.Int,MM.Str);
-	Type* fun_S_I_I_I =typeAlloc(th,TYPECODE_FUN,NULL,4,MM.Str,MM.Int,MM.Int,MM.Int);
-	Type* fun_S_S_I_I=typeAlloc(th,TYPECODE_FUN,NULL,4,MM.Str,MM.Str,MM.Int,MM.Int);
-	Type* fun_S_S_I_B=typeAlloc(th,TYPECODE_FUN,NULL,4,MM.Str,MM.Str,MM.Int,MM.Boolean);
-	Type* fun_S_S_S_S=typeAlloc(th,TYPECODE_FUN,NULL,4,MM.Str,MM.Str,MM.Str,MM.Str);
-	Type* fun_S_I_I_S=typeAlloc(th,TYPECODE_FUN,NULL,4,MM.Str,MM.Int,MM.Int,MM.Str);
-
-	Type* fun_S_I_I = typeAlloc(th,TYPECODE_FUN, NULL, 3, MM.Str, MM.Int, MM.Int);
-
-	pkgAddFun(th, system,"strConcat",fun_strConcat,typeAlloc(th,TYPECODE_FUN,NULL,3,MM.Str,MM.Str,MM.Str));
-	pkgAddFun(th, system,"strLength",fun_strLength,fun_S_I);
-	pkgAddFun(th, system,"strCmp",fun_strCmp,fun_S_S_I);
-	pkgAddFun(th, system,"strSlice",fun_strSlice,fun_S_I_I_S);
-	pkgAddFun(th, system,"strLeft",fun_strLeft,fun_S_I_S);
-	pkgAddFun(th, system,"strRight",fun_strRight,fun_S_I_S);
-
-	pkgAddFun(th, system,"strGet",fun_strGet, fun_S_I_I);
-	pkgAddFun(th, system,"strCharPos", fun_strCharPos, fun_S_I_I_I);
-	pkgAddFun(th, system,"strPos",fun_strPos,fun_S_S_I_I);
-	pkgAddFun(th, system,"strCharPosRev", fun_strCharPosRev, fun_S_I_I_I);
-	pkgAddFun(th, system,"strPosRev",fun_strPosRev, fun_S_S_I_I);
-	pkgAddFun(th, system, "strCheckPos", fun_strCheckPos, fun_S_S_I_B);
-
-	pkgAddFun(th, system, "bytesBuild", fun_strBuild, typeAlloc(th, TYPECODE_FUN, NULL, 2, u0, MM.Bytes));
-	pkgAddFun(th, system,"strBuild",fun_strBuild,typeAlloc(th,TYPECODE_FUN,NULL,2,u0,MM.Str));
-	pkgAddFun(th, system,"strListConcat",fun_strBuild, typeAlloc(th,TYPECODE_FUN, NULL, 2, list_S, MM.Str));	// idem strBuild, but with a different type
-	pkgAddFun(th, system,"strJoin",fun_strJoin,typeAlloc(th,TYPECODE_FUN,NULL,3,MM.Str, u0, MM.Str));
-	pkgAddFun(th, system,"strSplit",fun_strSplit,typeAlloc(th,TYPECODE_FUN,NULL,3,MM.Str,MM.Str,list_S));
-	pkgAddFun(th, system,"strLines",fun_strLines,typeAlloc(th,TYPECODE_FUN,NULL,2,MM.Str,list_S));
-		
-	pkgAddFun(th, system,"strReplace",fun_strReplace,fun_S_S_S_S);
-
-	pkgAddFun(th, system, "strFromChar", fun_strFromChar, fun_I_S);
-	pkgAddFun(th, system,"strRand",fun_strRand,fun_I_S);
-
+	static const Native nativeDefs[] = {
+		{ NATIVE_FUN, "strConcat", fun_strConcat, "fun Str Str -> Str"},
+		{ NATIVE_FUN, "strLength", fun_strLength, "fun Str -> Int"},
+		{ NATIVE_FUN, "strCmp", fun_strCmp, "fun Str Str -> Int"},
+		{ NATIVE_FUN, "strSlice", fun_strSlice, "fun Str Int Int -> Str"},
+		{ NATIVE_FUN, "strLeft", fun_strLeft, "fun Str Int -> Str"},
+		{ NATIVE_FUN, "strRight", fun_strRight, "fun Str Int -> Str"},
+		{ NATIVE_FUN, "strGet", fun_strGet, "fun Str Int -> Int"},
+		{ NATIVE_FUN, "strCharPos", fun_strCharPos, "fun Str Int Int -> Int"},
+		{ NATIVE_FUN, "strPos", fun_strPos, "fun Str Str Int -> Int"},
+		{ NATIVE_FUN, "strCharPosRev", fun_strCharPosRev, "fun Str Int Int -> Int"},
+		{ NATIVE_FUN, "strPosRev", fun_strPosRev, "fun Str Str Int -> Int"},
+		{ NATIVE_FUN, "strCheckPos", fun_strCheckPos, "fun Str Str Int -> Bool"},
+		{ NATIVE_FUN, "bytesBuild", fun_strBuild, "fun a1 -> Bytes"},
+		{ NATIVE_FUN, "strBuild", fun_strBuild, "fun a1 -> Str"},
+		{ NATIVE_FUN, "strListConcat", fun_strBuild, "fun list Str -> Str"},
+		{ NATIVE_FUN, "strJoin", fun_strJoin, "fun Str a1 -> Str"},
+		{ NATIVE_FUN, "strSplit", fun_strSplit, "fun Str Str -> list Str"},
+		{ NATIVE_FUN, "strLines", fun_strLines, "fun Str -> list Str"},
+		{ NATIVE_FUN, "strReplace", fun_strReplace, "fun Str Str Str -> Str"},
+		{ NATIVE_FUN, "strFromChar", fun_strFromChar, "fun Int -> Str"},
+		{ NATIVE_FUN, "strRand", fun_strRand, "fun Int -> Str"},
+	};
+	NATIVE_DEF(nativeDefs);
 
 	return 0;
 }

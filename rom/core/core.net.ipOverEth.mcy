@@ -40,7 +40,7 @@ struct IfStruct=[indexI nameI macI maxPacketI socketI ipI submaskI gatewayI dnsI
 var If;;
 
 fun ifSet index name mac maxPacket cbRead=
-	appStart nil nil name nil (lambda=
+	appStart nil nil name (lambda=
 		let ethOnEvent (ethCreate index) cbRead nil -> socket in
 		set If=[
 			indexI=index nameI=name macI=mac maxPacketI=maxPacket socketI=socket

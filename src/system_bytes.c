@@ -21,7 +21,7 @@ int fun_bytesCreate(Thread* th)
 	LINT n=STACK_INT(th,1);
 	if (STACK_IS_NIL(th,1)) FUN_RETURN_NIL;
 	if (n<0) FUN_RETURN_NIL;
-	p=memoryAllocStr(th, NULL,n); if (!p) return EXEC_OM;
+	p=memoryAllocStr(NULL,n); if (!p) return EXEC_OM;
 	memset(STR_START(p),(int)val,n);
 	FUN_RETURN_PNT(p)
 }
@@ -139,34 +139,32 @@ int fun_bytesRight(Thread* th)
 	FUN_RETURN_STR(STR_START(src) + STR_LENGTH(src) - len, len);
 }
 
-int coreBytesInit(Thread* th, Pkg *system)
+int coreBytesInit(Pkg *system)
 {
-	Type* fun_B_I_I = typeAlloc(th,TYPECODE_FUN, NULL, 3, MM.Bytes, MM.Int, MM.Int);
-	Type* fun_B_I_B = typeAlloc(th,TYPECODE_FUN, NULL, 3, MM.Bytes, MM.Int, MM.Bytes);
-	Type* fun_B_I_S = typeAlloc(th,TYPECODE_FUN, NULL, 3, MM.Bytes, MM.Int, MM.Str);
-	Type* fun_B_I_I_B = typeAlloc(th,TYPECODE_FUN, NULL, 4, MM.Bytes, MM.Int, MM.Int, MM.Bytes);
-
-	pkgAddFun(th, system,"bytesCreate",fun_bytesCreate,typeAlloc(th,TYPECODE_FUN,NULL,3,MM.Int,MM.Int,MM.Bytes));
-	pkgAddFun(th, system,"strCreate",fun_bytesCreate,typeAlloc(th,TYPECODE_FUN,NULL,3,MM.Int,MM.Int,MM.Str));
-	pkgAddFun(th, system,"bytesGet",fun_strGet, fun_B_I_I);
-	pkgAddFun(th, system,"bytesSet",fun_bytesSet, fun_B_I_I_B);
-	pkgAddFun(th, system,"bytesCopy",fun_bytesCopy,typeAlloc(th,TYPECODE_FUN,NULL,6,MM.Bytes,MM.Int,MM.Str,MM.Int,MM.Int,MM.Bytes));
-	pkgAddFun(th, system,"bytesCopyBytes",fun_bytesCopy,typeAlloc(th,TYPECODE_FUN,NULL,6,MM.Bytes,MM.Int,MM.Bytes,MM.Int,MM.Int,MM.Bytes));
-	pkgAddFun(th, system,"bytesXor",fun_bytesXor,typeAlloc(th,TYPECODE_FUN,NULL,6,MM.Bytes,MM.Int,MM.Str,MM.Int,MM.Int,MM.Bytes));
-	pkgAddFun(th, system,"bytesXorBytes",fun_bytesXor,typeAlloc(th,TYPECODE_FUN,NULL,6,MM.Bytes,MM.Int,MM.Bytes,MM.Int,MM.Int,MM.Bytes));
-	pkgAddFun(th, system,"bytesLSL1", fun_bytesLSL1, fun_B_I_I);
-	pkgAddFun(th, system,"bytesClear", fun_bytesClear, fun_B_I_B);
-	pkgAddOpcode(th, system,"_bytesAsStr",OPnop,typeAlloc(th,TYPECODE_FUN,NULL,2,MM.Bytes,MM.Str));
-	pkgAddFun(th, system, "bytesLeft", fun_bytesLeft, fun_B_I_B);
-	pkgAddFun(th, system, "strLeftBytes", fun_bytesLeft, fun_B_I_S);
-	pkgAddFun(th, system, "bytesRight", fun_bytesRight, fun_B_I_B);
-	pkgAddFun(th, system,"bytesSlice",fun_strSliceForceCopy,typeAlloc(th,TYPECODE_FUN,NULL,4,MM.Bytes,MM.Int,MM.Int,MM.Bytes));
-	pkgAddFun(th, system,"strSliceOfBytes",fun_strSliceForceCopy,typeAlloc(th,TYPECODE_FUN,NULL,4,MM.Str,MM.Int,MM.Int,MM.Bytes));
-	pkgAddFun(th, system,"bytesSliceOfStr",fun_strSliceForceCopy,typeAlloc(th,TYPECODE_FUN,NULL,4,MM.Bytes,MM.Int,MM.Int,MM.Str));
-	pkgAddFun(th, system,"strFromBytes",fun_strCopy,typeAlloc(th,TYPECODE_FUN,NULL,2,MM.Bytes,MM.Str));
-	pkgAddFun(th, system,"bytesFromStr",fun_strCopy,typeAlloc(th,TYPECODE_FUN,NULL,2,MM.Str,MM.Bytes));
-	pkgAddFun(th, system,"bytesLength",fun_strLength,typeAlloc(th,TYPECODE_FUN,NULL,2,MM.Bytes,MM.Int));
-	pkgAddFun(th, system,"bytesRand", fun_bytesRand, fun_B_I_I_B);
+	static const Native nativeDefs[] = {
+		{ NATIVE_FUN, "bytesCreate", fun_bytesCreate, "fun Int Int -> Bytes"},
+		{ NATIVE_FUN, "strCreate", fun_bytesCreate, "fun Int Int -> Str" },
+		{ NATIVE_FUN, "bytesGet", fun_strGet, "fun Bytes Int -> Int" },
+		{ NATIVE_FUN, "bytesSet", fun_bytesSet, "fun Bytes Int Int -> Bytes" },
+		{ NATIVE_FUN, "bytesCopy", fun_bytesCopy, "fun Bytes Int Str Int Int -> Bytes" },
+		{ NATIVE_FUN, "bytesCopyBytes", fun_bytesCopy, "fun Bytes Int Bytes Int Int -> Bytes" },
+		{ NATIVE_FUN, "bytesXor", fun_bytesXor, "fun Bytes Int Str Int Int -> Bytes" },
+		{ NATIVE_FUN, "bytesXorBytes", fun_bytesXor, "fun Bytes Int Bytes Int Int -> Bytes" },
+		{ NATIVE_FUN, "bytesLSL1", fun_bytesLSL1, "fun Bytes Int -> Int" },
+		{ NATIVE_FUN, "bytesClear", fun_bytesClear, "fun Bytes Int -> Bytes" },
+		{ NATIVE_OPCODE, "_bytesAsStr", (void*)OPnop, "fun Bytes -> Str" },
+		{ NATIVE_FUN, "bytesLeft", fun_bytesLeft, "fun Bytes Int -> Bytes" },
+		{ NATIVE_FUN, "strLeftBytes", fun_bytesLeft, "fun Bytes Int -> Str" },
+		{ NATIVE_FUN, "bytesRight", fun_bytesRight, "fun Bytes Int -> Bytes" },
+		{ NATIVE_FUN, "bytesSlice", fun_strSliceForceCopy, "fun Bytes Int Int -> Bytes" },
+		{ NATIVE_FUN, "strSliceOfBytes", fun_strSliceForceCopy, "fun Str Int Int -> Bytes" },
+		{ NATIVE_FUN, "bytesSliceOfStr", fun_strSliceForceCopy, "fun Bytes Int Int -> Str" },
+		{ NATIVE_FUN, "strFromBytes", fun_strCopy, "fun Bytes -> Str" },
+		{ NATIVE_FUN, "bytesFromStr", fun_strCopy, "fun Str -> Bytes" },
+		{ NATIVE_FUN, "bytesLength", fun_strLength, "fun Bytes -> Int" },
+		{ NATIVE_FUN, "bytesRand", fun_bytesRand, "fun Bytes Int Int -> Bytes" },
+	};
+	NATIVE_DEF(nativeDefs);
 
 	return 0;
 }

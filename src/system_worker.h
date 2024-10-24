@@ -18,5 +18,5 @@ MTHREAD_RETURN_TYPE workerDoneInt(Thread* th, LINT result);
 LB* workerAllocExt(Thread* th, LINT sizeofExt, LW dbg, FORGET forget, MARK mark);
 int workerBiggerBuffer(Thread* th, Buffer* buffer, LINT newSize);
 
-int sysWorkerInit(Thread* th, Pkg* system);
+int sysWorkerInit(Pkg* system);
 #endif

@@ -194,7 +194,7 @@ int fun_hexFilter(Thread* th)
 	}
 	return 0;
 }
-int fun_hexFromBin(Thread* th)
+int fun_hexFromStr(Thread* th)
 {
 	LINT i, len;
 	char *p, * q;
@@ -307,7 +307,7 @@ int name(Thread* th) \
 	LB* a = STACK_PNT(th, 0); \
 	if (!a) FUN_RETURN_NIL; \
 	if (keepSame(STR_START(a), STR_LENGTH(a))) return 0; \
-	k = convert(th, MM.tmpBuffer, STR_START(a), STR_LENGTH(a)); if (k == EXEC_OM) return k; \
+	k = convert(MM.tmpBuffer, STR_START(a), STR_LENGTH(a)); if (k == EXEC_OM) return k; \
 	if (k) FUN_RETURN_NIL; \
 	FUN_RETURN_BUFFER(MM.tmpBuffer);	\
 }
@@ -374,89 +374,64 @@ STR_CONVERT(fun_strSearchcaseU16Be, strSearchcaseU16Be, keepSameNever)
 STR_CONVERT(fun_strUnaccentedU16Be, strUnaccentedU16Be, keepSameNever)
 
 
-int coreConvertInit(Thread* th, Pkg *system)
+int coreConvertInit(Pkg *system)
 {
-	Type* fun_S_I = typeAlloc(th, TYPECODE_FUN, NULL, 2, MM.Str, MM.Int);
-	Type* fun_S_F = typeAlloc(th, TYPECODE_FUN, NULL, 2, MM.Str, MM.Float);
-	Type* fun_F_S = typeAlloc(th, TYPECODE_FUN, NULL, 2, MM.Float, MM.Str);
-	Type* fun_I_S = typeAlloc(th, TYPECODE_FUN, NULL, 2, MM.Int, MM.Str);
-	Type* fun_S_S = typeAlloc(th, TYPECODE_FUN, NULL, 2, MM.Str, MM.Str);
-	Type* fun_S_Bytes = typeAlloc(th, TYPECODE_FUN, NULL, 2, MM.Str, MM.Bytes);
-	Type* fun_S_B = typeAlloc(th, TYPECODE_FUN, NULL, 2, MM.Str, MM.Boolean);
-
-	pkgAddFun(th, system, "strSwap", fun_strSwap, fun_S_S);
-	pkgAddFun(th, system, "bytesSwapStr", fun_strSwap, fun_S_Bytes);
-	pkgAddFun(th, system, "sqlFromStr", fun_sqlFromStr, fun_S_S);
-	pkgAddFun(th, system, "urlFromStr", fun_urlFromStr, fun_S_S);
-	pkgAddFun(th, system, "strFromUrl", fun_strFromUrl, fun_S_S);
-
-	pkgAddFun(th, system, "strFromHex", fun_strFromHex, fun_S_S);
-	pkgAddFun(th, system, "hexFilter", fun_hexFilter, fun_S_S);
-	pkgAddFun(th, system, "hexFromStr", fun_hexFromBin, fun_S_S);
-
-	pkgAddFun(th, system, "intFromDec", fun_intFromDec, fun_S_I);
-	pkgAddFun(th, system, "decFromInt", fun_decFromInt, fun_I_S);
-
-	pkgAddFun(th, system, "floatFromStr", fun_floatFromStr, fun_S_F);
-	pkgAddFun(th, system, "strFromFloat", fun_strFromFloat, fun_F_S);
-	pkgAddFun(th, system, "strFloat", fun_strFloat, fun_F_S);
-
-	pkgAddFun(th, system, "intFromHex", fun_intFromHex, fun_S_I);
-	pkgAddFun(th, system, "hexFromInt", fun_hexFromInt, fun_I_S);
-
-	pkgAddFun(th, system, "isU8", fun_isU8, fun_S_B);
-
-	pkgAddFun(th, system, "strLengthU8", fun_strLengthU8, fun_S_I);
-	pkgAddFun(th, system, "strLengthU16", fun_strLengthU16, fun_S_I);
-
-	pkgAddFun(th, system, "u16LeFromLatin", fun_u16LeFromLatin, fun_S_S);
-	pkgAddFun(th, system, "latinFromU16Le", fun_latinFromU16Le, fun_S_S);
-
-	pkgAddFun(th, system, "u8FromU16Le", fun_u8FromU16Le, fun_S_S);
-	pkgAddFun(th, system, "u16LeFromU8", fun_u16LeFromU8, fun_S_S);
-
-	pkgAddFun(th, system, "u16BeFromLatin", fun_u16BeFromLatin, fun_S_S);
-	pkgAddFun(th, system, "latinFromU16Be", fun_latinFromU16Be, fun_S_S);
-
-	pkgAddFun(th, system, "u8FromU16Be", fun_u8FromU16Be, fun_S_S);
-	pkgAddFun(th, system, "u16BeFromU8", fun_u16BeFromU8, fun_S_S);
-
-	pkgAddFun(th, system, "latinFromU8", fun_latinFromU8, fun_S_S);
-	pkgAddFun(th, system, "u8FromLatin", fun_u8FromLatin, fun_S_S);
-
-	pkgAddFun(th, system, "strFromSource", fun_strFromSource, fun_S_S);
-	pkgAddFun(th, system, "sourceFromStr", fun_sourceFromStr, fun_S_S);
-
-	pkgAddFun(th, system,"u8FromJson",fun_u8FromJson,fun_S_S);
-	pkgAddFun(th, system,"jsonFromU8",fun_jsonFromU8,fun_S_S);
-
-	pkgAddFun(th, system, "latinFromXml", fun_latinFromXml, fun_S_S);
-	pkgAddFun(th, system, "u8FromXml", fun_u8FromXml, fun_S_S);
-	pkgAddFun(th, system, "xmlFromStr", fun_xmlFromStr, fun_S_S);
-
-	pkgAddFun(th, system, "strWithLF", fun_strWithLF, fun_S_S);
-	pkgAddFun(th, system, "strWithCR", fun_strWithCR, fun_S_S);
-	pkgAddFun(th, system, "strWithCRLF", fun_strWithCRLF, fun_S_S);
-
-	pkgAddFun(th, system, "strLowercase", fun_strLowercase, fun_S_S);
-	pkgAddFun(th, system, "strUppercase", fun_strUppercase, fun_S_S);
-	pkgAddFun(th, system, "strSearchcase", fun_strSearchcase, fun_S_S);
-	pkgAddFun(th, system, "strUnaccented", fun_strUnaccented, fun_S_S);
-
-	pkgAddFun(th, system, "strLowercaseU8", fun_strLowercaseU8, fun_S_S);
-	pkgAddFun(th, system, "strUppercaseU8", fun_strUppercaseU8, fun_S_S);
-	pkgAddFun(th, system, "strSearchcaseU8", fun_strSearchcaseU8, fun_S_S);
-	pkgAddFun(th, system, "strUnaccentedU8", fun_strUnaccentedU8, fun_S_S);
-
-	pkgAddFun(th, system, "strLowercaseU16Le", fun_strLowercaseU16Le, fun_S_S);
-	pkgAddFun(th, system, "strUppercaseU16Le", fun_strUppercaseU16Le, fun_S_S);
-	pkgAddFun(th, system, "strSearchcaseU16Le", fun_strSearchcaseU16Le, fun_S_S);
-	pkgAddFun(th, system, "strUnaccentedU16Le", fun_strUnaccentedU16Le, fun_S_S);
-
-	pkgAddFun(th, system, "strLowercaseU16Be", fun_strLowercaseU16Be, fun_S_S);
-	pkgAddFun(th, system, "strUppercaseU16Be", fun_strUppercaseU16Be, fun_S_S);
-	pkgAddFun(th, system, "strSearchcaseU16Be", fun_strSearchcaseU16Be, fun_S_S);
-	pkgAddFun(th, system, "strUnaccentedU16Be", fun_strUnaccentedU16Be, fun_S_S);
-
+	static const Native nativeDefs[] = {
+		{ NATIVE_FUN, "strSwap", fun_strSwap, "fun Str -> Str"},
+		{ NATIVE_FUN, "bytesSwapStr", fun_strSwap, "fun Str -> Bytes"},
+		{ NATIVE_FUN, "sqlFromStr", fun_sqlFromStr, "fun Str -> Str"},
+		{ NATIVE_FUN, "urlFromStr", fun_urlFromStr, "fun Str -> Str"},
+		{ NATIVE_FUN, "strFromUrl", fun_strFromUrl, "fun Str -> Str"},
+		{ NATIVE_FUN, "strFromHex", fun_strFromHex, "fun Str -> Str"},
+		{ NATIVE_FUN, "hexFilter", fun_hexFilter, "fun Str -> Str"},
+		{ NATIVE_FUN, "hexFromStr", fun_hexFromStr, "fun Str -> Str"},
+		{ NATIVE_FUN, "intFromDec", fun_intFromDec, "fun Str -> Int"},
+		{ NATIVE_FUN, "decFromInt", fun_decFromInt, "fun Int -> Str"},
+		{ NATIVE_FUN, "floatFromStr", fun_floatFromStr, "fun Str -> Float"},
+		{ NATIVE_FUN, "strFromFloat", fun_strFromFloat, "fun Float -> Str"},
+		{ NATIVE_FUN, "strFloat", fun_strFloat, "fun Float -> Str"},
+		{ NATIVE_FUN, "intFromHex", fun_intFromHex, "fun Str -> Int"},
+		{ NATIVE_FUN, "hexFromInt", fun_hexFromInt, "fun Int -> Str"},
+		{ NATIVE_FUN, "isU8", fun_isU8, "fun Str -> Bool"},
+		{ NATIVE_FUN, "strLengthU8", fun_strLengthU8, "fun Str -> Int"},
+		{ NATIVE_FUN, "strLengthU16", fun_strLengthU16, "fun Str -> Int"},
+		{ NATIVE_FUN, "u16LeFromLatin", fun_u16LeFromLatin, "fun Str -> Str"},
+		{ NATIVE_FUN, "latinFromU16Le", fun_latinFromU16Le, "fun Str -> Str"},
+		{ NATIVE_FUN, "u8FromU16Le", fun_u8FromU16Le, "fun Str -> Str"},
+		{ NATIVE_FUN, "u16LeFromU8", fun_u16LeFromU8, "fun Str -> Str"},
+		{ NATIVE_FUN, "u16BeFromLatin", fun_u16BeFromLatin, "fun Str -> Str"},
+		{ NATIVE_FUN, "latinFromU16Be", fun_latinFromU16Be, "fun Str -> Str"},
+		{ NATIVE_FUN, "u8FromU16Be", fun_u8FromU16Be, "fun Str -> Str"},
+		{ NATIVE_FUN, "u16BeFromU8", fun_u16BeFromU8, "fun Str -> Str"},
+		{ NATIVE_FUN, "latinFromU8", fun_latinFromU8, "fun Str -> Str"},
+		{ NATIVE_FUN, "u8FromLatin", fun_u8FromLatin, "fun Str -> Str"},
+		{ NATIVE_FUN, "strFromSource", fun_strFromSource, "fun Str -> Str"},
+		{ NATIVE_FUN, "sourceFromStr", fun_sourceFromStr, "fun Str -> Str"},
+		{ NATIVE_FUN, "u8FromJson", fun_u8FromJson, "fun Str -> Str"},
+		{ NATIVE_FUN, "jsonFromU8", fun_jsonFromU8, "fun Str -> Str"},
+		{ NATIVE_FUN, "latinFromXml", fun_latinFromXml, "fun Str -> Str"},
+		{ NATIVE_FUN, "u8FromXml", fun_u8FromXml, "fun Str -> Str"},
+		{ NATIVE_FUN, "xmlFromStr", fun_xmlFromStr, "fun Str -> Str"},
+		{ NATIVE_FUN, "strWithLF", fun_strWithLF, "fun Str -> Str"},
+		{ NATIVE_FUN, "strWithCR", fun_strWithCR, "fun Str -> Str"},
+		{ NATIVE_FUN, "strWithCRLF", fun_strWithCRLF, "fun Str -> Str"},
+		{ NATIVE_FUN, "strLowercase", fun_strLowercase, "fun Str -> Str"},
+		{ NATIVE_FUN, "strUppercase", fun_strUppercase, "fun Str -> Str"},
+		{ NATIVE_FUN, "strSearchcase", fun_strSearchcase, "fun Str -> Str"},
+		{ NATIVE_FUN, "strUnaccented", fun_strUnaccented, "fun Str -> Str"},
+		{ NATIVE_FUN, "strLowercaseU8", fun_strLowercaseU8, "fun Str -> Str"},
+		{ NATIVE_FUN, "strUppercaseU8", fun_strUppercaseU8, "fun Str -> Str"},
+		{ NATIVE_FUN, "strSearchcaseU8", fun_strSearchcaseU8, "fun Str -> Str"},
+		{ NATIVE_FUN, "strUnaccentedU8", fun_strUnaccentedU8, "fun Str -> Str"},
+		{ NATIVE_FUN, "strLowercaseU16Le", fun_strLowercaseU16Le, "fun Str -> Str"},
+		{ NATIVE_FUN, "strUppercaseU16Le", fun_strUppercaseU16Le, "fun Str -> Str"},
+		{ NATIVE_FUN, "strSearchcaseU16Le", fun_strSearchcaseU16Le, "fun Str -> Str"},
+		{ NATIVE_FUN, "strUnaccentedU16Le", fun_strUnaccentedU16Le, "fun Str -> Str"},
+		{ NATIVE_FUN, "strLowercaseU16Be", fun_strLowercaseU16Be, "fun Str -> Str"},
+		{ NATIVE_FUN, "strUppercaseU16Be", fun_strUppercaseU16Be, "fun Str -> Str"},
+		{ NATIVE_FUN, "strSearchcaseU16Be", fun_strSearchcaseU16Be, "fun Str -> Str"},
+		{ NATIVE_FUN, "strUnaccentedU16Be", fun_strUnaccentedU16Be, "fun Str -> Str"},
+	};
+	NATIVE_DEF(nativeDefs);
 	return 0;
 }

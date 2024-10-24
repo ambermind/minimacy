@@ -31,12 +31,12 @@ struct Type
 	FORGET forget;
 	MARK mark;
 
-	LINT code;	// one of the TYPECODE_* values above
+	short code;	// one of the TYPECODE_* values above
+	short nb;
 	Type* actual;	// NULL for TYPECODE_PRIMARY
 	Type* copy;		// NULL for TYPECODE_PRIMARY
 	Def* def;
-	LINT nb;
-	Type* child[1];
+	Type* child[0];
 };
 
 extern Type* TypeTest;
@@ -44,7 +44,7 @@ extern Type* TypeTest;
 #define TYPEFIELD_MAIN 0
 #define TYPEFIELD_FIELD 1
 
-#define TYPE_PUSH_NULL(c,t) STACK_PUSH_PNT_ERR((c)->th,(LB*)t,NULL)
+#define TYPE_PUSH_NULL(t) STACK_PUSH_PNT_ERR(MM.tmpStack,(LB*)t,NULL)
 
 typedef struct TypeLabel TypeLabel;
 
@@ -60,23 +60,26 @@ struct TypeLabel
 	TypeLabel* next;
 };
 
-Type* typeAllocEmpty(Thread* th, LINT code,Def* def,LINT nb);
-Type* typeAlloc(Thread* th, LINT code, Def* def,LINT nb,...);
-Type* typeAllocWeak(Thread* th);
-Type* typeAllocUndef(Thread* th);
-Type* typeDerivate(Thread* th, Type* parent);
+Type* typeAllocEmpty(LINT code,Def* def,LINT nb);
+Type* typeAlloc(LINT code, Def* def,LINT nb,...);
+Type* typeAllocWeak(void);
+Type* typeAllocUndef(void);
+Type* typeDerivate(Type* parent);
 Type* typeUnderivate(Compiler* c, Type* p);
-Type* typeAllocFromStack(Thread* th, Def* def, LINT code, LINT nb);
+Type* typeAllocFromStack(Def* def, LINT code, LINT nb);
 int compilerSkipTypeDef(Compiler* c);
 Type* compilerParseTypeDef(Compiler* c, int mono, Locals** labels);
+Type* typeParseStatic(const char* typeStr);
 
-int typeBuffer(Thread* th, Buffer* tmp, Type* type);
-int typePrint(Thread* th, int mask,Type* type);
+int typeBuffer(Buffer* tmp, Type* type);
+int typePrint(int mask,Type* type);
 
-void typesInit(Thread* th, Pkg* system);
+void typesInit(Pkg* system);
 
 int typePrimaryIsChild(Def* child, Def* parent);
-Type* typeCopy(Thread* th, Type* p);
+Type* typeCopy(Type* p);
 int typeHasWeak(Type* p);
+Type* typeSimplify(Type* p);
+
 
 #endif

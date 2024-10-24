@@ -110,8 +110,8 @@ const ListFonts= // [family size style Number_of_glyphs]
 //["10x20" nil nil 256]:
 //["lucidasans-24" nil nil 256]:
 	// Windows font:
-["Arial" 32 nil 256]:
-["Times New Roman" 32 nil 256]:
+//["Arial" 32 nil 256]:
+["Times New Roman" 40 FONT_ITALIC 256]:
 //["Vivaldi" 32 nil 256]:
 nil;;
 

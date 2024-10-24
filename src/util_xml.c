@@ -11,7 +11,7 @@
 #include"minimacy.h"
 
 #define XML_ENTITIES 254
-char* xmlEntities[XML_ENTITIES] = {
+const char* const xmlEntities[XML_ENTITIES] = {
 "quot",
 "amp",
 "apos",
@@ -267,7 +267,7 @@ char* xmlEntities[XML_ENTITIES] = {
 "hearts",
 "diams",
 };
-int xmlCodes[XML_ENTITIES] = {
+const int xmlCodes[XML_ENTITIES] = {
 0x0022,
 0x0026,
 0x0027,
@@ -529,7 +529,7 @@ int codeFromEntity(char* entity, LINT len)
 	int i;
 	for (i = 0; i < XML_ENTITIES; i++)
 	{
-		if (!memcmp(entity, xmlEntities[i], len)) return xmlCodes[i];
+		if (!memcmp(entity, ((char**)xmlEntities)[i], len)) return xmlCodes[i];
 	}
 	return -1;
 }

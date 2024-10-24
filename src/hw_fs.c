@@ -10,10 +10,14 @@
    with this program. If not, see <https://www.gnu.org/licenses/>. */
 #include"minimacy.h"
 
+#ifdef USE_FS_SYSTEMDIR_STUB
+char CurrentDir[1];
+char UserDir[1];
+#else
 char CurrentDir[MAX_PATH + 32];
 char UserDir[MAX_PATH + 2];
-
-void _fsAddFileInfo(Thread* th, Buffer* out, char* path, LINT len, char* tmpAttr)
+#endif
+void _fsAddFileInfo(Buffer* out, char* path, LINT len, char* tmpAttr)
 {
 	LINT lAttr;
 	LINT lName;
@@ -26,9 +30,9 @@ void _fsAddFileInfo(Thread* th, Buffer* out, char* path, LINT len, char* tmpAttr
 	if (len < 0) len = strlen(path);
 	lName = (path+len)-name;
 	lAttr = strlen(tmpAttr);
-	bufferAddBin(th, out, name, lName);
-	bufferAddChar(th, out, 0);
-	bufferAddBin(th, out, tmpAttr, lAttr + 1);
+	bufferAddBin(out, name, lName);
+	bufferAddChar(out, 0);
+	bufferAddBin(out, tmpAttr, lAttr + 1);
 }
 void systemCleanPath(char* p)
 {
@@ -74,19 +78,19 @@ void systemRemoveLast(char* p)
 	p[0] = 0;
 }
 
-LB* fileReadContent(Thread* th, LB* type, LINT index, char* path, int* size, int verbose)
+LB* fileReadContent(LB* type, LINT index, char* path, int* size, int verbose)
 {
 	if (verbose) PRINTF(LOG_USER, "Tried: '%s'\n", path);
 #ifdef USE_FS_ANSI
-	if (type == MM.ansiVolume) return ansiReadContent(th, path, size);
+	if (type == MM.ansiVolume) return ansiReadContent(path, size);
 #endif
 #ifdef USE_FS_UEFI
-	if (type == MM.uefiVolume) return uefiReadContent(th, index, path, size);
+	if (type == MM.uefiVolume) return uefiReadContent(index, path, size);
 #endif
-	if (type == MM.romdiskVolume) return romdiskReadContent(th, (int)index, path, size);
+	if (type == MM.romdiskVolume) return romdiskReadContent((int)index, path, size);
 	return NULL;
 }
-LB* _fsReadPackage(Thread* th, LB* type, LINT index, char* dir, char* pkg, int* size, int verbose)
+LB* _fsReadPackage(LB* type, LINT index, char* dir, char* pkg, int* size, int verbose)
 {
 	int i, j;
 	LB* result;
@@ -95,7 +99,7 @@ LB* _fsReadPackage(Thread* th, LB* type, LINT index, char* dir, char* pkg, int* 
 
 	if (prefix_length + 2 * strlen(pkg) + strlen(SUFFIX_CODE) > MAX_PATH) return NULL;
 	snprintf(path, MAX_PATH, "%s%s%s", dir, pkg, SUFFIX_CODE);
-	if ((result = fileReadContent(th, type, index, path, size, verbose))) return result;
+	if ((result = fileReadContent(type, index, path, size, verbose))) return result;
 	if (verbose) return NULL;
 	for (i = 0; i <= (int)strlen(pkg); i++)
 	{
@@ -104,13 +108,13 @@ LB* _fsReadPackage(Thread* th, LB* type, LINT index, char* dir, char* pkg, int* 
 			strcpy(path + prefix_length, pkg);
 			for (j = 0; j <= i; j++) if ((path[prefix_length + j] == '.') || (path[prefix_length + j] == 0)) path[prefix_length + j] = '/';
 			snprintf(path + prefix_length + i + 1, MAX_PATH - (prefix_length + i + 1), "%s%s", pkg, SUFFIX_CODE);
-			if ((result = fileReadContent(th, type, index, path, size, verbose))) return result;
+			if ((result = fileReadContent(type, index, path, size, verbose))) return result;
 		}
 	}
 	return NULL;
 }
 
-LB* fsReadPackage(Thread* th, char* pkg, int* size, int verbose)
+LB* fsReadPackage(char* pkg, int* size, int verbose)
 {
 	LB* l = MM.partitionsFS;
 	LB* result;
@@ -122,7 +126,7 @@ LB* fsReadPackage(Thread* th, char* pkg, int* size, int verbose)
 			LINT index = ARRAY_INT(partition, 1);
 			LB* physicalPath = ARRAY_PNT(partition, 2);
 			if (physicalPath) {
-				if ((result = _fsReadPackage(th, type, index, STR_START(physicalPath), pkg, size, verbose))) return result;
+				if ((result = _fsReadPackage(type, index, STR_START(physicalPath), pkg, size, verbose))) return result;
 			}
 		}
 		l = ARRAY_PNT(l, 1);
@@ -130,13 +134,12 @@ LB* fsReadPackage(Thread* th, char* pkg, int* size, int verbose)
 	return NULL;
 }
 
-int _volumeList(Thread* th, char* name, LB* type, LINT index, int writable)
+int _volumeList(Thread* th, LB* type, LINT index, int writable)
 {
-	FUN_PUSH_STR(name, -1);
 	FUN_PUSH_PNT(type);
 	FUN_PUSH_INT(index);
 	FUN_PUSH_BOOL(writable);
-	FUN_MAKE_ARRAY(4, DBG_TUPLE);
+	FUN_MAKE_ARRAY(3, DBG_TUPLE);
 	return 0;
 }
 int volumeList(Thread* th)
@@ -171,15 +174,15 @@ char* fsUserDir(void) {
 	return UserDir;
 }
 
-int fsMount(Thread* th, int argc, char** argv, int standalone)
+int fsMount(const char* argv0, int standalone)
 {
 
-	if (romdiskMount(th, argc, argv, standalone)) return -1;
+	if (romdiskMount(standalone)) return -1;
 #ifdef USE_FS_ANSI
-	if (ansiFsMount(th, argc, argv, standalone)) return -1;
+	if (ansiFsMount(argv0, standalone)) return -1;
 #endif
 #ifdef USE_FS_UEFI
-	if (uefiFsMount(th, argc, argv, standalone)) return -1;
+	if (uefiFsMount(standalone)) return -1;
 #endif
 	return 0;
 }
