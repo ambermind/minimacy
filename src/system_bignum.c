@@ -1363,10 +1363,10 @@ int coreBignumInit(Pkg *system)
 	};
 	NATIVE_DEF(nativeDefs);
 	MM.bigAdd = nativeOpcode("bigAdd", 2);
-	MM.bigGT = nativeOpcode("bigGT", 2);
-	MM.bigGE = nativeOpcode("bigGE", 2);
-	MM.bigLT = nativeOpcode("bigLT", 2);
-	MM.bigLE = nativeOpcode("bigLE", 2);
+	MM.bigGT = nativeOpcode("bigGreater", 2);
+	MM.bigGE = nativeOpcode("bigGreaterEquals", 2);
+	MM.bigLT = nativeOpcode("bigLower", 2);
+	MM.bigLE = nativeOpcode("bigLowerEquals", 2);
 
 	MM.bigExpMod = nativeOpcode("bigExpMod", 3);
 	MM.bigExpModBarrett = nativeOpcode("bigExpModBarrett", 4);
