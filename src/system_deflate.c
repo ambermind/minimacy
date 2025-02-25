@@ -16,56 +16,74 @@
 
 #define BLOCK_MAX_LENGTH 16384
 
-typedef struct
+typedef struct Deflate Deflate;
+struct Deflate
 {
-	Buffer* out;
+	LB header;
+	FORGET forget;
+	MARK mark;
+
+	volatile Deflate** link;
+
+	volatile Buffer** pout;
+	volatile LB* srcBlock;
+	volatile char* src;
+	int srcLen;
 
 	int bit;
 	int val;
-} Deflate;
+};
 
-int bwAlign(Deflate* z)
+int bwAlign(volatile Deflate** pz)
 {
-	if ((z->bit) && bufferAddChar(z->out, z->val)) return -1;	// should be OM error
+	Deflate* z = (Deflate*)*pz;
+	if ((z->bit) && bufferAddCharWorker(z->pout, z->val)) return -1;	// should be OM error
+	z = (Deflate*)*pz;
 	z->bit = z->val = 0;
 	return 0;
 }
-int bwFinal(Deflate* z)
+int bwFinal(volatile Deflate** pz)
 {
-	return bwAlign(z);
+	return bwAlign(pz);
 }
-int bwChar(Deflate* z, int val)
+int bwChar(volatile Deflate** pz, int val)
 {
-	if (bwAlign(z)) return -1;
-	if (bufferAddChar(z->out, val)) return -1;
+	if (bwAlign(pz)) return -1;
+	if (bufferAddCharWorker((*pz)->pout, val)) return -1;
 	return 0;
 }
-int bwBytes(Deflate* z, char* data, int len)
+int bwBytes(volatile Deflate** pz, int offset, int len)
 {
-	if (bwAlign(z)) return -1;
-	if (bufferAddBin(z->out, data, len)) return -1;
+	char* dst;
+	if (bwAlign(pz)) return -1;
+	dst = bufferRequireWorker((*pz)->pout, len); if (!dst) return -1;
+	memcpy(dst, (void*) &(*pz)->src[offset], len);
 	return 0;
 }
-int bwBitsLsb(Deflate* z, int data, int nbits)
+int bwBitsLsb(volatile Deflate** pz, int data, int nbits)
 {
 	int i;
+	Deflate* z = (Deflate*)*pz;
 	for (i = 0; i < nbits; i++) {
 		z->val |= (((data >> i) & 1) << z->bit);
 		if (z->bit >= 7) {
-			if (bufferAddChar(z->out, z->val)) return -1;
+			if (bufferAddCharWorker(z->pout, z->val)) return -1;
+			z = (Deflate*)*pz;
 			z->val = z->bit = 0;
 		}
 		else z->bit++;
 	}
 	return 0;
 }
-int bwBitsLsbInv(Deflate* z, int data, int nbits)
+int bwBitsLsbInv(volatile Deflate** pz, int data, int nbits)
 {
 	int i;
+	Deflate* z = (Deflate*)*pz;
 	for (i = 0; i < nbits; i++) {
 		z->val |= (((data >> (nbits - i - 1)) & 1) << z->bit);
 		if (z->bit >= 7) {
-			if (bufferAddChar(z->out, z->val)) return -1;
+			if (bufferAddCharWorker(z->pout, z->val)) return -1;
+			z = (Deflate*)*pz;
 			z->val = z->bit = 0;
 		}
 		else z->bit++;
@@ -209,10 +227,10 @@ int huffmanComputeCodeLengths(int* count, int n, int* lens)
 	_huffmanComputeLens(list, lens, 0);
 	return 0;
 }
-int lenEncode(Deflate* z, int* lenLengths, int* lenValues, int* lens, int n)
+int lenEncode(volatile Deflate** pz, int* lenLengths, int* lenValues, int* lens, int n)
 {
 	int i;
-	for(i=0;i<n;i++) if (bwBitsLsbInv(z, lenValues[lens[i]], lenLengths[lens[i]])) return -1;
+	for(i=0;i<n;i++) if (bwBitsLsbInv(pz, lenValues[lens[i]], lenLengths[lens[i]])) return -1;
 	return 0;
 }
 int _checkLengths(int* lens, int n, int maxValue)
@@ -235,15 +253,15 @@ void huffmanComputeLenLengths(int* lenCounts, int n, int* lenLengths)
 		for (i = 0; i < n; i++) if (lenCounts[i] > 1) lenCounts[i] >>= 1;
 	}
 }
-int _deflateLengths(Deflate* z, int* codeLengths, int nbCodes, int* distLengths, int nbDist)
+int _deflateLengths(volatile Deflate** pz, int* codeLengths, int nbCodes, int* distLengths, int nbDist)
 {
 	int i;
 	int lenCounts[MAX_LENGTH];
 	int lenLengths[MAX_LENGTH];
 	int lenValues[MAX_LENGTH];
-	if (bwBitsLsb(z, nbCodes-257, 5)) return -1;
-	if (bwBitsLsb(z, nbDist-1, 5)) return -1;
-	if (bwBitsLsb(z, MAX_LENGTH -4, 4)) return -1;
+	if (bwBitsLsb(pz, nbCodes-257, 5)) return -1;
+	if (bwBitsLsb(pz, nbDist-1, 5)) return -1;
+	if (bwBitsLsb(pz, MAX_LENGTH -4, 4)) return -1;
 
 	for (i = 0; i < MAX_LENGTH; i++) lenCounts[i] = lenValues[i]= 0;
 
@@ -255,15 +273,15 @@ int _deflateLengths(Deflate* z, int* codeLengths, int nbCodes, int* distLengths,
 	huffmanBuildEncoder(lenLengths, MAX_LENGTH, lenValues);
 	for (i = 0; i < MAX_LENGTH; i++) {
 //		PRINTF(LOG_DEV,"write %d\n", lenLengths[LEN_ORDER[i]]);
-		if (bwBitsLsb(z, lenLengths[LEN_ORDER[i]], 3)) return -1;
+		if (bwBitsLsb(pz, lenLengths[LEN_ORDER[i]], 3)) return -1;
 	}
 
-	if (lenEncode(z, lenLengths, lenValues, codeLengths, nbCodes)) return -1;
-	if (lenEncode(z, lenLengths, lenValues, distLengths, nbDist)) return -1;
+	if (lenEncode(pz, lenLengths, lenValues, codeLengths, nbCodes)) return -1;
+	if (lenEncode(pz, lenLengths, lenValues, distLengths, nbDist)) return -1;
 	return 0;
 }
 
-int deflateBlockDynamic(Deflate* z, char* start, int len)
+int deflateBlockDynamic(volatile Deflate** pz, int offset, int len)
 {
 	int i;
 	int counts[257];
@@ -271,10 +289,10 @@ int deflateBlockDynamic(Deflate* z, char* start, int len)
 	int codeValues[257];
 	int distLengths[1];
 
-	if (bwBitsLsb(z, 2, 2)) return -1;
+	if (bwBitsLsb(pz, 2, 2)) return -1;
 	for (i = 0; i < 257; i++) counts[i] = 0;
 	for (i = 0; i < len; i++) {
-		int c = start[i] & 255;
+		int c = (*pz)->src[offset+i] & 255;
 		counts[c]++;
 	}
 	counts[256] = 1;	// for final code
@@ -282,19 +300,19 @@ int deflateBlockDynamic(Deflate* z, char* start, int len)
 	counts[0] = 1;
 	huffmanComputeCodeLengths(counts, 1, distLengths);
 
-	if (_deflateLengths(z, codeLengths, 257, distLengths, 1)) return -1;
+	if (_deflateLengths(pz, codeLengths, 257, distLengths, 1)) return -1;
 
 	huffmanBuildEncoder(codeLengths, 257, codeValues);
 	for (i = 0; i < len; i++) {
-		int code = start[i] & 255;
-		if (bwBitsLsbInv(z, codeValues[code], codeLengths[code])) return -1;
+		int code = (*pz)->src[offset + i] & 255;
+		if (bwBitsLsbInv(pz, codeValues[code], codeLengths[code])) return -1;
 	}
-	if (bwBitsLsbInv(z, codeValues[256], codeLengths[256])) return -1;
+	if (bwBitsLsbInv(pz, codeValues[256], codeLengths[256])) return -1;
 
 	return 0;
 
 }
-int deflateBlockFixed(Deflate* z, char* start, int len)
+int deflateBlockFixed(volatile Deflate** pz, int offset, int len)
 {
 	int i;
 	int codeLengths[MAX_CODE];
@@ -302,67 +320,91 @@ int deflateBlockFixed(Deflate* z, char* start, int len)
 	//	int distLengths[MAX_DIST];
 	//	int distValues[MAX_DIST];
 
-	if (bwBitsLsb(z, 1, 2)) return -1;
+	if (bwBitsLsb(pz, 1, 2)) return -1;
 
 	getFixedCodeLengths(codeLengths);
 	huffmanBuildEncoder(codeLengths, MAX_CODE, codeValues);
 	for (i = 0; i < len; i++) {
-		int code = start[i] & 255;
-		if (bwBitsLsbInv(z, codeValues[code], codeLengths[code])) return -1;
+		int code = (*pz)->src[offset + i] & 255;
+		if (bwBitsLsbInv(pz, codeValues[code], codeLengths[code])) return -1;
 	}
-	if (bwBitsLsbInv(z, codeValues[256], codeLengths[256])) return -1;
+	if (bwBitsLsbInv(pz, codeValues[256], codeLengths[256])) return -1;
 	return 0;
 }
-int deflateBlockNoCompression(Deflate* z, char* start, int len)
+int deflateBlockNoCompression(volatile Deflate** pz, int offset, int len)
 {
 	int coLen = ~len;
-	if (bwBitsLsb(z, 0, 2)) return -1;
-	if (bwChar(z, len)) return -1;
-	if (bwChar(z, len>>8)) return -1;
-	if (bwChar(z, coLen)) return -1;
-	if (bwChar(z, coLen>>8)) return -1;
-	return bwBytes(z, start, len);
-	return 0;
+	if (bwBitsLsb(pz, 0, 2)) return -1;
+	if (bwChar(pz, len)) return -1;
+	if (bwChar(pz, len>>8)) return -1;
+	if (bwChar(pz, coLen)) return -1;
+	if (bwChar(pz, coLen>>8)) return -1;
+	return bwBytes(pz, offset, len);
 }
-void deflateInit(Deflate* z, Buffer* out)
-{
-	z->out = out;
-
-	z->bit = 0;
-	z->val = 0;
-}
-
-int deflateLoop(Deflate* z, char* src, int srcLen)
+int deflateLoop(volatile Deflate** pz)
 {
 	int i;
+	int srcLen = (*pz)->srcLen;
 	for (i = 0; i < srcLen; i += BLOCK_MAX_LENGTH)
 	{
 		int final = (i + BLOCK_MAX_LENGTH >= srcLen) ? 1 : 0;
 		int toCompress = srcLen - i;
 		if (toCompress > BLOCK_MAX_LENGTH) toCompress = BLOCK_MAX_LENGTH;
-		if (bwBitsLsb(z, final, 1)) return -1;
-//		if (deflateBlockNoCompression(z, src + i, toCompress)) return -1;
-//		if (deflateBlockFixed(z, src + i, toCompress)) return -1;
-		if (deflateBlockDynamic(z, src + i, toCompress)) return -1;
+		if (bwBitsLsb(pz, final, 1)) return -1;
+//		if (deflateBlockNoCompression(pz, i, toCompress)) return -1;
+//		if (deflateBlockFixed(pz, i, toCompress)) return -1;
+		if (deflateBlockDynamic(pz, i, toCompress)) return -1;
 	}
-	if (bwFinal(z)) return -1;
+	if (bwFinal(pz)) return -1;
 	return 0;
 }
-//--------------------------------------
-MTHREAD_START _deflate(Thread* th)
-{
-	Deflate z;
 
-	LB* src= STACK_PNT(th, 0);
-	Buffer* out = (Buffer*)STACK_PNT(th, 1);
-	if ((!src)||(!out)) return workerDonePnt(th,MM._false);
-	bufferSetWorkerThread(out, th);
-	deflateInit(&z, out);
-	if (deflateLoop(&z, STR_START(src), (int)STR_LENGTH(src))) {
-		bufferSetWorkerThread(out, NULL);
-		return workerDonePnt(th, MM._false);
-	}
-	bufferSetWorkerThread(out, NULL);
-	return workerDonePnt(th,MM._true);
+void deflateInit(Deflate* z, LB* src, volatile Buffer** pout)
+{
+	z->pout = pout;
+
+	z->srcBlock = src;
+	z->src = STR_START(src);
+	z->srcLen = (int)STR_LENGTH(src);
+
+	z->bit = 0;
+	z->val = 0;
 }
-int fun_deflate(Thread* th) { return workerStart(th, 2, _deflate); }
+
+//--------------------------------------
+WORKER_START _deflate(volatile Thread* th)
+{
+	int k;
+
+	volatile Deflate* z = (volatile Deflate*)STACK_PNT(th, 0);
+	LB* src= STACK_PNT(th, 1);
+	volatile Buffer* out = (Buffer*)STACK_PNT(th, 2);
+	deflateInit((Deflate*)z, src, &out);
+	bufferSetWorkerThread(&out, &th);
+	z->link = &z;
+	k = deflateLoop(&z);
+	bufferUnsetWorkerThread(&out, &th);
+	z->link = NULL;
+	return workerDonePnt(th,k? MM._false:MM._true);
+}
+
+void _deflateMark(LB* user)
+{
+	if (MM.updating) {
+		Deflate* z = (Deflate*)user;
+		MEMORY_MARK(z->srcBlock);
+		z->src = STR_START(z->srcBlock);
+		if (z->link) *z->link = (Deflate*)z->header.lifo;
+	}
+}
+
+int fun_deflate(Thread* th) {
+	Deflate* z;
+	LB* src = STACK_PNT(th, 0);
+	Buffer* out = (Buffer*)STACK_PNT(th, 1);
+	if ((!src) || (!out)) FUN_RETURN_FALSE;
+	z = (Deflate*)memoryAllocExt(sizeof(Deflate), DBG_BIN, NULL, _deflateMark);
+	if (!z) return EXEC_OM;
+	STACK_PUSH_PNT_ERR(th, z, EXEC_OM);
+	return workerStart(th, 3, _deflate);
+}

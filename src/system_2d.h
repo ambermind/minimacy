@@ -35,5 +35,5 @@ typedef struct
 
 LBitmap* _bitmapCreate(LINT w, LINT h);
 
-int core2dInit(Pkg* system);
+int system2dInit(Pkg* system);
 #endif

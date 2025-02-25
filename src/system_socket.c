@@ -10,6 +10,12 @@
    with this program. If not, see <https://www.gnu.org/licenses/>. */
 #include"minimacy.h"
 
+int SOCKET_FD=1;
+
+int socketNextFd()
+{
+	return SOCKET_FD++;
+}
 void _socketClose(Socket* s)
 {
 //	PRINTF(LOG_DEV,"close socket %lld\n", s->fd);
@@ -177,15 +183,15 @@ int fun_hostName(Thread* th)
 	FUN_RETURN_STR(buf, -1);
 }
 
-MTHREAD_START _ipByName(Thread* th)
+WORKER_START _ipByName(volatile Thread* th)
 {
 	struct hostent* hp;
 	LINT n = 0;
 
 	LB* name = STACK_PNT(th, 0);
-	Buffer* out = (Buffer*)STACK_PNT(th, 1);
+	volatile Buffer* out = (Buffer*)STACK_PNT(th, 1);
 	if ((!name) || (!out)) return workerDoneNil(th);
-	bufferSetWorkerThread(out, th);
+	bufferSetWorkerThread(&out, &th);
 	hp = gethostbyname(STR_START(name));
 	if (hp)
 	{
@@ -196,33 +202,33 @@ MTHREAD_START _ipByName(Thread* th)
 			struct in_addr Addr;
 			Addr.s_addr = *(p[n]);	// warning on Macos should cast with (in_addr_t) not known on windows
 			ip = (char*)inet_ntoa(Addr);
-			if (n) bufferAddChar(out, 0);
-			bufferAddBin(out, ip, strlen(ip));
+			if (n) bufferAddCharWorker(&out, 0);
+			bufferAddBinWorker(&out, ip, strlen(ip));
 			n++;
 		}
 	}
-	bufferSetWorkerThread(out, NULL);
+	bufferUnsetWorkerThread(&out, &th);
 	return workerDoneInt(th,n);
 }
 int fun_ipByName(Thread* th) { return workerStart(th, 2, _ipByName); }
 
-MTHREAD_START _nameByIp(Thread* th)
+WORKER_START _nameByIp(volatile Thread* th)
 {
 	long addr;
 	struct hostent* hp;
 
 	LB* ip = STACK_PNT(th, 0);
-	Buffer* out = (Buffer*)STACK_PNT(th, 1);
+	volatile Buffer* out = (Buffer*)STACK_PNT(th, 1);
 	if ((!ip) || (!out)) return workerDoneNil(th);
-	bufferSetWorkerThread(out, th);
+	bufferSetWorkerThread(&out, &th);
 	addr = inet_addr(STR_START(ip));
 	if ((hp = gethostbyaddr((char*)&addr, sizeof(addr), AF_INET)))
 	{
-		bufferAddBin(out, hp->h_name, strlen(hp->h_name));
-		bufferSetWorkerThread(out, NULL);
+		bufferAddBinWorker(&out, hp->h_name, strlen(hp->h_name));
+		bufferUnsetWorkerThread(&out, &th);
 		return workerDoneInt(th,1);
 	}
-	bufferSetWorkerThread(out, NULL);
+	bufferUnsetWorkerThread(&out, &th);
 	return workerDoneNil(th);
 }
 int fun_nameByIp(Thread* th) { return workerStart(th, 2, _nameByIp); }
@@ -295,6 +301,9 @@ int fun_keyboardOpen(Thread* th)
 	}
 	FUN_RETURN_PNT((LB*)s);
 }
+int fun_keyboardRead(Thread* th) {
+	return fun_socketRead(th);
+}
 #endif
 
 #ifdef USE_CONSOLE_IN_WIN
@@ -321,7 +330,7 @@ NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,
 "\033[20~", "\033[21~", "\033[23~","\033[24~",NULL,NULL,NULL,NULL,
 };
 
-MTHREAD_START keyboardThread(void* param)
+WORKER_START keyboardThread(void* param)
 {
 //	CONSOLE_CURSOR_INFO cinfo;
 	DWORD mode = 0;
@@ -384,7 +393,7 @@ MTHREAD_START keyboardThread(void* param)
 		if (len < 0) break;
 	}
 //	PRINTF(LOG_DEV,"keyboard close\n");
-	return MTHREAD_RETURN;
+	return WORKER_RETURN;
 }
 
 int fun_keyboardOpen(Thread* th)
@@ -400,11 +409,10 @@ int fun_keyboardOpen(Thread* th)
 	}
 	FUN_RETURN_PNT((LB*)s);
 }
-#endif
-
 int fun_keyboardRead(Thread* th) {
 	return fun_socketRead(th);
 }
+#endif
 
 int fun_internalOpen(Thread* th)
 {
@@ -418,7 +426,8 @@ int fun_internalRead(Thread* th) {
 int fun_udpRead(Thread* th)
 {
 	char ip_str[32];
-	int ip, port;
+	int ip;
+	int port=0;
 	ssize_t len = -1;
 	Socket* s = (Socket*)STACK_PNT(th, 0);
 	if (s && (s->fd != INVALID_SOCKET))
@@ -812,7 +821,7 @@ int fun_select(Thread* th)
 	{
 		Socket* s = (Socket*)ARRAY_PNT(p, LIST_VAL);
 		if (s) {
-//			printf("select prepare %llx -> %d\n",(LINT)s,s->readable);
+//			PRINTF(LOG_DEV,"select %d\n",s->fd);
 			if (s->fd != INVALID_SOCKET)
 			{
 				if (s->selectRead) {
@@ -853,6 +862,9 @@ int fun_select(Thread* th)
 			Socket* s = (Socket*)ARRAY_PNT(p, LIST_VAL);
 			if (s && (s->fd != INVALID_SOCKET))
 			{
+//				if (FD_ISSET(s->fd, w)) PRINTF(LOG_DEV,"writable %d\n",s->fd);
+//				if (FD_ISSET(s->fd, r)) PRINTF(LOG_DEV,"readable %d\n",s->fd);
+
 				if (FD_ISSET(s->fd, w)) s->writable = 1;
 				if (FD_ISSET(s->fd, r)) s->readable = 1;
 			}
@@ -873,6 +885,13 @@ int fun_select(Thread* th)
 	while(k==0)
 	{
 		LB* p = sockets;
+#ifdef WITH_POWER_SWITCH
+		if (hwPsw()) {
+			PRINTF(LOG_SYS,"psw\n");
+			MM.reboot = 1;
+			return EXEC_EXIT;
+		}
+#endif
 		while(p)
 		{
 			Socket* s = (Socket*)ARRAY_PNT(p, LIST_VAL);
@@ -896,16 +915,14 @@ int fun_select(Thread* th)
 #ifdef USE_CONSOLE_IN_UART
 int fun_keyboardRead(Thread* th) {
     ssize_t len=-1;
-	char buffer[2];
+	char buffer[128];
 	Socket* s = (Socket*)STACK_PNT(th, 0);
 	if (s && (s->fd != INVALID_SOCKET))
 	{
-		int c=uartGet();
-		if (c>=0) {
-			buffer[0]=(char)c;
-			buffer[1]=0;
-			len=1;
-		}
+		int c;
+		len=0;
+		while(len<128 && ((c=uartGet())>=0) ) buffer[len++]=c;
+		if (len==0) len=-1;
 	}
 	if (len < 0) FUN_RETURN_NIL;
 	FUN_RETURN_STR(buffer, len);

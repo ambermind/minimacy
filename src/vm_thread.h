@@ -19,16 +19,18 @@ extern LINT ThreadCounter;
 #define WORKER_ALLOC_EXT 3
 #define WORKER_BIGGER_BUFFER 4
 
+
 typedef struct {
 	volatile LINT state;
 	LINT sp;
 	LINT allocSize;
 	LINT w;
 	LINT h;
-	MSEM sem;
+	MSEM* sem;
 	Buffer* buffer;
 	LW result;
 	int type;
+	int OM;
 	LW dbg;
 	FORGET forget;
 	MARK mark;
@@ -47,6 +49,8 @@ struct Thread
 	LINT pc;
 	LB* fun;
 	LINT forceOpcode;
+
+	volatile Thread** link;
 
 	Thread* listNext;
 
@@ -71,7 +75,7 @@ int stackSetBuffer(Thread * th, LINT i, Buffer * b);
 
 void threadPrintCallstack(Thread* t);
 
-int coreThreadInit(Pkg *system);
+int systemThreadInit(Pkg *system);
 
 #define THREAD_STACK_LENGTH0 256
 #define THREAD_STACK_STEP (256*16)

@@ -56,7 +56,7 @@ typedef struct {
 
 	Window win;
 	GC paintdc;
-	LCursor* cursorToMake;
+	LCursor* cursorToMake;	// there is no need to update this during gcCompact as there can't be any gcCompact when in use
 //	Cursor cursor;
 	int type;
 	int w;
@@ -210,6 +210,7 @@ void _mkCursor(LCursor* d)
 int hostLoop()
 {
 	Window win = UI.win;
+	int lastButton=0;
 	UI.cursorToMake=NULL;
 //	PRINTF(LOG_DEV,"start hostloop\n");
 	while(win==UI.win)
@@ -332,8 +333,10 @@ int hostLoop()
 		case ButtonPress:
 //			PRINTF(LOG_DEV,"ButtonPress %d\n",ev.xbutton.button);
 			UI.state=ev.xbutton.state;
-			if (ev.xbutton.button<=3)
-				eventNotify(EVENT_CLICK, ev.xbutton.x,ev.xbutton.y,ev.xbutton.button-1);
+			if (ev.xbutton.button<=3) {
+				eventNotify(EVENT_CLICK, ev.xbutton.x,ev.xbutton.y,ev.xbutton.button);
+				lastButton=ev.xbutton.button;
+			}
 			if ((ev.xbutton.button==4)||(ev.xbutton.button==5))
 				eventNotify(EVENT_VWHEEL, ev.xbutton.x,ev.xbutton.y, (ev.xbutton.button==4)?1:-1);
 			if ((ev.xbutton.button==6)||(ev.xbutton.button==7))
@@ -343,13 +346,14 @@ int hostLoop()
 //			PRINTF(LOG_DEV,"ButtonRelease %d\n",ev.xbutton.button);
 			UI.state=ev.xbutton.state;
 			if (ev.xbutton.button<=3)
-				eventNotify(EVENT_UNCLICK, ev.xbutton.x,ev.xbutton.y,ev.xbutton.button-1);
+				eventNotify(EVENT_UNCLICK, ev.xbutton.x,ev.xbutton.y,ev.xbutton.button);
+			lastButton=0;
 			break;
 		case MotionNotify:
 //			PRINTF(LOG_DEV,"MotionNotify %d\n",ev.xbutton.button);
 			UI.state=ev.xbutton.state;
 			while(XCheckMaskEvent(UI.display,PointerMotionMask,&ev)) {/*PRINTF(LOG_DEV,"remove motion\n");*/};
-			eventNotify(EVENT_MOUSEMOVE, ev.xbutton.x,ev.xbutton.y,0);
+			eventNotify(EVENT_MOUSEMOVE, ev.xbutton.x,ev.xbutton.y,lastButton);
 			break;
 		case ConfigureNotify:
 //			PRINTF(LOG_DEV,"ConfigureNotify %d,%d %dx%d\n",ev.xconfigure.x,ev.xconfigure.y,ev.xconfigure.width,ev.xconfigure.height);
@@ -411,7 +415,7 @@ void _uiApplyHints(LINT w, LINT h)
 	UI.w=w; UI.h=h;
 }
 
-MTHREAD_START _uiStart(Thread* th)
+WORKER_START _uiStart(volatile Thread* th)
 {
 	int xIsNil, yIsNil;
 	LINT x, y;
@@ -460,9 +464,16 @@ MTHREAD_START _uiStart(Thread* th)
 
 	workerDonePnt(th, MM._true);
 	hostLoop();
-	return MTHREAD_RETURN;
+	return WORKER_RETURN;
 }
-int fun_uiStart(Thread* th) { return workerStart(th, 6, _uiStart); }
+int fun_uiStart(Thread* th) {
+#ifdef USE_WORKER_ASYNC
+	return workerStart(th, 6, _uiStart);
+#else
+	PRINTF(LOG_SYS, "> UI can't start without asynchronous workers\n");
+	FUN_RETURN_NIL
+#endif
+}
 
 int fun_uiResize(Thread* th)
 {
@@ -766,7 +777,7 @@ int fun_nativeFontList(Thread* th)
 	while (fontNumber--) FUN_MAKE_ARRAY(LIST_LENGTH, DBG_LIST);
 	return 0;
 }
-int coreUiHwInit(Pkg* system)
+int systemUiHwInit(Pkg* system)
 {
 	UI.display=NULL;
 	UI.win = 0;

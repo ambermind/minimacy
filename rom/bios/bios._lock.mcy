@@ -18,7 +18,6 @@ fun _lockEnter lck=
 	if 1<fifoCount lck._fifoL then
 	(
 //		echoLn "_threadHoldOn"; dumpCallstack nil;
-//		set  _This._stateT=_THREAD_WAIT;
 		_threadHoldOn;
 		0
 	)
@@ -58,7 +57,7 @@ fun _lockFreeThread th= for lck in th._locksT do _lockLeave lck; set th._locksT=
 
 
 //------------ Join
-struct Join{a0}=[_valJ@a0 _doneJ _threadJ] ;;
+struct Join{a0}=[_valJ@a0 _doneJ _threadJ _oblivionJ] ;;
 
 fun joinCreate=[_doneJ=false];;
 
@@ -69,6 +68,8 @@ fun joinWait m=
 	else
 	(
 		set m._threadJ= _This;
+		set m._oblivionJ = oblivionCreate (lambda = joinSend m nil);
+		set m=nil;	// forget the join so that it can be oblivioned
 		_threadHoldOn	
 	);;
 

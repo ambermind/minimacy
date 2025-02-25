@@ -44,7 +44,7 @@ int fun_accelerometerZ(Thread* th) FUN_RETURN_NIL
 int fun_accelerometerInit(Thread* th)FUN_RETURN_NIL
 
 
-int coreUiHwInit(Pkg* system) {return 0;}
+int systemUiHwInit(Pkg* system) {return 0;}
 #endif
 
 
@@ -56,7 +56,7 @@ int fun_nativeFontW(Thread* th) FUN_RETURN_NIL
 int fun_nativeFontDraw(Thread* th) FUN_RETURN_NIL
 int fun_nativeFontList(Thread* th) FUN_RETURN_NIL
 #endif
-int coreUiInit(Pkg* system)
+int systemUiInit(Pkg* system)
 {
 	static const Native nativeDefs[] = {
 		{ NATIVE_INT, "UI_NORMAL", (void*)UI_NORMAL, "Int"},
@@ -138,8 +138,8 @@ int coreUiInit(Pkg* system)
 	pkgAddType(system, "NativeFont");
 	NATIVE_DEF(nativeDefs);
 
-	coreUiHwInit(system);
-	coreUiGLInit(system);
+	systemUiHwInit(system);
+	systemUiGLInit(system);
 
 	return 0;
 }

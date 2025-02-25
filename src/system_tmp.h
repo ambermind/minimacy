@@ -11,6 +11,6 @@
 #ifndef _TMP_
 #define _TMP_
 
-int tmpInit(Pkg *system);
+int systemTmpInit(Pkg *system);
 
 #endif

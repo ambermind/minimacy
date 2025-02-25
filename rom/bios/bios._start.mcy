@@ -47,7 +47,7 @@ fun _start compile=
 	(
 		if _systemLogIsEnabled then echoLn ["> current time: " fullDate time];
 		_fsInit programDir;
-		_launchApp pkg compile caller
+		_launchApp pkg compile nil
 	);
 	_schedulerStart;;
 
@@ -61,7 +61,9 @@ fun _handleArgs l compile=
 			else _handleArgs (tail l) compile;;
 
 fun _init=
-	msgException "";	// this prevents the weak type in msgException
+//	gcTrace true;
+	gcCompact;
 	_threadSetUser _threadCurrent _ThreadBios;
 //	echoLn "args:"; dump args; return nil;
-	_handleArgs args false;;
+	_handleArgs args false;
+	nil;;

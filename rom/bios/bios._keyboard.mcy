@@ -35,6 +35,8 @@ fun onInput cbRead cbWrite=
 			(lambda =	// onSelectRead
 				streamOnSelectRead kb (lambda cbRead= 
 					let _keyboardRead kb._socketS -> data in
+					if data==nil then streamClose kb
+					else
 					(
 	//					dump data;
 						call cbRead data;
@@ -44,7 +46,7 @@ fun onInput cbRead cbWrite=
 			)
 			(lambda = streamOnSelectWrite kb)	// onSelectWrite
 			nil	// write
-			(lambda = _keyboardSync; true)	// close
+			(lambda = inputClose; true)	// close
 			(lambda fEcho= call fEcho "keyboard" "-");	// echo
 \atomic (
 		set _Keyboards= kb:_Keyboards;

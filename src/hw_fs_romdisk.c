@@ -24,12 +24,21 @@
 #define ROMDISK_NATIVE 2
 
 typedef struct {
-	int type;
 	char* data;
+	LINT type;
 } Romdisk;
 
 Romdisk Romdisks[ROMDISK_MAX_NB];
 
+void romdiskMark(LB* user)
+{
+	int i;
+	for (i = 0; i < ROMDISK_MAX_NB; i++) if (Romdisks[i].data && Romdisks[i].type != ROMDISK_NATIVE) {
+		char* node = Romdisks[i].data - sizeof(LB);
+		if (MM.updating) Romdisks[i].data = STR_START(((LB*)node)->lifo);
+		else BLOCK_MARK((LB*)node);
+	}
+}
 int romdiskCheck(char* src, unsigned int len)
 {
 	unsigned int i,last,dataStart;
@@ -71,12 +80,6 @@ int romdiskAdd(char* data,int type)
 	}
 	return -1;
 }
-void romdiskFree(int i)
-{
-	if (!Romdisks[i].data) return;
-	REGULAR_FREE(Romdisks[i].data);
-	Romdisks[i].data = NULL;
-}
 
 char* romdiskLookup(char* romdisk, char* path, int* size)
 {
@@ -95,7 +98,7 @@ char* romdiskLookup(char* romdisk, char* path, int* size)
 	return NULL;
 }
 
-void romdiskDump()
+void romdiskDump(void)
 {
 	int i;
 	for(i=0;i<ROMDISK_MAX_NB;i++) if (Romdisks[i].data) {
@@ -172,7 +175,8 @@ int romdiskVolumeList(Thread* th, int* n)
 	int j;
 	for (j = ROMDISK_MAX_NB-1; j>=0; j--) if (Romdisks[j].data)
 	{
-		if (_volumeList(th, MM.romdiskVolume, j, 0)) return EXEC_OM;
+		unsigned int* table = (unsigned int*)Romdisks[j].data;
+		if (_volumeList(th, MM.romdiskVolume, j, 0, 1, table[0])) return EXEC_OM;
 		(*n)++;
 	}
 	return 0;
@@ -184,7 +188,8 @@ char* bootDiskLoader()
 	char buffer[4];
 	int i=0;
 	int len=0;
-	unsigned long t0;
+	LINT t0;
+	LB* bin;
 	char* bufferBootLoader;   
 	for(;uartGet()>=0;);
 	uartPut("<BOOTDISK>",10);
@@ -193,13 +198,14 @@ char* bootDiskLoader()
 	while(i<4) {
 		int c=uartGet();
 		if (c>=0) buffer[i++]=c;
-		if (hwTimeMs()>t0) {
+		if ((hwTimeMs()-t0)>0) {
 			uartPut("<SKIP>\n",7);
 			return NULL;
 		}
 	}
 	len=*(int*)buffer;
-	bufferBootLoader= REGULAR_MALLOC(len+1);
+	bin = memoryAllocStr(NULL,len + 1);
+	bufferBootLoader= STR_START(bin);
 	for(i=0;i<4;i++) bufferBootLoader[i]=buffer[i];
 	uartPutChar('=');
 	while(i<len) {
@@ -213,7 +219,6 @@ char* bootDiskLoader()
 	if (!romdiskCheck(bufferBootLoader, len)) {
 		uartPut("<WRONG_FORMAT_ERROR>\n", 21);
 //		_myHexDump(bufferBootLoader, len,0);
-		REGULAR_FREE(bufferBootLoader);
 		return NULL;
 	}
 	uartPut("<DONE>\n",7);
@@ -221,7 +226,7 @@ char* bootDiskLoader()
 }
 #endif
 
-void romdiskInit()
+void romdiskInit(void)
 {
 	int j;
 	for (j = 0; j < ROMDISK_MAX_NB; j++) Romdisks[j].data = NULL;
@@ -234,22 +239,20 @@ void romdiskInit()
 		if (RomdiskBootLoader) romdiskAdd(RomdiskBootLoader, ROMDISK_BOOTLOADER);
 	}
 #endif
-//	romdiskDump();
 }
 
-int romdiskImport(char* src, LINT len)
+int romdiskImport(LB* bin)
 {
-	char* romdisk;
+	char* src = STR_START(bin);
+	LINT len = STR_LENGTH(bin);
+
 	if (romdiskAdd(NULL, ROMDISK_USER)<0) return -1;
 
 	if (!romdiskCheck(src, (unsigned int)len)) {
 		PRINTF(LOG_SYS,">Error: romdiskCheck failed\n");
 		return -1;
 	}
-	romdisk = REGULAR_MALLOC(len+1); if (!romdisk) return -1;
-	memcpy(romdisk, src, len);
-	romdisk[len] = 0;
-	return romdiskAdd(romdisk, ROMDISK_USER);
+	return romdiskAdd(src, ROMDISK_USER);
 }
 int romdiskMount(int standalone)
 {
@@ -266,10 +269,10 @@ int romdiskMount(int standalone)
 void romdiskReleaseUserDisk(void)
 {
 	int i;
-	for (i = 0; i < ROMDISK_MAX_NB; i++) if (Romdisks[i].data && Romdisks[i].type==ROMDISK_USER) romdiskFree(i);
+	for (i = 0; i < ROMDISK_MAX_NB; i++) if (Romdisks[i].data && Romdisks[i].type==ROMDISK_USER) Romdisks[i].data = NULL;
 }
 void romdiskRelease(void)
 {
 	int i;
-	for (i = 0; i < ROMDISK_MAX_NB; i++) if (Romdisks[i].data && Romdisks[i].data!= Romdisk0Content) romdiskFree(i);
+	for (i = 0; i < ROMDISK_MAX_NB; i++) if (Romdisks[i].data && Romdisks[i].data!= Romdisk0Content) Romdisks[i].data = NULL;
 }

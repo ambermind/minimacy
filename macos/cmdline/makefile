@@ -34,10 +34,8 @@ crypto_adler32.o \
 crypto_aes.o \
 crypto_crc32.o \
 crypto_des.o \
-crypto_md5.o \
+crypto_hash.o \
 crypto_rc4.o \
-crypto_sha1.o \
-crypto_sha2.o \
 hw.o \
 hw_console.o \
 hw_fs.o \
@@ -46,7 +44,7 @@ hw_fs_romdisk.o \
 hw_random.o \
 hw_thread.o \
 hw_time.o \
-main.o \
+minimacy.o \
 system_bignum.o \
 system.o \
 system_2d.o\

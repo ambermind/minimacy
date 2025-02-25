@@ -89,7 +89,7 @@ int fun_bufferAppendJoin(Thread* th)
 	return 0;
 }
 
-int coreBufferInit(Pkg *system)
+int systemBufferInit(Pkg *system)
 {
 	static const Native nativeDefs[] = { 
 		{ NATIVE_FUN, "bufferCreate", fun_bufferCreate, "fun -> Buffer"},

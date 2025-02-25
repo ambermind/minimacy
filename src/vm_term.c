@@ -456,7 +456,7 @@ void itemEcho(int mask, LW v, int type, int ln)
 	if (!(mask & MainTerm.mask)) return;
 	bufferReinit(b);
 	if (bufferItem(b, v, type, NULL)) return;
-	if (ln) bufferAddChar(b,10);
+	if (ln && bufferAddChar(b, 10)) return;
 	termWrite(mask, bufferStart(b), bufferSize(b));
 }
 

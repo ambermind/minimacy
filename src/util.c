@@ -258,10 +258,16 @@ LINT signExtend16(LINT val)
 	if (val & 0x8000) val |= ~0xffff;
 	return val;
 }
+LINT signExtend24(LINT val)
+{
+	val &= 0xffffff;
+	if (val & 0x800000) val |= ~0xffffff;
+	return val;
+}
 LINT signExtend32(LINT val)
 {
 	val &= 0xffffffff;
-	if (val & 0x80000000) val |= ~0xffffffff;
+	if (val & 0x80000000) val |= ~((LINT)0xffffffff);
 	return val;
 }
 char* defCodeName(LINT code)
@@ -303,11 +309,11 @@ LINT powerInt(LINT a, LINT n)
 
 unsigned long long RandomSeed=SEED_INIT_VALUE;
 
-void pseudoRandomInit()
+void pseudoRandomInit(void)
 {
 	pseudoRandomEntropy(hwTimeMs());	// clearly not enough...
 }
-LINT pseudoRandom32()
+LINT pseudoRandom32(void)
 {
 	unsigned long long x;
 	RandomSeed= (RandomSeed * 0x5DEECE66DL + 0xBL) & 0xffffffffffff;//(one << 48) - 1);

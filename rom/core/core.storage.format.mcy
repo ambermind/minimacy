@@ -1,0 +1,163 @@
+/* Copyright (c) 2022, Sylvain Huet, Ambermind
+   This program is free software: you can redistribute it and/or modify it
+   under the terms of the GNU General Public License, version 2.0, as
+   published by the Free Software Foundation.
+   This program is distributed in the hope that it will be useful, but WITHOUT
+   ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+   FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License,
+   version 2.0, for more details.
+   You should have received a copy of the GNU General Public License along
+   with this program. If not, see <https://www.gnu.org/licenses/>. */
+
+use core.storage.fat32;;
+
+fun _headSectorCylinder sectorsPerTrack numberOfHeads lba=
+// lba = (cylinder*numberOfHeads + head)*sectorsPerTrack + (sector-1)
+	let 1+ (lba%sectorsPerTrack) -> sector in
+	let lba/sectorsPerTrack -> headCylinder in	// headCylinder = cylinder*numberOfHeads + head
+	let headCylinder%numberOfHeads -> head in
+	let min headCylinder/numberOfHeads 1023 -> cylinder in
+	((((cylinder&0xff)<<8)|((cylinder&0x300)>>2)|sector)<<8)|head;;
+
+fun _intCeilingDiv a b= (a + b-1)/b;;
+	
+fun _sectorPadding bytesPerSector bytes = bytesBuild [ bytes strCreate (bytesPerSector - bytesLength bytes) 0];;
+
+fun _fat32Format volume totalSectors sectorsPerCluster name display withMbr=
+	let volume.fWriteV -> fWrite in
+	let if totalSectors<>nil then totalSectors else volume.nbSectorsV -> totalSectors in
+	let strUppercase strLeft name 11 -> name in	// should check authorized chars
+	let strConcat name (strCreate 11-(strLength name) 32) -> name11 in
+//disk
+	let 512 -> bytesPerSector in
+	let 63 -> sectorsPerTrack in	// must be less than 255
+	let 255 -> numberOfHeads in
+//mbr
+	let if withMbr then 0x10 else 0 -> partitionStart in
+	let totalSectors - partitionStart -> sectorsInPartition in
+	let strBuild [	// main partition
+		(strInt8 0)	// inactive (eg. not bootable)
+		(strInt24Lsb _headSectorCylinder sectorsPerTrack numberOfHeads partitionStart)	// first - head/sector/cylinder
+		(strInt8 0xc)	// fat32 - lba1 13h extensions
+		(strInt24Lsb _headSectorCylinder sectorsPerTrack numberOfHeads partitionStart+sectorsInPartition-1)	// last - head/sector/cylinder
+		(strInt32Lsb partitionStart)	// first sector offset
+		(strInt32Lsb sectorsInPartition)	// nb of hardware sectors
+	] -> partition in
+	let if withMbr then bytesBuild [
+		(strCreate 0x1be 0)
+		partition
+		(strCreate 48 0)
+		(strInt16Lsb 0xaa55)	// magic
+	] -> mbr in
+//fat 32 specific
+	let 16 -> reservedSectors in
+	let 2 -> numberOfFats in
+	// 2 "fake" clusters, 4 bytes (32 bits) per fat entry:
+	let _intCeilingDiv (sectorsInPartition - reservedSectors) 2+(sectorsPerCluster*bytesPerSector)/4 -> sectorsPerFat in
+	let 2 -> rootDirCluster in
+	let 1 -> fsInfoSector in
+	let 6 -> backupSector in
+	let reservedSectors -> fatStart in
+	let fatStart+ sectorsPerFat*numberOfFats -> dataStart in
+	let bytesBuild [
+		(strFromHex "eb5890") // JUMP
+		"MSDOS5.0"	// OEM
+		(strInt16Lsb bytesPerSector)
+		(strInt8 sectorsPerCluster)
+		(strInt16Lsb reservedSectors)
+
+		(strInt8 numberOfFats)
+		(strInt16Lsb 0)	// not for FAT32
+		(strInt16Lsb 0)	// not for FAT32
+		(strInt8 0xf8)	// media descriptor (Hard disk)
+		(strInt16Lsb 0)	// not for FAT32
+		(strInt16Lsb sectorsPerTrack)
+		(strInt16Lsb numberOfHeads)
+		(strInt32Lsb partitionStart)	// hidden sectors in partition
+
+		(strInt32Lsb sectorsInPartition)
+		(strInt32Lsb sectorsPerFat)
+		(strInt16Lsb 0)	// mirroringFlag
+		(strInt16Lsb 0)	// version
+		(strInt32Lsb rootDirCluster)
+
+		(strInt16Lsb fsInfoSector)
+		(strInt16Lsb backupSector)
+		(strCreate 12 0)	// reserved
+		
+		(strInt8 0x80)	// logical drive number
+		(strInt8 0)	// unused
+		(strInt8 0x29)	// extended signature
+		(strRand 4)	// serial number
+		"NO NAME    "	// 11 chars
+		"FAT32   "
+		(strCreate 356 0)
+		if withMbr then (strCreate 16 0) else partition
+		(strCreate 48 0)
+		(strInt16Lsb 0xaa55)	// magic
+	] -> boot in 
+	let bytesBuild [
+		(strInt32Lsb 0x41615252)	// magic
+		(strCreate 480 0)
+		(strInt32Lsb 0x61417272)	// magic
+		(strInt32Lsb 0xffffffff)	// free clusters (-1 for unknown)
+		(strInt32Lsb 2)		// last allocated cluster
+		(strCreate 12+2 0)
+		(strInt16Lsb 0xaa55)	// magic
+	] -> fsInfo in
+	let _sectorPadding bytesPerSector bytesBuild [
+		(strInt32Lsb 0xfffffff8)	// Fat Id
+		(strInt32Lsb 0x0fffffff)	// End of cluster-chain marker
+		(strInt32Lsb 0x0fffffff)	// Cluster 2 (first real cluster): rootdir end of chain
+	] -> fat in
+	let timeMs -> tms in
+	let fatFromTime tms/1000 -> t in
+	let _sectorPadding bytesPerSector bytesBuild [
+		name11
+		(strFromChar 8)	// partition name
+		"\0"	// case
+		(strFromChar (tms/10)%200)
+		(strInt32Lsb t)
+		(strInt16Lsb t>>16)
+		"\0\0"	// start cluster (bits 32-63)
+		(strInt32Lsb t)
+		"\0\0"	// start cluster (bits 0-31)
+		"\0\0\0\0"	// length
+	] -> rootDir in
+	let bytesCreate 512 0 -> empty in
+	(
+		if display then (
+			echoLn strFormat "bytesPerSector    : *" bytesPerSector;
+			echoLn strFormat "sectorsPerTrack   : *" sectorsPerTrack;
+			echoLn strFormat "numberOfHeads     : *" numberOfHeads;
+			echoLn strFormat "totalSectors      : *" totalSectors;
+
+			echoLn strFormat "sectorsPerCluster : *" sectorsPerCluster;
+			echoLn strFormat "reservedSectors   : *" reservedSectors;
+			echoLn strFormat "numberOfFats      : *" numberOfFats;
+			echoLn strFormat "sectorsPerFat     : *" sectorsPerFat;
+			echoLn strFormat "sectorsInPartition: *" sectorsInPartition;
+			if withMbr then echoLn strFormat "mbr sector        : $*" hexFromInt 0;
+			echoLn strFormat "boot sector       : $*" hexFromInt bytesPerSector*partitionStart;
+			echoLn strFormat "fsInfo sector     : $*" hexFromInt bytesPerSector*(partitionStart+fsInfoSector);
+			echoLn strFormat "backup sector     : $*" hexFromInt bytesPerSector*(partitionStart+backupSector);
+			echoLn strFormat "1st fat           : $*" hexFromInt bytesPerSector*(partitionStart+fatStart);
+			echoLn strFormat "2nd fat           : $*" hexFromInt bytesPerSector*(partitionStart+fatStart+sectorsPerFat);
+			echoLn strFormat "root directory    : $*" hexFromInt bytesPerSector*(partitionStart+dataStart);
+			echoLn strFormat "image size        : $* (*)" (hexFromInt bytesPerSector*totalSectors) bytesPerSector*totalSectors;
+			echoLn strFormat "user capacity     : * bytes" bytesPerSector*(sectorsInPartition-dataStart);
+		);
+		if withMbr then call fWrite 0 mbr 0 1;	// copy mbr
+		call fWrite partitionStart boot 0 1;	// copy boot sector
+		call fWrite (partitionStart+fsInfoSector) fsInfo 0 1;	// copy fsInfo
+		call fWrite (partitionStart+backupSector) boot 0 1;	// copy boot backup sector
+		call fWrite (partitionStart+fatStart) fat 0 1;	// copy first fat
+		for i=1;i<sectorsPerFat do call fWrite (partitionStart+fatStart+i) empty 0 1;
+		call fWrite (partitionStart+fatStart+sectorsPerFat) fat 0 1;	// copy second fat
+		for i=1;i<sectorsPerFat do call fWrite (partitionStart+fatStart+sectorsPerFat+i) empty 0 1;
+		call fWrite (partitionStart+dataStart) rootDir 0 1;	// copy first entry in root directory
+	);;
+
+
+fun volumeFormatFat32 volume totalSectors sectorsPerCluster name display = _fat32Format volume totalSectors sectorsPerCluster name display false;;
+fun volumeFormatFat32Mbr volume totalSectors sectorsPerCluster name display = _fat32Format volume totalSectors sectorsPerCluster name display true;;

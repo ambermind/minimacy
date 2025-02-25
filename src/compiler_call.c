@@ -80,7 +80,7 @@ Type* compileCall(Compiler* c)
 	callType = typeAllocFromStack(NULL, TYPECODE_FUN, argc + 1); if (!callType) return NULL;
 
 	if (typeUnify(c,funType,callType)) return NULL;
-	if (bc_byte_or_int(c,argc,OPexecb,OPexec)) return NULL;
+	if (bc_byte_or_int(c, argc, OPtfcb, OPtfc)) return NULL;
 	return result;
 }
 

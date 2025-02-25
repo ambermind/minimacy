@@ -16,6 +16,7 @@ struct BytecodeOps {
 };
 
 const struct BytecodeOps BytecodeDef[OPCODE_NB] = {
+
 {OPabs, 0, "abs"},
 {OPabsf, 0, "absf"},
 {OPacos, 0, "acos"},
@@ -31,8 +32,10 @@ const struct BytecodeOps BytecodeDef[OPCODE_NB] = {
 {OPcast, 0, "cast"},
 {OPcastb, 1, "cast.b"},
 {OPceil, 0, "ceil"},
+{OPcompact, 0, "compact"},
 {OPconst, 0, "const"},
 {OPconstb, 1, "const.b"},
+{OPcontinue, 0, "continue"},
 {OPcos, 0, "cos"},
 {OPcosh, 0, "cosh"},
 {OPdfarray, 0, "dfarray"},
@@ -78,9 +81,9 @@ const struct BytecodeOps BytecodeDef[OPCODE_NB] = {
 {OPlef, 0, "lef"},
 {OPln, 0, "ln"},
 {OPlog, 0, "log"},
+{OPloop, 0, "loop"},
 {OPlt, 0, "lt"},
 {OPltf, 0, "ltf"},
-{OPmark, BC_JUMP_SIZE, "mark"},
 {OPmax, 0, "max"},
 {OPmaxf, 0, "maxf"},
 {OPmin, 0, "min"},
@@ -137,11 +140,10 @@ const struct BytecodeOps BytecodeDef[OPCODE_NB] = {
 {OPtron, 0, "tron"},
 {OPtrue, 0, "true"},
 {OPtry, BC_JUMP_SIZE, "try"},
-{OPunmark, 0, "unmark"},
 {OPupdt, 0, "updt"},
 {OPupdtb, 1, "updt.b"},
-};
 
+};
 void opcodePrint(int msk,LINT op,char* p,LINT ind0)
 {
 	char* spaces="         ";
@@ -157,7 +159,7 @@ void opcodePrint(int msk,LINT op,char* p,LINT ind0)
 		PRINTF(msk,"%s%s " LSD "\n",BytecodeDef[op].str,spaces+strlen(BytecodeDef[op].str),v);
 		return;
 	}
-	else if ((op==OPgoto)||(op==OPelse)||(op==OPmark))
+	else if ((op==OPgoto)||(op==OPelse)||(op == OPtry))
 	{
 		LINT v=ind0+bytecodeGetJump(p);
 		PRINTF(msk,"%s%s >" LSD "\n",BytecodeDef[op].str,spaces+strlen(BytecodeDef[op].str),v);
@@ -231,8 +233,8 @@ void bytecodeOptimize(LB* bytecode)
 	while(ind<len)
 	{
 		LINT op=255&(*p);
-		if ((op==OPexec)&&(bytecodeIsTfc(p+1))) *p=OPtfc;
-		if ((op==OPexecb)&&(bytecodeIsTfc(p+2))) *p=OPtfcb;
+		if ((op==OPtfc)&&(!bytecodeIsTfc(p+1))) *p=OPexec;
+		if ((op==OPtfcb)&&(!bytecodeIsTfc(p+2))) *p=OPexecb;
 		if (op & 0x80) {
 			p+=2;
 			ind+=2;

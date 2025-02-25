@@ -10,6 +10,38 @@
    with this program. If not, see <https://www.gnu.org/licenses/>. */
 #include"minimacy.h"
 
+void _oblivionMark(LB* user)
+{
+	Oblivion* p = (Oblivion*)user;
+	MEMORY_MARK(p->f);
+	MEMORY_MARK(p->popNext);
+	if (MM.updating) MEMORY_MARK(p->listNext);
+}
+
+int fun_oblivionCreate(Thread* th)
+{
+	Oblivion* ob;
+	LB* f = STACK_PNT(th, 0);
+	if (!f) FUN_RETURN_NIL;
+	ob = (Oblivion*)memoryAllocExt(sizeof(Oblivion), DBG_OBLIVION, NULL, _oblivionMark); if (!ob) return EXEC_OM;
+	ob->f = f;
+	ob->listNext = MM.listOblivions;
+	MM.listOblivions = ob;
+	MEMORY_MARK(ob);
+	FUN_RETURN_PNT((LB*)ob);
+}
+int fun_oblivionPop(Thread* th)
+{
+	LB* f;
+	Oblivion* ob = MM.popOblivions;
+	if (!ob) FUN_RETURN_NIL;
+	f = ob->f;
+	ob->f = NULL;
+	MM.popOblivions = ob->popNext;
+	MEMORY_MARK(MM.popOblivions);
+	FUN_RETURN_PNT(f);
+}
+
 int fun_pkgCreate(Thread* th)
 {
 	Pkg* pkg = pkgAlloc((STACK_PNT(th,0)),0, PKG_FROM_NOTHING);
@@ -183,18 +215,27 @@ int fun_memoryRecount(Thread* th)
 	memoryRecount();
 	FUN_RETURN_INT(MM.blocs_length);
 }
-#ifdef USE_MEMORY_C
-int fun_memoryLongerBlock(Thread* th)
+int fun_memoryTry(Thread* th)
 {
-	FUN_RETURN_INT(bmmMaxSize());
+	FUN_RETURN_BOOL(memoryTry(STACK_INT(th, 0)));
+}
+#ifdef USE_MEMORY_C
+int fun_memoryLargestBlock(Thread* th)
+{
+	FUN_RETURN_INT(BmmMaxSize);
 }
 int fun_memoryReserve(Thread* th)
 {
 	FUN_RETURN_INT(bmmReservedMem());
 }
+int fun_memoryFree(Thread* th)
+{
+	FUN_RETURN_INT(BmmTotalFree);
+}
 #else
-int fun_memoryLongerBlock(Thread* th) FUN_RETURN_NIL
+int fun_memoryLargestBlock(Thread* th) FUN_RETURN_NIL
 int fun_memoryReserve(Thread* th) FUN_RETURN_NIL
+int fun_memoryFree(Thread* th) FUN_RETURN_NIL
 #endif
 int fun_systemLoadAllNatives(Thread* th)
 {
@@ -509,7 +550,7 @@ int fun_args(Thread* th)
 int fun_hostMemory(Thread* th)
 {
 #ifdef USE_MEMORY_C
-	FUN_RETURN_INT(bmmTotalSize());
+	FUN_RETURN_INT(BmmTotalSize);
 #else
 	FUN_RETURN_NIL
 #endif
@@ -535,6 +576,7 @@ int name(Thread* th)	\
 }
 
 intOpeI_I(fun_signExtend32,signExtend32)
+intOpeI_I(fun_signExtend24,signExtend24)
 intOpeI_I(fun_signExtend16,signExtend16)
 intOpeI_I(fun_signExtend8,signExtend8)
 
@@ -546,7 +588,7 @@ int fun_signExtend(Thread* th)
 	FUN_RETURN_INT(val);
 }
 
-int coreInit(Pkg *system)
+int systemCoreInit(Pkg *system)
 {
 	char device[64];
 	static const LFLOAT pi = (LFLOAT)3.14159265359;
@@ -558,12 +600,17 @@ int coreInit(Pkg *system)
 		{ NATIVE_FUN, "_exit", fun_exit, "fun -> Bool"},
 		{ NATIVE_FUN, "gc", fun_gc, "fun -> Int"},
 		{ NATIVE_FUN, "gcTrace", fun_gcTrace, "fun Bool -> Bool"},
+		{ NATIVE_OPCODE, "gcCompact", (void*)OPcompact, "fun -> Int"},
 		{ NATIVE_FUN, "memoryRecount", fun_memoryRecount, "fun -> Int"},
-		{ NATIVE_FUN, "memoryLongerBlock", fun_memoryLongerBlock, "fun -> Int"},
+		{ NATIVE_FUN, "_memoryTry", fun_memoryTry, "fun Int -> Bool"},
+		{ NATIVE_FUN, "memoryLargestBlock", fun_memoryLargestBlock, "fun -> Int"},
 		{ NATIVE_FUN, "memoryReserve", fun_memoryReserve, "fun -> Int"},
+		{ NATIVE_FUN, "memoryFree", fun_memoryFree, "fun -> Int"},
 		{ NATIVE_FUN, "systemLoadAllNatives", fun_systemLoadAllNatives, "fun -> Int"},
 		{ NATIVE_FUN, "address", fun_address, "fun a1 -> Int"},
 		{ NATIVE_FUN, "_reboot", fun_reboot, "fun -> Int"},
+		{ NATIVE_FUN, "_oblivionCreate", fun_oblivionCreate, "fun (fun -> Bool) -> Oblivion"},
+		{ NATIVE_FUN, "_oblivionPop", fun_oblivionPop, "fun -> (fun -> Bool)"},
 
 		{ NATIVE_FUN, "echo", fun_echo, "fun a1 -> a1"},
 		{ NATIVE_FUN, "echoLn", fun_echoLn, "fun a1 -> a1"},
@@ -612,6 +659,7 @@ int coreInit(Pkg *system)
 		{ NATIVE_FLOAT, "e", (void*)&e, "Float" },
 
 		{ NATIVE_FUN, "signExtend32", fun_signExtend32, "fun Int -> Int"},
+		{ NATIVE_FUN, "signExtend24", fun_signExtend24, "fun Int -> Int"},
 		{ NATIVE_FUN, "signExtend16", fun_signExtend16, "fun Int -> Int"},
 		{ NATIVE_FUN, "signExtend8", fun_signExtend8, "fun Int -> Int"},
 		{ NATIVE_FUN, "signExtend", fun_signExtend, "fun Int Int -> Int"},
@@ -687,6 +735,7 @@ int coreInit(Pkg *system)
 
 	pkgAddType(system, "Definition");
 	pkgAddType(system, "Useless");
+	pkgAddType(system, "Oblivion");
 	Def* Device = pkgAddType(system, "Device");
 	MM.Type = pkgAddType(system, "Type")->type;
 

@@ -14,21 +14,42 @@ struct _Internal=Stream+[];;
 
 var _InternalPipe;;
 var _InternalBuffer;;
-var _InternalHook @(array fun Int Int Int -> Bool)= arrayCreate _INTERNAL_MAX_CODE nil;;
+var _InternalHook = arrayCreate _INTERNAL_MAX_CODE nil;;
 var _InternalGrouping;;
+var _InternalExt = hashmapCreate 4;;
 
 fun _registerInternalHook event cb=set _InternalHook.event=cb;;
-fun _sign32 v=	if bitTest v 0x80000000 then v-0x100000000 else v;;
+
+fun registerInternalExt event f = 
+	hashmapSet _InternalExt event if f<>nil then
+		let _This -> th in (lambda data = threadPost th (lambda= call f data));;
+
+fun _internalExtAlive = 0<>hashmapCount _InternalExt;;
 
 fun _flushInternalGrouping except=
 	if _InternalGrouping<>nil then
-	let _InternalGrouping -> [cmd x y v] in
-	if cmd<>except then (
-//		echo ["<" cmd ">"];
-		call _InternalHook.cmd x y v;
+	let _InternalGrouping -> [event x y v] in
+	if event<>except then (
+//		echo ["<" event ">"];
+		call _InternalHook.event x y v;
 		set _InternalGrouping=nil
 	);;
 
+fun _internalUIevent i event=
+	let signExtend32 strRead32Lsb _InternalBuffer i+4 -> x in
+	let signExtend32 strRead32Lsb _InternalBuffer i+8 -> y in
+	let signExtend32 strRead32Lsb _InternalBuffer i+12 -> v in
+	(
+		if event==_EVENT_MOUSEMOVE || event==_EVENT_VWHEEL || event==_EVENT_HWHEEL || event==_EVENT_PAINT || event==_EVENT_SIZE then ( // grouping these events
+			_flushInternalGrouping event;
+			set _InternalGrouping=[event x y v];
+			nil
+		) else (
+			if event<>_EVENT_MULTITOUCH then _flushInternalGrouping nil;	// no need for multitouch as they do not fire any user event
+//			echo ["<" event ">"];
+			call _InternalHook.event x y v;
+		)
+	);;
 fun _handleInternal i=
 	let strLength _InternalBuffer -> len in
 	if i==len then
@@ -36,23 +57,16 @@ fun _handleInternal i=
 		set _InternalBuffer=nil;
 		_flushInternalGrouping nil
 	)
-	else if (i+16)>len then _flushInternalGrouping nil
+	else if (i+4)>len then _flushInternalGrouping nil
 	else
-	let strGet _InternalBuffer i -> cmd in
-	let _sign32 strRead32Lsb _InternalBuffer i+1 -> x in
-	let _sign32 strRead32Lsb _InternalBuffer i+5 -> y in
-	let _sign32 strRead32Lsb _InternalBuffer i+9 -> v in
-	(
-		if cmd==_EVENT_MOUSEMOVE || cmd==_EVENT_VWHEEL || cmd==_EVENT_HWHEEL || cmd==_EVENT_PAINT || cmd==_EVENT_SIZE then ( // grouping these events
-			_flushInternalGrouping cmd;
-			set _InternalGrouping=[cmd x y v];
-			nil
-		) else (
-			if cmd<>_EVENT_MULTITOUCH then _flushInternalGrouping nil;	// no need for multitouch as they do not fire any user event
-//			echo ["<" cmd ">"];
-			call _InternalHook.cmd x y v;
-		);
-		_handleInternal i+16
+	let strRead16Lsb _InternalBuffer i -> eventSize in
+	let strRead16Lsb _InternalBuffer i+2 -> event in
+	if (i+eventSize)>len then _flushInternalGrouping nil
+	else (
+		if !bitTest event 0x8000 then (_internalUIevent i event; nil)
+		else let hashmapGet _InternalExt event -> f in
+		if f<>nil then call f (strSlice _InternalBuffer i+4 eventSize-4);
+		_handleInternal i+eventSize
 	);;
 
 fun _internalInit=
@@ -70,22 +84,27 @@ fun _internalInit=
 	_streamAddToList _InternalPipe;
 	_socketSetSelectRead _InternalPipe._socketS true;;
 
-var _Workers;;
+var _WorkerList;;
 
 fun _workerCheck =
-	set _Workers=listFilter _Workers (lambda th =
+	set _WorkerList=listFilter _WorkerList (lambda th =
 		if th._stateT<>_THREAD_WAIT then false
-		else if _workerDone th._threadT then
-		(
-			_scheduleThread th;
-			false
-		)
-		else true
+		else match _workerDone th._threadT with 
+			nil -> (	
+				echoLn "> Thread is out of memory";
+				threadStop th;
+				false
+			),
+			true -> (
+				_scheduleThread th;
+				false
+			),
+			_ -> true
 	);;
 fun _workerEnter=
-	set _Workers=_This:_Workers;;
+	set _WorkerList=_This:_WorkerList;;
 
-fun _workerAlive = nil<>_Workers;;
+fun _workerAlive = nil<>_WorkerList;;
 
 //-----------------------------------
 fun ipByName hostname= let bufferCreateWithSize 32 -> output in (

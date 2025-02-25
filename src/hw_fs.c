@@ -84,9 +84,6 @@ LB* fileReadContent(LB* type, LINT index, char* path, int* size, int verbose)
 #ifdef USE_FS_ANSI
 	if (type == MM.ansiVolume) return ansiReadContent(path, size);
 #endif
-#ifdef USE_FS_UEFI
-	if (type == MM.uefiVolume) return uefiReadContent(index, path, size);
-#endif
 	if (type == MM.romdiskVolume) return romdiskReadContent((int)index, path, size);
 	return NULL;
 }
@@ -134,12 +131,17 @@ LB* fsReadPackage(char* pkg, int* size, int verbose)
 	return NULL;
 }
 
-int _volumeList(Thread* th, LB* type, LINT index, int writable)
+int _volumeList(Thread* th, LB* type, LINT index, int writable, LINT nbSectors, LINT sectorSize)
 {
 	FUN_PUSH_PNT(type);
 	FUN_PUSH_INT(index);
 	FUN_PUSH_BOOL(writable);
-	FUN_MAKE_ARRAY(3, DBG_TUPLE);
+	if (nbSectors < 0) FUN_PUSH_NIL
+	else FUN_PUSH_INT(nbSectors);
+	if (sectorSize < 0) FUN_PUSH_NIL
+	else FUN_PUSH_INT(sectorSize);
+
+	FUN_MAKE_ARRAY(5, DBG_TUPLE);
 	return 0;
 }
 int volumeList(Thread* th)
@@ -147,9 +149,6 @@ int volumeList(Thread* th)
 	int n = 0;
 #ifdef USE_FS_ANSI
 	if (ansiVolumeList(th, &n)) return EXEC_OM;
-#endif
-#ifdef USE_FS_UEFI
-	if (uefiVolumeList(th, &n)) return EXEC_OM;
 #endif
 	if (romdiskVolumeList(th, &n)) return EXEC_OM;
 	FUN_PUSH_NIL;
@@ -181,37 +180,28 @@ int fsMount(const char* argv0, int standalone)
 #ifdef USE_FS_ANSI
 	if (ansiFsMount(argv0, standalone)) return -1;
 #endif
-#ifdef USE_FS_UEFI
-	if (uefiFsMount(standalone)) return -1;
-#endif
 	return 0;
 }
 
-void fsInit()
+void fsInit(void)
 {
 	romdiskInit();
 #ifdef USE_FS_ANSI
 	ansiFsInit();
 #endif
-#ifdef USE_FS_UEFI
-	uefiFsInit();
-#endif
 	strcpy(CurrentDir, "");
 	strcpy(UserDir, "");
 	systemUserDir(UserDir, MAX_PATH);
 	systemCurrentDir(CurrentDir, MAX_PATH);
-	PRINTF(LOG_SYS, "> Current working directory: %s\n", CurrentDir);
-	PRINTF(LOG_SYS, "> Default user directory   : %s\n", UserDir);
+	PRINTF(LOG_SYS, "> Current working directory: %s\n", strlen(CurrentDir)?CurrentDir:"[empty]");
+	PRINTF(LOG_SYS, "> Default user directory   : %s\n", strlen(UserDir)?UserDir:"[empty]");
 
 }
 
-void fsRelease()
+void fsRelease(void)
 {
 	romdiskRelease();
 #ifdef USE_FS_ANSI
 	ansiFsRelease();
-#endif
-#ifdef USE_FS_UEFI
-	uefiFsRelease();
 #endif
 }

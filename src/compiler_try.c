@@ -21,7 +21,7 @@ Type* compileTry(Compiler* c)
 	if (bc_catch < 0) return NULL;
 
 	if (!(tresult=compileProgram(c))) return NULL;
-	if (bufferAddChar(c->bytecode,OPunmark)) return NULL;
+	if (bc_byte_or_int(c, 2, OPskipb, OPskip)) return NULL;
 
 	if (bufferAddChar(c->bytecode,OPgoto)) return NULL;
 	bc_next=bytecodeAddEmptyJump(c);

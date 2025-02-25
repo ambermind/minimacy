@@ -1,3 +1,5 @@
 {
+	"workspaceKeybindings.customRun.enabled": true,
+	"editor.detectIndentation": false,
 	"editor.insertSpaces": false
 }

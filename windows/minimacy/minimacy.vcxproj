@@ -41,10 +41,8 @@
     <ClCompile Include="..\..\src\crypto_aes.c" />
     <ClCompile Include="..\..\src\crypto_crc32.c" />
     <ClCompile Include="..\..\src\crypto_des.c" />
-    <ClCompile Include="..\..\src\crypto_md5.c" />
+    <ClCompile Include="..\..\src\crypto_hash.c" />
     <ClCompile Include="..\..\src\crypto_rc4.c" />
-    <ClCompile Include="..\..\src\crypto_sha1.c" />
-    <ClCompile Include="..\..\src\crypto_sha2.c" />
     <ClCompile Include="..\..\src\hw.c" />
     <ClCompile Include="..\..\src\hw_console.c" />
     <ClCompile Include="..\..\src\hw_fs.c" />
@@ -53,7 +51,7 @@
     <ClCompile Include="..\..\src\hw_random.c" />
     <ClCompile Include="..\..\src\hw_thread.c" />
     <ClCompile Include="..\..\src\hw_time.c" />
-    <ClCompile Include="..\..\src\main.c" />
+    <ClCompile Include="..\..\src\minimacy.c" />
     <ClCompile Include="..\..\src\system.c" />
     <ClCompile Include="..\..\src\system_2d.c" />
     <ClCompile Include="..\..\src\system_audio.c" />
@@ -104,10 +102,8 @@
     <ClInclude Include="..\..\src\crypto_aes.h" />
     <ClInclude Include="..\..\src\crypto_crc32.h" />
     <ClInclude Include="..\..\src\crypto_des.h" />
-    <ClInclude Include="..\..\src\crypto_md5.h" />
+    <ClInclude Include="..\..\src\crypto_hash.h" />
     <ClInclude Include="..\..\src\crypto_rc4.h" />
-    <ClInclude Include="..\..\src\crypto_sha1.h" />
-    <ClInclude Include="..\..\src\crypto_sha2.h" />
     <ClInclude Include="..\..\src\hw.h" />
     <ClInclude Include="..\..\src\hw_fs.h" />
     <ClInclude Include="..\..\src\hw_thread.h" />
@@ -142,6 +138,7 @@
     <ClInclude Include="resource.h" />
   </ItemGroup>
   <ItemGroup>
+    <None Include="..\..\programs\demo\demo.fun.boing.mcy" />
     <None Include="..\..\rom\bios\bios.mcy" />
     <None Include="..\..\rom\bios\bios._admin.mcy" />
     <None Include="..\..\rom\bios\bios._console.mcy" />
@@ -199,6 +196,7 @@
     <None Include="..\..\rom\core\core.net.http.cli.mcy" />
     <None Include="..\..\rom\core\core.net.http.mcy" />
     <None Include="..\..\rom\core\core.net.http.srv.mcy" />
+    <None Include="..\..\rom\core\core.net.ipOverEth.mcy" />
     <None Include="..\..\rom\core\core.net.mime.mcy" />
     <None Include="..\..\rom\core\core.net.mysql.mcy" />
     <None Include="..\..\rom\core\core.net.ssh.mcy" />
@@ -210,7 +208,11 @@
     <None Include="..\..\rom\core\core.net.tls13.mcy" />
     <None Include="..\..\rom\core\core.net.websocket.mcy" />
     <None Include="..\..\rom\core\core.net.xtcp.mcy" />
+    <None Include="..\..\rom\core\core.storage.fat32.mcy" />
+    <None Include="..\..\rom\core\core.storage.format.mcy" />
+    <None Include="..\..\rom\core\core.storage.romdisk.mcy" />
     <None Include="..\..\rom\core\core.util.base64.mcy" />
+    <None Include="..\..\rom\core\core.util.cache.mcy" />
     <None Include="..\..\rom\core\core.util.gzip.mcy" />
     <None Include="..\..\rom\core\core.util.hashmap.mcy" />
     <None Include="..\..\rom\core\core.util.huffman.mcy" />
@@ -229,7 +231,6 @@
     <None Include="..\..\rom\core\core.util.zip.mcy" />
     <None Include="..\..\programs\boot.mcy" />
     <None Include="..\..\programs\demo\demo.2d.qrcode.mcy" />
-    <None Include="..\..\programs\demo\demo.fun.boing3.mcy" />
     <None Include="..\..\programs\demo\demo.fun.mandelbrot.mcy" />
     <None Include="..\..\programs\demo\demo.fun.maze.mcy" />
     <None Include="..\..\programs\demo\demo.fun.queens.mcy" />

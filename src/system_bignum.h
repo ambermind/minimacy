@@ -11,7 +11,7 @@
 #ifndef _CORE_BIGNUM_
 #define _CORE_BIGNUM_
 
-#define BIGNUM_MAXWORDS 256
+#define BIGNUM_MAXWORDS 260	// minimum to handle 4096bits keys/modulo
 
 typedef unsigned int uint;
 typedef unsigned long long ulonglong;
@@ -220,8 +220,8 @@ int name(Thread* th)	\
 	FUN_RETURN_PNT(p);	\
 }
 
-void coreBignumReset(void);
-int coreBignumInit(Pkg *system);
+void systemBignumReset(void);
+int systemBignumInit(Pkg *system);
 
 
 #endif

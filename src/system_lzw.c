@@ -21,13 +21,19 @@ typedef struct
 	int brother;
 }Dictcase;
 
-typedef struct
+typedef struct Lzw Lzw;
+struct Lzw
 {
 	LB header;
 	FORGET forget;
 	MARK mark;
 
-	Buffer* output;
+	volatile Lzw** link;
+
+	volatile Buffer** pout;
+	volatile LB* srcBlock;
+	volatile char* src;
+
 	int done;
 
 	int dataBitSize;
@@ -47,19 +53,12 @@ typedef struct
 	int inputBitSize;  // number of bits in inputStream
 	int outputStream;
 	int outputBitSize;  // number of bits in outputStream
-} Dict;
+};
 
 #define LZW_DONE 1
 #define LZW_ONGOING 0
 #define LZW_ERR (-1)
 
-
-#define _lzwPrintChar(d,c) bufferAddChar(d->output,c);
-/*void _lzwPrintChar(Dict* d,int c)
-{
-	bufferAddChar(d->output,c);
-}
-*/
 const int LZW_MASKS[33]=
 {0x00000000,0x00000001,0x00000003,0x00000007,
  0x0000000f,0x0000001f,0x0000003f,0x0000007f,
@@ -72,154 +71,168 @@ const int LZW_MASKS[33]=
  0xffffffff};
 
 // add a data into the dictionary
-void _lzwAddToDict(Dict* d, int data, int parent)
+void _lzwAddToDict(Lzw* z, int data, int parent)
 {
-	d->tape[d->i].data=data;
-	d->tape[d->i].parent=parent;
-	d->tape[d->i].child=-1;
+	z->tape[z->i].data=data;
+	z->tape[z->i].parent=parent;
+	z->tape[z->i].child=-1;
 	if (parent!=-1)
 	{
-		d->tape[d->i].brother=d->tape[parent].child;
-		d->tape[parent].child=d->i;
+		z->tape[z->i].brother=z->tape[parent].child;
+		z->tape[parent].child=z->i;
 	}
-	else d->tape[d->i].brother=-1;
-	d->i++;
+	else z->tape[z->i].brother=-1;
+	z->i++;
 }
 
 // reset the dictionary
-void _lzwResetDict(Dict* d)
+void _lzwResetDict(Lzw* z)
 {
 	int i;
-	d->i=0;
-	d->lastCode=-1;
-	d->nbits = d->dataBitSize + 1;
-	for(i=0;i<=d->dataMask;i++) _lzwAddToDict(d,i,-1);
-	_lzwAddToDict(d,0,-1);  // CLEARCODE 
-	_lzwAddToDict(d,0,-1);  // EOI 
+	z->i=0;
+	z->lastCode=-1;
+	z->nbits = z->dataBitSize + 1;
+	for(i=0;i<=z->dataMask;i++) _lzwAddToDict(z,i,-1);
+	_lzwAddToDict(z,0,-1);  // CLEARCODE 
+	_lzwAddToDict(z,0,-1);  // EOI 
 }
 
 //--------------------------Encode
 
 // search for a data in the dictionary, return its index or -1 when not found 
-int _lzwFindMotif(Dict* d,int data,int parent)
+int _lzwFindMotif(Lzw* z,int data,int parent)
 {
-	int i=d->tape[parent].child;
+	int i=z->tape[parent].child;
 	while(i!=-1)
 	{
-		if (d->tape[i].data==data) return i;
-		i=d->tape[i].brother;
+		if (z->tape[i].data==data) return i;
+		i=z->tape[i].brother;
 	}
 	return -1;
 }
 
 // send a word to the output
-void _lzwPrintWord(Dict* d, int word)
+void _lzwPrintWord(volatile Lzw** pz, int word)
 {
-	while ((d->nbits < MAX_BIT_LENGTH) && (d->i > (1 << d->nbits))) d->nbits++;
+	Lzw* z = (Lzw*)*pz;
+	while ((z->nbits < MAX_BIT_LENGTH) && (z->i > (1 << z->nbits))) z->nbits++;
 
-	d->outputStream = (word << d->outputBitSize) + d->outputStream;
-	d->outputBitSize += d->nbits;
-	while (d->outputBitSize >= d->dataBitSize)
+	z->outputStream = (word << z->outputBitSize) + z->outputStream;
+	z->outputBitSize += z->nbits;
+	while (z->outputBitSize >= z->dataBitSize)
 	{
-		_lzwPrintChar(d, d->outputStream & d->dataMask);
-		d->outputBitSize -= d->dataBitSize;
-		d->outputStream >>= d->dataBitSize;
+		if (bufferAddCharWorker(z->pout, z->outputStream & z->dataMask)) return;
+		z = (Lzw*)*pz;
+		z->outputBitSize -= z->dataBitSize;
+		z->outputStream >>= z->dataBitSize;
 	}
 }
 
 // finalize the encoding
-void _lzwEncodeLastChar(Dict* d)
+void _lzwEncodeLastChar(volatile Lzw** pz)
 {
-	if (d->lastCode != -1)
+	Lzw* z = (Lzw*)*pz;
+	if (z->lastCode != -1)
 	{
-		_lzwPrintWord(d, d->lastCode);
-		_lzwAddToDict(d, 0, d->lastCode);
+		_lzwPrintWord(pz, z->lastCode);
+		z = (Lzw*)*pz;
+		_lzwAddToDict(z, 0, z->lastCode);
 	}
-	_lzwPrintWord(d, d->EOI);
-	if (d->outputBitSize) _lzwPrintChar(d, d->outputStream & LZW_MASKS[d->outputBitSize]);
+	_lzwPrintWord(pz, z->EOI);
+	z = (Lzw*)*pz;
+	if (z->outputBitSize) if (bufferAddCharWorker(z->pout, z->outputStream & LZW_MASKS[z->outputBitSize])) return;
 }
 
 // encode the next char 
-void _lzwEncodeChar(Dict* d,int c)
+void _lzwEncodeChar(volatile Lzw** pz,int c)
 {
 	int k;
-	c &= d->dataMask;
-	if (d->lastCode==-1) k=c;
-	else k=_lzwFindMotif(d,c,d->lastCode);
+	Lzw* z = (Lzw*)*pz;
+	c &= z->dataMask;
+	if (z->lastCode==-1) k=c;
+	else k=_lzwFindMotif(z,c,z->lastCode);
 	if (k!=-1)
 	{
-		d->lastCode=k;
+		z->lastCode=k;
 		return;
 	}
-	_lzwPrintWord(d,d->lastCode);
-	_lzwAddToDict(d, c, d->lastCode);
-	if (d->i >= d->iMax)
+	_lzwPrintWord(pz,z->lastCode);
+	z = (Lzw*)*pz;
+	_lzwAddToDict(z, c, z->lastCode);
+	if (z->i >= z->iMax)
 	{
-		_lzwPrintWord(d,d->CLEARCODE);
-		_lzwResetDict(d);
+		_lzwPrintWord(pz,z->CLEARCODE);
+		z = (Lzw*)*pz;
+		_lzwResetDict(z);
 	}
-	d->lastCode=c;
+	z->lastCode=c;
 }
 
 //--------------------------Decode
 // output a full sequence from a word
-void _lzwPrintFromWord(Dict* d, int word)
+void _lzwPrintFromWord(volatile Lzw** pz, int word)
 {
-	char* p = d->buffer;
+	Lzw* z = (Lzw*)*pz;
+	char* p = z->buffer;
 	do
 	{
-		*(p++) = d->tape[word].data;
-		word = d->tape[word].parent;
+		*(p++) = z->tape[word].data;
+		word = z->tape[word].parent;
 	} while (word != -1);
 
-	while(p!=d->buffer) _lzwPrintChar(d, *(--p));
+	while (p != z->buffer) {
+		if (bufferAddCharWorker(z->pout, *(--p))) return;
+		z = (Lzw*)*pz;
+	}
 }
 
-int _lzwGetRoot(Dict* d, int i)
+int _lzwGetRoot(Lzw* z, int i)
 {
-	while (d->tape[i].parent != -1) i = d->tape[i].parent;
+	while (z->tape[i].parent != -1) i = z->tape[i].parent;
 	return i;
 }
 
 // decode a word from the bitstream
-int _lzwDecodeWord(Dict* d,int word)
+int _lzwDecodeWord(volatile Lzw** pz,int word)
 {
 	int root;
-	if (word == d->EOI) return LZW_DONE;
-	if (word==d->CLEARCODE)
+	Lzw* z = (Lzw*)*pz;
+	if (word == z->EOI) return LZW_DONE;
+	if (word==z->CLEARCODE)
 	{
-		_lzwResetDict(d);
+		_lzwResetDict(z);
 		return LZW_ONGOING;
 	}
-	if ((word < 0) || (word > d->i))
+	if ((word < 0) || (word > z->i))
 	{
-//		PRINTF(LOG_DEV,"word is out of range %d/%d\n", word, d->i);
+//		PRINTF(LOG_DEV,"word is out of range %z/%z\n", word, z->i);
 		return LZW_ERR;
 	}
-	if (d->lastCode!=-1)
+	if (z->lastCode!=-1)
 	{
-		root = _lzwGetRoot(d, (word == d->i) ? d->lastCode: word);
-		if (d->i >= d->iMax)
+		root = _lzwGetRoot(z, (word == z->i) ? z->lastCode: word);
+		if (z->i >= z->iMax)
 		{
-//			PRINTF(LOG_DEV,"%d exceeds Max number of patterns %d\n", d->i, d->iMax);
+//			PRINTF(LOG_DEV,"%z exceeds Max number of patterns %z\n", z->i, z->iMax);
 			return LZW_ERR;
 		}
-		_lzwAddToDict(d,d->tape[root].data,d->lastCode);
+		_lzwAddToDict(z,z->tape[root].data,z->lastCode);
 	}
-	_lzwPrintFromWord(d, word);
-	d->lastCode=word;
+	z->lastCode=word;
+	_lzwPrintFromWord(pz, word);
 	return LZW_ONGOING;
 }
 
-void _lzwDecodeStream(Dict* d,char* p, LINT len)
+void _lzwDecodeStream(volatile Lzw** pz,LINT offset, LINT len)
 {
 	LINT i = 0;
-	while (d->done== LZW_ONGOING)
+	Lzw* z = (Lzw*)*pz;
+	while (z->done== LZW_ONGOING)
 	{
-		int word;
+		int word,done;
 
-		while ((d->nbits< MAX_BIT_LENGTH)&&(d->i >= (1 << d->nbits))) d->nbits++;
-		while (d->inputBitSize < d->nbits)
+		while ((z->nbits< MAX_BIT_LENGTH)&&(z->i >= (1 << z->nbits))) z->nbits++;
+		while (z->inputBitSize < z->nbits)
 		{
 			int c;
 			if (i >= len)
@@ -227,105 +240,125 @@ void _lzwDecodeStream(Dict* d,char* p, LINT len)
 //				PRINTF(LOG_DEV,"reach end of file %x / %x\n", i, len);
 				return;
 			}
-			c = p[i++] & 255;
+			c = z->src[offset+(i++)] & 255;
 //			PRINTF(LOG_DEV,"b:%x.", c);
-			d->inputStream = (c << d->inputBitSize) + d->inputStream;
-			d->inputBitSize += 8;
+			z->inputStream = (c << z->inputBitSize) + z->inputStream;
+			z->inputBitSize += 8;
 		}
-		word = d->inputStream & LZW_MASKS[d->nbits];
-		d->inputBitSize -= d->nbits;
-		d->inputStream >>= d->nbits;
+		word = z->inputStream & LZW_MASKS[z->nbits];
+		z->inputBitSize -= z->nbits;
+		z->inputStream >>= z->nbits;
 
-//		PRINTF(LOG_DEV,"c:%x nbits:%d\n", word, d->nbits);
-//		if (word == d->EOI) PRINTF(LOG_DEV,"found EOI at %x / %x\n", i, len);
-//		if (word == d->CLEARCODE) PRINTF(LOG_DEV,"found CLEARCODE at %x / %x\n", i, len);
+//		PRINTF(LOG_DEV,"c:%x nbits:%z\n", word, z->nbits);
+//		if (word == z->EOI) PRINTF(LOG_DEV,"found EOI at %x / %x\n", i, len);
+//		if (word == z->CLEARCODE) PRINTF(LOG_DEV,"found CLEARCODE at %x / %x\n", i, len);
 
-		d->done = _lzwDecodeWord(d, word);
+		done = _lzwDecodeWord(pz, word);
+		z = (Lzw*)*pz;
+		z->done = done;
 	}
 }
 
-void _lzwInit(Dict* d, LINT dataBitSize)
+void _lzwInit(Lzw* z, LINT dataBitSize)
 {
-	d->output = NULL;
-	d->done = LZW_ONGOING;
-	d->inputBitSize = 0;
-	d->outputBitSize = 0;
-	d->iMax = MAX_WORDS;
-	d->inputStream = 0;
-	d->outputStream = 0;
+	z->pout = NULL;
+	z->link = NULL;
+	z->done = LZW_ONGOING;
+	z->inputBitSize = 0;
+	z->outputBitSize = 0;
+	z->iMax = MAX_WORDS;
+	z->inputStream = 0;
+	z->outputStream = 0;
 
-	d->dataBitSize = (int)dataBitSize;
-	d->dataMask = (1 << d->dataBitSize) - 1;
-	d->CLEARCODE = d->dataMask + 1;
-	d->EOI = d->CLEARCODE + 1;
-	_lzwResetDict(d);
+	z->dataBitSize = (int)dataBitSize;
+	z->dataMask = (1 << z->dataBitSize) - 1;
+	z->CLEARCODE = z->dataMask + 1;
+	z->EOI = z->CLEARCODE + 1;
+	_lzwResetDict(z);
 }
 //---------------------------------------------------
+void _lzwMark(LB* user)
+{
+	if (MM.updating) {
+		Lzw* z = (Lzw*)user;
+		MEMORY_MARK(z->srcBlock);
+		z->src = STR_START(z->srcBlock);
+		if (z->link) *z->link = (Lzw*)z->header.lifo;
+	}
+}
 int fun_lzwCreate(Thread* th)
 {
-	Dict* d;
+	Lzw* z;
 
 	LINT dataBitSize = STACK_INT(th,0);
 	if ((dataBitSize<0)||(dataBitSize> MAX_BIT_LENGTH)) FUN_RETURN_NIL;
 	if (dataBitSize == 0) dataBitSize = 8;
-	d = (Dict*)memoryAllocExt(sizeof(Dict), DBG_BIN, NULL, NULL); if (!d) return EXEC_OM;
-	_lzwInit(d, dataBitSize);
+	z = (Lzw*)memoryAllocExt(sizeof(Lzw), DBG_BIN, NULL, _lzwMark); if (!z) return EXEC_OM;
+	_lzwInit(z, dataBitSize);
 
-	FUN_RETURN_PNT((LB*)d);
+	FUN_RETURN_PNT((LB*)z);
 }
 
 
-MTHREAD_START _lzwDeflate(Thread* th)
+WORKER_START _lzwDeflate(volatile Thread* th)
 {
 	int lenIsNil = STACK_IS_NIL(th,0);
 	LINT len = STACK_INT(th, 0);
 	LINT index = STACK_INT(th, 1);
 	LB* src = STACK_PNT(th, 2);
-	Buffer* b = (Buffer*)STACK_PNT(th, 3);
-	Dict* d = (Dict*)STACK_PNT(th, 4);
-	if ((!b)||(!d)||(d->done!= LZW_ONGOING)) return workerDoneNil(th);
-	bufferSetWorkerThread(b, th);
-	d->output = b;
+	volatile Buffer* out = (Buffer*)STACK_PNT(th, 3);
+	volatile Lzw* z = (Lzw*)STACK_PNT(th, 4);
+	if ((!out)||(!z)||(z->done!= LZW_ONGOING)) return workerDoneNil(th);
+	bufferSetWorkerThread(&out, &th);
+	z->link = &z;
+	z->pout = &out;
 	if (src)
 	{
-		char* p;
 		LINT i;
+		z->srcBlock = src;
+		z->src = STR_START(z->srcBlock);
 		WORKER_SUBSTR(src, index, len, lenIsNil, STR_LENGTH(src));
-		p = STR_START(src) + index;
-		for (i = 0; i < len; i++) _lzwEncodeChar(d, p[i]);
+		for (i = 0; i < len; i++) _lzwEncodeChar(&z, z->src[index+i]);
+		z->srcBlock = NULL;
 	}
 	else
 	{
-		_lzwEncodeLastChar(d);
-		d->done = LZW_DONE;
+		_lzwEncodeLastChar(&z);
+		z->done = LZW_DONE;
 	}
-	bufferSetWorkerThread(b, NULL);
+	bufferUnsetWorkerThread(&out, &th);
+	z->link = NULL;
 	return workerDonePnt(th, MM._true);
 }
 
 int fun_lzwDeflate(Thread* th) { return workerStart(th, 5, _lzwDeflate); }
 
-MTHREAD_START _lzwInflate(Thread* th)
+WORKER_START _lzwInflate(volatile Thread* th)
 {
 	int lenIsNil = STACK_IS_NIL(th,0);
 	LINT len = STACK_INT(th, 0);
 	LINT index = STACK_INT(th, 1);
 	LB* src = STACK_PNT(th, 2);
-	Buffer* b = (Buffer*)STACK_PNT(th, 3);
-	Dict* d = (Dict*)STACK_PNT(th, 4);
-	if ((!b)||(!d)||(d->done!= LZW_ONGOING)) return workerDoneNil(th);
-	bufferSetWorkerThread(b, th);
-	d->output = b;
+	volatile Buffer* out = (Buffer*)STACK_PNT(th, 3);
+	volatile Lzw* z = (Lzw*)STACK_PNT(th, 4);
+	if ((!out)||(!z)||(z->done!= LZW_ONGOING)) return workerDoneNil(th);
+	bufferSetWorkerThread(&out, &th);
+	z->link = &z;
+	z->pout = &out;
+	z->srcBlock = src;
+	z->src=STR_START(z->srcBlock);
 	WORKER_SUBSTR(src, index, len, lenIsNil, STR_LENGTH(src));
-	_lzwDecodeStream(d, STR_START(src) + index, len);
-	bufferSetWorkerThread(b, NULL);
-	if (d->done == LZW_DONE) return workerDonePnt(th, MM._true);
-	if (d->done == LZW_ERR) return workerDonePnt(th, MM._false);
+	_lzwDecodeStream(&z, index, len);
+	z->srcBlock = NULL;
+	bufferUnsetWorkerThread(&out, &th);
+	z->link = NULL;
+	if (z->done == LZW_DONE) return workerDonePnt(th, MM._true);
+	if (z->done == LZW_ERR) return workerDonePnt(th, MM._false);
 	return workerDoneNil(th);
 }
 int fun_lzwInflate(Thread* th) { return workerStart(th, 5, _lzwInflate); }
 
-int coreLzwInit(Pkg* system)
+int systemLzwInit(Pkg* system)
 {
 	pkgAddType(system, "_Lzw");
 	static const Native nativeDefs[] = {

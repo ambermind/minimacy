@@ -30,13 +30,30 @@ void threadMark(LB* user)
 	LB* p = th->stack;
 
 	if (!p) return;
-//	p->lifo=MM.USEFUL;
-	for(i=0;i<=th->sp;i++) if (ARRAY_IS_PNT(p,i)) MEMORY_MARK(ARRAY_PNT(p,i));
 
-	MEMORY_MARK(p);
+	MEMORY_MARK(th->stack);
 	MEMORY_MARK(th->user);
 	// there is no need to mark any pending worker's result pointer, as these pointers are
 	// stored in the stack by workerAllocExt before they are declared as the worker's result
+	if (MM.updating) {
+		MEMORY_MARK(th->listNext);	// this special list doesn't count for marking stage
+		MEMORY_MARK(th->fun);
+		MEMORY_MARK(th->worker.buffer);	// possible because all workers are inactive at this stage, see bmmCompact() function
+		if (th->worker.type == VAL_TYPE_PNT) {
+			LB* pnt=PNT_FROM_VAL(th->worker.result);
+			MEMORY_MARK(pnt);
+			th->worker.result=VAL_FROM_PNT(pnt);
+		}
+		for (i = 0; i <= th->sp; i++) if (ARRAY_IS_PNT(p, i)) {
+			LB* pnt = ARRAY_PNT(p, i);
+			MEMORY_MARK(pnt);
+			ARRAY_GET(p, i) = VAL_FROM_PNT(pnt);
+		}
+		if (th->link) *th->link = (Thread*)th->header.lifo;
+	}
+	else {
+		for(i=0;i<=th->sp;i++) if (ARRAY_IS_PNT(p,i)) BLOCK_MARK(ARRAY_PNT(p,i));
+	}
 }
 
 int threadForget(LB* p)
@@ -44,8 +61,6 @@ int threadForget(LB* p)
 	Thread* th = (Thread*)p;
 //	PRINTF(LOG_DEV,"threadForget "LSD"\n", th->uid);
 //	PRINTF(LOG_DEV,"threadForget "LSX":"LSD"\n", th, th->uid);
-	semDelete(&th->worker.sem);
-
 	th->stack = NULL;
 //	if (th->header.mem == MemoryCheck) PRINTF(LOG_DEV,"release thread of MemoryCheck ->%d\n", th->header.mem->bytes);
 	return 0;
@@ -58,8 +73,13 @@ Thread* threadCreate(LINT stackLen)
 	th=(Thread*)memoryAllocExt(sizeof(Thread),DBG_THREAD, threadForget,threadMark); if (!th) return NULL;
 	th->uid=ThreadCounter++;
 	th->count = 0;
+	th->worker.result = NIL;
+	th->worker.type = VAL_TYPE_PNT;
+	th->worker.buffer = NULL;
 	th->worker.state = WORKER_READY;
-	semCreate(&th->worker.sem);
+	th->worker.sem = NULL;
+	th->worker.OM = 0;
+	th->link = NULL;
 	th->callstack=-1;
 	th->pc=0;
 	th->fun=NULL;
@@ -246,18 +266,6 @@ int fun_threadClear(Thread* th)
 	return 0;
 }
 
-int fun_threadRun(Thread* th)
-{
-	LINT result;
-	LINT maxCycles=STACK_INT(th,0);
-	Thread* t=(Thread*)STACK_PNT(th,1);
-
-	if (!t) FUN_RETURN_INT(-1);
-	result = interpreterRun(t, maxCycles);
-	MM.OM = 0;
-	FUN_RETURN_INT(result);
-}
-
 int fun_threadResume(Thread* th)
 {
 //	stack(th,0) contains the result of the function to resume
@@ -267,6 +275,18 @@ int fun_threadResume(Thread* th)
 	STACK_PUSH_NIL_ERR(t,EXEC_OM);	// make space on the other thread
 	STACK_COPY(t,0,th,0);	// move onto the other thread
 	FUN_RETURN_INT(0);
+}
+
+int fun_threadRun(Thread* th)
+{
+	LINT result;
+	LINT maxCycles = STACK_INT(th, 0);
+	Thread* t = (Thread*)STACK_PNT(th, 1);
+
+	if (!t) FUN_RETURN_INT(-1);
+	result = interpreterRun(t, maxCycles);
+	MM.OM = 0;
+	FUN_RETURN_INT(result);
 }
 
 int fun_threadExec(Thread* th)
@@ -330,17 +350,9 @@ int fun_caller(Thread* th)
 	return 0;
 }
 
-int fun_OM(Thread* th)
-{
-	Thread* t = (Thread*)STACK_PNT(th, 0);
-	if (t) STACK_SET_BOOL(th, 0, MM.OM);
-	return 0;
-}
-
-int coreThreadInit(Pkg *system)
+int systemThreadInit(Pkg *system)
 {
 	static const Native nativeDefs[] = {
-		{ NATIVE_FUN, "_OM", fun_OM, "fun -> Bool"},
 		{ NATIVE_FUN, "_threadCurrent", fun_threadCurrent, "fun -> _Thread" },
 		{ NATIVE_INT, "EXEC_IDLE", (void*)EXEC_IDLE, "Int" },
 		{ NATIVE_INT, "EXEC_PREEMPTION", (void*)EXEC_PREEMPTION, "Int" },

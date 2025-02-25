@@ -40,7 +40,7 @@ void hwRandomBytes(char* dst, LINT len)
 	}
 	pseudoRandomBytes(dst, len);
 }
-int hwHasRandom()
+int hwHasRandom(void)
 {
 	return fCrypt?1:0;
 }

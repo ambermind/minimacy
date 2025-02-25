@@ -92,6 +92,10 @@ int fun_socketRead(Thread* th);
 int fun_socketWrite(Thread* th);
 int fun_socketClose(Thread* th);
 
+int socketNextFd(void);
+
 int sysSocketInit(Pkg* system);
 void sysSocketClose(void);
+
+int hwPsw(void);
 #endif

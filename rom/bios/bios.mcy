@@ -9,7 +9,7 @@
    You should have received a copy of the GNU General Public License along
    with this program. If not, see <https://www.gnu.org/licenses/>. */
 
-extend Exception with msgException _;;
+extend Exception with msgException @Str;;
 
 sum _State= _THREAD_RUN, _THREAD_WAIT, _THREAD_DONE, _THREAD_IDLE;;
 
@@ -55,7 +55,7 @@ const _SystemPkg=pkg;;
 var _HardStop=false;;
 var _NiceStop=false;;
 
-const _ThreadBios=[_threadT=_threadCurrent _nameT="BIOS" _callerT="system"
+const _ThreadBios=[_threadT=_threadCurrent _nameT="_BIOS_" _callerT="system"
 	_echoEnableT=_echoIsEnabled
 	_stateT=_THREAD_RUN
 	_t0T=time];;

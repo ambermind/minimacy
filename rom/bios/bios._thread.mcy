@@ -11,13 +11,8 @@
 
 //------------ THREAD
 const _BiosLock=lockCreate;;
-const _CheckList=fifoCreate;;
 
 fun _threadFull th= (fifoCount th._tasksT)>=_MAX__THREAD_TASKS ;;
-
-fun _threadNeedCheck th=
-	fifoIn _CheckList th;
-	nil;;
 
 fun _threadUnfreeze th val=
 	if th._stateT==_THREAD_WAIT then
@@ -31,19 +26,37 @@ fun _threadUnblockPosting th=
 	let fifoOut th._postingT -> thBlocked in
 	_threadUnfreeze thBlocked nil;;
 
-fun _threadsCheck =
-	while nil<>fifoNext _CheckList do let fifoOut _CheckList -> th in
-		if th._stateT==_THREAD_IDLE then
-		let fifoOut th._tasksT -> task in
-		if task<>nil then
-		(
-			_threadExec th._threadT task;
-			_scheduleThread th;
-			_threadUnblockPosting th;
-		);;
+fun _threadsCheckPendingTasks th =
+	if th._stateT==_THREAD_IDLE then
+	let fifoOut th._tasksT -> task in
+	if task<>nil then
+	(
+		_threadExec th._threadT task;
+		_scheduleThread th;
+		_threadUnblockPosting th;
+	);;
+
+fun threadPost th task=
+	if th<>nil then
+	if th._stateT<>_THREAD_DONE then
+	let (lambda = call task;0) -> task in
+	(
+		if (_threadFull th) && (th<> _This) && ( _This<>_ThreadBios) then
+		\atomic (
+			fifoIn th._postingT _This;
+			_threadHoldOn
+		);
+		fifoIn th._tasksT task;
+		\atomic _threadsCheckPendingTasks th;
+		true
+	);;
 
 fun _threadNew name caller start=
-	let _threadCreate -> sysThread in
+	if (strStartsWith name "_")&&_This<>_ThreadBios then (
+		echoLn strFormat "> User thread name '*' can't start with underscore" name;
+		nil
+	)
+	else let _threadCreate -> sysThread in
 	if sysThread<>nil then
 	let caller ->[funName _ _ pkg] in
 	let [
@@ -88,7 +101,7 @@ fun _checkPkgName str i=
 	else let strGet str i -> c in
 	if (c>='a' && c<='z')||(c>='A' && c<='Z')||(c=='_')||(c=='.')||(c>='0' && c<='9') then _checkPkgName str i+1;;
 
-fun _launchApp pkgName compile caller=
+fun _launchApp pkgName compile callerFun=
 	if !_checkPkgName pkgName 0 then ( // check syntax of pkgName
 		echoLn strFormat "Invalid package name '*'" pkgName;
 		nil
@@ -103,7 +116,8 @@ fun _launchApp pkgName compile caller=
 		nil
 	)
 	else
-	_threadNew pkgName caller (lambda =
+	let if callerFun==nil then caller else callerFun -> callerFun in
+	_threadNew pkgName callerFun (lambda =
 		let timeMs -> t0 in
 		let _prompt src dummyPkg -> [type val] in
 		if type<>nil then
@@ -116,7 +130,7 @@ fun _launchApp pkgName compile caller=
 
 fun compile pkgName= _launchApp pkgName true nil; _echoEnable true;;
 
-fun start pkgName= _launchApp pkgName false caller;;
+fun start pkgName= gcCompact; _launchApp pkgName false caller; true;;
 
 fun threadStop th=
 	if th<>nil && th._stateT<>_THREAD_DONE then
@@ -133,21 +147,6 @@ fun threadStop th=
 fun exit=
 	threadStop _This;
 	_exit;;
-
-fun threadPost th task=
-	if th<>nil then
-	if th._stateT<>_THREAD_DONE then
-	let (lambda = call task;0) -> task in
-	(
-		if (_threadFull th) && (th<> _This) && ( _This<>_ThreadBios) then
-		\atomic (
-			fifoIn th._postingT _This;
-			_threadHoldOn
-		);
-		fifoIn th._tasksT task;
-		_threadNeedCheck th;
-		true
-	);;
 
 fun threadId th= _threadId th._threadT;;
 fun threadName th= th._nameT;;

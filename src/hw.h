@@ -16,8 +16,9 @@ void consoleVPrint(int user, char* format, va_list arglist);
 
 void hwRandomInit(void);
 void hwRandomBytes(char* dst, LINT len);
-int hwHasRandom();
+int hwHasRandom(void);
 
+void hwSleepMs(LINT ms);
 LINT hwTime(void);
 LINT hwTimeMs(void);
 void hwTimeInit(void);

@@ -204,6 +204,7 @@ LINT cVsnprintf(char* dst, LINT size, const char* format, va_list arglist)
 	while (format[i]) {
 		int zerofirst = 0;
 		int number = 0;
+		int countL =0;
 		if (format[i] != '%') {
 #ifdef USE_CONSOLE_OUT_UART
 			if (!dst) uartPutChar(format[i]);
@@ -248,6 +249,10 @@ LINT cVsnprintf(char* dst, LINT size, const char* format, va_list arglist)
 			}
 			else if (c == 'd') {
 				argI = va_arg(arglist, LINT);
+				if (countL<2) {
+					argI&=0xffffffff;
+					if (argI&0x80000000) argI|=~0xffffffff;
+				}
 				len = myItoa(buffer, argI, zerofirst, number);
 #ifdef USE_CONSOLE_OUT_UART
 				if (!dst) uartPut(buffer,len);
@@ -259,6 +264,10 @@ LINT cVsnprintf(char* dst, LINT size, const char* format, va_list arglist)
 			}
 			else if ((c == 'x') || (c == 'X')) {
 				argI = va_arg(arglist, LINT);
+				if (countL<2) {
+					argI&=0xffffffff;
+					if (argI&0x80000000) argI|=~0xffffffff;
+				}
 				len = myItox(buffer, argI, zerofirst, number);
 #ifdef USE_CONSOLE_OUT_UART
 				if (!dst) for (j = 0; j < len; j++) uartPutChar(buffer[len - 1 - j]);
@@ -278,6 +287,9 @@ LINT cVsnprintf(char* dst, LINT size, const char* format, va_list arglist)
 				if (out + len < size) for (j = 0; j < len; j++) dst[out + j] = buffer[j];
 				out += len;
 				loop = 0;
+			}
+			else if (c == 'l') {
+				countL++;
 			}
 			else {
 				if (c == '0' && !number) zerofirst = 1;

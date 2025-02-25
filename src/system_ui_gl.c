@@ -325,12 +325,12 @@ GLIIIFloats(fun_glUniformMatrix2fv, glUniformMatrix2fv)
 GLIIIFloats(fun_glUniformMatrix3fv, glUniformMatrix3fv)
 GLIIIFloats(fun_glUniformMatrix4fv, glUniformMatrix4fv)
 
-int coreUiGLInit(Pkg* system)
+int systemUiGLInit(Pkg* system)
 {
-	Def* floats = pkgAddType(system, "Floats");
-	Def* shader = pkgAddType(system, "GlShader");
-	Def* program = pkgAddType(system, "GlProgram");
-	Def* texture = pkgAddType(system, "GlTexture");
+	pkgAddType(system, "Floats");
+	pkgAddType(system, "GlShader");
+	pkgAddType(system, "GlProgram");
+	pkgAddType(system, "GlTexture");
 
 	static const Native nativeDefs[] = {
 		{ NATIVE_INT, "GL_COLOR_BUFFER_BIT", (void*)GL_COLOR_BUFFER_BIT, "Int"},
@@ -466,7 +466,7 @@ int coreUiGLInit(Pkg* system)
 int fun_glMakeContext(Thread* th) FUN_RETURN_NIL
 int fun_glRefreshContext(Thread* th) FUN_RETURN_NIL
 
-int coreUiGLInit(Pkg* system)
+int systemUiGLInit(Pkg* system)
 {
 	static const Native nativeDefs[] = {
 		{ NATIVE_FUN, "_glMakeContext", fun_glMakeContext, "fun -> Int" },

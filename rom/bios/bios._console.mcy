@@ -119,8 +119,8 @@ fun _promptInput fOnInput c=
 				"^[[A" -> _promptUp,
 				"^[[B" -> _promptDown,
 				"^[[3~"-> _promptDelete,
-				"^[[5~"-> _promptUp,
-				"^[[6~"-> _promptDown,
+				"^[[5~"-> _promptUp,	// page up
+				"^[[6~"-> _promptDown,	// page down
 				"^[[D" -> _promptLeft,
 				"^[[C" -> _promptRight,
 				"^[[H" -> _promptHome,

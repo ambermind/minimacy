@@ -10,11 +10,11 @@
    with this program. If not, see <https://www.gnu.org/licenses/>. */
 
 //-------------- IO check
-var _Streams;;
+var _StreamList;;
 
 // alive if at least one stream different from _InteralPipe
-// (tail _Streams<>nil || head _Stream<>_internalPipe)
-fun _streamAlive = (tail _Streams)<>nil;;		// there is always the internal stream
+// (tail _StreamList<>nil || head _Stream<>_internalPipe)
+fun _streamAlive = (tail _StreamList)<>nil;;		// there is always the internal stream
 fun streamCheck s=
 	if s._thS._stateT <> _THREAD_DONE then true
 	else (
@@ -35,10 +35,10 @@ fun streamOnSelectWrite s =
 	true;;
 
 fun _streamClean= \atomic
-	let _Streams -> streams in (
-	set _Streams=nil;
+	let _StreamList -> streams in (
+	set _StreamList=nil;
 	let listFilter streams #streamCheck -> streams in
-	set _Streams=listConcat _Streams streams
+	set _StreamList=listConcat _StreamList streams
 );;
 
 fun _schedulerInitIO =
@@ -51,7 +51,7 @@ fun streamCommonClose s=
 	set s._thS=nil;
 	set s._onReadS=nil;
 	set s._onWriteS=nil;
-	set _Streams= listRemove _Streams Stream<s;
+	set _StreamList= listRemove _StreamList Stream<s;
 	true;;
 
 fun streamClose s= call s._closeS;;
@@ -68,14 +68,14 @@ fun streamWrite s data start =
 fun _streamAddToList s=
 	let Stream<s -> s in
 	\atomic
-		if !listContains _Streams s then (
-			set _Streams=s:_Streams
+		if !listContains _StreamList s then (
+			set _StreamList=s:_StreamList
 		)
 	;;
 fun _streamRemoveFromList s=
 	let Stream<s -> s in
 	\atomic 
-		set _Streams=listRemove _Streams s
+		set _StreamList=listRemove _StreamList s
 	;;
 fun _streamOnRead s onRead =
 	set s._thS= _This;
@@ -122,7 +122,7 @@ fun _bestTimeout current next=
 fun _streamPrepareSelect fifoSelect =
 	_streamClean;
 	let nil -> timeout in (
-		for s in _Streams do (
+		for s in _StreamList do (
 			if !_threadFull s._thS then (
 				if (_socketSelectWrite s._socketS) && (_socketWritable s._socketS) then set timeout=timeMs;
 				if (_socketSelectRead s._socketS) && (_socketReadable s._socketS) then set timeout=timeMs;
@@ -153,7 +153,7 @@ fun _ioCheck=
 	(	
 
 //		echo ".";
-//		echoTime strFormat "nbStreams=* nbSocks=*  timeout=*" (listLength _Streams) (listLength lSockets) wait;
+//		echoTime strFormat "nbStreams=* nbSocks=*  timeout=*" (listLength _StreamList) (listLength lSockets) wait;
 		_select lSockets wait;
 		for s in lSelect do (
 /*			if _socketWritable s._socketS then (

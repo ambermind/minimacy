@@ -96,8 +96,10 @@ LINT hashmapComputeIndex(LINT nbits, LW key, int type)
 {
 	if (type==VAL_TYPE_PNT)
 	{
+		LW dbg;
 		LB* p = PNT_FROM_VAL(key);
-		LW dbg = HEADER_DBG(p);
+		if (!p) return -1;
+		dbg = HEADER_DBG(p);
 		if (dbg == DBG_S) return hashSlotsComputeString(nbits, STR_START(p), STR_LENGTH(p));
 		if (dbg == DBG_B) return hashmapComputeBignum(nbits, (bignum)p);
 	}
@@ -110,6 +112,7 @@ int hashmapAdd(Thread* th, int i, HashSlots* h, LW key, int type)
 	LINT index= hashmapComputeIndex(h->nbits,key, type);
 	LB* table=h->table;
 	LB* next=ARRAY_PNT(table,index);
+	if (index < 0) return 0;
 	if ((!th)||STACK_IS_NIL(th,i))
 	{
 		LB* last=NULL;

@@ -15,7 +15,7 @@ On some distributions (including Ubuntu) the default version is the "Small versi
 With the "Small version", you get the following error:
 
 $ vi
-Error detected while processing /home/funfoo/.vimrc:
+Error detected while processing /home/[username]/.vimrc:
 line    1:
 E319: Sorry, the command is not available in this version: syntax on
 

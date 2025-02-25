@@ -15,8 +15,8 @@
 
 typedef struct
 {
-    uint64_t sub_key[16];
-    uint64_t result;
+    long long sub_key[16];
+    long long result;
 }DesCtx;
 void DESCreate(DesCtx* ctx, char* key);
 void DESProcess(DesCtx* ctx, char* data, int enc);

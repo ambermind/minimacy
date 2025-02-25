@@ -288,7 +288,7 @@ int fun_strRand(Thread* th)
 	return 0;
 }
 
-int coreStrInit(Pkg *system)
+int systemStrInit(Pkg *system)
 {
 	static const Native nativeDefs[] = {
 		{ NATIVE_FUN, "strConcat", fun_strConcat, "fun Str Str -> Str"},

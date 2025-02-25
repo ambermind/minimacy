@@ -12,6 +12,7 @@
 
 int fun_strGet(Thread* th);
 int fun_strLength(Thread* th);
+int fun_strCmp(Thread* th);
 
 int fun_bytesCreate(Thread* th)
 {
@@ -139,7 +140,7 @@ int fun_bytesRight(Thread* th)
 	FUN_RETURN_STR(STR_START(src) + STR_LENGTH(src) - len, len);
 }
 
-int coreBytesInit(Pkg *system)
+int systemBytesInit(Pkg *system)
 {
 	static const Native nativeDefs[] = {
 		{ NATIVE_FUN, "bytesCreate", fun_bytesCreate, "fun Int Int -> Bytes"},
@@ -162,6 +163,7 @@ int coreBytesInit(Pkg *system)
 		{ NATIVE_FUN, "strFromBytes", fun_strCopy, "fun Bytes -> Str" },
 		{ NATIVE_FUN, "bytesFromStr", fun_strCopy, "fun Str -> Bytes" },
 		{ NATIVE_FUN, "bytesLength", fun_strLength, "fun Bytes -> Int" },
+		{ NATIVE_FUN, "bytesCmp", fun_strCmp, "fun Bytes Bytes -> Int" },
 		{ NATIVE_FUN, "bytesRand", fun_bytesRand, "fun Bytes Int Int -> Bytes" },
 	};
 	NATIVE_DEF(nativeDefs);

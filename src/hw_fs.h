@@ -16,6 +16,14 @@
 #define MAX_PATH 1024
 #endif
 
+#ifdef USE_FS_ANSI_UNIX
+#ifdef USE_MACOS
+#include <sys/disk.h>
+#else
+#include <sys/mount.h>
+#endif
+#endif
+
 void systemCleanDir(char* p);
 void systemRemoveLast(char* p);
 void systemMainDir(char* path, int len, const char* argv0);
@@ -32,36 +40,22 @@ LINT ansiFileRead(void* file, char* start, LINT len);
 int ansiCreateDirs(char* filename);
 int ansiFileDelete(char* path);
 int ansiDirDelete(char* path);
+long long devNbSectors(char* path);
+int devSectorSize(char* path);
 
 LB* ansiReadContent(char* path, int* size);
-LINT ansiDirectoryList(Buffer* out, char* dir);
+LINT ansiDirectoryList(volatile Buffer** pout, char* dir);
 int ansiVolumeList(Thread* th, int* n);
 void ansiHelpBiosFinder(void);
 int ansiFsMount(const char* argv0, int standalone);
 void ansiFsInit(void);
 void ansiFsRelease(void);
 
-void uefiFileClose(void* file);
-void* uefiFileOpen(int index, char* name, Def* mode);
-int uefiFileSize(void* file);
-int uefiFileTell(void* file);
-LINT uefiFileSeek(void* file, LINT offset);
-LINT uefiFileWrite(void* file, char* start, LINT len);
-LINT uefiFileRead(void* file, char* start, LINT len);
-int uefiFileDelete(int index, char* path);
-int uefiDirDelete(int index, char* path);
-
-LB* uefiReadContent(int index, char* path, int* size);
-LINT uefiDirectoryList(int index, Buffer* out, char* dir);
-int uefiVolumeList(Thread* th, int* n);
-int uefiFsMount(int standalone);
-void uefiFsInit(void);
-void uefiFsRelease(void);
-
+void romdiskMark(LB* user);
 int romdiskVolumeList(Thread* th, int* n);
 LB* romdiskReadContent(int romdiskId, char* path, int* size);
 LINT romdiskDirectoryList(int romdiskId, Buffer* out, char* dir);
-int romdiskImport(char* src, LINT len);
+int romdiskImport(LB* bin);
 int romdiskMount(int standalone);
 void romdiskReleaseUserDisk(void);
 void romdiskInit(void);
@@ -71,7 +65,7 @@ void _fsAddFileInfo(Buffer* out, char* path, LINT len, char* tmpAttr);
 LB* fsReadPackage(char* pkg, int* size, int verbose);
 
 int _partitionAdd(LB* type, LINT index, char* physicalPath);
-int _volumeList(Thread* th, LB* type, LINT index, int writable);
+int _volumeList(Thread* th, LB* type, LINT index, int writable, LINT nbSectors, LINT sectorSize);
 int volumeList(Thread* th);
 
 char* fsCurrentDir(void);

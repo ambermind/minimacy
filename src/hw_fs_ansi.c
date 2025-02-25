@@ -173,7 +173,7 @@ void ansiFileClose(void* file)
 
 void* ansiFileOpen(char* path, char* mode)
 {
-	//	PRINTF(LOG_DEV,"ansiFileOpen '%s'\n", path);
+//		PRINTF(LOG_DEV,"ansiFileOpen '%s' %s\n", path, mode);
 #ifdef USE_FS_SYSTEMDIR_UNIX
 	{
 		struct stat statbuf;
@@ -224,8 +224,26 @@ LB* ansiReadContent(char* path, int* size)
 	return p;
 }
 
+void _ansiAddFileInfo(volatile Buffer** pout, char* path, LINT len, char* tmpAttr)
+{
+	LINT lAttr;
+	LINT lName;
+	char* name = path;
+
+	// format is : fileName\$00size\$20time\$20mode\$00
+	// it will be easy to add more attributes in the second member to be splitted by space
+	// win : dir => (fileinfo.attrib & 16)<>0
+	// unix: dir => (info.st_mode&S_IFMT) == S_IFDIR
+	if (len < 0) len = strlen(path);
+	lName = (path + len) - name;
+	lAttr = strlen(tmpAttr);
+	bufferAddBinWorker(pout, name, lName);
+	bufferAddCharWorker(pout, 0);
+	bufferAddBinWorker(pout, tmpAttr, lAttr + 1);
+}
+
 #ifdef USE_FS_ANSI_WIN
-LINT ansiDirectoryList(Buffer* out, char* dir)	// we expect dir to end with '/'
+LINT ansiDirectoryList(volatile Buffer** pout, char* dir)	// we expect dir to end with '/'
 {
 	char search[MAX_PATH + 2];
 	char tmpAttr[32];
@@ -240,7 +258,7 @@ LINT ansiDirectoryList(Buffer* out, char* dir)	// we expect dir to end with '/'
 	{
 //		PRINTF(LOG_DEV, "filename: %s\n", fileinfo.name);
 		snprintf(tmpAttr, 32, LSX" "LSX" %c", (LINT)fileinfo.size, (LINT)fileinfo.time_write, (fileinfo.attrib & _A_SUBDIR) ? 'd' : '-');
-		_fsAddFileInfo(out, fileinfo.name, -1, tmpAttr);
+		_ansiAddFileInfo(pout, fileinfo.name, -1, tmpAttr);
 
 		res = _findnext(h, &fileinfo);
 	}
@@ -266,7 +284,7 @@ int ansiDirDelete(char* path)
 }
 #endif
 #ifdef USE_FS_ANSI_UNIX
-LINT ansiDirectoryList(Buffer* out, char* dir)	// we expect dir to end with '/'
+LINT ansiDirectoryList(volatile Buffer** pout, char* dir)	// we expect dir to end with '/'
 {
 	char search[MAX_PATH + 2];
 	char tmpAttr[32];
@@ -284,7 +302,7 @@ LINT ansiDirectoryList(Buffer* out, char* dir)	// we expect dir to end with '/'
 		snprintf(candidate, MAX_PATH, "%s%s", dir, dp->d_name);
 		stat(candidate, &info);
 		snprintf(tmpAttr, 32, LSX" "LSX" %c", (LINT)info.st_size, (LINT)info.st_mtime, S_ISDIR(info.st_mode) ? 'd' : '-');
-		_fsAddFileInfo(out, dp->d_name, -1, tmpAttr);
+		_ansiAddFileInfo(pout, dp->d_name, -1, tmpAttr);
 	}
 	closedir(d);
 	return 0;
@@ -306,7 +324,45 @@ int ansiDirDelete(char* path)
 }
 #endif
 
-
+#ifdef USE_DEVICE_UNIX
+long long devNbSectors(char* path)
+{
+	long long nbSectors=-1;
+	FILE* file;
+	if (memcmp(path,"/dev/",5)) return -1;
+	file=fopen(path,"rb");
+	if (file) {
+		int fd=fileno((FILE*)file);
+#ifdef USE_MACOS
+		ioctl(fd, DKIOCGETBLOCKCOUNT, &nbSectors);
+#else
+		ioctl(fd, BLKGETSIZE, &nbSectors);
+#endif
+		fclose(file);
+	}
+	return nbSectors;
+}
+int devSectorSize(char* path)
+{
+	int sectorSize=-1;
+	FILE* file;
+	if (memcmp(path,"/dev/",5)) return -1;
+	file=fopen(path,"rb");
+	if (file) {
+		int fd=fileno((FILE*)file);
+#ifdef USE_MACOS
+		ioctl(fd, DKIOCGETBLOCKSIZE, &sectorSize);
+#else
+		ioctl(fd, BLKSSZGET, &sectorSize);
+#endif
+		fclose(file);
+	}
+	return sectorSize;
+}
+#else
+long long devNbSectors(char* path) { return -1;}
+int devSectorSize(char* path) { return -1; }
+#endif
 int ansiCreateDirs(char* filename)
 {
 	int i;
@@ -334,7 +390,7 @@ int ansiCreateDirs(char* filename)
 
 int ansiVolumeList(Thread* th, int* n)
 {
-	if (_volumeList(th, MM.ansiVolume, 0, 1)) return EXEC_OM;
+	if (_volumeList(th, MM.ansiVolume, 0, 1, -1, -1)) return EXEC_OM;
 	(*n)++;
 	return 0;
 }
@@ -342,7 +398,7 @@ int ansiVolumeList(Thread* th, int* n)
 void ansiHelpBiosFinder(void)
 {
 	PRINTF(LOG_USER, "\nOn startup Minimacy needs to open the file bios.mcy\n");
-	PRINTF(LOG_USER, "This file is expected to be closed to the executable\n");
+	PRINTF(LOG_USER, "This file is expected to be close to the executable\n");
 	PRINTF(LOG_USER, "On a standard computer, the Minimacy folder structure is:\n");
 	PRINTF(LOG_USER, "- ./bin/[executable]\n");
 	PRINTF(LOG_USER, "- ./rom/bios/bios.mcy\n");
@@ -363,10 +419,10 @@ int ansiFsMount(const char* argv0, int standalone)
 #endif
 	return 0;
 }
-void ansiFsInit()
+void ansiFsInit(void)
 {
 }
-void ansiFsRelease()
+void ansiFsRelease(void)
 {
 }
 #endif

@@ -9,15 +9,12 @@
    You should have received a copy of the GNU General Public License along
    with this program. If not, see <https://www.gnu.org/licenses/>. */
 #include"minimacy.h"
-#include "crypto_md5.h"
-#include "crypto_sha1.h"
-#include "crypto_sha2.h"
+#include "crypto_hash.h"
 #include "crypto_aes.h"
 #include "crypto_des.h"
 #include "crypto_rc4.h"
 #include "crypto_crc32.h"
 #include "crypto_adler32.h"
-
 
 typedef struct
 {
@@ -34,7 +31,7 @@ typedef struct
 	FORGET forget;
 	MARK mark;
 
-	SHA_CTX context;
+	SHA1_CTX context;
 }LSsha1;
 
 typedef struct
@@ -43,7 +40,7 @@ typedef struct
 	FORGET forget;
 	MARK mark;
 
-	SHA256_CTX context;
+	SHA2_CTX context;
 }LSsha256;
 
 typedef struct
@@ -52,7 +49,7 @@ typedef struct
 	FORGET forget;
 	MARK mark;
 
-	SHA384_CTX context;
+	SHA2L_CTX context;
 }LSsha384;
 
 typedef struct
@@ -61,7 +58,7 @@ typedef struct
 	FORGET forget;
 	MARK mark;
 
-	SHA512_CTX context;
+	SHA2L_CTX context;
 }LSsha512;
 
 typedef struct
@@ -95,7 +92,7 @@ typedef struct
 int fun_md5Create(Thread* th)
 {
 	LSmd5* md5 = (LSmd5*)memoryAllocExt(sizeof(LSmd5), DBG_BIN, NULL, NULL); if (!md5) return EXEC_OM;
-	MD5Init(&md5->context);
+	md5Create(&md5->context);
 	FUN_RETURN_PNT((LB*)md5);
 }
 
@@ -106,7 +103,7 @@ int fun_md5Output(Thread* th)
 	if (!md5) FUN_RETURN_NIL;
 
 	buffer = memoryAllocStr(NULL, 16); if (!buffer) return EXEC_OM;
-	MD5Final((unsigned char*)STR_START(buffer),&md5->context);
+	md5Output(&md5->context,STR_START(buffer));
 	FUN_RETURN_PNT(buffer);
 }
 
@@ -120,7 +117,7 @@ int fun_md5Process(Thread* th)
 	if (!md5) FUN_RETURN_NIL;
 	FUN_SUBSTR(src,start,len,lenIsNil,STR_LENGTH(src));
 
-	MD5Update(&md5->context, (unsigned char*)STR_START(src) + start, (int)len);
+	md5Process(&md5->context, STR_START(src) + start, len);
 	FUN_RETURN_PNT((LB*)md5);
 }
 
@@ -128,7 +125,7 @@ int fun_md5Process(Thread* th)
 int fun_sha1Create(Thread* th)
 {
 	LSsha1* sha = (LSsha1*)memoryAllocExt(sizeof(LSsha1), DBG_BIN, NULL, NULL); if (!sha) return EXEC_OM;
-	SHAInit(&sha->context);
+	sha1Create(&sha->context);
 	FUN_RETURN_PNT((LB*)sha);
 }
 
@@ -139,7 +136,7 @@ int fun_sha1Output(Thread* th)
 	if (!sha) FUN_RETURN_NIL;
 
 	buffer = memoryAllocStr(NULL, 20); if (!buffer) return EXEC_OM;
-	SHAFinal(&sha->context,(unsigned char*)STR_START(buffer));
+	sha1Output(&sha->context,STR_START(buffer));
 	FUN_RETURN_PNT(buffer);
 }
 int fun_sha1Process(Thread* th)
@@ -151,7 +148,7 @@ int fun_sha1Process(Thread* th)
 	LSsha1* sha = (LSsha1*)STACK_PNT(th, 3);
 	if (!sha) FUN_RETURN_NIL;
 	FUN_SUBSTR(src, start,len,lenIsNil,STR_LENGTH(src));
-	SHAUpdate(&sha->context, (unsigned char*)STR_START(src) + start, (int)len);
+	sha1Process(&sha->context, STR_START(src) + start, len);
 	FUN_RETURN_PNT((LB*)sha);
 }
 
@@ -159,7 +156,7 @@ int fun_sha1Process(Thread* th)
 int fun_sha256Create(Thread* th)
 {
 	LSsha256* sha = (LSsha256*)memoryAllocExt(sizeof(LSsha256), DBG_BIN, NULL, NULL); if (!sha) return EXEC_OM;
-	sha256create(&sha->context);
+	sha256Create(&sha->context);
 	FUN_RETURN_PNT((LB*)sha);
 }
 
@@ -170,7 +167,7 @@ int fun_sha256Output(Thread* th)
 	if (!sha) FUN_RETURN_NIL;
 	
 	buffer=memoryAllocStr(NULL,256/8); if (!buffer) return EXEC_OM;
-	sha256result(&sha->context,STR_START(buffer));
+	sha256Output(&sha->context,STR_START(buffer));
 	FUN_RETURN_PNT(buffer);
 }
 int fun_sha256Process(Thread* th)
@@ -182,7 +179,7 @@ int fun_sha256Process(Thread* th)
 	LSsha256* sha=(LSsha256*)STACK_PNT(th,3);
 	if (!sha) FUN_RETURN_NIL;
 	FUN_SUBSTR(src,start,len,lenIsNil,STR_LENGTH(src));
-	sha256process(&sha->context,STR_START(src)+start,(int)len);
+	sha256Process(&sha->context,STR_START(src)+start,len);
 	FUN_RETURN_PNT((LB*)sha);
 }
 
@@ -190,7 +187,7 @@ int fun_sha256Process(Thread* th)
 int fun_sha384Create(Thread* th)
 {
 	LSsha384* sha = (LSsha384*)memoryAllocExt(sizeof(LSsha384), DBG_BIN, NULL, NULL); if (!sha) return EXEC_OM;
-	sha384create(&sha->context);
+	sha384Create(&sha->context);
 	FUN_RETURN_PNT((LB*)sha);
 }
 
@@ -201,7 +198,7 @@ int fun_sha384Output(Thread* th)
 	if (!sha) FUN_RETURN_NIL;
 
 	buffer = memoryAllocStr(NULL, 384 / 8); if (!buffer) return EXEC_OM;
-	sha384result(&sha->context, STR_START(buffer));
+	sha384Output(&sha->context, STR_START(buffer));
 	FUN_RETURN_PNT(buffer);
 }
 int fun_sha384Process(Thread* th)
@@ -213,7 +210,7 @@ int fun_sha384Process(Thread* th)
 	LSsha384* sha = (LSsha384*)STACK_PNT(th, 3);
 	if (!sha) FUN_RETURN_NIL;
 	FUN_SUBSTR(src, start, len, lenIsNil, STR_LENGTH(src));
-	sha384process(&sha->context, STR_START(src) + start, (int)len);
+	sha384Process(&sha->context, STR_START(src) + start, len);
 	FUN_RETURN_PNT((LB*)sha);
 }
 
@@ -221,7 +218,7 @@ int fun_sha384Process(Thread* th)
 int fun_sha512Create(Thread* th)
 {
 	LSsha512* sha=(LSsha512*)memoryAllocExt(sizeof(LSsha512),DBG_BIN,NULL,NULL); if (!sha) return EXEC_OM;
-	sha512create(&sha->context);
+	sha512Create(&sha->context);
 	FUN_RETURN_PNT((LB*)sha);
 }
 
@@ -232,7 +229,7 @@ int fun_sha512Output(Thread* th)
 	if (!sha) FUN_RETURN_NIL;
 	
 	buffer=memoryAllocStr(NULL,512/8); if (!buffer) return EXEC_OM;
-	sha512result(&sha->context,STR_START(buffer));
+	sha512Output(&sha->context,STR_START(buffer));
 	FUN_RETURN_PNT(buffer);
 }
 
@@ -245,7 +242,7 @@ int fun_sha512Process(Thread* th)
 	LSsha512* sha=(LSsha512*)STACK_PNT(th,3);
 	if (!sha) FUN_RETURN_NIL;
 	FUN_SUBSTR(src, start, len, lenIsNil, STR_LENGTH(src));
-	sha512process(&sha->context,STR_START(src)+start,(int)len);
+	sha512Process(&sha->context,STR_START(src)+start,len);
 	FUN_RETURN_PNT((LB*)sha);
 }
 
@@ -441,7 +438,7 @@ int fun_adler32(Thread* th)
 	FUN_RETURN_INT(v & 0xffffffff);
 }
 
-int coreCryptoInit(Pkg *system)
+int systemCryptoInit(Pkg *system)
 {
 	pkgAddType(system, "Md5");
 	pkgAddType(system, "Sha1");

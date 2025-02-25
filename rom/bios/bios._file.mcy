@@ -33,6 +33,7 @@ struct Mount=[
 	writableM
 	mountM
 	rootM
+	_indexM
 ];;
 
 struct File=[sizeF tellF closeF writeF readF];;
@@ -43,16 +44,21 @@ var _Mounts;;
 
 fun _strFromPath path= if strEmpty path then "[empty]" else path;;
 
-fun fsAddVolume type index writable fRead fWrite nbSectors sectorSize=
+fun volumeCreate type index writable fRead fWrite nbSectors sectorSize=
 	let if index<>nil then index
 		else listReduce _Volumes 0 (lambda index v= if v.typeV==type then max index 1+v.indexV else index)
 	-> index in
 	let strFormat "**" (_strFromVolumeType type) index -> name in
-	let [nameV=name typeV=type indexV=index writableV=writable
-		fReadV=fRead fWriteV=fWrite nbSectorsV=nbSectors sectorSizeV=sectorSize] -> volume in (
-		set _Volumes=volume:_Volumes;
-		volume
-	);;
+	[
+		nameV=name typeV=type indexV=index writableV=writable
+		fReadV=fRead fWriteV=fWrite nbSectorsV=nbSectors sectorSizeV=sectorSize
+	];;
+
+fun fsAddVolume volume=
+	set _Volumes=volume:_Volumes;
+	volume;;
+
+fun volumeIsWritable volume = volume.writableV;;
 
 fun volumeAddPartition volume partition =
 	set volume.partitionsV= partition:volume.partitionsV;
@@ -85,10 +91,10 @@ fun _mountUpdate=
 		v.typeV==romdiskVolume && v.nameV=="romdisk0"
 	) -> bootdisk in
 	if bootdisk<>nil then set _Mounts=bootdisk:listRemove _Mounts bootdisk;
-	
+	listReduce _Mounts 0 (lambda i m= set m._indexM=i; i+1);
 	let listMap _Mounts (lambda m=
 		let m.partitionM.volumeP -> v in
-		if v.typeV==ansiVolume || v.typeV==romdiskVolume /*|| v.typeV==uefiVolume*/  then
+		if v.typeV==ansiVolume || v.typeV==romdiskVolume then
 		if strEmpty m.mountM then
 		[v.typeV v.indexV m.rootM]
 	) -> partitions in
@@ -109,8 +115,11 @@ fun partitionMount partition writable mount root=
 		rootM=root
 	];;
 
+fun partitionsMount partitions writable mount root=
+	listMap partitions (lambda partition= partitionMount partition writable mount root);;
+
 fun _fsInit programDir =
-	for [type index writable] in _volumes do fsAddVolume type index writable nil nil nil nil;
+	for [type index writable nbSectors sectorSize] in _volumes do fsAddVolume volumeCreate type index writable nil nil nbSectors sectorSize;
 	for [type index root] in listReverse _partitions do
 		let listFind _Volumes (lambda v = v.typeV==type && v.indexV==index) -> volume in
 		if volume<>nil then
@@ -121,11 +130,6 @@ fun _fsInit programDir =
 					partitionMount partition true "" programDir;
 				partitionMount partition true "/" "/";
 			),
-			//uefiVolume -> (
-			//	partitionAdd _mkUefiPartition "Rom" index false "" root;
-			//	partitionAdd _mkUefiPartition "Program" index true "" "/programs/";
-			//	partitionAdd _mkUefiPartition "Root" index true "/" "/";
-			//),
 			romdiskVolume -> let _mkRomdiskPartition volume index if index==0 then "BOOTLOADER" else "NATIVE" -> partition in (
 				partitionMount partition false "" root
 			),
@@ -135,7 +139,7 @@ fun _fsInit programDir =
 fun romdiskImport name data =
 	let _romdiskImport data -> index in
 	if index<>nil then
-	let fsAddVolume romdiskVolume index false nil nil nil nil-> volume in
+	let fsAddVolume volumeCreate romdiskVolume index false nil nil 1 (strLength data)-> volume in
 	let _mkRomdiskPartition volume index name -> partition in
 	partitionMount partition false "" "";;
 
@@ -191,26 +195,6 @@ fun _mkAnsiOpen writable=
 			readF= _mkAnsiFileRead f
 		];;
 
-//fun _mkUefiFileRead file = (lambda seek len =
-//	if len==0 then ""
-//	else if !(len<0) then
-//	let bytesCreate len 0 -> buffer in
-//	let _uefiFileRead file seek buffer 0 len -> len2 in
-//	strLeftBytes buffer len2
-//);;
-
-//fun _mkUefiOpen index writable=
-//	lambda path mode =
-//		if mode==FILE_READ_ONLY || writable then 
-//		let _uefiFileOpen index path mode -> f in
-//		if f<>nil then [
-//			sizeF= (lambda = _uefiFileSize f)
-//			tellF= (lambda = _uefiFileTell f)
-//			closeF= (lambda = _uefiFileClose f)
-//			writeF= if writable then (lambda seek src start len = _uefiFileWrite f seek src start len)
-//			readF= _mkUefiFileRead f
-//		];;
-
 fun _mkRomdiskOpen index=
 	lambda path mode =
 		let _romdiskLoad index path -> content in
@@ -218,34 +202,15 @@ fun _mkRomdiskOpen index=
 
 fun _strFromVolumeType type = strReplace (strBuild type) "Volume" "";;
 	
-//fun _mkUefiPartition name index writable mount root= [
-//	nameP=name
-//	typeP=uefiVolume
-//	indexP=index
-//	writableP=writable
-//	mountP=mount
-//	rootM=root
-//	openP=_mkUefiOpen index writable
-//	diskListP= (lambda output path= _uefiDiskList index output path)
-//	fileDeleteP=(lambda path= _uefiFileDelete index path)
-//];;
-
-/*
-fun partitionAdd partition=
-	let _mkCheckPartition partition -> partition in
-	if partition<>nil then set _Mounts= partition:_Mounts;
-	_partitionUpdate;
-	partition;;
-*/
 fun mountIndex mount= listPosition _Mounts mount;;
 
 fun fsClear =
 	set _Mounts= nil; _mountUpdate; true;;
 
-struct FileInfo=[_dirFI _nameFI _sizeFI _updateFI];;
+struct FileInfo=[_dirFI _nameFI _sizeFI _updateFI _mountFI];;
 
-fun mkFileInfo dir name size update=
-	[_dirFI=dir _nameFI=name _sizeFI=size _updateFI=update];;
+fun mkFileInfo mount dir name size update=
+	[_dirFI=dir _nameFI=name _sizeFI=size _updateFI=update _mountFI=mount];;
 
 fun _absoluteDir a= ('/'==strGet a 0)||(':'==strGet a 1);;
 
@@ -295,16 +260,16 @@ fun _mountFilter m path =
 	else if strStartsWith path m.mountM then
 	strConcat m.rootM strSlice path (strLength m.mountM) nil;;
 
-fun __decodeDir path0 l=
+fun __decodeDir mount path0 l=
 	if l<>nil then let l ->(name:attr:next) in
-	if (strEmpty name) || name=="." || name==".." then __decodeDir path0 next
+	if (strEmpty name) || name=="." || name==".." then __decodeDir mount path0 next
 	else
 	let strSplit " " attr ->(hexSize:hexTime:type:nil) in
 	let type=="d" -> directory in
 	let strFormat "***" path0 name (if directory then "/") -> fileName in
-	(mkFileInfo directory fileName (intFromHex hexSize) (intFromHex hexTime)):__decodeDir path0 next;;
+	(mkFileInfo mount directory fileName (intFromHex hexSize) (intFromHex hexTime)):__decodeDir mount path0 next;;
 
-fun _decodeDir path0 str= __decodeDir path0 (strSplit "\0" str);;
+fun _decodeDir mount path0 str= __decodeDir mount path0 (strSplit "\0" str);;
 
 fun mountDiskList m path0=
 	let if path0<>"" && !strEndsWith path0 "/" then strConcat path0 "/" else path0 -> path0 in
@@ -316,11 +281,11 @@ fun mountDiskList m path0=
 		let strLength path -> i in
 		let strPos m.mountM "/" i -> j in
 		if j<>nil then 
-		(mkFileInfo true (strLeft m.mountM j+1) 0 nil):nil
+		(mkFileInfo m._indexM true (strLeft m.mountM j+1) 0 nil):nil
 	)
 	else let bufferCreateWithSize 2048 -> output in (
 		call m.partitionM.diskListP output path;
-		_decodeDir path0 (strFromBuffer output)
+		_decodeDir m._indexM path0 (strFromBuffer output)
 	);;
 
 fun _diskListInfo path lMounts=
@@ -329,12 +294,14 @@ fun _diskListInfo path lMounts=
 		for m in lMounts do
 			let mountDiskList m path -> lFiles in
 			for f in lFiles do if nil==hashmapGet h f._nameFI then hashmapSet h f._nameFI f;
-				listMap (listFromHashmap h) (lambda [key val]=val)
+		listMap (listFromHashmap h) (lambda [key val]=val)
 	);;
 
 fun diskListInfo path= _diskListInfo path _Mounts;;
 
-fun mountListInfo i path= _diskListInfo path (listGet _Mounts i):nil;;
+fun mountByIndex i = listGet _Mounts i;;
+
+fun mountListInfo i path= _diskListInfo path (mountByIndex i):nil;;
 
 fun fileListInfo path= listFilter (diskListInfo path) (lambda f= !f._dirFI);;
 fun dirListInfo path= listFilter (diskListInfo path) (lambda f= f._dirFI);;

@@ -13,20 +13,11 @@
 
 extern int interpreterTRON;
 
-#define CALLSTACK_LENGTH 4 // taille de la callstack sans les variables locales
-#define CALLSTACK_MARK 3	// list of marks (exception, break)
+#define CALLSTACK_LENGTH 3 // taille de la callstack sans les variables locales
 #define CALLSTACK_FUN 2	// function index
 #define CALLSTACK_PC 1	// program counter
 #define CALLSTACK_PREV 0	// previous callstack
 
-#define MARK_LENGTH 4
-#define MARK_TYPE 0
-#define MARK_PC 1
-#define MARK_SP 2
-#define MARK_NEXT 3
-
-#define MARK_TYPE_TRY 0
-#define MARK_TYPE_BREAK 1
 
 #define BC_PRECOMPUTE \
 	globals=(ARRAY_PNT(th->fun,FUN_USER_GLOBALS)); \

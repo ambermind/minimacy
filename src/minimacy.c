@@ -35,7 +35,7 @@ int start(int argc, const char** argv)
 	int standalone = 1;
 	int help = 0;
 	
-//	char* args[]={"minimacy.exe","-h"};	argc=2;argv=args;
+//	char* args[]={"minimacy.exe","../../programs/demo/demo.fun.pacman.mcy"};	argc=2;argv=args;
 //	for (i = 0; i < argc; i++) PRINTF(LOG_DEV,"arg %d: '%s'\n", i, argv[i]);
 	termInit();
 
@@ -65,7 +65,7 @@ int start(int argc, const char** argv)
 		if ((strlen(arg) >= strlen(SUFFIX_CODE)) && !strcmp(arg + strlen(arg) - strlen(SUFFIX_CODE), SUFFIX_CODE)) standalone = 0;
 	}
 
-	PRINTF(LOG_SYS,"\n> Minimacy - Sylvain Huet - 2020-24 - "VERSION_MINIMACY"/"DEVICE_MODE"\n");
+	PRINTF(LOG_SYS,"\n> Minimacy - Sylvain Huet - 2020-25 - "VERSION_MINIMACY"/"DEVICE_MODE"\n");
 	PRINTF(LOG_SYS,"> ----\n");
 
 //	if (!standalone) termSetMask(LOG_USER);	// disable LOG_SYS
@@ -98,11 +98,11 @@ int start(int argc, const char** argv)
 //	bmmSetTotalSize(270* 1024);
 	cMallocInit();
 #endif
-	fsInit();
 	if (hwInit()) goto cleanup;
 	do
 	{
 		memoryInit(argc,argv);
+		fsInit();
 		if (fsMount(argc?argv[0]:NULL, standalone)) goto cleanup;
 		if (boot())
 		{
@@ -112,8 +112,8 @@ int start(int argc, const char** argv)
 		compilePromptAndRun(MM.scheduler);
 		romdiskReleaseUserDisk();
 //		PRINTF(LOG_SYS, "\n--\n\n");
+		fsRelease();
 	} while (memoryEnd());
-	fsRelease();
 cleanup:
 	termEnd();
 
@@ -153,6 +153,7 @@ int startInThread(int argc, const char** argv)
 int main(int argc, const char** argv)
 {
 	signal(SIGPIPE,SIG_IGN);
+
 	return start(argc,argv);
 }
 #endif

@@ -30,7 +30,7 @@ LINT nativeDefInsert(const Native* n, int nb)
 		while (1) {
 			if (!NativeDefs[i]) {
 				NativeDefs[i] = (Native*)n;
-//				printf("nativeDefInsert %llx in %lld\n", n, i);
+//				PRINTF(LOG_DEV,"nativeDefInsert "LSX" in "LSD"\n", n, i);
 				n++;
 				NativeDefsCount++;
 				break;
@@ -59,6 +59,8 @@ LINT nativeDefFind(char* name)
 LINT nativeOpcode(char* name, int argc)
 {
 	LINT i = nativeDefFind(name);
+//	PRINTF(LOG_DEV,"nativeOpcode %s %d\n",name,i);
+	if (i<0) return -1;
 	NativeDefsArgc[i] = argc;
 	return i | 0x8000;
 }
@@ -149,7 +151,11 @@ void defMark(LB* user)
 {
 	Def* d=(Def*)user;
 //	PRINTF(LOG_DEV,"\n---d %s %llx\n",STR_START(d->name),d->val);
-	if (d->valType==VAL_TYPE_PNT) MEMORY_MARK(PNT_FROM_VAL(d->val));
+	if (d->valType==VAL_TYPE_PNT) {
+		LB* p=PNT_FROM_VAL(d->val);
+		MEMORY_MARK(p);
+		if (MM.updating) d->val=VAL_FROM_PNT(p);
+	}
 	MEMORY_MARK(d->type);
 	MEMORY_MARK(d->name);
 	MEMORY_MARK(d->instances);
@@ -188,7 +194,7 @@ void defSet(Def* d,LW val,int valType)
 {
 	d->val=val;
 	d->valType=valType;
-	if (valType==VAL_TYPE_PNT) MEMORY_MARK(PNT_FROM_VAL(d->val));
+	if (valType==VAL_TYPE_PNT) BLOCK_MARK(PNT_FROM_VAL(d->val));
 }
 char* defName(Def* d)
 {
@@ -221,9 +227,11 @@ void pkgMark(LB* user)
 {
 	Pkg* pkg=(Pkg*)user;
 	MEMORY_MARK(pkg->name);
+	MEMORY_MARK(pkg->first);
 	MEMORY_MARK(pkg->start);
 	MEMORY_MARK(pkg->defs);
 	MEMORY_MARK(pkg->importList);
+	if (MM.updating) MEMORY_MARK(pkg->listNext);	// this special list doesn't count for marking stage
 //	PRINTF(LOG_DEV,"\n----pkg %s %llx\n",STR_START(pkg->name),pkg);
 }
 
@@ -727,29 +735,29 @@ void systemInit(Pkg *system)
 	nativeDefsInit();
 
 	typesInit(system);
-	coreInit(system);
-	coreStrInit(system);
-	coreBytesInit(system);
-	coreBinaryInit(system);
-	coreBignumInit(system);
-	coreBufferInit(system);
-	coreConvertInit(system);
-	coreCryptoInit(system);
-	coreThreadInit(system);
-	core2dInit(system);
-	coreEventInit(system);
+	systemCoreInit(system);
+	systemStrInit(system);
+	systemBytesInit(system);
+	systemBinaryInit(system);
+	systemBignumInit(system);
+	systemBufferInit(system);
+	systemConvertInit(system);
+	systemCryptoInit(system);
+	systemThreadInit(system);
+	system2dInit(system);
+	systemEventInit(system);
 
-	coreUiInit(system);
-	coreAudioInit(system);
+	systemUiInit(system);
+	systemAudioInit(system);
 
 	sysSocketInit(system);
 	sysSerialInit(system);
-	tmpInit(system);
-	sysWorkerInit(system);
-	sysFileInit(system);
+	systemTmpInit(system);
+	systemWorkerInit(system);
+	systemFileInit(system);
 
-	coreLzwInit(system);
-	coreInflateInit(system);
+	systemLzwInit(system);
+	systemInflateInit(system);
 
 //	systemMakeAllNatives();
 

@@ -12,39 +12,64 @@
 
 #ifdef USE_MEMORY_C
 
-typedef struct BMM BMM;
-
-struct BMM {
-	LINT sizeAndType;
-	BMM* left;
-	BMM* right;
-	BMM* next;
-};
-
 #define BMM_SIZE(p) ((HEADER_TYPE(p)==TYPE_FREE)?(HEADER_SIZE(p)):BLOCK_TOTAL_MEMORY(HEADER_TYPE(p), HEADER_SIZE(p)))
 
 #define BMM_MASK (LWLEN-1)
 
 #ifdef MEMORY_C_START
-char* MemoryStrip=NULL;
+char* MemoryStrip=(char*)(MEMORY_C_START);
 #ifdef MEMORY_C_SIZE
 LINT BmmTotalSize=MEMORY_C_SIZE;
 #else
 LINT BmmTotalSize=0;
 #endif
 #else
-char MemoryStrip[MEMORY_C_SIZE];
+char _MemoryStrip[MEMORY_C_SIZE];
+char* MemoryStrip=_MemoryStrip;
 LINT BmmTotalSize=MEMORY_C_SIZE;
 #endif
+LINT BmmTotalFree = 0;
+LINT BmmMaxSize=0;
 
-void checkPointer(LINT p)
+char* bmmAllocForEver(LINT size)
+{
+	size= (((size)+ LWLEN_MASK)&~LWLEN_MASK);
+	BmmTotalSize-=size;
+	return &MemoryStrip[BmmTotalSize];
+}
+int checkPointer(LINT p)
 {
 	LINT start=(LINT)MemoryStrip;
-	if (!p) return;
+	if (!p) return 1;
 	if (p<start || p>=start+BmmTotalSize) {
 		PRINTF(LOG_DEV,">>>>>>>>>>>Invalid pointer "LSX"\n", p);
+		return 0;
 	}
+	return 1;
 }
+LINT relativePointer(LB* p)
+{
+	return (LINT)(((char*)p) - MemoryStrip);
+}
+int checkListPointer(char* title, LB* p)
+{
+	LB* pLast;
+
+	PRINTF(LOG_DEV, ">>>>>>>>>>>Check %s pointers from "LSX"\n", title, (LINT)p);
+	pLast = p;
+	while (p) {
+		if (!checkPointer((LINT)p)) {
+			PRINTF(LOG_DEV, "error in "LSX"\n", relativePointer(pLast));
+			PRINTF(LOG_DEV, "stopped\n");
+			return 0;
+		}
+//		if (MM.gcTrace > 1) printf(LSX":%d(%d). ", relativePointer(p), (INT_FROM_VAL(HEADER_DBG(p)) - 1) / 2, HEADER_SIZE(p));
+		pLast = p;
+		p = p->nextBlock;
+	}
+	return 1;
+}
+
 BMM* BmmRoot;
 BMM* BmmReserve = NULL;
 void _bmmDump(BMM* node,int depth)
@@ -70,33 +95,33 @@ void bmmDump(void) {
 	_bmmDump(BmmRoot,0);
 	PRINTF(LOG_SYS, "malloc> end\n");
 }
-LINT bmmMaxSize(void) {
+void bmmComputeMaxSize(void) {
 	BMM* node = BmmRoot;
-	if (!node) return 0;
+	BmmMaxSize = 0;
+	if (!node) return;
 	while (node->right) node = node->right;
-	return BMM_SIZE(node);
+	BmmMaxSize= BMM_SIZE(node);
+//	if (MM.gcTrace) PRINTF(LOG_SYS, "> GC: Larger block: %d\n", BmmMaxSize);
 }
 LINT bmmReservedMem(void) {
 	if (!BmmReserve) return 0;
 	return BMM_SIZE(BmmReserve);
 }
 void cMallocInit(void) {
-#ifdef MEMORY_C_START
-	MemoryStrip=(char*)(MEMORY_C_START);
-#endif
 	PRINTF(LOG_SYS,"> Memory strip : "LSX"\n",MemoryStrip);
 	PRINTF(LOG_SYS,"> Memory end   : "LSX"\n",MemoryStrip+BmmTotalSize);
 	PRINTF(LOG_SYS,"> Memory length: "LSD" bytes\n",BmmTotalSize);
 	BmmRoot = (BMM*)MemoryStrip;
 	HEADER_SET_SIZE_AND_TYPE(BmmRoot, BmmTotalSize, TYPE_FREE);
 	BmmRoot->left = BmmRoot->right = BmmRoot->next = NULL;
+	BmmTotalFree = BmmMaxSize= BmmTotalSize;
 	BmmReserve = bmmMalloc(MEMORY_SAFE_SIZE);
 //	bmmDump();
 }
 void bmmMayday(void)
 {
 	if (!BmmReserve) return;
-	if (MM.gcTrace) PRINTF(LOG_SYS, "> Memory Mayday! recovering "LSD" bytes\n",BMM_SIZE(BmmReserve));
+	if (MM.gcTrace) PRINTF(LOG_SYS, "> GC: Memory Mayday! use reserve of "LSD" bytes\n",BMM_SIZE(BmmReserve));
 	bmmFree(BmmReserve);
 	BmmReserve = NULL;
 }
@@ -114,7 +139,8 @@ int _bmmAdd(BMM** parentLink, BMM* nodeToAdd)
 	size = BMM_SIZE(nodeToAdd);
 	if (size > BMM_SIZE(node)) return _bmmAdd(&node->right, nodeToAdd);
 	if (size < BMM_SIZE(node)) return _bmmAdd(&node->left, nodeToAdd);
-/*	if (((LINT)nodeToAdd) >((LINT)node)) {
+/*	// insert sort
+	if (((LINT)nodeToAdd) >((LINT)node)) {
 		while (node->next && (((LINT)nodeToAdd) > ((LINT)node->next))) node = node->next;
 		nodeToAdd->next = node->next;
 		node->next = nodeToAdd;
@@ -127,31 +153,12 @@ int _bmmAdd(BMM** parentLink, BMM* nodeToAdd)
 	*parentLink = nodeToAdd;
 	return 0;
 }
-/*
-int _bmmAdd(BMM** parentLink, BMM* nodeToAdd)
-{
-	LINT size;
-	BMM* node = *parentLink;
-	if (!node) {
-		nodeToAdd->left = nodeToAdd->right = nodeToAdd->next = NULL;
-		*parentLink = nodeToAdd;
-		return 0;
-	}
-	size = BMM_SIZE(nodeToAdd);
-	if (size > BMM_SIZE(node)) return _bmmAdd(&node->right, nodeToAdd);
-	if (size < BMM_SIZE(node)) return _bmmAdd(&node->left, nodeToAdd);
-	nodeToAdd->left = node->left;
-	nodeToAdd->right = node->right;
-	node->left = node->right = NULL;
-	nodeToAdd->next = node;
-	*parentLink = nodeToAdd;
-	return 0;
-}
-*/
+
 void bmmRebuildTree(void)
 {
 	LINT maxSize;
 	LINT index = 0;
+	BmmTotalFree = 0;
 	BmmRoot = NULL;
 	while (index < BmmTotalSize)
 	{
@@ -167,12 +174,15 @@ void bmmRebuildTree(void)
 		}
 		HEADER_SET_SIZE_AND_TYPE(node,index - index0, TYPE_FREE);
 		_bmmAdd(&BmmRoot, node);
+		BmmTotalFree += index - index0;
+
 	}
-	maxSize = bmmMaxSize();
+	bmmComputeMaxSize();
+	maxSize = BmmMaxSize;
 	if (maxSize >= MEMORY_SAFE_SIZE + sizeof(BMM)) maxSize = MEMORY_SAFE_SIZE;
 	if ((!BmmReserve) || (maxSize > BMM_SIZE(BmmReserve))) {
 		if (BmmReserve) bmmFree(BmmReserve);
-		if (MM.gcTrace) PRINTF(LOG_SYS, "> update Mayday block %d\n", maxSize);
+		if (MM.gcTrace) PRINTF(LOG_SYS, "> GC: update Mayday block %d\n", maxSize);
 		BmmReserve = bmmMalloc(maxSize);
 	}
 }
@@ -224,10 +234,12 @@ void* bmmMalloc(LINT size)
 	LINT remainingSize;
 	if (size < sizeof(LB)) size = sizeof(LB);
 	size = (size + BMM_MASK) & (~BMM_MASK);
-
+//	printf("alloc %lld. ",size);
 	result = _bmmTakeAtLeast(&BmmRoot, size, 1);	// exact
 	if (result) {
 		HEADER_SET_SIZE_AND_TYPE(result, size - sizeof(LB), TYPE_BINARY);
+		BmmTotalFree -= size;
+		bmmComputeMaxSize();
 		return result;
 	}
 	result = _bmmTakeAtLeast(&BmmRoot, size + sizeof(BMM), 0);	// we need at least extra space for the smallest free block
@@ -238,6 +250,8 @@ void* bmmMalloc(LINT size)
 
 	_bmmAdd(&BmmRoot, newBlock);
 	HEADER_SET_SIZE_AND_TYPE(result, size - sizeof(LB), TYPE_BINARY);
+	BmmTotalFree -= size;
+	bmmComputeMaxSize();
 	return (void*)result;
 }
 
@@ -251,8 +265,16 @@ int _bmmRemove(BMM** parentLink, BMM* nodeToRemove)
 		if (node) {
 			node->left = nodeToRemove->left;
 			node->right = nodeToRemove->right;
+			*parentLink = node;
 		}
-		*parentLink = node;
+		else if (!nodeToRemove->left) *parentLink = nodeToRemove->right;
+		else if (!nodeToRemove->right) *parentLink = nodeToRemove->left;
+		else {
+			*parentLink = nodeToRemove->right;
+			node = nodeToRemove->right;
+			while (node->left) node = node->left;
+			node->left = nodeToRemove->left;
+		}
 		return 0;
 	}
 	size = BMM_SIZE(nodeToRemove);
@@ -273,40 +295,163 @@ void bmmFree(void* block)
 	BMM* node = (BMM*)block;
 	index0 = ((char*)node) - MemoryStrip;
 	index= index0 + BMM_SIZE(node);
-//	PRINTF(LOG_DEV,"free %x.",(LINT)block);
+	BmmTotalFree += BMM_SIZE(node);
+
 	while (index < BmmTotalSize) {
 		BMM* next = (BMM*)(&MemoryStrip[index]);
 		if (HEADER_TYPE(next) != TYPE_FREE) break;
 		index += BMM_SIZE(next);
-//		printf("f.");
-//	PRINTF(LOG_DEV,"remove %x.",(LINT)next);
 		_bmmRemove(&BmmRoot, next);
 	}
+//	printf("free %lld. ", index - index0);
+
 	HEADER_SET_SIZE_AND_TYPE(node, index-index0, TYPE_FREE);
 	node->left = node->right = node->next = NULL;
 	_bmmAdd(&BmmRoot, node);
-}
-
-void* bmmRegularMalloc(LINT size)
-{
-	char* result;
-	if (size < sizeof(LB)) size = sizeof(LB);
-	result = bmmMalloc(size+ sizeof(LINT));
-	if (!result) return NULL;
-	return (void*)(result + sizeof(LINT));
-}
-void bmmRegularFree(void* block)
-{
-	char* node = (char*)block;
-	bmmFree((void*)(node - sizeof(LINT)));
+	bmmComputeMaxSize();
 }
 
 void bmmSetTotalSize(LINT size)
 {
 	BmmTotalSize=size;
 }
-LINT bmmTotalSize()
+
+LINT bmmCompact(void)
 {
-	return BmmTotalSize;
+	LINT index, indexAfterMove;
+	if (MM.gcTrace) PRINTF(LOG_SYS, "> GC: compacting memory...\n");
+	while (memoryGetFast()) memoryLeaveFast();
+	memoryFinalizeGC();
+	memoryFinalizeGC();
+
+	if (BmmReserve) bmmFree(BmmReserve);
+	BmmReserve = NULL;
+
+	workerWaitUntilAllInactive();
+
+	lockEnter(&MM.lock);
+	while (MM.lifo) {
+		LB* p = MM.lifo->lifo;
+		MM.lifo->lifo = MM.USELESS;
+		MM.lifo = p;
+	}
+
+	indexAfterMove = index = 0;
+	while (index < BmmTotalSize)
+	{
+		LB* node = (LB*)&MemoryStrip[index];
+		LINT size= BMM_SIZE((BMM*)node);
+		index += size;
+		if (HEADER_TYPE(node) == TYPE_FREE) continue;
+		node->lifo=(LB*)&MemoryStrip[indexAfterMove];
+		indexAfterMove += size;
+	}
+
+	// updating pointers
+	MM.updating = 1;
+	index = 0;
+	while (index < BmmTotalSize)
+	{
+		LB* node = (LB*)&MemoryStrip[index];
+		LINT size = BMM_SIZE((BMM*)node);
+		int type = HEADER_TYPE(node);
+		index += size;
+
+		if (type == TYPE_FREE) continue;
+		MEMORY_MARK(node->nextBlock);
+		MEMORY_MARK(node->pkg);
+
+		if ((type == TYPE_ARRAY) && (HEADER_DBG(node) != DBG_STACK)) {
+			LINT i, l;
+			l = ARRAY_LENGTH(node);
+			for (i = 0; i < l; i++) if (ARRAY_IS_PNT(node, i)) {
+				LB* pnt=ARRAY_PNT(node, i);
+				MEMORY_MARK(pnt);
+				ARRAY_GET(node, i)=VAL_FROM_PNT(pnt);
+			}
+		}
+		else if (type == TYPE_NATIVE)
+		{
+			void** q = (void**)&node->data[1];	// complicated because of the 32/64 bits compatibility
+			MARK mark = (MARK)q[NATIVE_MARK];
+			if (mark) (*mark)(node);
+		}
+		if (DBG_IS_PNT(node->data[0])) node->data[0] = VAL_FROM_PNT(PNT_FROM_VAL(node->data[0])->lifo);
+	}
+
+	MEMORY_MARK(MM.system);
+	MEMORY_MARK(MM.scheduler);
+	MEMORY_MARK(MM.tmpStack);
+	MEMORY_MARK(MM.tmpBuffer);
+	MEMORY_MARK(MM.args);
+	MEMORY_MARK(MM.fun_u0_list_u0_list_u0);
+	MEMORY_MARK(MM.fun_array_u0_I_u0);
+	MEMORY_MARK(MM.funStart);
+	MEMORY_MARK(MM.roots);
+	MEMORY_MARK(MM.popOblivions);
+	MEMORY_MARK(MM.listOblivions);
+	MEMORY_MARK(MM.tmpRoot);
+	MEMORY_MARK(MM.partitionsFS);
+	romdiskMark(NULL);
+
+	MEMORY_MARK(MM.listBlocks);
+	MEMORY_MARK(MM.listCheck);
+	MEMORY_MARK(MM.listFast);
+
+	MEMORY_MARK(MM.listThreads);
+	MEMORY_MARK(MM.listPkgs);
+	MEMORY_MARK(MM.currentPkg);
+
+	MEMORY_MARK(MM._true);
+	MEMORY_MARK(MM._false);
+
+	MEMORY_MARK(MM.ansiVolume);
+	MEMORY_MARK(MM.romdiskVolume);
+
+	MEMORY_MARK(MM.Int);
+	MEMORY_MARK(MM.Float);
+	MEMORY_MARK(MM.Str);
+	MEMORY_MARK(MM.Bytes);
+	MEMORY_MARK(MM.Boolean);
+	MEMORY_MARK(MM.BigNum);
+	MEMORY_MARK(MM.Package);
+	MEMORY_MARK(MM.Exception);
+	MEMORY_MARK(MM.Type);
+
+	MEMORY_MARK(FM.READ_ONLY);
+	MEMORY_MARK(FM.REWRITE);
+	MEMORY_MARK(FM.READ_WRITE);
+	MEMORY_MARK(FM.APPEND);
+	MM.updating = 0;
+
+	index = 0;
+	while (index < BmmTotalSize)
+	{
+		LB* newNode;
+		LB* node = (LB*)&MemoryStrip[index];
+		LINT size = BMM_SIZE((BMM*)node);
+		index += size;
+		if (HEADER_TYPE(node) == TYPE_FREE) continue;
+		newNode = node->lifo;
+		if (node != newNode) {
+			LINT* src = (LINT*)node;
+			LINT* dst = (LINT*)newNode;
+			size >>= LSHIFT;
+			while (size--) *(dst++) = *(src++);
+		}
+		newNode->lifo = _USELESS;
+	}
+	BmmRoot =(BMM*)&MemoryStrip[indexAfterMove];
+	HEADER_SET_SIZE_AND_TYPE(BmmRoot, BmmTotalSize- indexAfterMove, TYPE_FREE);
+	BmmRoot->left = BmmRoot->right = BmmRoot->next = NULL;
+	BmmTotalFree = BmmMaxSize = BmmTotalSize - indexAfterMove;
+	lockLeave(&MM.lock);
+
+	if (MM.gcTrace) PRINTF(LOG_SYS, "> GC: defragmented %d free bytes in one single block\n", BmmMaxSize);
+	BmmReserve = bmmMalloc(MEMORY_SAFE_SIZE);
+	if (MM.gcTrace && BmmReserve) PRINTF(LOG_SYS, "> GC: restored a reserve of %d bytes\n", MEMORY_SAFE_SIZE);
+	bmmComputeMaxSize();
+	if (MM.gcTrace) PRINTF(LOG_SYS, "> GC: Larger block: %d\n", BmmMaxSize);
+	return BmmMaxSize;
 }
 #endif

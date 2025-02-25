@@ -211,8 +211,8 @@ int compilePromptAndRun(Thread* th)
 	if ((k= promptOnThread(th))) return k;
 
 	interpreterExec(th,0,0);
-	interpreterRun(th,0);
-
+	interpreterRun(th,0);	// may move thread th
+	th = MM.scheduler;	// hack: as for today compilePromptAndRun is only called on MM.scheduler
 	STACK_DROPN(th,2);
 	return 0;
 }

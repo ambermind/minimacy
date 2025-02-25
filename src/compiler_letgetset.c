@@ -456,7 +456,11 @@ Type* compileDef(Compiler* c,int noPoint)
 			parserGiveback(c);		
 		}
 		if ((index != DEF_INDEX_OPCODE) && (index != DEF_INDEX_STATIC)) {
-			if (bc_byte_or_int(c, code, OPexecb, OPexec)) return NULL;
+			if (def->header.pkg == c->pkg) {
+				if (bc_byte_or_int(c, code, OPtfcb, OPtfc)) return NULL;
+			}
+			else
+				if (bc_byte_or_int(c, code, OPexecb, OPexec)) return NULL;
 		}
 		else {
 			LINT opcode = (index == DEF_INDEX_OPCODE)?ARRAY_INT(PNT_FROM_VAL(val), FUN_NATIVE_OPCODE):INT_FROM_VAL(val);

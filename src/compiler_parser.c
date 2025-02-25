@@ -285,6 +285,11 @@ void parserMark(LB* user)
 	Parser* parser = (Parser*)user;
 	MEMORY_MARK(parser->name);
 	MEMORY_MARK(parser->block);
+	if (MM.updating) {
+		LINT offset = parser->token - parser->src;
+		parser->src = STR_START(parser->block);
+		parser->token = parser->src + offset;
+	}
 }
 
 int parserFromData(Compiler* c, char* name, LB* srcBlock)

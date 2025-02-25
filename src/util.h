@@ -38,6 +38,7 @@ LFLOAT ls_atofExt(char* src, char** dst);
 LINT signExtend(LINT val, LINT bit);
 LINT signExtend8(LINT val);
 LINT signExtend16(LINT val);
+LINT signExtend24(LINT val);
 LINT signExtend32(LINT val);
 
 char* defCodeName(LINT code);
@@ -45,8 +46,8 @@ char* defCodeName(LINT code);
 LINT getLsbInt(char* p);
 LINT powerInt(LINT a, LINT n);
 
-void pseudoRandomInit();
-LINT pseudoRandom32();
+void pseudoRandomInit(void);
+LINT pseudoRandom32(void);
 void pseudoRandomBytes(char* dst, LINT len);
 void pseudoRandomEntropy(LINT val);
 

@@ -10,7 +10,9 @@
    with this program. If not, see <https://www.gnu.org/licenses/>. */
 #include"minimacy.h"
 
+int NextExtEvent=0x8000;
 
+int eventGetNextID(void) { return NextExtEvent++; }
 
 void eventNotify(int c, int x, int y, int v)
 {
@@ -18,27 +20,41 @@ void eventNotify(int c, int x, int y, int v)
 	int i = 0;
 //	PRINTF(LOG_DEV,"eventNotify %d %d %d %d\n",c,x,y,v);
 
+	out[i++] = 16;
+	out[i++] = 0;
 	out[i++] = (char)c;
-
-	out[i++] = (char)x; x >>= 8;
-	out[i++] = (char)x; x >>= 8;
-	out[i++] = (char)x; x >>= 8;
-	out[i++] = (char)x; x >>= 8;
-
-	out[i++] = (char)y; y >>= 8;
-	out[i++] = (char)y; y >>= 8;
-	out[i++] = (char)y; y >>= 8;
-	out[i++] = (char)y; y >>= 8;
-
-	out[i++] = (char)v; v >>= 8;
-	out[i++] = (char)v; v >>= 8;
-	out[i++] = (char)v; v >>= 8;
-	out[i++] = (char)v; v >>= 8;
-
 	out[i++] = 0;
-	out[i++] = 0;
-	out[i++] = 0;
+
+	out[i++] = (char)x; x >>= 8;
+	out[i++] = (char)x; x >>= 8;
+	out[i++] = (char)x; x >>= 8;
+	out[i++] = (char)x; x >>= 8;
+
+	out[i++] = (char)y; y >>= 8;
+	out[i++] = (char)y; y >>= 8;
+	out[i++] = (char)y; y >>= 8;
+	out[i++] = (char)y; y >>= 8;
+
+	out[i++] = (char)v; v >>= 8;
+	out[i++] = (char)v; v >>= 8;
+	out[i++] = (char)v; v >>= 8;
+	out[i++] = (char)v; v >>= 8;
+
 	internalSend(out, 16);
+}
+void eventBinary(int c, char* data, int dataLen)
+{
+    char out[4];
+    int i = 0;
+    int eventSize=dataLen+4;
+//    PRINTF(LOG_DEV,"eventNotify %d %d %d %d\n",c,x,y,v);
+    c&=0xffff;
+    out[i++] = eventSize; eventSize>>=8;
+    out[i++] = eventSize;
+    out[i++] = c; c>>=8;
+    out[i++] = c;
+    internalSend(out, 4);
+    internalSend(data, dataLen);
 }
 
 void internalPoke(void)
@@ -46,7 +62,7 @@ void internalPoke(void)
 	eventNotify(EVENT_POKE,0,0,0);
 }
 
-int coreEventInit(Pkg* system)
+int systemEventInit(Pkg* system)
 {
 	static const Native nativeDefs[] = {
 		{ NATIVE_INT, "_EVENT_POKE", (void*)EVENT_POKE, "Int"},

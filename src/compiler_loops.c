@@ -13,11 +13,30 @@
 Type* compileBreak(Compiler* c)
 {
 	Type* t;
-	if (!c->fmk->breakType) return compileError(c,"nothing to break!\n");
+	LINT pin;
+	if (!c->fmk->loopType) return compileError(c,"nothing to break!\n");
 	if (!(t=compileExpression(c))) return NULL;
-	if (typeUnify(c,t,c->fmk->breakType)) return NULL;
+	if (typeUnify(c,t,c->fmk->loopType)) return NULL;
 	if (bufferAddChar(c->bytecode,OPbreak)) return NULL;
-	c->fmk->breakUse=1;
+	if (bufferAddChar(c->bytecode, OPgoto)) return NULL;
+	pin = bytecodePin(c);
+	if (bytecodeAddJumpList(c, c->fmk->breakList)) return NULL;
+	c->fmk->breakList=pin;
+	return t;
+}
+
+Type* compileContinue(Compiler* c)
+{
+	Type* t;
+	LINT pin;
+	if (!c->fmk->loopType) return compileError(c, "nothing to continue!\n");
+	if (!(t = compileExpression(c))) return NULL;
+	if (typeUnify(c, t, c->fmk->loopType)) return NULL;
+	if (bufferAddChar(c->bytecode, OPcontinue)) return NULL;
+	if (bufferAddChar(c->bytecode, OPgoto)) return NULL;
+	pin = bytecodePin(c);
+	if (bytecodeAddJumpList(c, c->fmk->continueList)) return NULL;
+	c->fmk->continueList = pin;
 	return t;
 }
 
@@ -26,20 +45,17 @@ Type* compileWhile(Compiler* c)
 	Type* t;
 	LINT bc_while,bc_end;
 
-	Type* backupTypeBreak;
-	int backupBreakUse;
-	LINT bc_break;
+	Type* backupLoopType= c->fmk->loopType;
+	LINT backupBreakList = c->fmk->breakList;
+	LINT backupContinueList = c->fmk->continueList;
+	LINT bc_loop;
 	Type* tresult = typeAllocUndef(); if (!tresult) return NULL;
+	c->fmk->loopType = NULL;
+	c->fmk->breakList = 0;
+	c->fmk->continueList = 0;
 
-	if (bufferAddChar(c->bytecode,OPmark)) return NULL;
-	bc_break= bytecodeAddEmptyJump(c);
-	if (bc_break < 0) return NULL;
-	backupTypeBreak = c->fmk->breakType;
-	backupBreakUse = c->fmk->breakUse;
-	c->fmk->breakType = tresult;
-	c->fmk->breakUse = 0;
-
-	if (bufferAddChar(c->bytecode,OPnil)) return NULL;
+	bc_loop = bytecodePin(c);
+	if (bufferAddChar(c->bytecode,OPloop)) return NULL;
 
 	bc_while=bytecodePin(c);
 	if (!(t=compileExpression(c))) return NULL;
@@ -47,6 +63,8 @@ Type* compileWhile(Compiler* c)
 	if (typeUnify(c,t,MM.Boolean)) return NULL;
 
 	if (parserAssume(c,"do")) return NULL;
+
+	c->fmk->loopType = tresult;
 
 	if (bufferAddChar(c->bytecode,OPelse)) return NULL;
 	bc_end=bytecodeAddEmptyJump(c);
@@ -60,18 +78,27 @@ Type* compileWhile(Compiler* c)
 	
 	bytecodeSetJump(c,bc_end,bytecodePin(c));
 
-	if (c->fmk->breakUse)
+	if (c->fmk->breakList || c->fmk->continueList)
 	{
-		if (bufferAddChar(c->bytecode, OPunmark)) return NULL;
-		bytecodeSetJump(c, bc_break, bytecodePin(c));
+		if (bufferAddChar(c->bytecode, OPbreak)) return NULL;
 	}
 	else
 	{
-		bufferSetChar(c->bytecode, bc_break - 1, OPgoto);
-		bytecodeSetJump(c, bc_break, bc_break + 3);
+		bufferSetChar(c->bytecode, bc_loop, OPnil);
 	}
-	c->fmk->breakType = backupTypeBreak;
-	c->fmk->breakUse = backupBreakUse;
+
+	if (c->fmk->breakList)
+	{
+		bytecodeSetJumpList(c, c->fmk->breakList, bytecodePin(c));
+	}
+	if (c->fmk->continueList)
+	{
+		bytecodeSetJumpList(c, c->fmk->continueList, bc_while);
+	}
+
+	c->fmk->loopType = backupLoopType;
+	c->fmk->breakList = backupBreakList;
+	c->fmk->continueList = backupContinueList;
 
 	return t;
 }
@@ -90,18 +117,17 @@ Type* compileFor(Compiler* c)
 	int oneLabelOnly = 0;
 
 	LINT bc_cond,bc_end;
-	Type* backupTypeBreak;
-	int backupBreakUse;
-	LINT bc_break;
+	Type* backupLoopType = c->fmk->loopType;
+	LINT backupBreakList = c->fmk->breakList;
+	LINT backupContinueList = c->fmk->continueList;
+	LINT bc_loop, bc_iterator;
 	Type* tresult=typeAllocUndef(); if (!tresult) return NULL;
 
-	if (bufferAddChar(c->bytecode, OPmark)) return NULL;
-	bc_break = bytecodeAddEmptyJump(c);
-	if (bc_break < 0) return NULL;
-	backupTypeBreak = c->fmk->breakType;
-	backupBreakUse = c->fmk->breakUse;
-	c->fmk->breakType = tresult;
-	c->fmk->breakUse = 0;
+	backupLoopType = c->fmk->loopType;
+	backupBreakList = c->fmk->breakList;
+	c->fmk->loopType = NULL;
+	c->fmk->breakList = 0;
+	c->fmk->continueList = 0;
 
 	localsBefore = c->fmk->locals;
 
@@ -142,7 +168,9 @@ Type* compileFor(Compiler* c)
 		c->fmk->locals=localsAfter;
 		if (bc_byte_or_int(c, iterator->index,OPslocb,OPsloc)) return NULL;	// set list iterator
 
-		if (bufferAddChar(c->bytecode,OPnil)) return NULL;
+		bc_loop = bytecodePin(c);
+		if (bufferAddChar(c->bytecode, OPloop)) return NULL;
+
 		bc_cond=bytecodePin(c);
 		if (bc_byte_or_int(c, iterator->index,OPrlocb,OPrloc)) return NULL;
 		if (bufferAddChar(c->bytecode,OPnil)) return NULL;
@@ -152,6 +180,7 @@ Type* compileFor(Compiler* c)
 		bc_end=bytecodeAddEmptyJump(c);
 		if (bc_end < 0) return NULL;
 		if (parserAssume(c,"do")) return NULL;
+		c->fmk->loopType = tresult;
 		if (bufferAddChar(c->bytecode,OPdrop)) return NULL;
 
 		if (bc_byte_or_int(c, iterator->index, OPrlocb, OPrloc)) return NULL;
@@ -161,7 +190,8 @@ Type* compileFor(Compiler* c)
 		if (!(t=compileExpression(c))) return NULL;
 		if (typeUnify(c,t,tresult)) return NULL;
 
-		if (bc_byte_or_int(c, iterator->index,OPrlocb,OPrloc)) return NULL;
+		bc_iterator = bytecodePin(c);
+		if (bc_byte_or_int(c, iterator->index, OPrlocb, OPrloc)) return NULL;
 		if (bufferAddChar(c->bytecode,OPtl)) return NULL;
 		if (bc_byte_or_int(c, iterator->index,OPslocb,OPsloc)) return NULL;	// update list iterator
 		if (bufferAddChar(c->bytecode,OPgoto)) return NULL;
@@ -196,7 +226,9 @@ Type* compileFor(Compiler* c)
 		if (bcint_byte_or_int(c, 0)) return NULL;	// set array index
 		if (bc_byte_or_int(c, iterator->index, OPslocb, OPsloc)) return NULL;	// set array index
 
-		if (bufferAddChar(c->bytecode, OPnil)) return NULL;
+		bc_loop = bytecodePin(c);
+		if (bufferAddChar(c->bytecode, OPloop)) return NULL;
+
 		bc_cond = bytecodePin(c);
 		if (bc_byte_or_int(c, iterator->index, OPrlocb, OPrloc)) return NULL;
 		if (bc_byte_or_int(c, arrayLen->index, OPrlocb, OPrloc)) return NULL;
@@ -206,6 +238,7 @@ Type* compileFor(Compiler* c)
 		bc_end = bytecodeAddEmptyJump(c);
 		if (bc_end < 0) return NULL;
 		if (parserAssume(c, "do")) return NULL;
+		c->fmk->loopType = tresult;
 		if (bufferAddChar(c->bytecode, OPdrop)) return NULL;
 		if (bc_byte_or_int(c, array->index, OPrlocb, OPrloc)) return NULL;	// set array index
 		if (bc_byte_or_int(c, iterator->index, OPrlocb, OPrloc)) return NULL;
@@ -216,6 +249,7 @@ Type* compileFor(Compiler* c)
 		if (!(t = compileExpression(c))) return NULL;
 		if (typeUnify(c, t, tresult)) return NULL;
 
+		bc_iterator = bytecodePin(c);
 		if (bc_byte_or_int(c, iterator->index, OPrlocb, OPrloc)) return NULL;	// i+1
 		if (bufferAddChar(c->bytecode, OPintb)) return NULL;
 		if (bufferAddChar(c->bytecode, 1)) return NULL;
@@ -238,7 +272,9 @@ Type* compileFor(Compiler* c)
 
 		if (bufferAddBin(c->bytecode, BIN_START(localsBytecode), BIN_LENGTH(localsBytecode))) return NULL;
 
-		if (bufferAddChar(c->bytecode, OPnil)) return NULL;
+		bc_loop = bytecodePin(c);
+		if (bufferAddChar(c->bytecode, OPloop)) return NULL;
+
 		bc_cond = bytecodePin(c);
 		if ((!parserNext(c)) || strcmp(c->parser->token, ";")) return compileError(c,"';' expected (found %s)\n", compileToken(c));
 
@@ -254,12 +290,12 @@ Type* compileFor(Compiler* c)
 		if (!strcmp(c->parser->token, ";"))	// with a "next" expression: for i=v0; cond; next do ...
 		{
 			Type* tinc;
-			LINT bc_expr, bc_next;
+			LINT bc_expr;
 			if (bufferAddChar(c->bytecode, OPgoto)) return NULL;
 			bc_expr = bytecodeAddEmptyJump(c);
 			if (bc_expr < 0) return NULL;
 
-			bc_next = bytecodePin(c);
+			bc_iterator = bytecodePin(c);
 			if (!(tinc = compileExpression(c))) return NULL;
 
 			if (typeUnify(c, localsType, tinc)) return NULL;
@@ -269,6 +305,7 @@ Type* compileFor(Compiler* c)
 			if (bytecodeAddJump(c, bc_cond)) return NULL;
 
 			if (parserAssume(c, "do")) return NULL;
+			c->fmk->loopType = tresult;
 
 			bytecodeSetJump(c, bc_expr, bytecodePin(c));
 			if (bufferAddChar(c->bytecode, OPdrop)) return NULL;
@@ -277,7 +314,7 @@ Type* compileFor(Compiler* c)
 			if (typeUnify(c, t, tresult)) return NULL;
 
 			if (bufferAddChar(c->bytecode, OPgoto)) return NULL;
-			if (bytecodeAddJump(c, bc_next)) return NULL;
+			if (bytecodeAddJump(c, bc_iterator)) return NULL;
 		}
 		else	// without "next" expression: for i=v0; cond do ...
 		{
@@ -285,11 +322,13 @@ Type* compileFor(Compiler* c)
 			parserGiveback(c);
 			if (typeUnify(c, localsType, MM.Int)) return NULL;
 			if (parserAssume(c, "do")) return NULL;
+			c->fmk->loopType = tresult;
 			if (bufferAddChar(c->bytecode, OPdrop)) return NULL;
 
 			if (!(t = compileExpression(c))) return NULL;
 			if (typeUnify(c, t, tresult)) return NULL;
 
+			bc_iterator = bytecodePin(c);
 			if (bc_byte_or_int(c, iterator->index, OPrlocb, OPrloc)) return NULL;	// i+1
 			if (bufferAddChar(c->bytecode, OPintb)) return NULL;
 			if (bufferAddChar(c->bytecode, 1)) return NULL;
@@ -302,18 +341,27 @@ Type* compileFor(Compiler* c)
 	bytecodeSetJump(c,bc_end,bytecodePin(c));
 	c->fmk->locals=localsBefore;
 
-	if (c->fmk->breakUse)
+	if (c->fmk->breakList || c->fmk->continueList)
 	{
-		if (bufferAddChar(c->bytecode, OPunmark)) return NULL;
-		bytecodeSetJump(c, bc_break, bytecodePin(c));
+		if (bufferAddChar(c->bytecode, OPbreak)) return NULL;
 	}
 	else
 	{
-		bufferSetChar(c->bytecode, bc_break - 1, OPgoto);
-		bytecodeSetJump(c, bc_break, bc_break + 3);
+		bufferSetChar(c->bytecode, bc_loop, OPnil);
 	}
-	c->fmk->breakType = backupTypeBreak;
-	c->fmk->breakUse = backupBreakUse;
+
+	if (c->fmk->breakList)
+	{
+		bytecodeSetJumpList(c, c->fmk->breakList, bytecodePin(c));
+	}
+	if (c->fmk->continueList)
+	{
+		bytecodeSetJumpList(c, c->fmk->continueList, bc_iterator);
+	}
+
+	c->fmk->loopType = backupLoopType;
+	c->fmk->breakList = backupBreakList;
+	c->fmk->continueList = backupContinueList;
 
 	return tresult;
 }

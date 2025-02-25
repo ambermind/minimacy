@@ -248,6 +248,8 @@ Type* compileTerm(Compiler* c,int noPoint)
 		return compileFor(c);
 	else if (!strcmp(c->parser->token,"break"))
 		return compileBreak(c);
+	else if (!strcmp(c->parser->token,"continue"))
+		return compileContinue(c);
 	else if (!strcmp(c->parser->token,"match"))
 		return compileMatch(c);
 	else if (!strcmp(c->parser->token,"call"))

@@ -14,6 +14,10 @@ void bitmapMark(LB* user)
 {
 	LBitmap* b = (LBitmap*)user;
 	MEMORY_MARK(b->bytes);
+	if (MM.updating) {
+		b->start8 = (lchar*)STR_START(b->bytes);
+		b->start32 = (int*)b->start8;
+	}
 }
 
 LBitmap* _bitmapCreate(LINT w, LINT h)
@@ -261,7 +265,7 @@ int fun_dct88(Thread* th)
 	if (ARRAY_LENGTH(array) == 64) dct88(array);
 	return 0;
 }
-int core2dInit(Pkg *system)
+int system2dInit(Pkg *system)
 {
 	pkgAddType(system, "BlendFunction");
 	pkgAddType(system, "Component");

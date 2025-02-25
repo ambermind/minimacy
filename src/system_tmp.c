@@ -17,7 +17,7 @@
 #define MINIMP3_IMPLEMENTATION
 #include"../tmpSrc/minimp3.h"
 
-MTHREAD_START _mp3Decode(Thread* th)
+WORKER_START _mp3Decode(volatile Thread* th)
 {
 	unsigned char* input_buf;
 	int buf_size = -1;
@@ -29,7 +29,7 @@ MTHREAD_START _mp3Decode(Thread* th)
 	LB* src = STACK_PNT(th, 0);
 	Buffer* out = (Buffer*)STACK_PNT(th, 1);
 	if ((!src) || (!out)) return workerDonePnt(th, MM._false);
-	bufferSetWorkerThread(out, th);
+	bufferSetWorkerThread(&out, &th);
 	input_buf = STR_START(src);
 	buf_size = (int)STR_LENGTH(src);
 	mp3dec_init(&mp3d);
@@ -39,13 +39,13 @@ MTHREAD_START _mp3Decode(Thread* th)
 		input_buf += info.frame_bytes;
 		buf_size -= info.frame_bytes;
 		if (samples) {
-			if (bufferAddBin(out, (char*)pcm, 2 * info.channels * samples)) {
-				bufferSetWorkerThread(out, NULL);
+			if (bufferAddBinWorker(&out, (char*)pcm, 2 * info.channels * samples)) {
+				bufferUnsetWorkerThread(&out, &th);
 				return workerDoneNil(th);
 			}
 		}
 	} while (samples || info.frame_bytes);
-	bufferSetWorkerThread(out, NULL);
+	bufferUnsetWorkerThread(&out, &th);
 	return workerDonePnt(th, MM._true);
 }
 
@@ -71,17 +71,19 @@ int usrMp3Init(Pkg* system)
 int fun_storageRead(Thread* th)
 {
 	LINT len;
+	LB* bytes;
 	
 	LINT nb = STACK_INT(th, 0);
 	LINT start = STACK_INT(th, 1);
-	LINT offset = STACK_INT(th, 2);
-	LB* bytes = STACK_PNT(th, 3);
-	LINT index = STACK_INT(th, 4);	// index of storage device
-	if ((!bytes)||(offset<0)||(start < 0)||(nb<=0)) FUN_RETURN_NIL;
-	if (offset+512*nb>STR_LENGTH(bytes)) FUN_RETURN_NIL;
-	len = storageRead(index, STR_START(bytes)+offset, (int)start, (int)nb);
-	if (len < 0) FUN_RETURN_NIL;
-	FUN_RETURN_INT(len);
+	LINT index = STACK_INT(th, 2);	// index of storage device
+	if ((start < 0)||(nb<=0)) FUN_RETURN_NIL;
+	if (index<0 || index>=storageCount()) FUN_RETURN_NIL;
+	FUN_PUSH_STR(NULL, nb*storageSectorSize(index));
+
+	bytes = STACK_PNT(th,0);
+	len = storageRead(index, STR_START(bytes), (int)start, (int)nb);
+	if (len < nb*storageSectorSize(index)) FUN_RETURN_NIL;
+	FUN_RETURN_PNT(bytes);
 }
 
 int fun_storageWrite(Thread* th)
@@ -89,22 +91,52 @@ int fun_storageWrite(Thread* th)
 	LINT len;
 
 	LINT nb = STACK_INT(th, 0);
-	LINT start = STACK_INT(th, 1);
-	LINT offset = STACK_INT(th, 2);
-	LB* bytes = STACK_PNT(th, 3);
+	LINT offset = STACK_INT(th, 1);
+	LB* bytes = STACK_PNT(th, 2);
+	LINT start = STACK_INT(th, 3);
 	LINT index = STACK_INT(th, 4);	// index of storage device
 	if ((!bytes)||(offset<0)||(start < 0)||(nb<=0)) FUN_RETURN_NIL;
-	if (offset+512*nb>STR_LENGTH(bytes)) FUN_RETURN_NIL;
+	if (index<0 || index>=storageCount()) FUN_RETURN_NIL;
+	if (offset+storageSectorSize(index)*nb>STR_LENGTH(bytes)) FUN_RETURN_NIL;
 	len = storageWrite(index, STR_START(bytes)+offset, (int)start, (int)nb);
 	if (len < 0) FUN_RETURN_NIL;
 	FUN_RETURN_INT(len);
+}
+int fun_storageNbSectors(Thread* th)
+{
+	LINT index = STACK_INT(th, 0);	// index of storage device
+	LINT value=storageNbSectors(index);
+	if (value<0) FUN_RETURN_NIL;
+	FUN_RETURN_INT(value);
+}
+int fun_storageSectorSize(Thread* th)
+{
+	LINT index = STACK_INT(th, 0);	// index of storage device
+	LINT value=storageSectorSize(index);
+	if (value<0) FUN_RETURN_NIL;
+	FUN_RETURN_INT(value);
+}
+int fun_storageWritable(Thread* th)
+{
+	LINT index = STACK_INT(th, 0);	// index of storage device
+	LINT value=storageWritable(index);
+	if (value<0) FUN_RETURN_NIL;
+	FUN_RETURN_BOOL(value);
+}
+int fun_storageCount(Thread* th)
+{
+	FUN_RETURN_INT(storageCount());
 }
 
 int usrSdInit(Pkg* system)
 {
 	static const Native nativeDefs[] = {
-		{ NATIVE_FUN, "storageRead", fun_storageRead, "fun Int Bytes Int Int Int -> Int"},
-		{ NATIVE_FUN, "storageWrite", fun_storageWrite, "fun Int Bytes Int Int Int -> Int"},
+		{ NATIVE_FUN, "storageCount", fun_storageCount, "fun -> Int"},
+		{ NATIVE_FUN, "storageWritable", fun_storageWritable, "fun Int -> Bool"},
+		{ NATIVE_FUN, "storageNbSectors", fun_storageNbSectors, "fun Int -> Int"},
+		{ NATIVE_FUN, "storageSectorSize", fun_storageSectorSize, "fun Int -> Int"},
+		{ NATIVE_FUN, "storageRead", fun_storageRead, "fun Int Int Int -> Bytes"},
+		{ NATIVE_FUN, "storageWrite", fun_storageWrite, "fun Int Int Bytes Int Int -> Int"},
 	};
 	NATIVE_DEF(nativeDefs);
 	return 0;
@@ -134,9 +166,7 @@ int usrActivityLedInit(Pkg* system)
 	return 0;
 }
 
-int hostOnlyFunctionsInit(Pkg* system);
-
-int tmpInit(Pkg* system)
+int systemTmpInit(Pkg* system)
 {
 	usrSdInit(system);
 	usrActivityLedInit(system);

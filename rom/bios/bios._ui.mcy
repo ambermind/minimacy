@@ -136,6 +136,7 @@ fun _loadShader tp src=
 	);;
 
 fun _initShaders =
+	echo "> openGL: ";
 	echoLn strJoin " | " [(glGetString GL_VERSION) (glGetString GL_VENDOR) (glGetString GL_RENDERER) (glGetString GL_SHADING_LANGUAGE_VERSION)];
 	let _loadShader GL_VERTEX_SHADER _VERTEX_TEXTURE -> vertexShader in
 	if vertexShader!=nil then
@@ -394,7 +395,7 @@ fun _uiOnSize x y v=
 var _MultiTouchTmp;;
 var _MultiTouch;;
 fun _uiOnMultiTouch x y v= if _UI_DEBUG then dump strFormat "multi *,* / *" x y v;
-	if v==0 then (set _MultiTouchTmp=[x y]:_MultiTouchTmp; nil)
+	if v==0 then (set _MultiTouchTmp=[(_xConvert x y) (_yConvert x y)]:_MultiTouchTmp; nil)
 	else
 	(
 		set _MultiTouch=_MultiTouchTmp;

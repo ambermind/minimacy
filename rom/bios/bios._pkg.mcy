@@ -121,39 +121,6 @@ fun pkgOverload  p=
 		nil
 	);;
 
-fun _lineCount src target n i=
-	if i==nil || i>target then n
-	else _lineCount src target n+1 strPos src "\n" i+1;;
-
-fun _jumpLines src i n=
-	if n==0 then i
-	else if n>0 then 
-	(
-		let strPos src "\n" i -> next in
-		if next==nil then strLength src
-		else _jumpLines src next+1 n-1
-	)
-	else
-	(
-		let strPosRev src "\n" i-2 -> prev in
-		if prev==nil then 0
-		else _jumpLines src prev+1 n+1
-	);;
-fun defLocate p name=
-	for [_ p] in listConcat (_pkgImports p) ["bios" pkg]:nil do
-		for r=pkgDefs p; r<>nil; defNext r do
-			if name==defName r then
-			let defIndexInCode r -> i in
-			let defSourceCode r -> src in
-			(
-				echoLn strFormat "package *:\nline *\n..." (defSourceName r) (_lineCount src i 0 0);
-				let _jumpLines src i (-3) -> start in
-				let _jumpLines src i (3) -> end in
-				echoLn strSlice src start (end-start);
-				echoLn "...";
-				return r
-			);;
-
 fun _firstWord src i=
 	let strGet src i -> c in
 	if (c>='a' && c<='z')||(c>='A' && c<='Z')||(c=='_')||(c>='0' && c<='9') then _firstWord src i+1
@@ -168,12 +135,7 @@ const _DECLARATIONS=strSplit " " "fun var const enum use struct sum extend";;
 fun _makeprompt src caller=
 	let trim src -> src in
 	let _firstWord src 0 -> key in
-	if key=="run" then
-	(
-		_launchApp (trim strSlice src 4 nil) false caller;
-		nil
-	)
-	else if listContains _DECLARATIONS key then _appendEndPattern src
+	if listContains _DECLARATIONS key then _appendEndPattern src
 	else _appendEndPattern strFormat "fun _init=\n*" src;;
 
 fun _promptTry src p=

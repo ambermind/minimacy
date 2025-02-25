@@ -108,17 +108,18 @@ int fun_serialSocket(Thread* th)
 {
 	return 0;
 }
-
+#else
+#define B115200 115200
+#define B57600 57600
+#define B38400 38400
+#define B19200 19200
+#define B9600 9600
 #endif
 #ifdef USE_SERIAL_WIN
 
 #define SERIAL_SLOT_NB 16
 #define SERIAL_BUFFER_LEN 2048
 
-#define B115200 115200
-#define B57600 57600
-#define B38400 38400
-#define B19200 19200
 typedef struct {
 	HANDLE hCom;
 	SOCKET pipe[2];
@@ -153,7 +154,7 @@ void _serialMark(LB* user)
 	MEMORY_MARK(f->socket);
 }
 
-MTHREAD_START _serialThread(void* param)
+WORKER_START _serialThread(void* param)
 {
 	SerialSlot* f = (SerialSlot*)param;
 	HANDLE hCom = f->hCom;
@@ -212,7 +213,7 @@ MTHREAD_START _serialThread(void* param)
 	lambdaPipeClose(f->pipe);
 	f->running = -1;
 	PRINTF(LOG_SYS,"> Serial thread closed\n");
-	return MTHREAD_RETURN;
+	return WORKER_RETURN;
 }
 
 Serial* _serialCreate(int slot, HANDLE hCom)
@@ -346,10 +347,6 @@ int fun_serialSocket(Thread* th)
 }
 #endif
 #ifdef USE_SERIAL_STUB
-#define B115200 115200
-#define B57600 57600
-#define B38400 38400
-#define B19200 19200
 int fun_serialOpen(Thread* th) FUN_RETURN_NIL
 int fun_serialClose(Thread* th) FUN_RETURN_NIL
 int fun_serialWrite(Thread* th) FUN_RETURN_NIL
@@ -370,6 +367,7 @@ int sysSerialInit(Pkg* system)
 		{ NATIVE_INT, "SERIAL_57600", (void*)B57600, "SerialSpeed" },
 		{ NATIVE_INT, "SERIAL_38400", (void*)B38400, "SerialSpeed" },
 		{ NATIVE_INT, "SERIAL_19200", (void*)B19200, "SerialSpeed" },
+		{ NATIVE_INT, "SERIAL_9600", (void*)B9600, "SerialSpeed" },
 		{ NATIVE_INT, "SERIAL_ONESTOPBIT", (void*)0, "Stop" },
 		{ NATIVE_INT, "SERIAL_TWOSTOPBITS", (void*)2, "Stop" },
 		{ NATIVE_INT, "SERIAL_NOPARITY", (void*)0, "Parity" },

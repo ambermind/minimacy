@@ -44,6 +44,8 @@ quicksort l f : fun list a0 (fun a0 a0 -> Bool) -> list a0
    true : a before b
    false : a equals or after b
 */
+fun _concat p q = if p==nil then q else _concat (tail p) (head p):q;;
+
 fun _divide x p r1 r2 fBefore=
 	if p==nil then [r1 r2]
 	else let p-> a:n  in
@@ -55,7 +57,8 @@ fun quicksort l fBefore=
 	else let l-> vl:nl in
 	if nl==nil then l
 	else let _divide vl nl nil nil fBefore->[va na] in
-	listConcat (quicksort va fBefore) vl:quicksort na fBefore;;
+	_concat (_reverse (quicksort va fBefore) nil) vl:quicksort na fBefore;;
+//	listConcat (quicksort va fBefore) vl:quicksort na fBefore;;
 
 fun doubleListCompress ll= let fifoCreate -> fifo in fifoList for l in ll do for p in l do fifoIn fifo p;;
 fun tripleListCompress lll= let fifoCreate -> fifo in fifoList for ll in lll do for l in ll do for p in l do fifoIn fifo p;;
@@ -178,12 +181,13 @@ fun echoTime v = let strFromFloat (floatFromInt timeMs-T0)/.1000. -> str in echo
 
 fun echoHexLn v= echoLn hexFromStr v;v;;
 
+fun hexFromIntN n i= let hexFromInt i -> s in strConcat (strCreate n-(strLength s) '0') s;;
+
 fun hexDump s=
-	let lambda n i = let hexFromInt i -> s in strConcat (strCreate n-(strLength s) '0') s -> intToHexN in
 	for i=0;i<strLength s;i+16 do
 	(
-		echo call intToHexN 8 i;
-		for j=0;j<16 do let strGet s i+j -> a in echo [" " if a==nil then "  " else call intToHexN 2 a];
+		echo hexFromIntN 8 i;
+		for j=0;j<16 do let strGet s i+j -> a in (echo " "; echo if a==nil then "  " else hexFromIntN 2 a);
 		echo "  ";
 		for j=0;j<16 do let strGet s i+j -> a in echo match a with
 			nil -> " ",
@@ -238,7 +242,8 @@ fun dec3FromInt sep val=
 fun _intAbbrev v div l=
 	if v<div || nil==tail l then strConcat (decFromInt v) head l
 	else _intAbbrev v/div div tail l;;
-fun intAbbrev div v= if v<>nil then _intAbbrev v div "":"k":"M":"G":"T":"P":nil;;
+fun intAbbrevExt div v units= if v<>nil then _intAbbrev v div units;;
+fun intAbbrev div v= intAbbrevExt div v "":"k":"M":"G":"T":"P":nil;;
 
 //------------ MISC
 
@@ -260,3 +265,5 @@ fun bytesInit n f=
 fun bitmapErase b color= bitmapFill b color nil;;
 
 fun tfcPrevent a = a;;
+
+fun memoryTry size = (_memoryTry size)||(gcCompact; _memoryTry size);;

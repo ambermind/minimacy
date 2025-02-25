@@ -20,6 +20,7 @@ struct FunMaker
 	FORGET forget;
 	MARK mark;
 
+	FunMaker* parent;
 	Def* def;
 	Def* defForInstances;
 	Locals* locals;
@@ -30,13 +31,12 @@ struct FunMaker
 	Buffer* bc;
 	Type* resultType;
 
-	Type* breakType;
-	int breakUse;
-	int forceNumbers;
+	Type* loopType;
+	LINT breakList;
+	LINT continueList;
 	LINT forceModulo;
 	LINT forceMu;
-
-	FunMaker *parent;
+	int forceNumbers;
 };
 
 struct Parser
@@ -124,6 +124,8 @@ int bc_opcode(Compiler* c, LINT opcode);
 LINT bytecodePin(Compiler *c);
 int bytecodeAddJump(Compiler *c, LINT pin);
 void bytecodeSetJump(Compiler *c, LINT index, LINT pin);
+int bytecodeAddJumpList(Compiler* c, LINT next);
+void bytecodeSetJumpList(Compiler* c, LINT index, LINT pin);
 LINT bytecodeAddEmptyJump(Compiler *c);
 LINT bytecodeGetJump(char *pc);
 
@@ -146,6 +148,7 @@ Type* compileTerm(Compiler* c,int noPoint);
 Type* compileFor(Compiler* c);
 Type* compileWhile(Compiler* c);
 Type* compileBreak(Compiler* c);
+Type* compileContinue(Compiler* c);
 
 Type* compileGetPoint(Compiler* c, Type* t0);
 Type* compileDef(Compiler* c,int noPoint);

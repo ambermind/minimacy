@@ -35,63 +35,155 @@ fun ms=
 	gc;
 	let memoryRecount -> totalMem in
 	let memoryReserve -> reserve in
-	let memoryLongerBlock -> longerBlock in
+	let memoryLargestBlock -> largestBlock in
+	let if hostMemory<>nil then memoryFree -> totalFree in
 	(
 		echoLn "Memory:";
+		echoLn "  Size      (bytes)  Package";
+		echoLn "  ----      -------  -------";
+
 		let quicksort pkgs (lambda a b= 0>=strCmp (pkgName a) (pkgName b)) -> lPkgs in
 		let listMap lPkgs (lambda p = [(pkgName p) (pkgMemory p)]) -> rows in
-		let listConcat rows ["TOTAL" totalMem]:["(reserve)" reserve]:["(longer block)" longerBlock]:nil -> rows in
+		let listConcat rows ["TOTAL USED" totalMem]:["(reserve)" reserve]:["(free)" totalFree]:["(total ram = TOTAL USED+reserve+free)" hostMemory]:["(largest free block)" largestBlock]:nil -> rows in
 		for [title value] in rows do
 			if value<>nil then
 			echoLn strFormat "**  *" (strLeftSpacePadding 6 intAbbrev 1024 value) (strLeftSpacePadding 13 strFormat "(*)" value) title;
+		echoLn "";
 		true
 	);;
 fun ts=
-	let lambda n1 i1 state count start caller=echoLn [(strLeftSpacePadding 24 n1) (strLeftSpacePadding 8 i1) (strLeftSpacePadding 8 state)
+	echoLn "Threads:";
+	let lambda n1 i1 state count start caller=echoLn [(strLeftSpacePadding 16 n1) (strLeftSpacePadding 8 i1) (strLeftSpacePadding 8 state)
 		(strLeftSpacePadding 7 count) (strLeftSpacePadding 9 start) " " caller] -> echoFormat in
 	(
-		call echoFormat "Thread" "ID" "State" "Cycles" "Start" "Origin";
+		call echoFormat "Name" "ID" "State" "Cycles" "Start" "Origin";
+		call echoFormat "----" "--" "-----" "------" "-----" "------";
 		for th in _threads do
 			call echoFormat (threadName th) (decFromInt threadId th) (stateName threadState th)
 				(intAbbrev 1000 threadCycles th)
 //				(strBuild [(intAbbrev 1024 threadMemory th) (if maxMem>0 then ["/" intAbbrev 1024 maxMem] )])
 				(smallDate threadT0 th)
 				threadOrigin th;
+		echoLn "";
 		true
 	);;
 
 fun inputs=
-	let lambda type detail th= echoLn strFormat "*** *"
+	echoLn "Inputs:";
+	let lambda type detail id name= echoLn strFormat "*** *"
 		(strLeftSpacePadding 10 type)
 		(strLeftSpacePadding 21 detail)
-		(strLeftSpacePadding 6 if th==nil then "ID" else decFromInt threadId th)
-		(if th==nil then "THREAD" else th._nameT)
+		(strLeftSpacePadding 6 id)
+		(name)
 	-> echoFormat in
 	(
-		call echoFormat "Type" "Detail" nil;
-		for s in _Streams do call s._showS (lambda type detail=call echoFormat type detail s._thS);
+		call echoFormat "Type" "Detail" "Id" "Thread";
+		call echoFormat "----" "------" "--" "------";
+		for s in _StreamList do call s._showS (lambda type detail=
+			call echoFormat type detail (decFromInt threadId s._thS) s._thS._nameT
+		);
+		echoLn "";
 		true
 	);;
 
+fun eth=		//only for root on Linux
+	echoLn " Id      Name Family          MAC Max_packet        IP";
+	echoLn " --      ---- ------          --- ----------        --";
+	for [index name family mac maxPacketLength ip] in ethList do
+		echoLn [
+			(strLeftSpacePadding 3 decFromInt index)
+			(strLeftSpacePadding 10 name)
+			(strLeftSpacePadding 7 decFromInt family)
+			(strLeftSpacePadding 13 hexFromStr mac)
+			(strLeftSpacePadding 11 decFromInt maxPacketLength)
+			" "
+			ip
+		];
+	true;;
+
 fun timers=
+	echoLn "Timers:";
 	let lambda delay id name=echoLn [(strLeftSpacePadding 12 delay) (strLeftSpacePadding 6 id) " " name] -> echoFormat in
 	let _timerList -> lTimers in
 	(
-		call echoFormat "WAIT" "ID" "THREAD";
+		call echoFormat "Wait" "Id" "Thread";
+		call echoFormat "----" "--" "------";
 		for [t th] in lTimers do call echoFormat (dec3FromInt "," max 0 t-timeMs) (decFromInt threadId th) th._nameT;
-		if lTimers==nil then (echoLn "-> none";nil);
+		if lTimers==nil then (echoLn "        (no active timer)";nil);
+		echoLn "";
 		true
 	);;
 
+fun volumes=
+	echoLn "Volumes:";
+	echoLn "    Volume    Access  SectorSize   NbSectors  TotalSize";
+	echoLn "    ------    ------  ----------   ---------  ---------";
+	for v in _Volumes do echoLn [
+		(strLeftSpacePadding 10 v.nameV)
+		(strLeftSpacePadding 10 if v.writableV then "writable" else "readonly")
+		(strLeftSpacePadding 12 if v.sectorSizeV==nil then "-" else strFromInt v.sectorSizeV)
+		(strLeftSpacePadding 12 if v.nbSectorsV==nil then "-" else strFromInt v.nbSectorsV)
+		(strLeftSpacePadding 11 
+			if v.nbSectorsV==nil then "-" 
+			else
+			// we complexify the next formula in order to work on 32bits versions, as nbSectors*sectorSize may exceed 2**31:
+			let (v.nbSectorsV/(1024*1024))*v.sectorSizeV -> sizeMb in
+			if sizeMb==0 then intAbbrev 1024 v.nbSectorsV*v.sectorSizeV
+			else intAbbrevExt 1024 (v.nbSectorsV/(1024*1024))*v.sectorSizeV "M":"G":"T":"P":nil
+		)
+	];
+	echoLn "";
+	true;;
+
+fun partitions=
+	echoLn "Partitions:";
+	echoLn "    Volume    Access  Partition";
+	echoLn "    ------    ------  ---------";
+	for v in _Volumes do
+		for p in v.partitionsV do echoLn [
+			(strLeftSpacePadding 10 v.nameV)
+			(strLeftSpacePadding 10 if p.writableP then "writable" else "readonly")
+			"  "
+			p.nameP
+		];
+	echoLn "";
+	true;;
+
+fun mounts=
+	echoLn "Mounts:";
+	let 1+max 7 listReduce _Mounts 0 (lambda mx m= max mx strLength m.mountM) -> mountWidth in
+	(
+		echoLn [" Id    Volume         Partition    Access" (strLeftSpacePadding mountWidth "Mount") "  Partition Path"];
+		echoLn [" --    ------         ---------    ------ " (strCreate mountWidth-1 '-')           "  --------------"];
+
+		for m in _Mounts do
+			echoLn [
+				(strLeftSpacePadding 3 decFromInt m._indexM)
+				(strLeftSpacePadding 10 m.partitionM.volumeP.nameV)
+				(strLeftSpacePadding 18 m.partitionM.nameP)
+				(strLeftSpacePadding 10 if m.writableM then "writable" else "readonly")
+				(strLeftSpacePadding mountWidth _strFromPath m.mountM)
+				"  "
+				(_strFromPath m.rootM)
+			];
+		echoLn "";
+		true
+	);;
+
+fun fs=
+	volumes;
+	partitions;
+	mounts;
+	true;;
+
 fun sys=
 	echoLn "\nSystem status";
-	echoLn "-------------";
+	echoLn "=============\n";
 	fs;
-	echoLn "\nMemory:"; ms;
-	echoLn "\nThreads:"; ts;
-	echoLn "\nTimers:"; timers;
-	echoLn "\nInputs:"; inputs;
-	echoLn "";
+	ms;
+	ts;
+	timers;
+	inputs;
 	true;;
 
 fun kill id= 
@@ -120,52 +212,7 @@ fun hardStop=
 fun niceStop=
 	set _NiceStop=true;;
 
-fun partitions=
-	echoLn "    Volume    Access  Partition";
-	for v in _Volumes do
-		if v.partitionsV==nil then (
-			echoLn [
-				(strLeftSpacePadding 10 v.nameV)
-				(strLeftSpacePadding 10 if v.writableV then "writable" else "readonly")
-				"  [No Partition]"
-			];
-			nil
-		)
-		else
-		for p in v.partitionsV do echoLn [
-			(strLeftSpacePadding 10 v.nameV)
-			(strLeftSpacePadding 10 if p.writableP then "writable" else "readonly")
-			"  "
-			p.nameP
-		];
-	echoLn "";
-	true;;
 
-fun mounts=
-	let 1+max 7 listReduce _Mounts 0 (lambda mx m= max mx strLength m.mountM) -> mountWidth in
-	(
-		echoLn [" Id    Volume   Partition    Access" (strLeftSpacePadding mountWidth "Mount") "  Root"];
-		listReduce _Mounts 0 (lambda i m =
-			echoLn [
-				(strLeftSpacePadding 3 decFromInt i)
-				(strLeftSpacePadding 10 m.partitionM.volumeP.nameV)
-				(strLeftSpacePadding 12 m.partitionM.nameP)
-				(strLeftSpacePadding 10 if m.writableM then "writable" else "readonly")
-				(strLeftSpacePadding mountWidth _strFromPath m.mountM)
-				"  "
-				(_strFromPath m.rootM)
-			];
-			i+1
-		);
-		echoLn "";
-		true
-	);;
-
-fun fs=
-	echoLn "Partitions:"; partitions;
-	echoLn "Mounts:"; mounts;
-	true;;
-	
 fun mountDir i path =
 	let if i==nil then diskListInfo path else mountListInfo i path -> l in
 	let listFilter l (lambda f= f._dirFI) -> lDirs in
@@ -175,8 +222,10 @@ fun mountDir i path =
 		echoLn {
 			(strLeftSpacePadding 12 if p._dirFI then "DIRECTORY" else decFromInt p._sizeFI)
 			" | "
-			(if p._updateFI<>nil then fullDate p._updateFI else "          [mounted mount]")
-			" | "
+			(if p._updateFI<>nil then fullDate p._updateFI else "          [mounted partition]")
+			" |"
+			(strLeftSpacePadding 2 strFromInt p._mountFI)
+			": "
 			p._nameFI
 		};
 		echoLn [(listLength l) " element(s)"];
@@ -184,43 +233,6 @@ fun mountDir i path =
 	);;
 
 fun dir path = mountDir nil path;;
-
-//fun _removeIndex n l=
-//	if n==0 || l==nil then tail l
-//	else (head l):_removeIndex n-1 tail l;;
-
-//fun _insertIndex val n l=
-//	if n==0 || l==nil then val:l
-//	else (head l):_insertIndex val n-1 tail l;;
-
-//fun umount n =
-//	set _Partitions= _removeIndex n _Partitions;
-//	_mountUpdate;;
-
-//fun mountMove from to=
-//	let listGet _Partitions from -> p in
-//	if p<>nil then set _Partitions= _insertIndex p to _removeIndex from _Partitions;
-//	_mountUpdate;;
-
-//fun mount name type index writable mountPath physPath=
-//	mountAdd match type with
-//		"ansi"   -> _mkAnsiPartition name writable mountPath physPath,
-//		"uefi"   -> _mkUefiPartition name index writable mountPath physPath,
-//		"romdisk"-> _mkRomdiskPartition index mountPath physPath;;
-
-fun eth=		//only for root on Linux
-	echoLn " ID      NAME FAMILY          MAC MAX_PACKET        IP";
-	for [index name family mac maxPacketLength ip] in ethList do
-		echoLn [
-			(strLeftSpacePadding 3 decFromInt index)
-			(strLeftSpacePadding 10 name)
-			(strLeftSpacePadding 7 decFromInt family)
-			(strLeftSpacePadding 13 hexFromStr mac)
-			(strLeftSpacePadding 11 decFromInt maxPacketLength)
-			" "
-			ip
-		];
-	true;;
 
 fun nativeFonts=
 	let hashsetCreate 8 -> h in (

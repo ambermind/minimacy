@@ -64,10 +64,24 @@ int bytecodeAddJump(Compiler* c, LINT pin)
 	return bufferAddIntN(c->bytecode, pin - c->bytecode->index, BC_JUMP_SIZE);
 }
 
+int bytecodeAddJumpList(Compiler* c, LINT next)
+{
+	return bufferAddIntN(c->bytecode, next, BC_JUMP_SIZE);
+}
+
 // compute the relative jump value
 void bytecodeSetJump(Compiler* c, LINT index, LINT pin)
 {
 	bufferSetIntN(c->bytecode, index, pin - index, BC_JUMP_SIZE);
+}
+
+void bytecodeSetJumpList(Compiler* c, LINT index, LINT pin)
+{
+	while (index) {
+		LINT next = bufferGetIntN(c->bytecode, index, BC_JUMP_SIZE);
+		bytecodeSetJump(c, index, pin);
+		index = next;
+	}
 }
 
 // make room for later relative jump, return the position where to later store the jump value
@@ -108,7 +122,7 @@ void funMakerMark(LB* user)
 	MEMORY_MARK(f->typeLabels);
 	MEMORY_MARK(f->bc);
 	MEMORY_MARK(f->resultType);
-	MEMORY_MARK(f->breakType);
+	MEMORY_MARK(f->loopType);
 	MEMORY_MARK(f->parent);
 }
 
@@ -128,8 +142,8 @@ int funMakerInit(Compiler* c, Locals* locals, Locals* typeLabels, LINT level, De
 	f->maxlocals = localsNb(locals);
 	f->level = level;
 	f->resultType = NULL;
-	f->breakType = NULL;
-	f->breakUse = 0;
+	f->loopType = NULL;
+	f->breakList = 0;
 	f->parent = c->fmk;
 	c->fmk = f;
 	f->forceNumbers = FORCE_NUMBER_NONE;

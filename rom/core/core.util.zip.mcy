@@ -25,9 +25,6 @@ LOCALHEADERMAGIC
 30	n	File name
 30+n	m	Extra field
 
-
-
-
 CENTRALHEADERMAGIC
 0	4	Central directory file header signature = 0x02014b50
 4	1	Version used
@@ -91,7 +88,6 @@ export zipFromFileList lData;; // lData : list of [fileName updateTime content]
 
 // encode from disk files:
 export zipFromFileInfoList lFileInfo;;	// lFileInfo: list of FileInfo structures (see bios functions fileListInfo, fileInfo)
-
 
 struct ZipFile=[fileNameZ flagZ methodZ compressedZ uncompressedZ offsetZ contentZ crcZ updateZ];;
 const LOCALHEADERMAGIC    =0x04034b50;;

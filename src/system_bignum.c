@@ -48,7 +48,7 @@ bignum bignumCreate(LINT nword)
 	if (nword<1) nword=1;
 	if (nword > BIGNUM_MAXWORDS)
 	{
-		PRINTF(LOG_SYS, "> Error: Bignum too long (" LSD " bits, max is " LSD ")\n",nword*sizeof(uint), BIGNUM_MAXWORDS *sizeof(uint));
+		PRINTF(LOG_SYS, "> Error: Bignum too long (" LSD " bits, max is " LSD ")\n",nword*sizeof(uint)*8, BIGNUM_MAXWORDS *sizeof(uint)*8);
 		return NULL;
 	}
 	b = BigList;
@@ -552,7 +552,7 @@ bignum bignumPower2(LINT n)
 	bignum b;
 	if (n < 0) return bignumFromInt(0);
 	if (n == 0) return bignumFromInt(1);
-	b= bignumCreate(1 + (n >> 5)); if (!b) return NULL;
+	b= bignumCreate(1 + (n >> 5)); if (!b) return NULL;	// n=4096 => bignumCreate(257)
 	bignumSet(b,(n>>5),1<<(n&31));
 	return b;
 }
@@ -1286,7 +1286,7 @@ int fun_bigEuclid(Thread* th)
 	bigOpeBBBBBBBB_B(fun_bigExpChinese7,bignumExpChinese7)
 
 
-void coreBignumReset(void)
+void systemBignumReset(void)
 {
 	int i;
 	if (BigCount>= BIGREGISTERS) return;
@@ -1299,7 +1299,7 @@ void coreBignumReset(void)
 	}
 	BigCount = BIGREGISTERS;
 }
-int coreBignumInit(Pkg *system)
+int systemBignumInit(Pkg *system)
 {
 	static const Native nativeDefs[] = {
 		{ NATIVE_FUN, "bigAbs", fun_bigAbs, "fun BigNum -> BigNum"},
@@ -1386,6 +1386,6 @@ int coreBignumInit(Pkg *system)
 	MM.bigNeg = nativeOpcode("bigNeg", 2);
 	MM.bigSub = nativeOpcode("bigSub", 2);
 	BigCount = 0;
-	coreBignumReset();
+	systemBignumReset();
 	return 0;
 }

@@ -89,19 +89,21 @@ fun romdiskStart appName romdisk=
 	fsClear;
 	romdiskImport appName romdisk;
 	fs;
-	start appName nil;;
+	start appName;;
 
 //------- create a romdisk with all mcy files from a partition
-fun _romdiskFindMcy i fifo path=
+fun _romdiskFindMcy i fifo path depth=
+	if depth>0 then
 	for fi in mountListInfo i path do
 		let fileInfoName fi -> path in
-		if fileInfoIsDir fi then _romdiskFindMcy i fifo path
+		if fileInfoIsDir fi then _romdiskFindMcy i fifo path depth-1
 		else
 		if strEndsWith path ".mcy" then fifoIn fifo path;;
 
-fun romdiskFromMountSources i =
+fun romdiskFromMountSources i depth =
+	let mountByIndex i -> m in
 	let fifoCreate -> fifo in (
-		_romdiskFindMcy i fifo "";
+		_romdiskFindMcy i fifo "" depth;
 		let romdiskBuild (fifoList fifo) false -> data in
-		romdiskImport "Import" data;
+		romdiskImport (strFormat "*:*.mcy" m.partitionM.nameP "*") data;
 	);;

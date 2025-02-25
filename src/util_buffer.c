@@ -35,15 +35,18 @@ int _bufferBigger(Buffer* b,LINT neededSize)
 	}
 //	PRINTF(LOG_DEV,"bigger buffer %lld -> %lld (mainthread? %d)\n", b->size, newsize, memoryIsMainThread());
 	if (memoryIsMainThread()) return _bufferBiggerFinalize(b, newsize);
-	if (workerBiggerBuffer(b->th, b, newsize)) return EXEC_OM;
+	if (workerBiggerBuffer(b->pth, b, newsize)) return EXEC_OM;
 	return 0;
 }
 
 void bufferMark(LB* user)
 {
-	Buffer* buffer=(Buffer*)user;
-	MEMORY_MARK(buffer->bloc);
-	MEMORY_MARK(buffer->th);
+	Buffer* b=(Buffer*)user;
+	MEMORY_MARK(b->bloc);
+	if (MM.updating) {
+		b->buffer = BIN_START(b->bloc);
+		if (b->link) *b->link = (Buffer*)b->header.lifo;
+	}
 }
 
 Buffer* bufferCreateWithSize(LINT size)
@@ -55,7 +58,8 @@ Buffer* bufferCreateWithSize(LINT size)
 	b=(Buffer*)memoryAllocExt(sizeof(Buffer),DBG_BUFFER,NULL,bufferMark); if (!b) return NULL;
 	b->index=0;
 	b->size=size;
-	b->th=NULL;
+	b->pth=NULL;
+	b->link = NULL;
 	b->bloc = NULL;	// required because the following memoryAlloc may fire a GC
 	p= memoryAllocBin(NULL,size+1,DBG_BIN); if (!p) return NULL;
 	b->bloc = p;
@@ -68,9 +72,17 @@ Buffer* bufferCreate(void)
 {
 	return bufferCreateWithSize(0);
 }
-void bufferSetWorkerThread(Buffer* b, Thread* th)
+void bufferSetWorkerThread(volatile Buffer** pb, volatile Thread** pth)
 {
-	if (b) b->th = th;
+	(*pb)->link = pb;
+	(*pb)->pth = pth;
+	(*pth)->link = pth;
+}
+void bufferUnsetWorkerThread(volatile Buffer** pb, volatile Thread** pth)
+{
+	(*pb)->link = NULL;
+	(*pb)->pth = NULL;
+	(*pth)->link = NULL;
 }
 
 void bufferReinit(Buffer* b)
@@ -83,6 +95,16 @@ void bufferRemove(Buffer* b, int delta)
 	b->index-=delta;
 	if (b->index<0) b->index=0;
 }
+int bufferAddCharWorker(volatile Buffer** pb, char c)
+{
+	int k;
+	Buffer* b = (Buffer*)(*pb);
+	if ((b->index >= b->size) && (k = _bufferBigger(b, 1))) return k;
+	b = (Buffer*)(*pb);
+	b->buffer[b->index++] = c;
+	return 0;
+}
+
 int bufferAddChar(Buffer* b,char c)
 {
 	int k;
@@ -157,6 +179,28 @@ void bufferSetIntN(Buffer* b,LINT index,LINT i,LINT n)
 		i>>=8;
 	}
 }
+
+LINT bufferGetIntN(Buffer* b, LINT index, LINT n)
+{
+	LINT result = 0;
+	while (n--) result = (result << 8) + ((unsigned char)b->buffer[index + n]);
+	return result;
+}
+
+char* bufferRequireWorker(volatile Buffer** pb, LINT len)
+{
+	char* result;
+	Buffer* b = (Buffer*)(*pb);
+	if (len < 0) return NULL;
+	while (b->index + len >= b->size) {
+		if (_bufferBigger(b, len)) return NULL;
+		b = (Buffer*)(*pb);
+	}
+	result = b->buffer + b->index;
+	b->index += len;
+	return result;
+}
+
 char* bufferRequire(Buffer* b, LINT len)
 {
 	char* result;
@@ -167,6 +211,19 @@ char* bufferRequire(Buffer* b, LINT len)
 	return result;
 }
 
+int bufferAddBinWorker(volatile Buffer** pb, char* src, LINT len)
+{
+	int k;
+	Buffer* b = (Buffer*)(*pb);
+	if (len < 0) len = strlen(src);
+	while (b->index + len >= b->size) {
+		if ((k = _bufferBigger(b, len))) return k;
+		b = (Buffer*)(*pb);
+	}
+	memcpy(b->buffer + b->index, src, len);
+	b->index += len;
+	return 0;
+}
 int bufferAddBin(Buffer* b,char *src,LINT len)
 {
 	int k;
@@ -331,13 +388,13 @@ int bufferFormat(Buffer* b, Thread* th, LINT argc)
 	bufferReinit(b);
 	for (i = 0; i < fLen; i++)
 	{
+		int k;
 		if (f[i] == '*')
 		{
-			int k;
 			argc--;
 			if ((argc>=0)&&((k=bufferItem(b, STACK_GET(th, argc), STACK_TYPE(th, argc),NULL)))) return k;
 		} 
-		else bufferAddChar(b, f[i]);
+		else if ((k=bufferAddChar(b, f[i]))) return k;
 	}
 	FUN_RETURN_BUFFER(b);
 }

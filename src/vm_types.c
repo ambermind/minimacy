@@ -603,6 +603,7 @@ void typesInit(Pkg* system)
 {
 	Def* Exception;
 	Def* Boolean;
+	Def* Mark;
 	Type* u0, * list_u0, * array_u0;
 
 	memoryEnterFast();
@@ -626,6 +627,10 @@ void typesInit(Pkg* system)
 	Exception = pkgAddSum(system, "Exception");
 	MM.Exception = Exception->type;
 	pkgAddCons0(system, "anyException", Exception);
+
+	Mark = pkgAddSum(system, "_Mark");
+	MM._loopMark = (LB*)pkgAddCons0(system, "_loop", Mark);
+	MM._throwMark = (LB*)pkgAddCons0(system, "_throw", Mark);
 
 	u0 = typeAllocUndef();
 	list_u0 = typeAlloc(TYPECODE_LIST, NULL, 1, u0);

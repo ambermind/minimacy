@@ -12,14 +12,14 @@
 #define _AES_H_
 
 #define AES_BLOCKLEN 16 //Block length in bytes AES is 128b block only
-#define AES_keyExpSize 240	// max size
 
 typedef struct
 {
-    int Nr;
-    uint8_t RoundKey[AES_keyExpSize];
-    uint8_t buffer[AES_BLOCKLEN];
+	int Nr;
+	unsigned int RK[60];
+	unsigned int W[4];
 }AesCtx;
+
 void AESCreate(AesCtx* ctx, char* key, int key_len);
 void AESEncrypt(AesCtx* ctx, char* data);
 void AESDecrypt(AesCtx* ctx, char* data);

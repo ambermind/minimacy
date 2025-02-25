@@ -374,7 +374,7 @@ STR_CONVERT(fun_strSearchcaseU16Be, strSearchcaseU16Be, keepSameNever)
 STR_CONVERT(fun_strUnaccentedU16Be, strUnaccentedU16Be, keepSameNever)
 
 
-int coreConvertInit(Pkg *system)
+int systemConvertInit(Pkg *system)
 {
 	static const Native nativeDefs[] = {
 		{ NATIVE_FUN, "strSwap", fun_strSwap, "fun Str -> Str"},
@@ -386,7 +386,9 @@ int coreConvertInit(Pkg *system)
 		{ NATIVE_FUN, "hexFilter", fun_hexFilter, "fun Str -> Str"},
 		{ NATIVE_FUN, "hexFromStr", fun_hexFromStr, "fun Str -> Str"},
 		{ NATIVE_FUN, "intFromDec", fun_intFromDec, "fun Str -> Int"},
+		{ NATIVE_FUN, "intFromStr", fun_intFromDec, "fun Str -> Int"},
 		{ NATIVE_FUN, "decFromInt", fun_decFromInt, "fun Int -> Str"},
+		{ NATIVE_FUN, "strFromInt", fun_decFromInt, "fun Int -> Str"},
 		{ NATIVE_FUN, "floatFromStr", fun_floatFromStr, "fun Str -> Float"},
 		{ NATIVE_FUN, "strFromFloat", fun_strFromFloat, "fun Float -> Str"},
 		{ NATIVE_FUN, "strFloat", fun_strFloat, "fun Float -> Str"},

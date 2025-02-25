@@ -273,6 +273,8 @@ GTIF gtif = NULL;
 CTIH ctih = NULL;
 RTW rtw = NULL;
 
+int lastTouchCount = 0;
+
 void uiRegisterTouchWindow(HWND win)
 {
 	if (rtw == NULL) rtw = (RTW)GetProcAddress(GetModuleHandle("USER32.dll"), "RegisterTouchWindow");
@@ -280,6 +282,7 @@ void uiRegisterTouchWindow(HWND win)
 }
 void uiTouch(HTOUCHINPUT h, int n)
 {
+
 	TOUCHINPUT pInputs[MULTITOUCH_MAX];
 //	PRINTF(LOG_DEV,"uiTouch %d\n", n);
 	if (gtif == NULL) gtif = (GTIF)GetProcAddress(GetModuleHandle("USER32.dll"), "GetTouchInputInfo");
@@ -291,15 +294,50 @@ void uiTouch(HTOUCHINPUT h, int n)
 	if (gtif(h, n, pInputs, sizeof(TOUCHINPUT)))
 	{
 		int i;
+		int touchCount = 0;
+		int anyUp = -1;
+		LONG sx = 0;
+		LONG sy = 0;
+
 		RECT r;
 		GetClientRect(UI.win, &r); MapWindowPoints(UI.win, GetParent(UI.win), (LPPOINT)&r, 2);
 		for (i = 0; i < n; i++)
 		{
 			TOUCHINPUT ti = pInputs[i];
-			if (!(ti.dwFlags & TOUCHEVENTF_UP))
-				eventNotify(EVENT_MULTITOUCH, (int)ti.x / 100 - r.left, (int)ti.y / 100 - r.top, 0);
+			int x = (int)ti.x / 100 - r.left;
+			int y = (int)ti.y / 100 - r.top;
+//			printf("---touch %dx%d up=%d\n",x,y,(ti.dwFlags & TOUCHEVENTF_UP)?1:0);
+
+			if (!(ti.dwFlags & TOUCHEVENTF_UP)) {
+				touchCount++;
+				sx += x; sy += y;
+				eventNotify(EVENT_MULTITOUCH, x, y, 0);
+			}
+			else anyUp = i;
 		}
+
 		eventNotify(EVENT_MULTITOUCH, 0, 0, 1);
+		if (!touchCount) {
+			TOUCHINPUT ti = pInputs[i];
+			int x = (int)ti.x / 100 - r.left;
+			int y = (int)ti.y / 100 - r.top;
+			//			printf("unclick %dx%d\n",x,y);
+			eventNotify(EVENT_UNCLICK, x, y, 1);
+		}
+		else {
+			sx /= touchCount;
+			sy /= touchCount;
+			if (lastTouchCount>0) {
+				//				printf("move %dx%d\n", sx, sy);
+				eventNotify(EVENT_MOUSEMOVE, (int)sx, (int)sy, 1);
+			}
+			else {
+				//				printf("click %dx%d\n", sx, sy);
+				eventNotify(EVENT_CLICK, (int)sx, (int)sy, 1);
+			}
+		}
+		lastTouchCount = touchCount;
+		if (!lastTouchCount) lastTouchCount = -1;	// -1 means we will ignore buttonDown events until buttonUp (included)
 		ctih(h);
 	}
 }
@@ -341,16 +379,22 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 		return(DefWindowProc(hwnd, msg, wParam, lParam));
 		break;
 	case WM_LBUTTONDOWN:
-		SetCapture(hwnd);
-		eventNotify(EVENT_CLICK, LOWORD(lParam), HIWORD(lParam), 0);
-		break;
-	case WM_MBUTTONDOWN:
+		if (lastTouchCount) break;
+		//		PRINTF(LOG_DEV, "WM_LBUTTONDOWN\n");
 		SetCapture(hwnd);
 		eventNotify(EVENT_CLICK, LOWORD(lParam), HIWORD(lParam), 1);
 		break;
-	case WM_RBUTTONDOWN:
+	case WM_MBUTTONDOWN:
+		if (lastTouchCount) break;
+		//		PRINTF(LOG_DEV, "WM_MBUTTONDOWN\n");
 		SetCapture(hwnd);
 		eventNotify(EVENT_CLICK, LOWORD(lParam), HIWORD(lParam), 2);
+		break;
+	case WM_RBUTTONDOWN:
+		if (lastTouchCount) break;
+		//		PRINTF(LOG_DEV, "WM_RBUTTONDOWN\n");
+		SetCapture(hwnd);
+		eventNotify(EVENT_CLICK, LOWORD(lParam), HIWORD(lParam), 3);
 		break;
 /*	case WM_LBUTTONDBLCLK:
 		SetCapture(hwnd);
@@ -361,19 +405,38 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 		if (uiDclick(th, vp, wi, LOWORD(lParam), HIWORD(lParam), 1)) return 0;
 		break;
 */	case WM_LBUTTONUP:
-		ReleaseCapture();
-		eventNotify(EVENT_UNCLICK, LOWORD(lParam), HIWORD(lParam), 0);
-		break;
-	case WM_MBUTTONUP:
+		if (lastTouchCount) {
+			if (lastTouchCount < 0) lastTouchCount=0;
+			break;
+		}
+		//		PRINTF(LOG_DEV, "WM_LBUTTONUP\n");
 		ReleaseCapture();
 		eventNotify(EVENT_UNCLICK, LOWORD(lParam), HIWORD(lParam), 1);
 		break;
-	case WM_RBUTTONUP:
+	case WM_MBUTTONUP:
+		if (lastTouchCount) {
+			if (lastTouchCount < 0) lastTouchCount = 0;
+			break;
+		}
+		//		PRINTF(LOG_DEV, "WM_MBUTTONUP\n");
 		ReleaseCapture();
 		eventNotify(EVENT_UNCLICK, LOWORD(lParam), HIWORD(lParam), 2);
 		break;
+	case WM_RBUTTONUP:
+		if (lastTouchCount) {
+			if (lastTouchCount < 0) lastTouchCount = 0;
+			break;
+		}
+		//		PRINTF(LOG_DEV, "WM_RBUTTONUP\n");
+		ReleaseCapture();
+		eventNotify(EVENT_UNCLICK, LOWORD(lParam), HIWORD(lParam), 3);
+		break;
 	case WM_MOUSEMOVE:
-		eventNotify(EVENT_MOUSEMOVE, (int)signExtend16(LOWORD(lParam)), (int)signExtend16(HIWORD(lParam)), (int)wParam);
+		c = 0;
+		if (wParam & MK_LBUTTON) c = 1;
+		else if (wParam & MK_MBUTTON) c = 2;
+		else if (wParam & MK_RBUTTON) c = 3;
+		eventNotify(EVENT_MOUSEMOVE, (int)signExtend16(LOWORD(lParam)), (int)signExtend16(HIWORD(lParam)), (int)c);
 		break;
 	case WM_TOUCH:
 		uiTouch((HTOUCHINPUT)lParam, LOWORD(wParam));
@@ -450,7 +513,7 @@ BOOL DeclareWindow(HINSTANCE this_inst)
 }
 
 
-MTHREAD_START _uiStart(Thread* th)
+WORKER_START _uiStart(volatile Thread* th)
 {
 	int xIsNil, yIsNil;
 	LINT y, x;
@@ -515,9 +578,16 @@ MTHREAD_START _uiStart(Thread* th)
 #ifdef WITH_GL
 //	_windowReleaseGL();
 #endif
-	return MTHREAD_RETURN;
+	return WORKER_RETURN;
 }
-int fun_uiStart(Thread* th) { return workerStart(th, 6, _uiStart); }
+int fun_uiStart(Thread* th) { 
+#ifdef USE_WORKER_ASYNC
+	return workerStart(th, 6, _uiStart); 
+#else
+	PRINTF(LOG_SYS, "> UI can't start without asynchronous workers\n");
+	FUN_RETURN_NIL
+#endif
+}
 
 int fun_uiResize(Thread* th)
 {
@@ -961,7 +1031,7 @@ int fun_nativeFontList(Thread* th)
 	return 0;
 }
 
-int coreUiHwInit(Pkg* system)
+int systemUiHwInit(Pkg* system)
 {
 	UI.thisInstance = GetModuleHandle(NULL);
 	UI.classRegistered = 0;

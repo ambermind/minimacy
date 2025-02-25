@@ -150,14 +150,16 @@ int fun_bytesWriteVarUInt(Thread* th) { return _bytesWriteVarInt(th, 0); }
 int fun_bytesReadFloat(Thread* th)
 {
 	unsigned char* str;
-	LFLOAT* f;
+	double* pf;
+	LFLOAT f;
 	LINT start = STACK_PULL_INT(th);
 	LB* p = STACK_PNT(th, 0);
-	FUN_CHECK_CONTAINS(p, start, (int)sizeof(LFLOAT), STR_LENGTH(p));
+	FUN_CHECK_CONTAINS(p, start, (int)sizeof(double), STR_LENGTH(p));
 
 	str = (unsigned char*)(STR_START(p) + start);
-	f = (LFLOAT*)str;
-	FUN_RETURN_FLOAT(*f);
+	pf = (double*)str;
+	f =(LFLOAT)(*pf);
+	FUN_RETURN_FLOAT(f);
 }
 
 #define CORE_BYTESREAD(name,type,convert) \
@@ -326,7 +328,7 @@ CORE_STRFROMINT24(fun_strInt24Lsb, LSB24)
 CORE_STRFROMINT24(fun_strInt24Msb, MSB24)
 
 
-int coreBinaryInit(Pkg* system)
+int systemBinaryInit(Pkg* system)
 {
 	static const Native nativeDefs[] = {
 		{ NATIVE_FUN, "strU8Next", fun_strU8Next, "fun Str Int -> Int"},

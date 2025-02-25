@@ -12,7 +12,7 @@
 struct IP=Stream+[_addrIP _portIP];;
 struct TcpSrv=Stream+[_nameTS _onAcceptTS];;
 struct Tcp=IP+[_incomingT];;
-struct Udp=IP+[_localAddrU _localPortU _nameU _linkU];;
+struct Udp=IP+[_localAddrU _localPortU _nameU];;
 struct Eth=Stream+[_ifE];;
 
 struct EthInterface=[
@@ -138,7 +138,6 @@ fun udpCreate remoteAddr remotePort localAddr localPort=
 	let [
 		_localAddrU=localAddr
 		_localPortU=localPort
-		_linkU= link
 		_nameU= (strFormat "*:*" localAddr localPort)
 		_addrIP=remoteAddr
 		_portIP=remotePort
@@ -149,11 +148,7 @@ fun udpCreate remoteAddr remotePort localAddr localPort=
 			threadPost udp._thS (lambda =
 				_socketSetSelectRead socket true;
 				let call _IP.udpReadII socket -> [data ip port] in
-				if port<>nil then
-				if udp._linkU then (
-					if udp._addrIP==ip && udp._portIP==port then call udp._onReadS data
-				)
-				else (
+				if port<>nil then (
 					set udp._addrIP=ip;
 					set udp._portIP=port;
 					call udp._onReadS data
@@ -167,7 +162,7 @@ fun udpCreate remoteAddr remotePort localAddr localPort=
 		)
 		(lambda = call _IP.sockCloseII socket; streamCommonClose udp)	// close
 		(lambda fEcho=	// show
-			call fEcho (if udp._linkU then "UDPlink" else "UDPsrv") udp._nameU
+			call fEcho "UDP" udp._nameU
 		);;
 
 fun udpSend udp msg= streamWrite Udp<udp msg 0;;

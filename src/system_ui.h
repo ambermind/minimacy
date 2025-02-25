@@ -61,8 +61,8 @@ int fun_nativeFontW(Thread* th);
 int fun_nativeFontDraw(Thread* th);
 int fun_nativeFontList(Thread* th);
 
-int coreUiHwInit(Pkg* system);
-int coreUiGLInit(Pkg* system);
-int coreUiInit(Pkg* system);
+int systemUiHwInit(Pkg* system);
+int systemUiGLInit(Pkg* system);
+int systemUiInit(Pkg* system);
 
 #endif

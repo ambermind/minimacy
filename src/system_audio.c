@@ -76,7 +76,6 @@ typedef struct {
 	FORGET forget;
 	MARK mark;
 
-	MLOCK lock;
 	int playing;
 	int playTimer;
 	int playSerial;
@@ -108,7 +107,8 @@ typedef struct {
 	HAudioBuf audioBuffers[AUDIO_NB_BUFFERS];
 #endif
 }AudioEngine;
-AudioEngine* AE=NULL;
+volatile AudioEngine* AE=NULL;
+MLOCK AELock;
 
 void audioSampleMark(LB* user)
 {
@@ -118,53 +118,54 @@ void audioSampleMark(LB* user)
 }
 int audioSystemForget(LB* user)
 {
-	AudioEngine* as = (AudioEngine*)user;
+//	AudioEngine* as = (AudioEngine*)user;
 	//	PRINTF(LOG_DEV,"audioSystemForget\n");
-	lockDelete(&as->lock);
 	return 0;
 }
 void audioSystemMark(LB* user)
 {
 	AudioEngine* as = (AudioEngine*)user;
 	MEMORY_MARK(as->sounds);
+	MEMORY_MARK(as->playBuffer);
+	if (MM.updating) AE = as;	// there is only one AudioEngine
 }
 
-int haudioPlayStop(AudioEngine* t);
-int haudioPlayNextBuffer(AudioEngine* t, char* output);
+int haudioPlayStop(void);
+int haudioPlayNextBuffer(char* output);
 
 //--------------------------------------------------------------------------
 #ifdef USE_OPENSLES	// ANDROID
-int sysPlayVolume(AudioEngine* t)
+int sysPlayVolume()
 {
 	int x=SL_MILLIBEL_MIN;
-	if (t->masterVolume)
+	if (AE->masterVolume)
 	{
-		float y=t->masterVolume;
+		float y=AE->masterVolume;
 		y=1000.0f*log10(y/65535.0f);
 		x=(int)y;
 	}
-//	LOGI("volumeaudio %d -> %d (%d)\n",t->playVolL,x,SL_MILLIBEL_MIN);
-	if (t->bqPlayerVolume) (*t->bqPlayerVolume)->SetVolumeLevel(t->bqPlayerVolume, x);
+//	LOGI("volumeaudio %d -> %d (%d)\n",AE->playVolL,x,SL_MILLIBEL_MIN);
+	if (AE->bqPlayerVolume) (*AE->bqPlayerVolume)->SetVolumeLevel(AE->bqPlayerVolume, x);
 	return 0;
 }
 
-int sysPlayStop(AudioEngine* t)	// called in the lock section t->lock
+int sysPlayStop()	// called in the lock section AE->lock
 {
 //PRINTF(LOG_DEV,"sysPlayStop\n");
-	if (t->bqPlayerObject != NULL)
+	if (AE->bqPlayerObject != NULL)
 	{
-		(*t->bqPlayerObject)->Destroy(t->bqPlayerObject);
-		t->bqPlayerObject = NULL;
-		t->bqPlayerVolume = NULL;
+		(*AE->bqPlayerObject)->Destroy(AE->bqPlayerObject);
+		AE->bqPlayerObject = NULL;
+		AE->bqPlayerVolume = NULL;
 	}
 	return 0;
 }
 
-int sysAudioInit(AudioEngine* t)
+int sysAudioInit()
 {
-	t->engineEngine=NULL;
-	t->bqPlayerObject=NULL;
-	t->bqPlayerVolume=NULL;
+	AE->engineEngine=NULL;
+	AE->bqPlayerObject=NULL;
+	AE->bqPlayerVolume=NULL;
 	return 0;
 }
 
@@ -174,7 +175,7 @@ int audioerror(char* str,int x)
 	return x;
 }
 
-int createEngine(AudioEngine* t)
+int createEngine()
 {
     SLresult result;
 	SLObjectItf engineObject;
@@ -185,76 +186,76 @@ int createEngine(AudioEngine* t)
     result = (*engineObject)->Realize(engineObject, SL_BOOLEAN_FALSE);
 	if (result!=SL_RESULT_SUCCESS) return audioerror("#ERR engineObject->Realize",result);
 
-    result = (*engineObject)->GetInterface(engineObject, SL_IID_ENGINE, &t->engineEngine);
+    result = (*engineObject)->GetInterface(engineObject, SL_IID_ENGINE, &((AudioEngine*)AE)->engineEngine);
 	if (result!=SL_RESULT_SUCCESS) return audioerror("#ERR GetInterface",result);
 
-    result = (*t->engineEngine)->CreateOutputMix(t->engineEngine, &t->outputMixObject, 0, NULL, NULL);
+    result = (*AE->engineEngine)->CreateOutputMix(AE->engineEngine, &((AudioEngine*)AE)->outputMixObject, 0, NULL, NULL);
 	if (result!=SL_RESULT_SUCCESS) return audioerror("#ERR CreateOutputMix",result);
 
-    result = (*t->outputMixObject)->Realize(t->outputMixObject, SL_BOOLEAN_FALSE);
+    result = (*AE->outputMixObject)->Realize(AE->outputMixObject, SL_BOOLEAN_FALSE);
 	if (result!=SL_RESULT_SUCCESS) return audioerror("#ERR outputMixObject->Realize",result);
 
 	return 0;
 }
 void bqPlayerCallback(SLAndroidSimpleBufferQueueItf bq, void *user)
 {
-	AudioEngine* t=(AudioEngine*)user;
-
-	lockEnter(&t->lock);
-	haudioPlayNextBuffer(t,BIN_START(t->playBuffer));
-	(*bq)->Enqueue(bq, BIN_START(t->playBuffer), AUDIO_BUFFER);
-	lockLeave(&t->lock);
+	lockEnter(&MM.lock);	// required in case of gcCompact
+	lockEnter(&AELock);
+	haudioPlayNextBuffer(BIN_START(AE->playBuffer));
+	(*bq)->Enqueue(bq, BIN_START(AE->playBuffer), AUDIO_BUFFER);
+	lockLeave(&AELock);
+	lockLeave(&MM.lock);
 }
-int sysPlayStart(AudioEngine* t)
+int sysPlayStart()
 {
 	int i;
     SLresult result;
 	SLPlayItf bqPlayerPlay;
 	SLAndroidSimpleBufferQueueItf bqPlayerBufferQueue;
 
-	if (t->engineEngine==NULL) createEngine(t);
-	if (t->engineEngine==NULL) return -1;
+	if (AE->engineEngine==NULL) createEngine();
+	if (AE->engineEngine==NULL) return -1;
     SLDataLocator_AndroidSimpleBufferQueue loc_bufq = {SL_DATALOCATOR_ANDROIDSIMPLEBUFFERQUEUE, AUDIO_NB_BUFFERS};
     SLDataFormat_PCM format_pcm = {SL_DATAFORMAT_PCM, AUDIO_CHANNELS, AUDIO_FREQ*1000,
 								   AUDIO_VALUE*8, AUDIO_VALUE*8,
         0, SL_BYTEORDER_LITTLEENDIAN};
     SLDataSource audioSrc = {&loc_bufq, &format_pcm};
 
-    SLDataLocator_OutputMix loc_outmix = {SL_DATALOCATOR_OUTPUTMIX, t->outputMixObject};
+    SLDataLocator_OutputMix loc_outmix = {SL_DATALOCATOR_OUTPUTMIX, AE->outputMixObject};
     SLDataSink audioSnk = {&loc_outmix, NULL};
 
     const SLInterfaceID ids[3] = {SL_IID_BUFFERQUEUE, SL_IID_EFFECTSEND, SL_IID_VOLUME};
     const SLboolean req[3] = {SL_BOOLEAN_TRUE, SL_BOOLEAN_TRUE, SL_BOOLEAN_TRUE};
 
-    result = (*t->engineEngine)->CreateAudioPlayer(t->engineEngine, &t->bqPlayerObject, &audioSrc, &audioSnk,
+    result = (*AE->engineEngine)->CreateAudioPlayer(AE->engineEngine, &((AudioEngine*)AE)->bqPlayerObject, &audioSrc, &audioSnk,
             3, ids, req);
 	if (result!=SL_RESULT_SUCCESS) return audioerror("#ERR CreateAudioPlayer",result);
 
     // realize the player
-    result = (*t->bqPlayerObject)->Realize(t->bqPlayerObject, SL_BOOLEAN_FALSE);
+    result = (*AE->bqPlayerObject)->Realize(AE->bqPlayerObject, SL_BOOLEAN_FALSE);
 	if (result!=SL_RESULT_SUCCESS) return audioerror("#ERR bqPlayerObject->Realize",result);
 
     // get the play interface
-    result = (*t->bqPlayerObject)->GetInterface(t->bqPlayerObject, SL_IID_PLAY, &bqPlayerPlay);
+    result = (*AE->bqPlayerObject)->GetInterface(AE->bqPlayerObject, SL_IID_PLAY, &bqPlayerPlay);
 	if (result!=SL_RESULT_SUCCESS) return audioerror("#ERR GetInterface->bqPlayerPlay",result);
 
     // get the buffer queue interface
-    result = (*t->bqPlayerObject)->GetInterface(t->bqPlayerObject, SL_IID_BUFFERQUEUE,&bqPlayerBufferQueue);
+    result = (*AE->bqPlayerObject)->GetInterface(AE->bqPlayerObject, SL_IID_BUFFERQUEUE,&bqPlayerBufferQueue);
 	if (result!=SL_RESULT_SUCCESS) return audioerror("#ERR GetInterface->bqPlayerBufferQueue",result);
 
     // register callback on the buffer queue
-    result = (*bqPlayerBufferQueue)->RegisterCallback(bqPlayerBufferQueue, bqPlayerCallback, t);
+    result = (*bqPlayerBufferQueue)->RegisterCallback(bqPlayerBufferQueue, bqPlayerCallback, NULL);
 	if (result!=SL_RESULT_SUCCESS) return audioerror("#ERR RegisterCallback",result);
 
     // get the volume interface
-    result = (*t->bqPlayerObject)->GetInterface(t->bqPlayerObject, SL_IID_VOLUME, &t->bqPlayerVolume);
+    result = (*AE->bqPlayerObject)->GetInterface(AE->bqPlayerObject, SL_IID_VOLUME, &((AudioEngine*)AE)->bqPlayerVolume);
 	if (result!=SL_RESULT_SUCCESS) return audioerror("#ERR GetInterface->bqPlayerVolume",result);
-	sysPlayVolume(t);
+	sysPlayVolume();
 
     // set the player's state to playing
     result = (*bqPlayerPlay)->SetPlayState(bqPlayerPlay, SL_PLAYSTATE_PLAYING);
 	if (result!=SL_RESULT_SUCCESS) return audioerror("#ERR SetPlayState",result);
-	for (i=0;i<AUDIO_NB_BUFFERS;i++) (*bqPlayerBufferQueue)->Enqueue(bqPlayerBufferQueue, BIN_START(t->playBuffer), AUDIO_BUFFER);
+	for (i=0;i<AUDIO_NB_BUFFERS;i++) (*bqPlayerBufferQueue)->Enqueue(bqPlayerBufferQueue, BIN_START(AE->playBuffer), AUDIO_BUFFER);
 
 	return 0;
 }
@@ -262,52 +263,61 @@ int sysPlayStart(AudioEngine* t)
 
 //--------------------------------------------------------------------------
 #ifdef USE_ALSA	// LINUX
-int sysPlayVolume(AudioEngine* t)
+int sysPlayVolume()
 {
 	// on linux we should apply the master volume on each track before mixing
 	return 0;
 }
 //USE_ALSA
-int sysPlayStop(AudioEngine* t)	// called in the lock section t->lock
+int sysPlayStop()	// called in the lock section AE->lock
 {
 //PRINTF(LOG_DEV,"sysPlayStop\n");
-	snd_pcm_close(t->player);
-	t->player=NULL;
+	snd_pcm_close(AE->player);
+	AE->player=NULL;
 	return 0;
 }
 
 void* sysPlayAlsaThread(void* param)
 {
 	int err,k;
-	AudioEngine* t=(AudioEngine*)param;
 //	PRINTF(LOG_DEV,"nsamples=%d\n",nsamples);
-	while(t->player)
+	lockEnter(&MM.lock);	// required in case of gcCompact
+	while(1)
 	{
-		if ((err = snd_pcm_wait (t->player, -1)) < 0) {
+		snd_pcm_t* player;
+		player = AE->player;
+		if (!player) break;
+		lockLeave(&MM.lock);
+		err = snd_pcm_wait(player, -1);
+
+		lockEnter(&MM.lock);	// required in case of gcCompact
+		if (err < 0) {
 //			PRINTF(LOG_DEV, "poll failed (%s)\n", snd_strerror (err));
-			snd_pcm_prepare(t->player);
+			snd_pcm_prepare(AE->player);
 		}
-		if (!t->player) return NULL;	//possible if sysPlayStop occurs in another thread
-		k=snd_pcm_avail(t->player);
+		if (!AE->player) break; //possible if sysPlayStop occurs in another thread
+
+		k=snd_pcm_avail(AE->player);
 //			PRINTF(LOG_DEV,"k=%d\n",k);
 		if (k<0)
 		{
 //			PRINTF(LOG_DEV,"err %s\n",snd_strerror (k));
-			snd_pcm_prepare(t->player);
+			snd_pcm_prepare(AE->player);
 		}
 		else if (k>=AUDIO_SLICE)
 		{
-			lockEnter(&t->lock);
-			haudioPlayNextBuffer(t,BIN_START(t->playBuffer));
-			if (t->player) snd_pcm_writei(t->player, BIN_START(t->playBuffer), AUDIO_SLICE);
-			lockLeave(&t->lock);
+			lockEnter(&AELock);
+			haudioPlayNextBuffer(BIN_START(AE->playBuffer));
+			if (AE->player) snd_pcm_writei(AE->player, BIN_START(AE->playBuffer), AUDIO_SLICE);
+			lockLeave(&AELock);
 		}
-//		PRINTF(LOG_DEV,"cb\n");
+		//		PRINTF(LOG_DEV,"cb\n");
 	}
+	lockLeave(&MM.lock);
 	return NULL;
 }
 
-int sysPlayStart(AudioEngine* t)
+int sysPlayStart()
 {
 	int err,exact_rate;
 	snd_pcm_uframes_t exact_buffersize;
@@ -414,46 +424,47 @@ int sysPlayStart(AudioEngine* t)
 			snd_strerror (err));
 		goto cleanup;
 	}
-	t->player=handle;
-	hwThreadCreate(sysPlayAlsaThread,t);
+	AE->player=handle;
+	hwThreadCreate(sysPlayAlsaThread,NULL);
 	return 0;
 cleanup:
 	if (hw_params) snd_pcm_hw_params_free (hw_params);
 	if (handle) snd_pcm_close(handle);
 	return -1;
 }
-int sysAudioInit(AudioEngine* t)
+int sysAudioInit()
 {
 	return 0;
 }
 #endif	//USE_ALSA
 //--------------------------------------------------------------------------
 #ifdef USE_AUDIOTOOLBOX	// MACOS, IOS
-int sysPlayVolume(AudioEngine* t)
+int sysPlayVolume(void)
 {
-	float v=t->masterVolume;
-	if (t->playQueue) AudioQueueSetParameter(t->playQueue,kAudioQueueParam_Volume,v/65535.0f);
+	float v=AE->masterVolume;
+	if (AE->playQueue) AudioQueueSetParameter(AE->playQueue,kAudioQueueParam_Volume,v/65535.0f);
 	return 0;
 }
 
-int sysPlayStop(AudioEngine* t)	// called in the lock section t->lock
+int sysPlayStop(void)	// called in the lock section AE->lock
 {
-    	AudioQueueStop(t->playQueue,true);
-	AudioQueueDispose(t->playQueue,true);
+    AudioQueueStop(AE->playQueue,true);
+	AudioQueueDispose(AE->playQueue,true);
 	return 0;
 }
 
 static void sysPlayCb(void *user,AudioQueueRef queue,AudioQueueBufferRef buffer)
 {
-	AudioEngine* t=AE;
-	lockEnter(&t->lock);
-	haudioPlayNextBuffer(t,buffer->mAudioData);
+	lockEnter(&MM.lock);	// required in case of gcCompact
+	lockEnter(&AELock);
+	haudioPlayNextBuffer(buffer->mAudioData);
 	buffer->mAudioDataByteSize = AUDIO_BUFFER;
 	AudioQueueEnqueueBuffer(queue,buffer,0,NULL);
-	lockLeave(&t->lock);
+	lockLeave(&AELock);
+	lockLeave(&MM.lock);
 }
 
-int sysPlayStart(AudioEngine* t)
+int sysPlayStart(void)
 {
 	int i;
 	AudioStreamBasicDescription audioFormat;
@@ -469,45 +480,44 @@ int sysPlayStart(AudioEngine* t)
 	audioFormat.mChannelsPerFrame=AUDIO_CHANNELS;
 	audioFormat.mBitsPerChannel=AUDIO_VALUE*8;
 	
-	AudioQueueNewOutput(&audioFormat,sysPlayCb,t,NULL,kCFRunLoopCommonModes,0,&t->playQueue);
-	sysPlayVolume(t);
-//	PRINTF(LOG_DEV,"sysPlayStart masterVolume=%x\n", t->masterVolume);
+	AudioQueueNewOutput(&audioFormat,sysPlayCb,NULL,NULL,kCFRunLoopCommonModes,0,(AudioQueueRef*)&AE->playQueue);
+	sysPlayVolume();
+//	PRINTF(LOG_DEV,"sysPlayStart masterVolume=%x\n", AE->masterVolume);
 
 	for(i=0;i<AUDIO_NB_BUFFERS;i++)
 	{
-		AudioQueueAllocateBuffer(t->playQueue,AUDIO_BUFFER,&buffer);
+		AudioQueueAllocateBuffer(AE->playQueue,AUDIO_BUFFER,&buffer);
 		memset(buffer->mAudioData,AUDIO_ZERO_VALUE,AUDIO_BUFFER);
 		buffer->mAudioDataByteSize = AUDIO_BUFFER;
-		AudioQueueEnqueueBuffer(t->playQueue,buffer,0,NULL);
+		AudioQueueEnqueueBuffer(AE->playQueue,buffer,0,NULL);
 	}
-	AudioQueueStart(t->playQueue,NULL);
+	AudioQueueStart(AE->playQueue,NULL);
 	return 0;
 }
-int sysAudioInit(AudioEngine* t)
+int sysAudioInit(void)
 {
 	return 0;
 }
 #endif	// USE_AUDIOTOOLBOX
 //--------------------------------------------------------------------------
 #ifdef USE_AUDIO_ENGINE	// WINDOWS
-int sysPlayVolume(AudioEngine* t)
+int sysPlayVolume()
 {
-	int masterVolume= (t->masterVolume << 16) + t->masterVolume;
-	waveOutSetVolume(t->hWaveOut,masterVolume);
+	int masterVolume= (AE->masterVolume << 16) + AE->masterVolume;
+	waveOutSetVolume(AE->hWaveOut,masterVolume);
 	return 0;
 }
 
-int sysPlayStop(AudioEngine* t)	// called in the lock section t->lock
+int sysPlayStop()	// called in the lock section AE->lock
 {
 	//	PRINTF(LOG_DEV,"sysPlayStop\n");
 	AudioPlaySerial++;
-	waveOutClose(t->hWaveOut);
+	waveOutClose(AE->hWaveOut);
 	return 0;
 }
 
 void CALLBACK waveOutProc(HWAVEOUT m_hWO, UINT uMsg, DWORD_PTR dwInstance, DWORD_PTR dwParam1, DWORD_PTR dwParam2)
 {
-	AudioEngine* t = (AudioEngine*)dwInstance;
 	if (uMsg == WOM_DONE)
 	{
 		LPWAVEHDR lpWaveHdr = (LPWAVEHDR)dwParam1;
@@ -522,13 +532,15 @@ void CALLBACK waveOutProc(HWAVEOUT m_hWO, UINT uMsg, DWORD_PTR dwInstance, DWORD
 			GlobalFree(ha->hWaveHdr);
 			return;
 		}
-		lockEnter(&t->lock);
-		haudioPlayNextBuffer(t, lpWaveHdr->lpData);
-		waveOutWrite(t->hWaveOut, lpWaveHdr, sizeof(WAVEHDR));
-		lockLeave(&t->lock);
+		lockEnter(&MM.lock);	// required in case of gcCompact
+		lockEnter(&AELock);
+		haudioPlayNextBuffer(lpWaveHdr->lpData);
+		waveOutWrite(AE->hWaveOut, lpWaveHdr, sizeof(WAVEHDR));
+		lockLeave(&AELock);
+		lockLeave(&MM.lock);
 	}
 }
-int sysPlayStart(AudioEngine* t)
+int sysPlayStart()
 {
 	UINT wResult;
 	PCMWAVEFORMAT pcmWaveFormat;
@@ -541,15 +553,15 @@ int sysPlayStart(AudioEngine* t)
 	pcmWaveFormat.wf.nBlockAlign = AUDIO_BYTES_PER_SAMPLE;
 	pcmWaveFormat.wBitsPerSample = AUDIO_VALUE*8;
 
-	wResult = waveOutOpen((LPHWAVEOUT)&t->hWaveOut, WAVE_MAPPER, (LPWAVEFORMATEX)&pcmWaveFormat, (DWORD_PTR)waveOutProc, (DWORD_PTR)t, CALLBACK_FUNCTION);
+	wResult = waveOutOpen((LPHWAVEOUT)&AE->hWaveOut, WAVE_MAPPER, (LPWAVEFORMATEX)&pcmWaveFormat, (DWORD_PTR)waveOutProc, (DWORD_PTR)NULL, CALLBACK_FUNCTION);
 	if (wResult != 0)	return -1;
-	sysPlayVolume(t);
-//	PRINTF(LOG_DEV,"sysPlayStart masterVolume=%x\n", t->masterVolume);
+	sysPlayVolume();
+//	PRINTF(LOG_DEV,"sysPlayStart masterVolume=%x\n", AE->masterVolume);
 	for (i = 0; i < AUDIO_NB_BUFFERS; i++)
 	{
 		HPSTR lpData;
 		LPWAVEHDR lpWaveHdr;
-		HAudioBuf* ha = &t->audioBuffers[i];
+		HAudioBuf* ha = &AE->audioBuffers[i];
 		ha->serial = AudioPlaySerial;
 		ha->hData = GlobalAlloc(GMEM_MOVEABLE | GMEM_SHARE, AUDIO_BUFFER);
 		if (!ha->hData) return -1;
@@ -566,30 +578,30 @@ int sysPlayStart(AudioEngine* t)
 		lpWaveHdr->dwUser = (DWORD_PTR)ha;
 		lpWaveHdr->dwFlags = 0L;
 		lpWaveHdr->dwLoops = 1L;
-		wResult = waveOutPrepareHeader(t->hWaveOut, lpWaveHdr, sizeof(WAVEHDR));
+		wResult = waveOutPrepareHeader(AE->hWaveOut, lpWaveHdr, sizeof(WAVEHDR));
 		if (wResult != 0) return -1;
 		memset(lpData, AUDIO_ZERO_VALUE, AUDIO_BUFFER);
-		wResult = waveOutWrite(t->hWaveOut, lpWaveHdr, sizeof(WAVEHDR));
+		wResult = waveOutWrite(AE->hWaveOut, lpWaveHdr, sizeof(WAVEHDR));
 	}
 	return 0;
 }
 
-int sysAudioInit(AudioEngine* t)
+int sysAudioInit()
 {
 	return 0;
 }
 #endif	// USE_AUDIO_ENGINE
 //--------------------------------------------------------------------------
 
-// haudioPlayStop is only called by haudioPlayNextBuffer, and therefore in the lock section t->lock
-int haudioPlayStop(AudioEngine* t)
+// haudioPlayStop is only called by haudioPlayNextBuffer, and therefore in the lock section AE->lock
+int haudioPlayStop(void)
 {
-	//LOGI("haudioPlayStop %d\n",t->playing);
+	//LOGI("haudioPlayStop %d\n",AE->playing);
 	//PRINTF(LOG_DEV,"#################playstop\n");
-	if (t->playing)
+	if (AE->playing)
 	{
-		t->playing = 0;
-		sysPlayStop(t);
+		AE->playing = 0;
+		sysPlayStop();
 		internalPoke();
 	}
 	return 0;
@@ -605,13 +617,13 @@ void haudioMix(short* out, short* in, int vol, int n)
 		int s = in[i];
 		s = (s * vol) >> 8;
 		v += s;
-		if (v > 0x7ffff) v = 0x7fff;
-		if (v < -0x7ffff) v = -0x7fff;
+		if (v > 0x7fff) v = 0x7fff;
+		if (v < -0x7fff) v = -0x7fff;
 		out[i] = v;
 	}
 }
 
-int haudioPlayNextBuffer(AudioEngine* t, char* output)
+int haudioPlayNextBuffer(char* output)
 {
 	short* out = (short*)output;
 	AudioSound* snd;
@@ -619,19 +631,19 @@ int haudioPlayNextBuffer(AudioEngine* t, char* output)
 	memset(output, 0, AUDIO_BUFFER);
 //	PRINTF(LOG_DEV,"\nplay %d ", AUDIO_SLICE);
 
-	snd = t->sounds;
+	snd = AE->sounds;
 #ifdef WITH_AUTO_STOP
     // audio device startup may be slow and slightly freezing
 	if (!snd)
 	{
-		t->noSound++;
-		//		PRINTF(LOG_DEV,"nosound %d",t->noSound);
+		AE->noSound++;
+		//		PRINTF(LOG_DEV,"nosound %d",AE->noSound);
 #ifndef USE_OPENSLES
-		if (t->noSound > 20) haudioPlayStop(t);	// we close only after a certain time of inactivity
+		if (AE->noSound > 20) haudioPlayStop();	// we close only after a certain time of inactivity
 #endif
 		return 0;
 	}
-	t->noSound = 0;
+	AE->noSound = 0;
 #endif
     while (snd)
 	{
@@ -644,45 +656,56 @@ int haudioPlayNextBuffer(AudioEngine* t, char* output)
 			//			printf("mix %llx %d %d %d\n", snd->buffer, snd->i, snd->len, nbToPlay);
 			haudioMix(out, &buffer[snd->i * AUDIO_CHANNELS], snd->volume, nbToPlay * AUDIO_CHANNELS);
 			snd->i += nbToPlay;
-			if ((snd->i >= snd->len) && (snd->loop >= 0))
-			{
-				int nbToPlay2 = AUDIO_SLICE - nbToPlay;
-				snd->i = snd->loop;
-				haudioMix(&out[nbToPlay * AUDIO_CHANNELS], &buffer[snd->i * AUDIO_CHANNELS], snd->volume, nbToPlay2 * AUDIO_CHANNELS);
-				snd->i += nbToPlay2;
+			if (snd->i >= snd->len) {
+				if (snd->loop >= 0)
+				{
+					int nbToPlay2 = AUDIO_SLICE - nbToPlay;
+					snd->i = snd->loop;
+					haudioMix(&out[nbToPlay * AUDIO_CHANNELS], &buffer[snd->i * AUDIO_CHANNELS], snd->volume, nbToPlay2 * AUDIO_CHANNELS);
+					snd->i += nbToPlay2;
+				}
+				else snd->i = -1;
 			}
 		}
 		snd = snd->next;
 	}
+	return 0;
+}
 
-	snd = t->sounds;
-	t->sounds = NULL;
+// purge the list of sounds
+// must be called only from the main thread
+void haudioPurge(void)
+{
+	AudioSound* snd;
+	lockEnter(&AELock);
+	snd = AE->sounds;
+	AE->sounds = NULL;
 	while (snd)
 	{
 		AudioSound* next = snd->next;
 		if ((snd->i < snd->len) && (snd->i >= 0))
 		{
-			snd->next = t->sounds;
-			t->sounds = snd;
+			snd->next = AE->sounds;
+			AE->sounds = snd;
+			MEMORY_MARK(snd);
 		}
 		snd = next;
 	}
-	return 0;
+	lockLeave(&AELock);
 }
-
-int haudioPlayStart(AudioEngine* t)
+int haudioPlayStart(void)
 {
 //    printf("haudioPlayStart\n");
-	if (!t->playBuffer) {
-		t->playBuffer = memoryAllocBin(NULL, AUDIO_BUFFER, DBG_BIN); if (!t->playBuffer) return -1;
+	if (!AE->playBuffer) {
+		AE->playBuffer = memoryAllocBin(NULL, AUDIO_BUFFER, DBG_BIN); if (!AE->playBuffer) return -1;
 	}
-	memset(BIN_START(t->playBuffer), AUDIO_ZERO_VALUE, AUDIO_BUFFER);
+	memset(BIN_START(AE->playBuffer), AUDIO_ZERO_VALUE, AUDIO_BUFFER);
 
-	t->noSound = 0;
-	if (sysPlayStart(t)) return -1;
+	AE->noSound = 0;
+	if (sysPlayStart()) return -1;
 
-	t->playing = 1;
-	t->playTimer = -1;
+	AE->playing = 1;
+	AE->playTimer = -1;
 	return 0;
 }
 int fun_soundStart(Thread* th)
@@ -709,13 +732,15 @@ int fun_soundStart(Thread* th)
 	as->i = 0;
 	as->loop = loopIsNil ? -1 : loop;
 	if (as->loop > as->len) as->loop = -1;
-	lockEnter(&AE->lock);
+	haudioPurge();
+	lockEnter(&AELock);
     startNow = AE->playing?0:1;
 	as->next = AE->sounds;
+	MEMORY_MARK(as->next);
 	AE->sounds = as;
-	lockLeave(&AE->lock);
+	lockLeave(&AELock);
 
-	if (startNow) haudioPlayStart(AE);
+	if (startNow) haudioPlayStart();
 	FUN_RETURN_PNT((LB*)as)
 }
 int fun_soundAbort(Thread* th)
@@ -747,6 +772,15 @@ int fun_soundSetVolume(Thread* th)
 
 int fun_soundPlaying(Thread* th)
 {
+	AudioSound* as = (AudioSound*)STACK_PNT(th, 0);
+	if (!as) FUN_RETURN_NIL;
+	FUN_RETURN_BOOL((as->i >=0));
+}
+
+
+int fun_audioPlaying(Thread* th)
+{
+	haudioPurge();
 	FUN_RETURN_BOOL(AE->sounds);
 }
 
@@ -756,16 +790,19 @@ int fun_soundAbort(Thread* th) FUN_RETURN_NIL
 int fun_soundPosition(Thread* th) FUN_RETURN_NIL
 int fun_soundSetVolume(Thread* th) FUN_RETURN_NIL
 int fun_soundPlaying(Thread* th) FUN_RETURN_NIL
+int fun_audioPlaying(Thread* th) FUN_RETURN_NIL
 #endif	//WITH_AUDIO
-int coreAudioInit(Pkg *system)
+int systemAudioInit(Pkg *system)
 {
 	pkgAddType(system, "Sample");
 	static const Native nativeDefs[] = {
 		{ NATIVE_FUN, "soundStart", fun_soundStart, "fun Str Float Int -> Sample"},
+		{ NATIVE_FUN, "soundStartBytes", fun_soundStart, "fun Bytes Float Int -> Sample"},
 		{ NATIVE_FUN, "soundAbort", fun_soundAbort, "fun Sample -> Sample" },
 		{ NATIVE_FUN, "soundPosition", fun_soundPosition, "fun Sample -> Int" },
 		{ NATIVE_FUN, "soundSetVolume", fun_soundSetVolume, "fun Sample Float -> Sample" },
-		{ NATIVE_FUN, "soundPlaying", fun_soundPlaying, "fun -> Bool" },
+		{ NATIVE_FUN, "soundPlaying", fun_soundPlaying, "fun Sample -> Bool" },
+		{ NATIVE_FUN, "audioPlaying", fun_audioPlaying, "fun -> Bool" },
 	};
 	NATIVE_DEF(nativeDefs);
 #ifdef WITH_AUDIO
@@ -774,11 +811,11 @@ int coreAudioInit(Pkg *system)
 	AE->playBuffer = NULL;
 	AE->noSound = 0;
 
-	AE->masterVolume = 0x8000;
+	AE->masterVolume = 0xc000;
 	AE->playing = 0;
-	lockCreate(&AE->lock);
+	lockCreate(&AELock);
 	memoryAddRoot((LB*)AE);
-	sysAudioInit(AE);
+	sysAudioInit();
 #endif
 
 	return 0;

@@ -37,20 +37,29 @@ typedef double LFLOAT;
 void cMallocInit();
 void* bmmMalloc(LINT size);
 void bmmFree(void* block);
-void* bmmRegularMalloc(LINT size);
-void bmmRegularFree(void* block);
 void bmmRebuildTree(void);
-LINT bmmMaxSize(void);
 void bmmDump(void);
 void bmmMayday(void);
 LINT bmmReservedMem(void);
 
 void bmmSetTotalSize(LINT size);
-LINT bmmTotalSize();
+char* bmmAllocForEver(LINT size);
+extern LINT BmmTotalSize;
+extern LINT BmmMaxSize;
+extern LINT BmmTotalFree;
+LINT bmmCompact(void);
 #define VM_MALLOC bmmMalloc
 #define VM_FREE bmmFree
-#define REGULAR_MALLOC bmmRegularMalloc
-#define REGULAR_FREE bmmRegularFree
+
+typedef struct BMM BMM;
+
+struct BMM {
+	LINT sizeAndType;
+	BMM* left;
+	BMM* right;
+	BMM* next;
+};
+
 #else
 #ifdef ON_ESP32
 void* VM_MALLOC(long long x);
@@ -58,8 +67,6 @@ void VM_FREE(void* x);
 #else
 #define VM_MALLOC malloc
 #define VM_FREE free
-#define REGULAR_MALLOC malloc
-#define REGULAR_FREE free
 #endif
 #endif
 
@@ -75,6 +82,8 @@ void VM_FREE(void* x);
 #define MSB24(x) ((((x)>>16)&0xff)+((x)&0xff00)+(((x)&0xff)<<16))
 #define LSBL(x) ((x)&0xffffffff)
 #define MSBL(x) ((((x)>>24)&0xff)+((((x)>>8)&0xff00)+(((x)&0xff00)<<8))+(((x)&0xff)<<24))
+#define LSB64(x) (x)
+#define MSB64(x) (((x&0xff)<<56)|((x&0xff00)<<40)|((x&0xff0000)<<24)|((x&0xff000000)<<8)|((x>>8)&0xff000000)|((x>>24)&0xff0000)|((x>>40)&0xff00)|((x>>56)&0xff))
 #else
 #define LSBW(x) ((((x)>>8)&255)+(((x)&255)<<8))
 #define MSBW(x) ((x)&0xffff)
@@ -82,6 +91,8 @@ void VM_FREE(void* x);
 #define MSB24(x) ((x)&0xffffff)
 #define LSBL(x) ((((x)>>24)&0xff)+((((x)>>8)&0xff00)+(((x)&0xff00)<<8))+(((x)&0xff)<<24))
 #define MSBL(x) ((x)&0xffffffff)
+#define LSB64(x) (((x&0xff)<<56)|((x&0xff00)<<40)|((x&0xff0000)<<24)|((x&0xff000000)<<8)|((x>>8)&0xff000000)|((x>>24)&0xff0000)|((x>>40)&0xff00)|((x>>56)&0xff))
+#define MSB64(x) (x)
 #endif
 
 
@@ -92,6 +103,8 @@ typedef struct Def Def;
 typedef struct Buffer Buffer;
 typedef struct Type Type;
 typedef struct LB LB;
+typedef struct Oblivion Oblivion;
+
 typedef struct Mem Mem;
 typedef struct Locals Locals;
 typedef struct Compiler Compiler;
@@ -109,14 +122,28 @@ struct LB
 	LW data[1];
 };
 
+struct Oblivion
+{
+	LB header;
+	FORGET forget;
+	MARK mark;
+
+	LB* f;	// function to call when oblivioned
+	Oblivion* listNext;	// list to watch by GC, no mark
+	Oblivion* popNext;	// list of oblivioned function to call
+};
+
 typedef struct {
 	MTHREAD_ID mainThread;
 	Thread* scheduler;
 	Thread* tmpStack;
+	MLOCK lock;
 	LB* USEFUL;
 	LB* USELESS;
 	LB* roots;
 	LB* tmpRoot;
+	Oblivion* popOblivions;
+	Oblivion* listOblivions;
 
 	LINT fastAlloc;
 	LINT step;	// GC step (0/1/2)
@@ -124,8 +151,7 @@ typedef struct {
 	LB *listBlocks;
 	LB *listCheck;
 	LB *listFast;
-
-	MLOCK lock;
+	LINT updating;
 
 	Thread* listThreads;
 	Pkg* listPkgs;
@@ -134,21 +160,21 @@ typedef struct {
 	LINT blocs_nb;
 	LINT blocs_length;
 
-	LINT gc_period;
 	LINT gc_nb0;
-	LINT gc_length0;
-	LINT gc_time;
 	LINT gc_free;
 	LINT gc_count;
-	LINT gc_totalCount;
+	LINT gc_period;
+	LINT gc_period_counter;
+	LINT gc_period_time;
 
 	Pkg* system;
 	LB * _true;
 	LB * _false;
+	LB* _loopMark;
+	LB* _throwMark;
 
 	LB* ansiVolume;
 	LB* romdiskVolume;
-	LB* uefiVolume;
 	LB* partitionsFS;
 
 	Buffer* tmpBuffer;
@@ -201,7 +227,9 @@ extern Memory MM;
 
 typedef int (*NATIVE)(Thread*);
 
-#define GC_PERIOD 20
+#define GC_PERIOD_START 20
+#define GC_PERIOD_COUNT 1000
+
 #ifndef MEMORY_SAFE_SIZE
 #define MEMORY_SAFE_SIZE (1024*1024*16)
 #endif
@@ -214,9 +242,23 @@ typedef int (*NATIVE)(Thread*);
 #define _USEFUL (LB*)(2)
 #define _USELESS (LB*)(3)
 
-//void checkPointer(LINT p);
-//#define MEMORY_MARK(p) { checkPointer((LINT)(p)); if ((p) && (((LB*)(p))->lifo==MM.USELESS)) {((LB*)(p))->lifo=MM.lifo; MM.lifo=(LB*)(p); } }
-#define MEMORY_MARK(p) { if ((p) && (((LB*)(p))->lifo==MM.USELESS)) {((LB*)(p))->lifo=MM.lifo; MM.lifo=(LB*)(p); } }
+#define BLOCK_MARK(p) { if ((p) && (((LB*)(p))->lifo==MM.USELESS)) {((LB*)(p))->lifo=MM.lifo; MM.lifo=(LB*)(p); } }
+
+#ifdef USE_MEMORY_C
+int checkPointer(LINT p);
+LINT relativePointer(LB* p);
+int checkListPointer(char* title, LB* p);
+
+#define MEMORY_MARK(p) { if (p) {	\
+		if (MM.updating) *(LB**)(&(p)) = ((LB*)(p))->lifo; \
+		else if (((LB*)(p))->lifo == MM.USELESS) {((LB*)(p))->lifo = MM.lifo; MM.lifo = (LB*)(p); } \
+} }
+#else
+#define MEMORY_MARK(p) { if (p) {	\
+		if (MM.updating) *(LB**)(&(p)) = ((LB*)(p))->lifo; \
+		else if (((LB*)(p))->lifo == MM.USELESS) {((LB*)(p))->lifo = MM.lifo; MM.lifo = (LB*)(p); } \
+} }
+#endif
 
 #define NATIVE_FORGET 0
 #define NATIVE_MARK 1
@@ -269,7 +311,7 @@ typedef int (*NATIVE)(Thread*);
 	char memType=type;	\
 	((char*)p)[sizeof(LB)+HEADER_SIZE(p)+ memI]= memType; \
 	(p)->data[1+ memI]=memVal; \
- 	if (memType ==VAL_TYPE_PNT) MEMORY_MARK(PNT_FROM_VAL(memVal)); \
+ 	if (memType ==VAL_TYPE_PNT) BLOCK_MARK(PNT_FROM_VAL(memVal)); \
 }
 #define ARRAY_SET_TYPE_NO_MARK(p,i,v,type) \
 { \
@@ -303,7 +345,7 @@ typedef int (*NATIVE)(Thread*);
 	int memType=type; \
 	memVal=(memVal&-4)|type;	\
 	(p)->data[1+(i)]=(LW)memVal; \
- 	if (memType==VAL_TYPE_PNT) MEMORY_MARK(PNT_FROM_VAL((LW)memVal)); \
+ 	if (memType==VAL_TYPE_PNT) BLOCK_MARK(PNT_FROM_VAL((LW)memVal)); \
 }
 #define ARRAY_SET_TYPE_NO_MARK(p,i,v,type) \
 { \
@@ -355,7 +397,8 @@ typedef int (*NATIVE)(Thread*);
 #define DBG_FIFO VAL_FROM_DEBUG(18)
 #define DBG_FUN VAL_FROM_DEBUG(19)
 #define DBG_SOCKET VAL_FROM_DEBUG(20)
-#define DBG_HASHSET VAL_FROM_DEBUG(22)
+#define DBG_HASHSET VAL_FROM_DEBUG(21)
+#define DBG_OBLIVION VAL_FROM_DEBUG(22)
 
 void memoryInit(int argc, const char** argv);
 int memoryEnd(void);
@@ -376,6 +419,8 @@ LB* memoryAllocExt(LINT sizeofExt,LW dbg,FORGET forget,MARK mark);
 LB* memoryAllocStr(char* src, LINT size);
 LB* memoryAllocBin(char* src, LINT size, LW dbg);
 LB* memoryAllocFromBuffer(Buffer * b);
+
+int memoryTry(LINT size);
 
 int memoryIsMainThread(void);
 

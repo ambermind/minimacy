@@ -82,15 +82,17 @@ struct Def
 	LB* instances;
 	Parser* parser;
 	LW val;
-	char valType;
-	char proto;
-	char tagged;
-	char public;
+	Def* parent;
+
 	int parserIndex;
 
 	short dI;	// derived index
 	short dCI;	// derived child index
-	Def* parent;
+
+	char valType;
+	char proto;
+	char tagged;
+	char public;
 };
 
 #define PKG_FROM_IMPORT 0
@@ -177,5 +179,7 @@ Def* pkgAddCons0(Pkg* pkg, char* name, Def* defType);
 
 void systemInit(Pkg *system);
 void systemTerminate(void);
-int sysSerialInit(Pkg* system);
+
+int hostOnlyFunctionsInit(Pkg* system);
+
 #endif

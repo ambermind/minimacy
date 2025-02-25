@@ -98,16 +98,7 @@
     <ClCompile Include="..\..\src\crypto_des.c">
       <Filter>Source Files\src</Filter>
     </ClCompile>
-    <ClCompile Include="..\..\src\crypto_md5.c">
-      <Filter>Source Files\src</Filter>
-    </ClCompile>
     <ClCompile Include="..\..\src\crypto_rc4.c">
-      <Filter>Source Files\src</Filter>
-    </ClCompile>
-    <ClCompile Include="..\..\src\crypto_sha1.c">
-      <Filter>Source Files\src</Filter>
-    </ClCompile>
-    <ClCompile Include="..\..\src\crypto_sha2.c">
       <Filter>Source Files\src</Filter>
     </ClCompile>
     <ClCompile Include="..\..\src\hw.c">
@@ -132,9 +123,6 @@
       <Filter>Source Files\src</Filter>
     </ClCompile>
     <ClCompile Include="..\..\src\hw_time.c">
-      <Filter>Source Files\src</Filter>
-    </ClCompile>
-    <ClCompile Include="..\..\src\main.c">
       <Filter>Source Files\src</Filter>
     </ClCompile>
     <ClCompile Include="..\..\src\system.c">
@@ -257,6 +245,12 @@
     <ClCompile Include="..\..\src\system_serial.c">
       <Filter>Source Files\src</Filter>
     </ClCompile>
+    <ClCompile Include="..\..\src\minimacy.c">
+      <Filter>Source Files\src</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\crypto_hash.c">
+      <Filter>Source Files\src</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="resource.h">
@@ -286,16 +280,7 @@
     <ClInclude Include="..\..\src\crypto_des.h">
       <Filter>Source Files\src</Filter>
     </ClInclude>
-    <ClInclude Include="..\..\src\crypto_md5.h">
-      <Filter>Source Files\src</Filter>
-    </ClInclude>
     <ClInclude Include="..\..\src\crypto_rc4.h">
-      <Filter>Source Files\src</Filter>
-    </ClInclude>
-    <ClInclude Include="..\..\src\crypto_sha1.h">
-      <Filter>Source Files\src</Filter>
-    </ClInclude>
-    <ClInclude Include="..\..\src\crypto_sha2.h">
       <Filter>Source Files\src</Filter>
     </ClInclude>
     <ClInclude Include="..\..\src\hw.h">
@@ -389,6 +374,9 @@
       <Filter>Source Files\src</Filter>
     </ClInclude>
     <ClInclude Include="..\..\src\util_2d_const.h">
+      <Filter>Source Files\src</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\src\crypto_hash.h">
       <Filter>Source Files\src</Filter>
     </ClInclude>
   </ItemGroup>
@@ -651,9 +639,6 @@
     <None Include="..\..\programs\boot.mcy">
       <Filter>Mcy\programs</Filter>
     </None>
-    <None Include="..\..\programs\demo\demo.fun.boing3.mcy">
-      <Filter>Mcy\programs\demo</Filter>
-    </None>
     <None Include="..\..\programs\demo\demo.fun.mandelbrot.mcy">
       <Filter>Mcy\programs\demo</Filter>
     </None>
@@ -667,6 +652,24 @@
       <Filter>Mcy\programs\demo</Filter>
     </None>
     <None Include="..\..\programs\demo\demo.2d.qrcode.mcy">
+      <Filter>Mcy\programs\demo</Filter>
+    </None>
+    <None Include="..\..\rom\core\core.net.ipOverEth.mcy">
+      <Filter>Mcy\rom\core</Filter>
+    </None>
+    <None Include="..\..\rom\core\core.storage.romdisk.mcy">
+      <Filter>Mcy\rom\core</Filter>
+    </None>
+    <None Include="..\..\rom\core\core.storage.fat32.mcy">
+      <Filter>Mcy\rom\core</Filter>
+    </None>
+    <None Include="..\..\rom\core\core.storage.format.mcy">
+      <Filter>Mcy\rom\core</Filter>
+    </None>
+    <None Include="..\..\rom\core\core.util.cache.mcy">
+      <Filter>Mcy\rom\core</Filter>
+    </None>
+    <None Include="..\..\programs\demo\demo.fun.boing.mcy">
       <Filter>Mcy\programs\demo</Filter>
     </None>
   </ItemGroup>

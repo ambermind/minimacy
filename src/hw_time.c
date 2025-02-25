@@ -33,6 +33,10 @@ LINT hwTimeMs(void)
 	return (LINT)p;
 
 }
+void hwSleepMs(LINT ms)
+{
+	Sleep((DWORD)ms);
+}
 void hwTimeInit()
 {
 	long long p;
@@ -56,6 +60,14 @@ LINT hwTimeMs(void)
 	gettimeofday(&tm, NULL);
 	t = (tm.tv_sec * 1000) + (tm.tv_usec / 1000);
 	return t;
+}
+void hwSleepMs(LINT ms)
+{
+	struct timeval tm;
+	int d = (int)ms;
+	tm.tv_sec = d / 1000;
+	tm.tv_usec = (int)((d - (1000 * tm.tv_sec)) * 1000);
+	select(1, NULL, NULL, NULL, &tm);
 }
 void hwTimeInit(void)
 {

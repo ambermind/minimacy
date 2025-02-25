@@ -53,7 +53,7 @@ fun ifSelect cbSelect cbRead=
 	let ethList ->el in
 	let listFind el (lambda [index name family mac maxPacket ip]= call cbSelect index name family mac maxPacket ip) -> [index name family mac maxPacket ip] in
 	(
-		echoLn ["use " index ": " name " mac=" (strFromMac mac) " maxPacket=" maxPacket];
+		echoLn ["> use " index ": " name " mac=" (strFromMac mac) " maxPacket=" maxPacket];
 		ifSet index name mac maxPacket cbRead;
 		true
 	);;
