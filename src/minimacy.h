@@ -11,7 +11,7 @@
 #ifndef _MINIMACY_
 #define _MINIMACY_
 
-#define VERSION_MINIMACY "1.3.6"
+#define VERSION_MINIMACY "1.3.7"
 
 #ifdef ON_WINDOWS____
 #undef ON_WINDOWS
@@ -181,6 +181,17 @@
 #define GROUP_RP2350
 #endif
 
+#ifdef ON_ADAFRUIT_FEATHER_RP2350_PSRAM
+#define DEVICE_MODE "AdafruitFeatherRP2350"
+#define FLASH_SIZE (1024 * 1024 * 8)
+#define USE_PSRAM
+#define MEMORY_C_START (char *)0x11000000
+#define MEMORY_SAFE_SIZE (512 * 1024)
+//#define MEMORY_C_SIZE (1024 * 472)
+//#define MEMORY_SAFE_SIZE (32 * 1024)
+#define GROUP_RP2350
+#endif
+
 #ifdef ON_PICO_2
 #define DEVICE_MODE "Pico2"
 #define FLASH_SIZE (1024 * 1024 * 4)
@@ -264,18 +275,6 @@ extern volatile unsigned char _end;
 // #define NEED_ALIGN
 #endif
 
-#ifdef GROUP_BAREMETAL
-#define USE_THREAD_STUB
-#define USE_MEMORY_C
-#define USE_TYPES_C
-#define USE_MATH_C
-#define USE_STR_C
-#define USE_MINMAX_C
-#define USE_SOCKET_STUB
-#define HIDE_COMPILER_LISTING
-#define FORGET_PARSER
-#endif
-
 #ifdef ON_UNIX_X11GL
 #define ON_UNIX
 #define WITH_UI
@@ -292,6 +291,29 @@ extern volatile unsigned char _end;
 #define USE_X11
 #define USE_ALSA
 #define USE_ETH_UNIX
+#endif
+
+#ifdef ON_UNIX_BM
+#define DEVICE_MODE "UnixBareMetal"
+#define GROUP_BAREMETAL
+#define MEMORY_C_SIZE (1024 * 1024 * 128)
+#define USE_ETH_STUB
+#define USE_SERIAL_STUB
+#define USE_STDARG_ANSI
+#define USE_RANDOM_C
+#define USE_TIME_ANSI
+//#define USE_TIME_STUB
+#define USE_TIME_MS_ANSI
+//#define USE_TIME_MS_STUB
+#define USE_ETH_STUB
+#define USE_FS_ROMDISK0 "../baremetal/nothing/nothing_romdisk0.h"
+#define USE_FS_SYSTEMDIR_STUB
+#define USE_SERIAL_STUB
+#define USE_CONSOLE_OUT_ANSI
+#define USE_CONSOLE_IN_STUB
+
+#define NEED_ALIGN
+
 #endif
 
 #ifdef ON_RPIOS
@@ -374,6 +396,18 @@ extern volatile unsigned char _end;
 #define USE_GLES
 #define USE_OPENSLES
 #define USE_ETH_STUB
+#endif
+
+#ifdef GROUP_BAREMETAL
+#define USE_THREAD_STUB
+#define USE_MEMORY_C
+#define USE_TYPES_C
+#define USE_MATH_C
+#define USE_STR_C
+#define USE_MINMAX_C
+#define USE_SOCKET_STUB
+#define HIDE_COMPILER_LISTING
+#define FORGET_PARSER
 #endif
 
 #ifdef GROUP_UNIX

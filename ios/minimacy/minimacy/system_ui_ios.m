@@ -129,7 +129,7 @@ void sendEvent(int c, int x, int y, int v);
 // ---------------------------------
 - (id)initWithCoder:(NSCoder *)decoder
 {
-    NSLog(@"initWithCoder");
+//    NSLog(@"initWithCoder");
     self = [super initWithCoder:decoder];
     UI=self;
     keyboardHeight=0;
@@ -143,7 +143,7 @@ void sendEvent(int c, int x, int y, int v);
     h=(int)bounds.size.height;
 
 //    CGRect bounds=[[UIScreen mainScreen] nativeBounds];
-    printf("view bounds %fx%f %f\n",bounds.size.width,bounds.size.height,scale);
+//    printf("view bounds %fx%f %f\n",bounds.size.width,bounds.size.height,scale);
     self.context = [[EAGLContext alloc] initWithAPI:kEAGLRenderingAPIOpenGLES2];
 
     [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(keyboardWasShown:) name:UIKeyboardDidShowNotification object:nil];

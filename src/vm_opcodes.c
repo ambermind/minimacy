@@ -16,7 +16,7 @@ struct BytecodeOps {
 };
 
 const struct BytecodeOps BytecodeDef[OPCODE_NB] = {
-
+{OPabort, 0, "abort"},
 {OPabs, 0, "abs"},
 {OPabsf, 0, "absf"},
 {OPacos, 0, "acos"},
@@ -134,7 +134,6 @@ const struct BytecodeOps BytecodeDef[OPCODE_NB] = {
 {OPtanh, 0, "tanh"},
 {OPtfc, 0, "tfc"},
 {OPtfcb, 1, "tfc.b"},
-{OPthrow, 0, "throw"},
 {OPtl, 0, "tail"},
 {OPtroff, 0, "troff"},
 {OPtron, 0, "tron"},
@@ -142,7 +141,6 @@ const struct BytecodeOps BytecodeDef[OPCODE_NB] = {
 {OPtry, BC_JUMP_SIZE, "try"},
 {OPupdt, 0, "updt"},
 {OPupdtb, 1, "updt.b"},
-
 };
 void opcodePrint(int msk,LINT op,char* p,LINT ind0)
 {

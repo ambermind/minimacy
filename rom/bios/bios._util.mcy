@@ -265,5 +265,6 @@ fun bytesInit n f=
 fun bitmapErase b color= bitmapFill b color nil;;
 
 fun tfcPrevent a = a;;
+fun void a = nil;;
 
 fun memoryTry size = (_memoryTry size)||(gcCompact; _memoryTry size);;

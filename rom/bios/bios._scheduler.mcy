@@ -29,31 +29,23 @@ fun _schedulerLoop=
 	(
 		_ioCheck;
 		let fifoOut _RunList -> th in
+		if th._stateT==_THREAD_RUN then
 		(
-//			echoLn [";" th._stateT];
-			if th._stateT==_THREAD_RUN then
-			let _threadId th._threadT -> uid in
-			(
-				set _This._cyclesT=_threadCount _This._threadT;
-				set _This=th;
-				_echoEnable _This._echoEnableT;
-				let try
-					_threadRun th._threadT _MAX_THREAD_EXEC
-				catch _ -> EXEC_EXIT
-				-> execResult in
-				match execResult with
-					EXEC_IDLE -> set th._stateT=_THREAD_IDLE,
-					EXEC_PREEMPTION -> (_scheduleThread th;nil),
-					EXEC_WAIT -> (set th._stateT= _THREAD_WAIT),
-					EXEC_EXIT -> (threadStop th; nil),
-					EXEC_OM -> (echoLn "> Thread is out of memory"; threadStop th; set th=nil; gcCompact; nil);
-				_threadsCheckPendingTasks th;
+			set _This._cyclesT=_threadCount _This._threadT;
+			set _This=th;
+			_echoEnable _This._echoEnableT;
+			let _threadRun th._threadT _MAX_THREAD_EXEC -> execResult in
+			match execResult with
+				EXEC_IDLE -> set th._stateT=_THREAD_IDLE,
+				EXEC_PREEMPTION -> (_scheduleThread th;nil),
+				EXEC_WAIT -> (set th._stateT= _THREAD_WAIT),
+				EXEC_EXIT -> (threadStop th; nil),
+				EXEC_OM -> (echoLn "> Thread is out of memory"; threadStop th; set th=nil; gcCompact; nil);
+			_threadsCheckPendingTasks th;
 
-				set th._cyclesT=_threadCount th._threadT;
-				set _This=_ThreadBios;
-				_echoEnable _This._echoEnableT;
-			);
-//			echoLn ["->" th._stateT]
+			set th._cyclesT=_threadCount th._threadT;
+			set _This=_ThreadBios;
+			_echoEnable _This._echoEnableT;
 		);
 	);
 	uiStop;;

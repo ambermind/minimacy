@@ -93,7 +93,7 @@ LINT interpreterExec(Thread* th,LINT argc,LINT tfc)	// fun arg0 ... 0:argn-1
 	}
 	if (tfc) {
 		for (i = 0; i< th->sp-th->callstack; i++) {
-			if (STACK_IS_PNT(th, i) && (STACK_PNT(th, i) == MM._throwMark)) {	// we can't use tfc if inside a try ... catch
+			if (STACK_IS_PNT(th, i) && (STACK_PNT(th, i) == MM._abortMark)) {	// we can't use tfc if inside a try ... else
 				tfc = 0;
 				break;
 			}
@@ -182,25 +182,44 @@ int interpreterBreak(Thread* th, LW data, int dataType)
 	return 0;
 }
 
-int interpreterThrow(Thread* th, LW data, int dataType)
+int interpreterAbort(Thread* th)
 {
-	while(th->callstack>=0)
+	LINT callstack = th->callstack;
+	LINT i = th->sp;
+	LB* fun = th->fun;
+	LB* bytecode;
+
+	while(callstack>=0)
 	{
-		while (th->sp > th->callstack + 1)
-		{
-			if (STACK_IS_PNT(th, 1) && (STACK_PNT(th, 1) == MM._throwMark)) {
-				th->pc = STACK_PULL_INT(th);
-				STACK_SET_TYPE(th, 0, data, dataType);
-				return 0;
+//		if (fun->pkg == th->fun->pkg) {	// we force the try to be in the same package as abort
+			while (i > callstack + 1)
+			{
+				if ((ARRAY_IS_PNT(STACK_BLOCK(th), i - 1)) && (ARRAY_PNT(STACK_BLOCK(th), i - 1) == MM._abortMark)) {
+					th->sp = i;
+					th->pc = STACK_PULL_INT(th);
+					th->fun = fun;
+					th->callstack = callstack;
+					STACK_SET_NIL(th, 0);
+					return 0;
+				}
+				i--;
 			}
-			STACK_DROP(th);
-		}
-		th->fun=STACK_REF_PNT(th,th->callstack,CALLSTACK_FUN);
-		th->pc=STACK_REF_INT(th,th->callstack,CALLSTACK_PC);
-		th->callstack=STACK_REF_INT(th,th->callstack,CALLSTACK_PREV);
+//		}
+		i = callstack - CALLSTACK_LENGTH;
+		fun=STACK_REF_PNT(th,callstack,CALLSTACK_FUN);
+		callstack=STACK_REF_INT(th,callstack,CALLSTACK_PREV);
 	}
-	PRINTF(LOG_SYS,"> Uncaught exception!\n");
-	itemDump(LOG_SYS,data, dataType);
+	PRINTF(LOG_SYS,"> Uncaught abort in '%s.%s'!\n", pkgName(MM.currentPkg),interpreterCurrentFun(th));
+
+	th->sp = th->callstack + 1;	// OPabort ensures there is at least one element there
+	STACK_SET_NIL(th, 0);
+
+	bytecode = (ARRAY_PNT(th->fun, FUN_USER_BC));
+	STACK_SKIP(th, BC_ARGS(bytecode) + BC_LOCALS(bytecode) + CALLSTACK_LENGTH + 1);
+	th->fun = STACK_REF_PNT(th, th->callstack, CALLSTACK_FUN);
+	th->pc = STACK_REF_INT(th, th->callstack, CALLSTACK_PC);
+	th->callstack = STACK_REF_INT(th, th->callstack, CALLSTACK_PREV);
+
 	return 0;
 }
 LINT interpreterEnd(Thread* th,LINT count, LINT result)
@@ -254,7 +273,7 @@ LINT interpreterRun(Thread* th,LINT maxCycles)
 //			if (interpreterTRON)
 //			{
 //				LINT pci=(LINT)(pc-1-BC_START(bytecode));
-////				threadDump(LOG_USER,th,20);
+//				threadDump(LOG_USER,th,20);
 //				PRINTF(LOG_USER,"#" LSD " (sp=" LSD " locals=" LSD " callstack=" LSD ") %s -> ",th->uid,th->sp, STACK_REF(th)-locals,STACK_REF(th)-th->callstack,interpreterCurrentFun(th));
 //				PRINTF(LOG_USER,"count=" LSD "/" LSD " pc=" LSD " op=%2d:",th->count+nloop-count, maxCycles,pci,op);
 //				opcodePrint(LOG_USER,op,pc,pci);
@@ -263,6 +282,11 @@ LINT interpreterRun(Thread* th,LINT maxCycles)
 //			}
 
 			switch (op) {
+			case OPabort:
+				if (interpreterAbort(th)) return INTERPRETER_OM;
+				if (th->callstack < 0) return INTERPRETER_END(EXEC_IDLE);  // Exception uncaught
+				BC_PRECOMPUTE
+				break;
 			case OPabs: BCINT1FUN(absint)
 			case OPabsf: BCFLOAT1FUN(fabs)
 			case OPacos: BCFLOAT1FUN(acos)
@@ -679,11 +703,6 @@ LINT interpreterRun(Thread* th,LINT maxCycles)
 				EXEC_COMMON_TFC
 				if (th->callstack < 0) return INTERPRETER_END(EXEC_IDLE);  // successful end of bytecode execution
 				break;
-			case OPthrow:
-				if (interpreterThrow(th, STACK_GET(th, 0), STACK_TYPE(th, 0))) return INTERPRETER_OM;
-				if (th->callstack < 0) return INTERPRETER_END(EXEC_EXIT);  // Exception uncaught
-				BC_PRECOMPUTE
-				break;
 			case OPtl:
 				if (STACK_PNT(th, 0)) STACK_LOAD(th, 0, STACK_PNT(th, 0), 1);
 				break;
@@ -699,7 +718,8 @@ LINT interpreterRun(Thread* th,LINT maxCycles)
 				STACK_PUSH_PNT_ERR(th, MM._true, INTERPRETER_OM);
 				break;
 			case OPtry:
-				STACK_PUSH_PNT_ERR(th, MM._throwMark, INTERPRETER_OM)
+				th->error = NULL;
+				STACK_PUSH_PNT_ERR(th, MM._abortMark, INTERPRETER_OM)
 				STACK_PUSH_INT_ERR(th, (LINT)(pc + bytecodeGetJump(pc) - BC_START(bytecode)), INTERPRETER_OM);
 				pc += BC_JUMP_SIZE;
 				break;

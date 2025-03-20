@@ -241,7 +241,7 @@ LFLOAT ls_atof(char* p)
 }
 LINT signExtend(LINT val, LINT bit)
 {
-	LINT signBit = ((LINT)1) << bit;
+	LINT signBit = ((LINT)1) << (bit-1);
 	LINT mask = signBit -1; // bit=7 -> 0x7f
 	if (val& signBit) return val|~mask;
 	return val&mask;

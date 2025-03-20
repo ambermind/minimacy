@@ -11,7 +11,7 @@
 #include"minimacy.h"
 
 
-Type* compileMatchNext(Compiler* c,Type* tval,Type* tresult,LINT* end,LINT bc_else,int trycatch)
+Type* compileMatchNext(Compiler* c,Type* tval,Type* tresult,LINT* end,LINT bc_else)
 {
 	LINT bc_goto;
 	Type* t;
@@ -21,25 +21,18 @@ Type* compileMatchNext(Compiler* c,Type* tval,Type* tresult,LINT* end,LINT bc_el
 	bytecodeSetJump(c,bc_else,bytecodePin(c));
 	if ((parserNext(c))&&(!strcmp(c->parser->token,",")))
 	{
-		if (!(t=compileMatchChoice(c,tval,tresult,end,trycatch))) return NULL;
+		if (!(t=compileMatchChoice(c,tval,tresult,end))) return NULL;
 		bytecodeSetJump(c,bc_goto,*end);
 		return tresult;
 	}
 	parserGiveback(c);
-	if (trycatch)
-	{
-		if (bufferAddChar(c->bytecode,OPthrow)) return NULL;
-	}
-	else
-	{
-		if (bufferAddChar(c->bytecode,OPdrop)) return NULL;
-		if (bufferAddChar(c->bytecode,OPnil)) return NULL;
-	}
+	if (bufferAddChar(c->bytecode,OPdrop)) return NULL;
+	if (bufferAddChar(c->bytecode,OPnil)) return NULL;
 	*end=bytecodePin(c);
 	bytecodeSetJump(c,bc_goto,*end);
 	return tresult;
 }
-Type* compileMatchValue(Compiler* c,Type* tval,Type* tresult,LINT* end,int trycatch)
+Type* compileMatchValue(Compiler* c,Type* tval,Type* tresult,LINT* end)
 {
 	Type* t;
 	LINT bc_else;
@@ -58,10 +51,10 @@ Type* compileMatchValue(Compiler* c,Type* tval,Type* tresult,LINT* end,int tryca
 	if (!(t= compileExpression(c))) return NULL;
 	if (typeUnify(c,t,tresult)) return NULL;
 
-	return compileMatchNext(c,tval,tresult,end,bc_else,trycatch);
+	return compileMatchNext(c,tval,tresult,end,bc_else);
 
 }
-Type* compileMatchStruct(Compiler* c, Type* tval, Type* tresult, LINT* end, Def* def, int trycatch)
+Type* compileMatchStruct(Compiler* c, Type* tval, Type* tresult, LINT* end, Def* def)
 {
 	LINT i;
 	Def* root;
@@ -113,9 +106,9 @@ Type* compileMatchStruct(Compiler* c, Type* tval, Type* tresult, LINT* end, Def*
 
 	c->fmk->locals = localsBefore;
 
-	return compileMatchNext(c, tval, tresult, end, bc_else, trycatch);
+	return compileMatchNext(c, tval, tresult, end, bc_else);
 }
-Type* compileMatchCons0(Compiler* c, Type* tval, Type* tresult, LINT* end, Def* def, int trycatch)
+Type* compileMatchCons0(Compiler* c, Type* tval, Type* tresult, LINT* end, Def* def)
 {
 	Type* t;
 	Type* t0;
@@ -135,9 +128,9 @@ Type* compileMatchCons0(Compiler* c, Type* tval, Type* tresult, LINT* end, Def* 
 	if (!(t = compileExpression(c))) return NULL;
 	if (typeUnify(c, t, tresult)) return NULL;
 
-	return compileMatchNext(c, tval, tresult, end, bc_else, trycatch);
+	return compileMatchNext(c, tval, tresult, end, bc_else);
 }
-Type* compileMatchCons(Compiler* c,Type* tval,Type* tresult,LINT* end, Def* def,int trycatch)
+Type* compileMatchCons(Compiler* c,Type* tval,Type* tresult,LINT* end, Def* def)
 {
 	Type* t;
 	Type* t0;
@@ -180,9 +173,9 @@ Type* compileMatchCons(Compiler* c,Type* tval,Type* tresult,LINT* end, Def* def,
 
 	c->fmk->locals=localsBefore;
 
-	return compileMatchNext(c,tval,tresult,end,bc_else,trycatch);
+	return compileMatchNext(c,tval,tresult,end,bc_else);
 }
-Type* compileMatchChoice(Compiler* c,Type* tval,Type* tresult,LINT* end,int trycatch)
+Type* compileMatchChoice(Compiler* c,Type* tval,Type* tresult,LINT* end)
 {
 	Type* t;
 	Def* def;
@@ -205,12 +198,11 @@ Type* compileMatchChoice(Compiler* c,Type* tval,Type* tresult,LINT* end,int tryc
 	if (islabel(c->parser->token))
 	{
 		def=compileGetDef(c);
-		if (def &&(def->code==DEF_CODE_CONS)) return compileMatchCons(c,tval,tresult,end,def,trycatch);
-		if (def && (def->code == DEF_CODE_CONS0)) return compileMatchCons0(c, tval, tresult, end, def, trycatch);
-		if (def && (def->code == DEF_CODE_STRUCT)) return compileMatchStruct(c, tval, tresult, end, def, trycatch);
+		if (def &&(def->code==DEF_CODE_CONS)) return compileMatchCons(c,tval,tresult,end,def);
+		if (def && (def->code == DEF_CODE_CONS0)) return compileMatchCons0(c, tval, tresult, end, def);
+		if (def && (def->code == DEF_CODE_STRUCT)) return compileMatchStruct(c, tval, tresult, end, def);
 	}
-//	if (trycatch) return compileError(c,"constructor or '_' expected (found '%s')\n",compileToken(c));
-	return compileMatchValue(c,tval,tresult,end,trycatch);
+	return compileMatchValue(c,tval,tresult,end);
 
 }
 
@@ -225,5 +217,5 @@ Type* compileMatch(Compiler* c)
 
 	if (parserAssume(c,"with")) return NULL;
 
-	return compileMatchChoice(c,tval,tresult,&end,0);
+	return compileMatchChoice(c,tval,tresult,&end);
 }

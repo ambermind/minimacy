@@ -490,7 +490,7 @@ void memoryInit(int argc, const char** argv)
 	MM.partitionsFS = NULL;
 
 	MM._loopMark=NULL;
-	MM._throwMark=NULL;
+	MM._abortMark=NULL;
 
 
 	MM.args = NULL;

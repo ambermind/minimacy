@@ -33,6 +33,7 @@ void threadMark(LB* user)
 
 	MEMORY_MARK(th->stack);
 	MEMORY_MARK(th->user);
+	MEMORY_MARK(th->error);
 	// there is no need to mark any pending worker's result pointer, as these pointers are
 	// stored in the stack by workerAllocExt before they are declared as the worker's result
 	if (MM.updating) {
@@ -86,6 +87,7 @@ Thread* threadCreate(LINT stackLen)
 	th->forceOpcode=THREAD_OPCODE_NONE;
 
 	th->user = NULL;
+	th->error = NULL;
 
 	th->atomic = 0;
 	th->sp=-1;
@@ -349,7 +351,18 @@ int fun_caller(Thread* th)
 	FUN_MAKE_ARRAY( 4, DBG_TUPLE);
 	return 0;
 }
-
+int fun_lastError(Thread* th)
+{
+	FUN_PUSH_PNT(th->error);
+	th->error=NULL;
+	return 0;
+}
+int fun_setError(Thread* th)
+{
+	th->error=STACK_PNT(th,0);
+	MEMORY_MARK(th->error);
+	return 0;
+}
 int systemThreadInit(Pkg *system)
 {
 	static const Native nativeDefs[] = {
@@ -374,6 +387,8 @@ int systemThreadInit(Pkg *system)
 		{ NATIVE_FUN, "_threadNext", fun_threadNext, "fun _Thread -> _Thread" },
 		{ NATIVE_FUN, "_threadUser", fun_threadUser, "fun _Thread -> a1" },
 		{ NATIVE_FUN, "_threadSetUser", fun_threadSetUser, "fun _Thread  a1 -> _Thread" },
+		{ NATIVE_FUN, "lastError", fun_lastError, "fun -> Error" },
+		{ NATIVE_FUN, "setError", fun_setError, "fun Error -> Error" },
 	};
 	NATIVE_DEF(nativeDefs);
 

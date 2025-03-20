@@ -26,7 +26,7 @@ const MARSHAL_FILTERS=
 fun _tokenNext p= tokenNext p MARSHAL_FILTERS;;
 fun _tokenTake p= tokenTake p MARSHAL_FILTERS;;
 
-fun _marshallError p str= throw msgException strFormat str tokenContextError p 20;;
+fun _marshallError p str= setError msgError strFormat str tokenContextError p 20; abort;;
 
 fun mAssume p v=
 	let _tokenTake p -> w in
@@ -163,7 +163,7 @@ fun mMakeBuild p arg=
 					(arrayInit (arrayLength args) lambda j= ["; " mMakeBuild args.j strBuild ["a" j " "]])
 				"),\n"
 			])
-			"\t_ -> throw msgException \"wrong sum value\"\n);;\n"
+			"\t_ -> (setError msgError \"wrong sum value\";abort)\n);;\n"
 		],
 		structM name val -> strBuild [
 			"extend MarshalLink with _t_"name"_ML _;;\n"
@@ -206,7 +206,7 @@ fun mMakeParse p=
 			(arrayInit (arrayLength val) lambda i= let val.i -> [cons args] in strBuild [
 				"\t"i" -> (parserCheck n "(arrayLength args)"; "cons (arrayInit (arrayLength args) lambda j= [" " mMakeParse args.j]) "),\n"
 			])
-		"\t_ -> throw msgException \"wrong sum value\"\n) (lambda a=_t_"name"_ML a) (lambda a=match a with _t_"name"_ML b -> b);;\n"
+		"\t_ -> (setError msgError \"wrong sum value\"; abort)\n) (lambda a=_t_"name"_ML a) (lambda a=match a with _t_"name"_ML b -> b);;\n"
 		],
 		structM name val -> strBuild [
 			"struct "name"=["

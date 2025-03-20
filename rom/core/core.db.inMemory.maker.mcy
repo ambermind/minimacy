@@ -41,7 +41,7 @@ fun checkLabel src =
 			(i>0 && (c>='0' && c<='9'))
 		) then checkError ["wrong label: "src];;
 
-fun checkError msg = throw msgException strBuild msg; nil;;
+fun checkError msg = echo "Compile error: "; echoLn msg; abort;;
 
 var TableNames;;
 var TableNums;;
@@ -116,12 +116,12 @@ fun checkTable p=
 fun checkDatabase database tables=
 	set TableNames=hashsetCreate 4;
 	set TableNums=hashsetCreate 4;
-	try
+	try (
 		if database==nil then checkError ["no database definition"];
 		let database -> [name strMaxMem] in
 		checkLabel name;
 		listMap tables #checkTable
-	catch msgException msg -> (echo "Compile error: "; echoLn msg; nil);;
+	);;
 
 fun maxTableNum l=
 	if l==nil then 0

@@ -25,8 +25,9 @@ fun _systemDirFromFile file=
 	let if _absoluteDir boot then boot else strConcat _currentDir boot -> path in
 	let cleanPath path -> path in
 	let strCharPosRev path '/' nil -> i in
-	let strLeft path i+1 -> dir in
-	let strSlice path i+1 nil -> pkg in
+	let if i<>nil then i+1 else 0 -> i in
+	let strLeft path i -> dir in
+	let strSlice path i nil -> pkg in
 	let _dirBestMatch dir (strConcat "/" strReplace pkg "." "/") 1 dir  -> dir in
 	[dir pkg];;
 

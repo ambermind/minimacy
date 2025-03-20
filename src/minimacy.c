@@ -102,7 +102,6 @@ int start(int argc, const char** argv)
 	do
 	{
 		memoryInit(argc,argv);
-		fsInit();
 		if (fsMount(argc?argv[0]:NULL, standalone)) goto cleanup;
 		if (boot())
 		{
@@ -155,6 +154,13 @@ int main(int argc, const char** argv)
 	signal(SIGPIPE,SIG_IGN);
 
 	return start(argc,argv);
+}
+#endif
+
+#ifdef ON_UNIX_BM
+int main(int argc, const char** argv)
+{
+		return start(argc,argv);
 }
 #endif
 

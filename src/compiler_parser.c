@@ -253,7 +253,7 @@ int parserIsFinal(Compiler* c)
 	char* p;
 	char* token = c->parser->token;
 	if (!token) return 1;
-	p = strstr(" ) } ] : , ; ;; -> then else do with catch ", token);
+	p = strstr(" ) } ] : , ; ;; -> then else do with ", token);
 	if (p && (p[-1]==32) && (p[strlen(token)]==32)) return 1;
 	d = compileGetDef(c);
 

@@ -14,37 +14,39 @@
 Type* compileTry(Compiler* c)
 {
 	Type* tresult;
-	LINT bc_catch,bc_next,end;
+	Type* telse;
+	LINT bc_catch,bc_next;
 
 	if (bufferAddChar(c->bytecode,OPtry)) return NULL;
 	bc_catch= bytecodeAddEmptyJump(c);
 	if (bc_catch < 0) return NULL;
 
-	if (!(tresult=compileProgram(c))) return NULL;
+	if (!(tresult= compileExpression(c))) return NULL;
 	if (bc_byte_or_int(c, 2, OPskipb, OPskip)) return NULL;
 
-	if (bufferAddChar(c->bytecode,OPgoto)) return NULL;
-	bc_next=bytecodeAddEmptyJump(c);
+	if ((!parserNext(c)) || (strcmp(compileToken(c), "else"))) {
+		parserGiveback(c);
+		bytecodeSetJump(c, bc_catch, bytecodePin(c));
+		return tresult;
+	}
+	if (bufferAddChar(c->bytecode, OPgoto)) return NULL;
+	bc_next = bytecodeAddEmptyJump(c);
 	if (bc_next < 0) return NULL;
+	bytecodeSetJump(c, bc_catch, bytecodePin(c));
 
-	if (parserAssume(c,"catch")) return NULL;
-	bytecodeSetJump(c,bc_catch,bytecodePin(c));
+	if (bufferAddChar(c->bytecode, OPdrop)) return NULL;	// remove nil
 
-	if (!compileMatchChoice(c,MM.Exception,tresult,&end,1)) return NULL;
-
-	bytecodeSetJump(c,bc_next,end);
+	if (!(telse = compileExpression(c))) return NULL;
+	if (typeUnify(c, tresult, telse)) return NULL;
+	bytecodeSetJump(c,bc_next, bytecodePin(c));
 	return tresult;
 }
 
-// parsing of throw ... ('throw' has already been read)
-Type* compileThrow(Compiler* c)
+// parsing of abort ... ('abort' has already been read)
+Type* compileAbort(Compiler* c)
 {
-	Type* t;
-
-	if (!(t=compileExpression(c))) return NULL;
-	if (typeUnify(c,t,MM.Exception)) return NULL;
-	if (bufferAddChar(c->bytecode,OPthrow)) return NULL;
-
+	if (bufferAddChar(c->bytecode, OPnil)) return NULL;	// ensure there is at least one value in the stack after the callstack
+	if (bufferAddChar(c->bytecode, OPabort)) return NULL;
 	return typeAllocUndef();
 }
 

@@ -9,8 +9,8 @@
    You should have received a copy of the GNU General Public License along
    with this program. If not, see <https://www.gnu.org/licenses/>. */
 
+// https://www.rfc-editor.org/rfc/rfc8032.txt
 use core.crypto.hash;;
-
 
 var _EcP;;
 var _EcQ;;
@@ -136,24 +136,26 @@ fun _secret_expand secret=
 		[(bigFromBytes a) strSlice h 32 nil]
 	);;
 
-//------------------ API
-fun ed25519secret_to_public secret=
-	_checkInit;
-    let _secret_expand secret -> [a _] in
-	_point_compress _point_mul a _EcG;;
+fun _dom2 x y= if x<>nil then strBuild {
+	"SigEd25519 no Ed25519 collisions"
+	(strFromChar x)
+	(strFromChar strLength y)
+	y
+};;
 
-fun ed25519sign secret msg=
+fun _ed25519Sign secret msg phflag context=
 	_checkInit;
+	let _dom2 phflag context -> d2 in
 	let _secret_expand secret -> [a prefix] in
 	let _point_compress _point_mul a _EcG -> A in
-	let _sha512_modq strConcat prefix msg -> r in
+	let _sha512_modq strBuild {d2 prefix msg} -> r in
 	let _point_mul r _EcG -> R in
 	let _point_compress R -> Rs in
-	let _sha512_modq strBuild {Rs A msg} -> h in
+	let _sha512_modq strBuild {d2 Rs A msg} -> h in
 	let \modBarrett _EcQ _EcMuQ r+ h*a -> s in
 	strConcat Rs strSwap strFromBig s 32;;
 
-fun ed25519verify public msg signature=
+fun _ed25519Verify public msg signature phflag context=
 	_checkInit;
 	if 32==strLength public then
 	if 64==strLength signature then
@@ -162,15 +164,24 @@ fun ed25519verify public msg signature=
 	let strLeft signature 32 -> Rs in
 	let _point_decompress Rs -> R in
 	if R<>nil then
+	let _dom2 phflag context -> d2 in
 	let bigFromStr strSwap strRight signature 32 -> s in
 	\modBarrett _EcP _EcMuP
 		if s<_EcQ then
-		let _sha512_modq strBuild {Rs public msg} -> h in
+		let _sha512_modq strBuild {d2 Rs public msg} -> h in
 		let _point_mul s _EcG -> sB in
 		let _point_mul h A -> hA in
 		let _point_add R hA -> sB2 in
 		_point_equal sB sB2;;
 
+//------------------ API
+fun ed25519PublicFromSecret secret=
+	_checkInit;
+    let _secret_expand secret -> [a _] in
+	_point_compress _point_mul a _EcG;;
 
+fun ed25519Sign secret msg= _ed25519Sign secret msg nil nil;;
+fun ed25519phSign secret msg context= _ed25519Sign secret (sha512 msg) 1 context;;
 
-
+fun ed25519Verify public msg signature= _ed25519Verify public msg signature nil nil;;
+fun ed25519phVerify public msg signature context= _ed25519Verify public (sha512 msg) signature 1 context;;

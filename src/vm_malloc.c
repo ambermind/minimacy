@@ -415,7 +415,6 @@ LINT bmmCompact(void)
 	MEMORY_MARK(MM.Boolean);
 	MEMORY_MARK(MM.BigNum);
 	MEMORY_MARK(MM.Package);
-	MEMORY_MARK(MM.Exception);
 	MEMORY_MARK(MM.Type);
 
 	MEMORY_MARK(FM.READ_ONLY);

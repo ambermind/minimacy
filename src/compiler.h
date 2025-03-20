@@ -173,11 +173,11 @@ Type* compileDefCons2(Compiler* c, Def* defType, Locals* labels);
 Type* compileCons(Compiler* c,Def* def);
 Type* compileCons0(Compiler* c, Def* def);
 
-Type* compileMatchChoice(Compiler* c,Type* tval,Type* tresult,LINT* end,int trycatch);
+Type* compileMatchChoice(Compiler* c,Type* tval,Type* tresult,LINT* end);
 Type* compileMatch(Compiler* c);
 
 Type* compileTry(Compiler* c);
-Type* compileThrow(Compiler* c);
+Type* compileAbort(Compiler* c);
 
 int typeUnify(Compiler* c,Type* x,Type* y);
 Type* typeUnifyFromStack(Compiler* c,Type* fun);

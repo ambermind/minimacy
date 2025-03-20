@@ -362,7 +362,7 @@ fun _sshSelectAlgo h client server mandatory=
 	if mandatory && algo==nil then
 	(
 		sshFail h SSH_NO_ALGO nil;
-		throw anyException
+		abort
 	)
 	else algo;;
 
@@ -374,7 +374,7 @@ fun sshParseKeyExchangeInit h data=
 	_sshHashStr h data;
 	let h.clientInitS.algosI -> algosCli in
 	let sshDump sshParseVals data 17 10 -> algosSrv in
-	try (
+	try
 		let _sshFusionAlgos h 0 algosCli algosSrv Mandatory -> algos in
 		let sshDump arrayFromList algos -> algos in
 		(
@@ -385,10 +385,9 @@ fun sshParseKeyExchangeInit h data=
 			];
 			match algos.kex_algorithms with
 				"curve25519-sha256" -> _sshSend h sshMakeEcdhRequest h,
-				"diffie-hellman-group-exchange-sha256" -> _sshSend h sshMakeDhgeRequest h
-		)
-	) catch _ -> nil;
-	0;;
+				"diffie-hellman-group-exchange-sha256" -> _sshSend h sshMakeDhgeRequest h;
+			0
+		);;
 
 fun sshParseKexDhgeGroup h data=
 	sshEchoLn "sshParseKexDhgeGroup";
@@ -462,7 +461,7 @@ fun _sshCheckSignEd25519 dh=
 	let sshParseVals dh.hostKeyDH 0 2 -> (type:pub:_) in
 	let sshParseVals dh.signDH 0 2 -> (signType:sign:_) in
 	if type=="ssh-ed25519" && type==signType then
-	ed25519verify pub dh.hDH sign;;
+	ed25519Verify pub dh.hDH sign;;
 
 fun _sshCheckSignRSA dh keyType signType signVal=
 	let sshParseVals dh.hostKeyDH 0 3 -> (type:rsaE:rsaN:_) in

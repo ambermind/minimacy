@@ -57,6 +57,7 @@ struct Thread
 	Worker worker;
 
 	LB* user;
+	LB* error;
 
 	LINT sp;
 	LB* stack;

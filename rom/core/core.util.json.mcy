@@ -12,7 +12,7 @@
 // fun jsonParse src i0 -> [json next]
 // i0 start index
 // next is nil when reaching end of string, else index of the remaining data
-// type: fun Str Int -> [Json Int] # -> throw msgException
+// type: fun Str Int -> [Json Int]
 
 // fun jsonEncode: fun Json -> Str
 // fun jsonEncodePretty: fun Json -> Str
@@ -45,7 +45,7 @@ const _JSON_FILTERS=
 
 fun _tokenTake p= tokenTake p _JSON_FILTERS;;
 
-fun _jsonError p str= throw msgException strFormat str tokenContextError p 20;;
+fun _jsonError p str= setError msgError strFormat str tokenContextError p 20; abort;;
 
 fun _jsonParseArray p first=
 	let _jsonParse p (if first then "]") -> val in
@@ -83,9 +83,10 @@ fun _jsonParse p terminate=
 	else let strGet val 0 -> c in
 	if c==TOKEN_DOUBLEQUOTE then jsonString u8FromJson val
 	else if tokenIsNumber val then jsonNumber floatFromStr val
-	else throw msgException strFormat "unknown '*'" val;;
+	else (setError msgError strFormat "unknown '*'" val; abort);;
 
 fun jsonParse src i0=
+	try
 	let tokenCreate src i0-> p in
 	let _jsonParse p nil -> json in
 	let tokenIndex p -> next in

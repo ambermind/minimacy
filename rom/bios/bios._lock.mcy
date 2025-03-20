@@ -40,10 +40,7 @@ fun lockSync lck function=
 	(
 		_lockEnter lck;
 		set  _This._locksT=lck: _This._locksT;
-		let try
-				call function
-			catch _ -> nil
-		-> val in
+		let try call function -> val in
 		(
 			set  _This._locksT=tail  _This._locksT;
 			\atomic _lockLeave lck;
@@ -57,7 +54,7 @@ fun _lockFreeThread th= for lck in th._locksT do _lockLeave lck; set th._locksT=
 
 
 //------------ Join
-struct Join{a0}=[_valJ@a0 _doneJ _threadJ _oblivionJ] ;;
+struct Join{a0}=[_valJ@a0 _doneJ _threadJ _oblivionJ _abortJ _errorJ] ;;
 
 fun joinCreate=[_doneJ=false];;
 
@@ -86,6 +83,19 @@ fun joinSend m val=
 fun await asyncFun=
 	let joinCreate -> join in
 	(
-		threadStart "async" (lambda = call asyncFun join);
-		joinWait join
+		threadStart "async" (lambda = 
+			try call asyncFun join
+			else if !join._doneJ then (
+				set join._abortJ=true;
+				set join._errorJ=lastError;
+				joinSend join nil;
+				nil
+			)
+		);
+		let joinWait join -> val in
+		if join._abortJ then (
+			setError join._errorJ;
+			abort
+		)
+		else val
 	);;

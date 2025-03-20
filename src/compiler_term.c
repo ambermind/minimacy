@@ -268,8 +268,8 @@ Type* compileTerm(Compiler* c,int noPoint)
 		return compileCompile(c);
 	else if (!strcmp(c->parser->token,"try"))
 		return compileTry(c);
-	else if (!strcmp(c->parser->token,"throw"))
-		return compileThrow(c);
+	else if (!strcmp(c->parser->token,"abort"))
+		return compileAbort(c);
 	else if (!strcmp(c->parser->token,"nil"))
 	{
 		if (bufferAddChar(c->bytecode,OPnil)) return NULL;

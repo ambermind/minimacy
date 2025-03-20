@@ -171,7 +171,7 @@ typedef struct {
 	LB * _true;
 	LB * _false;
 	LB* _loopMark;
-	LB* _throwMark;
+	LB* _abortMark;
 
 	LB* ansiVolume;
 	LB* romdiskVolume;
@@ -187,7 +187,6 @@ typedef struct {
 	Type* Boolean;
 	Type* BigNum;
 	Type* Package;
-	Type* Exception;
 	Type* Type;
 
 	Type* fun_u0_list_u0_list_u0;

@@ -56,13 +56,15 @@ fun _matchCheck src pattern i fFound=
 
 //------------------------
 
+fun _tokenError str= setError msgError strBuild str; abort;;
+
 fun _tokenizeRepeat str i val result=
 	if i>=strLength str then result
 	else let strGet str i -> c in
 	if c>='0' && c<='9' then _tokenizeRepeat str i+1 val*10+(c-'0') result
 	else if c==',' then _tokenizeRepeat str i+1 nil ",":if val<>nil then (decFromInt val):result else result
 	else if c=='}' then _tokenize str i+1 "}":if val<>nil then (decFromInt val):result else result
-	else throw msgException strBuild ["unexpected char in repeat, found " c];;
+	else _tokenError strBuild ["unexpected char in repeat, found " c];;
 
 fun _tokenize str i result=
 	if i>=strLength str then result
@@ -82,14 +84,14 @@ fun tokenNext t= refSet t tail refGet t; t;;
 fun _rAssume tokens val=
 	let tokenNext tokens -> tokens in
 	let tokenVal tokens -> token in
-	if token<>val then throw msgException strBuild ["'"val"' expected, found: " token];;
+	if token<>val then _tokenError strBuild ["'"val"' expected, found: " token];;
 	
 fun _rLoop tokens next=
 	let _rOr tokens next -> next in
 	let tokenVal tokens -> token in
 	match token with
 		"(" -> (tokenNext tokens; next),
-		_ ->  throw msgException strBuild ["( expected, found " token];;
+		_ ->  _tokenError strBuild ["( expected, found " token];;
 
 fun _rStr tokens token next=
 	let if 92==strGet token 0 then strSlice token 1 nil else token -> token in
@@ -122,7 +124,7 @@ fun _rClass tokens next table=
 				"\\s" -> _rClass tokens next fMATCH_CHAR 32 fMATCH_CHAR 9 fMATCH_CHAR 13 fMATCH_CHAR 10 fMATCH_CHAR 12 table,
 				"\\S" -> _rClass tokens next fMATCH_INVERT (fMATCH_CHAR 32 fMATCH_CHAR 9 fMATCH_CHAR 13 fMATCH_CHAR 10 fMATCH_CHAR 12 fMATCH_ALL) table,
 				_ ->  if 92==strGet token 0 then _rClass tokens next fMATCH_CHAR (strGet token 1) table
-					else throw msgException strBuild ["unknown token in class definition: " token];;
+					else _tokenError strBuild ["unknown token in class definition: " token];;
 
 fun _rChar tokens next=
 	let tokenVal tokens -> token in
@@ -130,7 +132,7 @@ fun _rChar tokens next=
 		")" -> _rLoop (tokenNext tokens) next,
 		"]" -> _rClass tokens next fMATCH_ALL,
 		"^" -> (tokenNext tokens; if nil==tokenVal tokens then mBegin next
-			else throw msgException "^ must be at the beginning of the Regexp"),
+			else _tokenError "^ must be at the beginning of the Regexp"),
 		"." -> (tokenNext tokens; mAny next),
 		_ -> match strLength token with
 				1 -> if !strContains "()[]{}|,." token then (tokenNext tokens; _rStr tokens token next)
@@ -143,8 +145,8 @@ fun _rChar tokens next=
 						"\\t" -> "\t",
 						_ -> strRight token 1
 					-> str in (tokenNext tokens; _rStr tokens str next)
-					else throw msgException strBuild ["expected token " token],
-				_ -> throw msgException strBuild ["expected token " token];;
+					else _tokenError strBuild ["expected token " token],
+				_ -> _tokenError strBuild ["expected token " token];;
 
 fun _rRange tokens next=
 	let tokenVal tokens -> token in
@@ -157,7 +159,7 @@ fun _rRange tokens next=
 	let if token<>"{" then (tokenNext tokens; intFromDec token) -> mn in
 	let tokenVal tokens -> token in
 	if token=="{" then mRepeat mn mx (_rChar (tokenNext tokens) mDone) next
-	else throw msgException strBuild ["} expected, found " token];;
+	else _tokenError strBuild ["} expected, found " token];;
 
 fun _rTerm tokens next=
 	let tokenVal tokens -> token in
@@ -204,6 +206,7 @@ fun regexpNext src pattern i=
 	else regexpNext src pattern i+1;;
 
 fun regexpCreate str=
+	try
 	let tokenCreate str -> tokens in
 	let tokenVal tokens -> token in
 	if token=="$" then _rOr (tokenNext tokens) mEOF

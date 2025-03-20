@@ -25,7 +25,7 @@ export xmlFilterChilds xml tag;;
 // fun xmlParse src i0 -> [xml next]
 // i0 start index
 // next is nil when reaching end of string, else index of the remaining data
-// type: fun Str Int Bool -> [Xml Int] # -> throw msgException
+// type: fun Str Int Bool -> [Xml Int]
 
 // fun xmlEncode: fun Xml -> Str
 // fun xmlEncodePretty: fun Xml -> Str
@@ -55,7 +55,7 @@ fun _tokenTakeContent p= tokenTake p XML_CONTENT;;
 
 const NOCHILD=hashsetInit 4 "meta":"br":"link":"hr":nil;;
 
-fun _xmlError p str= throw msgException strFormat str tokenContextError p 20;;
+fun _xmlError p str= setError msgError strFormat str tokenContextError p 20; abort;;
 
 
 fun tokenFilterXmlWord = (lambda fifo str i=
@@ -203,8 +203,8 @@ fun _xmlParse src i0 noMixChild isHtml=
 	let tokenIndex p -> next in
 	[xml next];;
 
-fun xmlParse src i0 noMixChild= _xmlParse src i0 noMixChild false;;
-fun htmlParse src i0 noMixChild= _xmlParse src i0 noMixChild true;;
+fun xmlParse src i0 noMixChild= try _xmlParse src i0 noMixChild false;;
+fun htmlParse src i0 noMixChild= try _xmlParse src i0 noMixChild true;;
 
 fun xmlGetTag xml= match xml with tagXml tag _ _ -> tag;;
 fun xmlGetAttributes xml= match xml with tagXml _ attributes _ -> attributes;;
