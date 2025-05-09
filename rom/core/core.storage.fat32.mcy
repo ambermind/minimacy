@@ -212,7 +212,7 @@ fun _readDataCluster p cluster= _readCluster p (_dataSector p cluster);;
 
 fun _saveDataCluster p cluster data=
 	let _dataSector p cluster -> sector in
-	call p.fWriteP sector (cacheDataSet p sector data) 0 p.sectorsPerClusterP;;
+	call p.fWriteP sector (cacheDataSet p sector data);;
 
 
 
@@ -229,7 +229,7 @@ fun _saveFatCluster p cluster data=
 	if _validCluster cluster then
 	let _fatCluster p cluster -> sector in
 	for i=0;i<p.numberOfFatsP do
-		call p.fWriteP sector+i*p.sectorsPerFatP data 0 p.sectorsPerClusterP;;
+		call p.fWriteP sector+i*p.sectorsPerFatP data;;
 		
 fun _fatGet p data cluster=
 	let _fatOffset p cluster -> offset in
@@ -710,9 +710,7 @@ fun _partitionInitFat32 bootSector partitionStart volume=
 	] -> p in (
 		_partitionCacheInit p;
 		set p.fReadP= (lambda sector nbSectors = call volume.fReadV partitionStart+sector nbSectors);
-		set p.fWriteP= (lambda sector data offset nbSectors=
-			(nbSectors*bytesPerSector)==call volume.fWriteV partitionStart+sector data offset nbSectors
-		);
+		set p.fWriteP= (lambda sector data=	(bytesLength data)==call volume.fWriteV partitionStart+sector data );
 		let listFind (_partitionDir p "") (lambda d= isVolumeName d) -> d in
 		if d<>nil then set p.volumeLabelP=d.fullNameDF;
 		echoLn strFormat "> Storage: found fat32 partition (* Bytes): *" \bigNum (bigFromInt largeTotalSector)*(bigFromInt bytesPerSector) p.volumeLabelP;

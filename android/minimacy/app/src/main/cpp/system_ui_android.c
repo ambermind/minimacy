@@ -647,8 +647,6 @@ void android_main(struct android_app* app)
 	assetDirCopy(app,"rsc/fonts","rom");
 	assetDirCopy(app,"","programs");
 	assetDirCopy(app,"demo","programs");
-	assetDirCopy(app,"demo/fun","programs");
-	assetDirCopy(app,"demo/fun/pacman","programs");
 	assetDirCopy(app,"usr","programs");
 	assetDirCopy(app,"test","programs");
 	while (1) {

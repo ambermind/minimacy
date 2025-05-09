@@ -381,11 +381,11 @@ WORKER_START _inflate(volatile Thread* th)
 
 void _inflateMark(LB* user)
 {
-	if (MM.updating) {
+	if (MOVING_BLOCKS) {
 		Inflate* z = (Inflate*)user;
-		MEMORY_MARK(z->srcBlock);
+		MARK_OR_MOVE(z->srcBlock);
 		z->src = STR_START(z->srcBlock);
-		if (z->link) *z->link = (Inflate*)z->header.lifo;
+		if (z->link) *z->link = (Inflate*)z->header.listMark;
 	}
 }
 

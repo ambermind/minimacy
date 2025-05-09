@@ -11,12 +11,7 @@
 #ifndef _MINIMACY_
 #define _MINIMACY_
 
-#define VERSION_MINIMACY "1.3.7"
-
-#ifdef ON_WINDOWS____
-#undef ON_WINDOWS
-#define ON_NOTHING
-#endif
+#define VERSION_MINIMACY "1.3.8"
 
 #ifdef ON_WINDOWS
 #define DEVICE_MODE "Windows"
@@ -37,12 +32,12 @@
 #define USE_RANDOM_WIN
 #define USE_THREAD_WIN
 
-// #define USE_MEMORY_C
-// #define MEMORY_C_SIZE (1024*480)
+//#define USE_MEMORY_C
+//#define MEMORY_C_SIZE (1024*480)
 ////#define MEMORY_C_SIZE (1024*1024*16)
-// #define MEMORY_SAFE_SIZE (32*1024)
-// #define FORGET_PARSER
-// #define USE_FS_ROMDISK0 "../baremetal/nothing/nothing_romdisk0.h"
+//#define MEMORY_SAFE_SIZE (32*1024)
+//#define FORGET_PARSER
+//// #define USE_FS_ROMDISK0 "../baremetal/nothing/nothing_romdisk0.h"
 
 #define USE_WORKER_ASYNC // when USE_WORK_ASYNC is not defined, no UI is possible as the event loop runs in a dedicated worker and never returns
 
@@ -479,7 +474,7 @@ int uartGet();
 
 #ifdef WITH_SECTOR_STORAGE
 int storageRead(int index, char *buffer, int start, int nb);
-int storageWrite(int index, char *buffer, int start, int nb);
+int storageWrite(int index, char *buffer, int start, int len);
 int storageNbSectors(int index);
 int storageSectorSize(int index);
 int storageWritable(int index);

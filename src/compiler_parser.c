@@ -283,9 +283,9 @@ int parserNextchar(Compiler* c)
 void parserMark(LB* user)
 {
 	Parser* parser = (Parser*)user;
-	MEMORY_MARK(parser->name);
-	MEMORY_MARK(parser->block);
-	if (MM.updating) {
+	MARK_OR_MOVE(parser->name);
+	MARK_OR_MOVE(parser->block);
+	if (MOVING_BLOCKS) {
 		LINT offset = parser->token - parser->src;
 		parser->src = STR_START(parser->block);
 		parser->token = parser->src + offset;

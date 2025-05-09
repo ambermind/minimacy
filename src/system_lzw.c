@@ -279,11 +279,11 @@ void _lzwInit(Lzw* z, LINT dataBitSize)
 //---------------------------------------------------
 void _lzwMark(LB* user)
 {
-	if (MM.updating) {
+	if (MOVING_BLOCKS) {
 		Lzw* z = (Lzw*)user;
-		MEMORY_MARK(z->srcBlock);
+		MARK_OR_MOVE(z->srcBlock);
 		z->src = STR_START(z->srcBlock);
-		if (z->link) *z->link = (Lzw*)z->header.lifo;
+		if (z->link) *z->link = (Lzw*)z->header.listMark;
 	}
 }
 int fun_lzwCreate(Thread* th)

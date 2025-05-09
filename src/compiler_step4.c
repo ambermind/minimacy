@@ -115,15 +115,15 @@ Def* compileSetStart(Compiler* c)
 void funMakerMark(LB* user)
 {
 	FunMaker* f = (FunMaker*)user;
-	MEMORY_MARK(f->def);
-	MEMORY_MARK(f->defForInstances);
-	MEMORY_MARK(f->locals);
-	MEMORY_MARK(f->globals);
-	MEMORY_MARK(f->typeLabels);
-	MEMORY_MARK(f->bc);
-	MEMORY_MARK(f->resultType);
-	MEMORY_MARK(f->loopType);
-	MEMORY_MARK(f->parent);
+	MARK_OR_MOVE(f->def);
+	MARK_OR_MOVE(f->defForInstances);
+	MARK_OR_MOVE(f->locals);
+	MARK_OR_MOVE(f->globals);
+	MARK_OR_MOVE(f->typeLabels);
+	MARK_OR_MOVE(f->bc);
+	MARK_OR_MOVE(f->resultType);
+	MARK_OR_MOVE(f->loopType);
+	MARK_OR_MOVE(f->parent);
 }
 
 int funMakerInit(Compiler* c, Locals* locals, Locals* typeLabels, LINT level, Def* d, Def* defForInstances)
@@ -163,7 +163,7 @@ int funMakerInit(Compiler* c, Locals* locals, Locals* typeLabels, LINT level, De
 	}
 
 	c->bytecode = f->bc;
-	MEMORY_MARK(c->bytecode);
+	BLOCK_MARK(c->bytecode);
 	if ((k = bufferAddInt(c->bytecode, 0))) return k;	// some place to store the number of args
 	if ((k = bufferAddInt(c->bytecode, 0))) return k;	// some place to store the number of locals
 	return 0;
@@ -172,8 +172,8 @@ void funMakerRelease(Compiler* c)
 {
 	c->fmk = c->fmk->parent;
 	c->bytecode = c->fmk?c->fmk->bc:NULL;
-	MEMORY_MARK(c->fmk);
-	MEMORY_MARK(c->bytecode);
+	BLOCK_MARK(c->fmk);
+	BLOCK_MARK(c->bytecode);
 }
 int funMakerIsForVar(Compiler* c)
 {
@@ -382,7 +382,7 @@ Type* compileDefs4(Compiler* c)
 //		PRINTF(LOG_DEV,"Compile step4 '%s.%s'\n", defPkgName(d), defName(d));
 		if (d->parser && d->proto)
 		{
-			memoryEnterFast();
+			memoryEnterSafe();
 			if ((d->code == DEF_CODE_CONST || d->code == DEF_CODE_VAR) && (d->index < 0))
 			{
 				parserRestoreFromDef(c, d);
@@ -398,7 +398,7 @@ Type* compileDefs4(Compiler* c)
 				if (!(result = compileFun4(c, d))) return compileErrorInFunction(c, "error compiling function '%s'\n", defName(d));
 				parserReset(c);
 			}
-			memoryLeaveFast();
+			memoryLeaveSafe();
 		}
 #ifdef FORGET_PARSER
 		d->parser = NULL;
@@ -416,10 +416,10 @@ Type* compileStep4(Compiler* c)
 	result = compileDefs4(c);
 	defReverse(c->pkg);
 	if (!result) return NULL;
-	memoryEnterFast();
+	memoryEnterSafe();
 	result = typeAllocUndef(); if (!result) return NULL;
 	result=compileFinalize(c, result);
 	funMakerRelease(c);
-	memoryLeaveFast();
+	memoryLeaveSafe();
 	return result;
 }

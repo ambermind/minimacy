@@ -50,10 +50,10 @@ void typeMark(LB* user)
 {
 	LINT i;
 	Type* type=(Type*)user;
-	MEMORY_MARK(type->actual);
-	MEMORY_MARK(type->copy);
-	MEMORY_MARK(type->def);
-	for(i=0;i<type->nb;i++) MEMORY_MARK(type->child[i]);
+	MARK_OR_MOVE(type->actual);
+	MARK_OR_MOVE(type->copy);
+	MARK_OR_MOVE(type->def);
+	for(i=0;i<type->nb;i++) MARK_OR_MOVE(type->child[i]);
 }
 
 Type* typeAllocEmpty(LINT code,Def* def,LINT nb)
@@ -97,7 +97,7 @@ Type* typeAllocFromStack(Def* def, LINT code, LINT nb)
 	{
 		LB* p=STACK_PULL_PNT(MM.tmpStack);
 		t->child[i]=(Type*)p;
-		MEMORY_MARK(p);
+		BLOCK_MARK(p);
 	}
 	return t;
 }
@@ -605,7 +605,7 @@ void typesInit(Pkg* system)
 	Def* Mark;
 	Type* u0, * list_u0, * array_u0;
 
-	memoryEnterFast();
+	memoryEnterSafe();
 	MM.Int = pkgAddType(system, "Int")->type;
 	MM.Float = pkgAddType(system, "Float")->type;
 	MM.Str = pkgAddType(system, "Str")->type;
@@ -626,8 +626,8 @@ void typesInit(Pkg* system)
 	pkgAddSum(system, "Error");
 
 	Mark = pkgAddSum(system, "_Mark");
-	MM._loopMark = (LB*)pkgAddCons0(system, "_loop", Mark);
-	MM._abortMark = (LB*)pkgAddCons0(system, "_abort", Mark);
+	MM.loopMark = (LB*)pkgAddCons0(system, "_loop", Mark);
+	MM.abortMark = (LB*)pkgAddCons0(system, "_abort", Mark);
 
 	u0 = typeAllocUndef();
 	list_u0 = typeAlloc(TYPECODE_LIST, NULL, 1, u0);
@@ -635,7 +635,7 @@ void typesInit(Pkg* system)
 
 	MM.fun_u0_list_u0_list_u0 = typeAlloc(TYPECODE_FUN, NULL, 3, u0, list_u0, list_u0);
 	MM.fun_array_u0_I_u0 = typeAlloc(TYPECODE_FUN, NULL, 3, array_u0, MM.Int, u0);
-	memoryLeaveFast();
+	memoryLeaveSafe();
 }
 
 
@@ -883,7 +883,7 @@ int typeUnify(Compiler* c,Type* x,Type* y)
 		{
 			if (lb->name)
 			{
-				PRINTF(LOG_USER, "   local %s: ",STR_START(lb->name));
+				PRINTF(LOG_USER, "  %s: ",STR_START(lb->name));
 				typePrint(LOG_USER, lb->type);
 				PRINTF(LOG_USER, "\n");
 			}
@@ -896,13 +896,14 @@ int typeUnify(Compiler* c,Type* x,Type* y)
 				Def* def = (Def*)globals->data;
 				if (def->name)
 				{
-					PRINTF(LOG_USER, "   global %s: ", STR_START(def->name));
+					PRINTF(LOG_USER, "  %s: ", STR_START(def->name));
 					typePrint(LOG_USER, def->type);
 					PRINTF(LOG_USER, "\n");
 				}
 			}
 			globals = globals->next;
 		}
+		if (c->fmk->bc) bytecodeShowNatives(c->fmk->bc);
 	}
 	return err;
 }

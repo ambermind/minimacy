@@ -332,7 +332,7 @@ Type* compileFile1(Compiler* c, int depth, int depthFail)
 		LB* name;
 		char* token = c->parser->token;
 		c->parser->mayGetBackToParent = 0;
-		memoryEnterFast();
+		memoryEnterSafe();
 		if (!strcmp(token, "#"))
 		{
 			if (!parserNext(c)) return compileError(c, "missing condition after '#'\n");
@@ -448,7 +448,7 @@ Type* compileFile1(Compiler* c, int depth, int depthFail)
 		}
 		else return compileError(c, "unknown declaration '%s'\n", token);
 		c->parser->mayGetBackToParent = 1;
-		memoryLeaveFast();
+		memoryLeaveSafe();
 	}
 	return MM.Boolean;	// anything except NIL
 }

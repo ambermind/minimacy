@@ -1039,7 +1039,7 @@ int sysSocketInit(Pkg* system)
 		{ NATIVE_FUN, "_udpCreate", fun_udpCreate, "fun Str Int -> Socket"},
 		{ NATIVE_FUN, "_udpSend", fun_udpSend, "fun Socket Str Int Str Int Str -> Int"},
 		{ NATIVE_FUN, "_udpRead", fun_udpRead, "fun Socket -> [Str Str Int]"},
-		{ NATIVE_FUN, "ethList", fun_ethList, "fun -> list [Int Str Int Str Int Str]"},
+		{ NATIVE_FUN, "_ethList", fun_ethList, "fun -> list [Int Str Int Str Int Str]"},
 		{ NATIVE_FUN, "_ethCreate", fun_ethCreate, "fun Int -> Socket"},
 		{ NATIVE_FUN, "_ethSend", fun_ethSend, "fun Socket Int Str -> Int"},
 		{ NATIVE_FUN, "_ethRead", fun_ethRead, "fun Socket -> Str"},

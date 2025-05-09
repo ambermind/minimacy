@@ -61,6 +61,10 @@ const _ThreadBios=[_threadT=_threadCurrent _nameT="_BIOS_" _callerT="system"
 	_t0T=time];;
 var _This=_ThreadBios;;
 
+var _EthList = _ethList;;
+fun ethList = _EthList;;
+fun ethAdd name family mac maxPacketLength ip = set _EthList=[(listLength _EthList) name family mac maxPacketLength ip]:_EthList; true;;
+
 //------------------------------
 include bios._start;;
 include bios._util;;

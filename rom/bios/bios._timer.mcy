@@ -43,3 +43,9 @@ fun sleepMs ms=
 fun _timerList= listMap _TimerList (lambda p= [p._timeTM p._thTM]);;
 
 fun _timerAlive= _TimerList<>nil;;
+
+fun timeSet t=
+\atomic (
+	let (t-time)*1000 -> dt in for p in _TimerList do set p._timeTM= p._timeTM+dt;
+	_timeSet t
+);;

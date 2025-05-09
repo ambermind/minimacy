@@ -151,7 +151,7 @@ int _serialForget(LB* p)
 void _serialMark(LB* user)
 {
 	Serial* f = (Serial*)user;
-	MEMORY_MARK(f->socket);
+	MARK_OR_MOVE(f->socket);
 }
 
 WORKER_START _serialThread(void* param)
@@ -181,7 +181,7 @@ WORKER_START _serialThread(void* param)
 		}
 		if ((inLen == 0)&&(outLen == 0)) {
 //			printf(".");
-			Sleep(50);
+			Sleep(5);
 			continue;
 		}
 //		Sleep(100);
@@ -283,11 +283,11 @@ int fun_serialOpen(Thread* th)
 		goto cleanup;
 	}
 	ct.ReadIntervalTimeout = MAXDWORD;
-	ct.ReadTotalTimeoutConstant = (DWORD)100;
+	ct.ReadTotalTimeoutConstant = (DWORD)0;
 	ct.ReadTotalTimeoutMultiplier = 0;
 
-	ct.WriteTotalTimeoutConstant = 100;
-	ct.WriteTotalTimeoutMultiplier = 100;
+	ct.WriteTotalTimeoutConstant = 0;
+	ct.WriteTotalTimeoutMultiplier = 0;
 
 	fSuccess = SetCommTimeouts(hCom, &ct);
 	if (!fSuccess)

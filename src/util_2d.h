@@ -11,6 +11,11 @@
 #ifndef _UTIL_2D_
 #define _UTIL_2D_
 
+#define CORNER_TOP_LEFT 1
+#define CORNER_TOP_RIGHT 2
+#define CORNER_BOTTOM_LEFT 4
+#define CORNER_BOTTOM_RIGHT 8
+
 typedef int (*BLEND_FUNCTION)(int src, int dst);
 BLEND_FUNCTION _blendFunction(LINT num);
 
@@ -31,6 +36,8 @@ void _bitmapCircle(LBitmap* b, LINT x0, LINT y0, LINT w, LINT h, int color, BLEN
 void _bitmapResizeSmooth(LBitmap* d, LBitmap* src);
 void _bitmapResizeNearest(LBitmap* dst, LBitmap* src);
 void _bitmapComponents(LBitmap* d, LINT r, LINT g, LINT b, LINT a);
+void _bitmapCorners(LBitmap* d, LINT w, LINT mask);
+void _bitmapGradient(LBitmap* d, LINT col00, LINT colw0, LINT col0h);
 int _rgbFromYCrCb(LINT rgb);
 int _yCrCbFromRgb(LINT ycrcb);
 void _bitmapFromYCrCb(LBitmap* b);

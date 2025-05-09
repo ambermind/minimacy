@@ -19,8 +19,8 @@ LINT globalsNb(Globals* globals)
 void globalsMark(LB* user)
 {
 	Globals* l=(Globals*)user;
-	MEMORY_MARK(l->data);
-	MEMORY_MARK(l->next);
+	MARK_OR_MOVE(l->data);
+	MARK_OR_MOVE(l->next);
 }
 
 Globals* globalsCreate(LB* data, Globals* next)

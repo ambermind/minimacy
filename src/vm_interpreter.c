@@ -93,7 +93,7 @@ LINT interpreterExec(Thread* th,LINT argc,LINT tfc)	// fun arg0 ... 0:argn-1
 	}
 	if (tfc) {
 		for (i = 0; i< th->sp-th->callstack; i++) {
-			if (STACK_IS_PNT(th, i) && (STACK_PNT(th, i) == MM._abortMark)) {	// we can't use tfc if inside a try ... else
+			if (STACK_IS_PNT(th, i) && (STACK_PNT(th, i) == MM.abortMark)) {	// we can't use tfc if inside a try ... else
 				tfc = 0;
 				break;
 			}
@@ -158,7 +158,7 @@ int interpreterContinue(Thread* th, LW data, int dataType)
 {
 	while (th->sp > th->callstack + 1)
 	{
-		if (STACK_IS_PNT(th, 1) && (STACK_PNT(th, 1) == MM._loopMark)) {
+		if (STACK_IS_PNT(th, 1) && (STACK_PNT(th, 1) == MM.loopMark)) {
 			STACK_SET_TYPE(th, 0, data, dataType);
 			return 0;
 		}
@@ -172,7 +172,7 @@ int interpreterBreak(Thread* th, LW data, int dataType)
 {
 	while (th->sp > th->callstack)
 	{
-		if (STACK_IS_PNT(th, 0) && (STACK_PNT(th, 0) == MM._loopMark)) {
+		if (STACK_IS_PNT(th, 0) && (STACK_PNT(th, 0) == MM.loopMark)) {
 			STACK_SET_TYPE(th, 0, data, dataType);
 			return 0;
 		}
@@ -194,7 +194,7 @@ int interpreterAbort(Thread* th)
 //		if (fun->pkg == th->fun->pkg) {	// we force the try to be in the same package as abort
 			while (i > callstack + 1)
 			{
-				if ((ARRAY_IS_PNT(STACK_BLOCK(th), i - 1)) && (ARRAY_PNT(STACK_BLOCK(th), i - 1) == MM._abortMark)) {
+				if ((ARRAY_IS_PNT(STACK_BLOCK(th), i - 1)) && (ARRAY_PNT(STACK_BLOCK(th), i - 1) == MM.abortMark)) {
 					th->sp = i;
 					th->pc = STACK_PULL_INT(th);
 					th->fun = fun;
@@ -523,7 +523,7 @@ LINT interpreterRun(Thread* th,LINT maxCycles)
 			case OPln: BCFLOAT1FUN(log)
 			case OPlog: BCFLOAT1FUN(log10)
 			case OPloop:
-				STACK_PUSH_PNT_ERR(th, MM._loopMark, INTERPRETER_OM)	// push _loopMark
+				STACK_PUSH_PNT_ERR(th, MM.loopMark, INTERPRETER_OM)	// push loopMark
 				STACK_PUSH_NIL_ERR(th, INTERPRETER_OM);
 				break;
 			case OPlt:	BCINT2BOOL(< )
@@ -719,7 +719,7 @@ LINT interpreterRun(Thread* th,LINT maxCycles)
 				break;
 			case OPtry:
 				th->error = NULL;
-				STACK_PUSH_PNT_ERR(th, MM._abortMark, INTERPRETER_OM)
+				STACK_PUSH_PNT_ERR(th, MM.abortMark, INTERPRETER_OM)
 				STACK_PUSH_INT_ERR(th, (LINT)(pc + bytecodeGetJump(pc) - BC_START(bytecode)), INTERPRETER_OM);
 				pc += BC_JUMP_SIZE;
 				break;
@@ -741,7 +741,7 @@ LINT interpreterRun(Thread* th,LINT maxCycles)
 					NATIVE native;
 					int k,argc;
 					LINT skip, def;
-					LINT fastAlloc = memoryGetFast();
+					LINT safeAlloc = MM.safeAlloc;
 					int scheduler = (th == MM.scheduler);
 					int opext = op&0x7fff;
 					if (opext >= NATIVE_DEF_LENGTH) {
@@ -774,7 +774,7 @@ LINT interpreterRun(Thread* th,LINT maxCycles)
 //					PRINTF(LOG_SYS,"native %s done\n",n->name);
 					//		if (MM.gcTrace) PRINTF(LOG_DEV, "/");
 					MM.tmpRoot = NULL;
-					while (memoryGetFast() > fastAlloc) memoryLeaveFast();	// this simplifies a lot how to write native functions which need "fastAlloc"
+					while (MM.safeAlloc > safeAlloc) memoryLeaveSafe();	// this simplifies a lot how to write native functions which need "safeAlloc"
 					if (k>0) return INTERPRETER_END(k);
 					skip = STACK_REF(th) - def;
 					if (skip < 0)

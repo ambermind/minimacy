@@ -13,8 +13,7 @@
 #include "crypto_aes.h"
 #include "crypto_des.h"
 #include "crypto_rc4.h"
-#include "crypto_crc32.h"
-#include "crypto_adler32.h"
+#include "crypto_checksum.h"
 
 typedef struct
 {
@@ -426,6 +425,16 @@ int fun_crc32(Thread* th)
 	v = crc32Str((unsigned int)crc, STR_START(src), (int)STR_LENGTH(src));
 	FUN_RETURN_INT(v & 0xffffffff);
 }
+int fun_crc7(Thread* th)
+{
+	LINT v;
+
+	LINT crc = STACK_INT(th, 0);
+	LB* src = STACK_PNT(th, 1);
+	if (!src) FUN_RETURN_NIL;
+	v = crc7Str((unsigned int)crc, STR_START(src), (int)STR_LENGTH(src));
+	FUN_RETURN_INT(v & 0xff);
+}
 
 int fun_adler32(Thread* th)
 {
@@ -489,6 +498,8 @@ int systemCryptoInit(Pkg *system)
 		{ NATIVE_FUN, "rc4WriteBytes", fun_rc4WriteBytes, "fun Rc4 Bytes Int Str Int Int -> Rc4" },
 		{ NATIVE_FUN, "strCrc32", fun_crc32, "fun Str Int -> Int" },
 		{ NATIVE_FUN, "bytesCrc32", fun_crc32, "fun Bytes Int -> Int" },
+		{ NATIVE_FUN, "strCrc7", fun_crc7, "fun Str Int -> Int" },
+		{ NATIVE_FUN, "bytesCrc7", fun_crc7, "fun Bytes Int -> Int" },
 		{ NATIVE_FUN, "strAdler32", fun_adler32, "fun Str Int -> Int" },
 		{ NATIVE_FUN, "bytesAdler32", fun_adler32, "fun Bytes Int -> Int" },
 	};

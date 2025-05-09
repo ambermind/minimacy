@@ -19,9 +19,9 @@ LINT localsNb(Locals* locals)
 void localsMark(LB* user)
 {
 	Locals* l=(Locals*)user;
-	MEMORY_MARK(l->name);
-	MEMORY_MARK(l->type);
-	MEMORY_MARK(l->next);
+	MARK_OR_MOVE(l->name);
+	MARK_OR_MOVE(l->type);
+	MARK_OR_MOVE(l->next);
 }
 
 Locals* localsCreate(char* name,LINT level, Type* type, Locals* next)

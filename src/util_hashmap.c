@@ -13,7 +13,7 @@
 void hashmapMark(LB* user)
 {
 	HashSlots* h=(HashSlots*)user;
-	MEMORY_MARK(h->table);
+	MARK_OR_MOVE(h->table);
 }
 
 HashSlots* hashSlotsCreate(LINT nbits, LW type)
@@ -23,7 +23,7 @@ HashSlots* hashSlotsCreate(LINT nbits, LW type)
 	LINT size;
 	LB* table;
 
-	memoryEnterFast();
+	memoryEnterSafe();
 	if (nbits==0) nbits=HASH_DEFAULT;
 	size = one << nbits;
 	h=(HashSlots*)memoryAllocExt(sizeof(HashSlots),type,NULL,hashmapMark); if (!h) return NULL;
@@ -33,10 +33,9 @@ HashSlots* hashSlotsCreate(LINT nbits, LW type)
 	table= memoryAllocArray(size,DBG_ARRAY); if (!table) return NULL;
 	h->table = table;
 	//	PRINTF(LOG_DEV,"hashmap %llx nbits %lld -> %llx #%lld \n", h, nbits, h->table,size);
-	memoryLeaveFast();
+	memoryLeaveSafe();
 	return h;
 }
-
 LINT hashSlotsBitSize(HashSlots* h)
 {
 	if (!h) return 0;
@@ -259,4 +258,33 @@ int hashsetAdd(HashSlots* h, LW key, int type)
 	ARRAY_SET_PNT(table, index, p);
 	h->nb++;
 	return 0;
+}
+
+void hashSlotsRecompute(HashSlots* h)
+{
+	int i;
+	h->save = NULL;
+	// we put all elements in h->save list
+	for (i = 0; i < (1 << h->nbits); i++) {
+		LB* p;
+		while ((p = ARRAY_PNT(h->table, i))) {
+			LW dbg;
+			LB* next = ARRAY_PNT(p, HASH_LIST_NEXT);
+			if (ARRAY_TYPE(p, HASH_LIST_KEY) != VAL_TYPE_PNT) return;	// no need to recompute Int and Float key hashmaps/hashsets
+			dbg = HEADER_DBG(ARRAY_PNT(p, HASH_LIST_KEY));
+			if ((dbg == DBG_S) || (dbg == DBG_B)) return;	// no need to recompute String and Bignum key hashmaps/hashsets
+			ARRAY_SET_PNT(p, HASH_LIST_NEXT, h->save);
+			h->save = p;
+			ARRAY_SET_PNT(h->table, i, next);
+		}
+	}
+	// now we add each element in the new slot
+	while (h->save) {
+		LB* p = h->save;
+		LB* next = ARRAY_PNT(p, HASH_LIST_NEXT);
+		LINT index = hashmapComputeIndex(h->nbits, ARRAY_GET(p, HASH_LIST_KEY), ARRAY_TYPE(p, HASH_LIST_KEY));
+		ARRAY_SET_PNT(p, HASH_LIST_NEXT, ARRAY_PNT(h->table, index));
+		ARRAY_SET_PNT(h->table, index, p);
+		h->save = next;
+	}
 }

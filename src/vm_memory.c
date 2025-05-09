@@ -96,15 +96,15 @@ LB* memoryAlloc(LINT size,LINT type,LW dbg)
 	p->pkg = MM.currentPkg;
 	p->data[0]=dbg;
 
-	if (MM.step == 2) p->lifo = MM.USEFUL;
+	if (MM.gcStage == GC_STAGE_SWEEP) p->listMark = MM.USEFUL;
 	else {
-		p->lifo = MM.lifo; MM.lifo = p;
+		p->listMark = MM.listMark; MM.listMark = p;
 	}
 
-	if (MM.fastAlloc>0)
+	if (MM.safeAlloc>0)
 	{
-		p->nextBlock=MM.listFast;
-		MM.listFast=p;
+		p->nextBlock=MM.listSafe;
+		MM.listSafe=p;
 	}
 	else
 	{
@@ -224,7 +224,7 @@ cleanup:
 void memoryGCinit(void)
 {
 	LB* p;
-	MM.step = 1;
+	MM.gcStage = GC_STAGE_MARK;
 	MM.listCheck = MM.listBlocks;
 	MM.listBlocks = NULL;
 	MM.gc_nb0 = MM.blocs_nb;
@@ -232,23 +232,23 @@ void memoryGCinit(void)
 
 	p = MM.USEFUL; MM.USEFUL = MM.USELESS; MM.USELESS = p;
 
-	MEMORY_MARK(MM.system);
-	MEMORY_MARK(MM.scheduler);
-	MEMORY_MARK(MM.tmpStack);
-	MEMORY_MARK(MM.tmpBuffer);
-	MEMORY_MARK(MM.args);
-	MEMORY_MARK(MM.fun_u0_list_u0_list_u0);
-	MEMORY_MARK(MM.fun_array_u0_I_u0);
-	MEMORY_MARK(MM.funStart);
-	MEMORY_MARK(MM.roots);
-	MEMORY_MARK(MM.popOblivions);
-	MEMORY_MARK(MM.tmpRoot);
-	MEMORY_MARK(MM.partitionsFS);
+	BLOCK_MARK(MM.system);
+	BLOCK_MARK(MM.scheduler);
+	BLOCK_MARK(MM.tmpStack);
+	BLOCK_MARK(MM.tmpBuffer);
+	BLOCK_MARK(MM.args);
+	BLOCK_MARK(MM.fun_u0_list_u0_list_u0);
+	BLOCK_MARK(MM.fun_array_u0_I_u0);
+	BLOCK_MARK(MM.funStart);
+	BLOCK_MARK(MM.roots);
+	BLOCK_MARK(MM.popOblivions);
+	BLOCK_MARK(MM.tmpRoot);
+	BLOCK_MARK(MM.partitionsFS);
 	romdiskMark(NULL);
-	p = MM.listFast;
+	p = MM.listSafe;
 	while (p)
 	{
-		if (HEADER_DBG(p) != DBG_STACK) MEMORY_MARK(p);
+		if (HEADER_DBG(p) != DBG_STACK) BLOCK_MARK(p);
 		p = p->nextBlock;
 	}
 }
@@ -259,13 +259,13 @@ int memoryCleanOblivions(void)
 	while (*previous)
 	{
 		Oblivion* ob = *previous;
-		if (ob->header.lifo == MM.USELESS)
+		if (ob->header.listMark == MM.USELESS)
 		{
 			*previous = ob->listNext;
 			if (ob->f) {
 				result = 1;
-				ob->header.lifo = MM.lifo;
-				MM.lifo = (LB*)ob;
+				ob->header.listMark = MM.listMark;
+				MM.listMark = (LB*)ob;
 				ob->popNext = MM.popOblivions;
 				MM.popOblivions = ob;
 			}
@@ -275,13 +275,13 @@ int memoryCleanOblivions(void)
 	}
 	return result;
 }
-void memoryCleanListThreads(void)
+void memoryCleanThreads(void)
 {
 	Thread** previous = &MM.listThreads;
 	while (*previous)
 	{
 		Thread* th = *previous;
-		if (th->header.lifo == MM.USELESS)
+		if (th->header.listMark == MM.USELESS)
 		{
 			*previous = th->listNext;
 			th->listNext = NULL;	// useless yet clean
@@ -295,7 +295,7 @@ void memoryCleanPkgs(void)
 	while (*previous)
 	{
 		Pkg* p = *previous;
-		if (p->header.lifo == MM.USELESS)
+		if (p->header.listMark == MM.USELESS)
 		{
 			*previous = p->listNext;
 			p->listNext = NULL;	// useless yet clean
@@ -307,14 +307,14 @@ void memoryCleanPkgs(void)
 void memoryGC(LINT period)
 {
 	MM.gc_period_time += period;
-//	PRINTF(LOG_DEV,LSD,MM.step);
-	if (MM.step==1)
+//	PRINTF(LOG_DEV,LSD,MM.gcStage);
+	if (MM.gcStage== GC_STAGE_MARK)
 	{
 //		PRINTF(LOG_DEV,"$");
-		if (MM.lifo)
+		if (MM.listMark)
 		{
-			LB* p=MM.lifo; MM.lifo=p->lifo;
-			p->lifo=MM.USEFUL;
+			LB* p=MM.listMark; MM.listMark=p->listMark;
+			p->listMark=MM.USEFUL;
 
 			BLOCK_MARK(p->pkg);
 			if ((HEADER_TYPE(p)==TYPE_ARRAY)&&(HEADER_DBG(p)!= DBG_STACK))	// stack content is marked by threadMark
@@ -333,13 +333,13 @@ void memoryGC(LINT period)
 		}
 		else if (!memoryCleanOblivions())
 		{
-			memoryCleanListThreads();
+			memoryCleanThreads();
 			memoryCleanPkgs();
 //			threadDumpLoop("go step 2");
-			MM.step=2;
+			MM.gcStage= GC_STAGE_SWEEP;
 		}
 	}
-	else if (MM.step==2)
+	else if (MM.gcStage== GC_STAGE_SWEEP)
 	{
 //		PRINTF(LOG_DEV,".");
 //		PRINTF(LOG_DEV,"GC2 %llx.", MM.listCheck);
@@ -347,7 +347,7 @@ void memoryGC(LINT period)
 		{
 			LB* p=MM.listCheck;
 			MM.listCheck=MM.listCheck->nextBlock;
-			if (p->lifo!=MM.USELESS)
+			if (p->listMark!=MM.USELESS)
 			{
 				p->nextBlock=MM.listBlocks;
 				MM.listBlocks=p;
@@ -373,7 +373,7 @@ void memoryGC(LINT period)
 				PRINTF(LOG_SYS, "> GC: #"LSD" freed " LSD " of " LSD " blocks, still using "LSD "%s\n", 
 					MM.gc_count, MM.gc_free, MM.gc_nb0, MM.blocs_length >> (useMB?20:10),useMB?"M":"k");
 			}
-			MM.step = 0;
+			MM.gcStage = GC_STAGE_INIT;
 		}
 	}
 	else memoryGCinit();
@@ -383,9 +383,9 @@ void memoryFinalizeGC(void)
 {
 	if (MM.gcTrace) PRINTF(LOG_DEV,"> GC: waiting for GC ending\n");
 
-	if (MM.step==0) memoryGCinit();
-	if (MM.step==1) while(MM.step==1) memoryGC(0);
-	while(MM.step==2) memoryGC(0);
+	if (MM.gcStage== GC_STAGE_INIT) memoryGCinit();
+	if (MM.gcStage== GC_STAGE_MARK) while(MM.gcStage== GC_STAGE_MARK) memoryGC(0);
+	while(MM.gcStage== GC_STAGE_SWEEP) memoryGC(0);
 }
 
 void memoryRecount(void)
@@ -402,7 +402,7 @@ void memoryRecount(void)
 	for (pkg = MM.listPkgs; pkg; pkg = pkg->listNext) pkg->memory = 0;
 
 	for(i=0;i<2;i++) {
-		p = i?MM.listBlocks:MM.listFast;
+		p = i?MM.listBlocks:MM.listSafe;
 		while (p) {
 			LINT total = BLOCK_TOTAL_MEMORY(HEADER_TYPE(p), HEADER_SIZE(p));
 			if (DBG_IS_PNT(HEADER_DBG(p))) slots[31] += total;
@@ -439,13 +439,13 @@ int memoryAddRoot(LB* root)
 	STACK_PUSH_PNT_ERR(MM.tmpStack, MM.roots, EXEC_OM);
 	STACK_PUSH_FILLED_ARRAY_ERR(MM.tmpStack, 2, DBG_LIST,EXEC_OM);
 	MM.roots = STACK_PULL_PNT(MM.tmpStack);
-	MEMORY_MARK(MM.roots);
+	BLOCK_MARK(MM.roots);
 	return 0;
 }
 void memorySetTmpRoot(LB* p)
 {
 	MM.tmpRoot = p;
-	MEMORY_MARK(MM.tmpRoot);
+	BLOCK_MARK(MM.tmpRoot);
 }
 void memoryInit(int argc, const char** argv)
 {
@@ -457,10 +457,10 @@ void memoryInit(int argc, const char** argv)
 	MM.USEFUL=_USEFUL;
 	MM.USELESS=_USELESS;
 
-	MM.fastAlloc=0;
-	MM.step=0;
-	MM.lifo=MM.listCheck=MM.listBlocks=MM.listFast=NULL;
-	MM.updating = 0;
+	MM.safeAlloc=0;
+	MM.gcStage= GC_STAGE_INIT;
+	MM.listMark=MM.listCheck=MM.listBlocks=MM.listSafe=NULL;
+	MM.blockOperation = MEMORY_MARK;
 
 	MM.listThreads = NULL;
 	MM.listOblivions = NULL;
@@ -489,8 +489,8 @@ void memoryInit(int argc, const char** argv)
 	MM.romdiskVolume = NULL;
 	MM.partitionsFS = NULL;
 
-	MM._loopMark=NULL;
-	MM._abortMark=NULL;
+	MM.loopMark=NULL;
+	MM.abortMark=NULL;
 
 
 	MM.args = NULL;
@@ -499,7 +499,7 @@ void memoryInit(int argc, const char** argv)
 	MM.OM = 0;
 
 
-	memoryEnterFast();
+	memoryEnterSafe();
 	biosName = memoryAllocStr(BOOT_FILE, -1);
 	MM.system = pkgAlloc(biosName, 0, PKG_FROM_IMPORT);
 	MM.currentPkg = MM.system;
@@ -516,7 +516,7 @@ void memoryInit(int argc, const char** argv)
 	MM.args = (STACK_PULL_PNT(MM.tmpStack));
 
 	MM.funStart= memoryAllocStr(FUN_START_NAME, -1);
-	memoryLeaveFast();
+	memoryLeaveSafe();
 
 	systemInit(MM.system);
 
@@ -525,34 +525,33 @@ void memoryInit(int argc, const char** argv)
 	if (MM.gcTrace) PRINTF(LOG_SYS, "> GC: Memory after init : " LSD " bytes\n", MM.blocs_length);
 //	exit(0);
 }
-void memoryEnterFast(void)	// after this, newly allocated blocks cannot be GCized
+void memoryEnterSafe(void)	// after this, newly allocated blocks cannot be GCized
 {
-	MM.fastAlloc++;
+	MM.safeAlloc++;
 }
-LINT memoryGetFast(void)
+void memoryLeaveSafe(void)
 {
-	return MM.fastAlloc;
-}
-void memoryLeaveFast(void)
-{
-	LB* p=MM.listFast;
-
-	MM.fastAlloc--;
-	if (MM.fastAlloc>0) return;
-	if (p)
-	{
-		while(p->nextBlock) p= p->nextBlock;
+	LB* p = MM.listSafe;
+	MM.safeAlloc--;
+	if (MM.safeAlloc>0) return;
+	while (p) {
+		LB* next = p->nextBlock;
+		if (p->listMark == MM.USEFUL || p->listMark == MM.USELESS) {
+			p->listMark = MM.listMark;
+			MM.listMark = p;
+		}
 		p->nextBlock = MM.listBlocks;
-		MM.listBlocks = MM.listFast;
-		MM.listFast = NULL;
+		MM.listBlocks = p;
+		p = next;
 	}
+	MM.listSafe = NULL;
 }
 int memoryEnd(void)
 {
 /*	LB* p;
 	for (p = MM.listBlocks; p; p = p->nextBlock) if (p == MemoryCheck) PRINTF(LOG_DEV,"in listBlocks\n");
 	for (p = MM.listCheck; p; p = p->nextBlock) if (p == MemoryCheck) PRINTF(LOG_DEV,"in listCheck\n");
-	for (p = MM.listFast; p; p = p->nextBlock) if (p == MemoryCheck) PRINTF(LOG_DEV,"in listFast\n");
+	for (p = MM.listSafe; p; p = p->nextBlock) if (p == MemoryCheck) PRINTF(LOG_DEV,"in listSafe\n");
 */	MM.scheduler=NULL;
 	MM.tmpStack=NULL;
 	MM.system=NULL;
@@ -565,11 +564,11 @@ int memoryEnd(void)
 	MM.popOblivions = NULL;
 	MM.tmpRoot = NULL;
 	MM.partitionsFS = NULL;
-	while(memoryGetFast()>0) memoryLeaveFast();
+	while(MM.safeAlloc>0) memoryLeaveSafe();
 	memoryFinalizeGC();
 	memoryFinalizeGC();
 //	PRINTF(LOG_DEV,"MemoryCheck %lld %lld\n", ((Mem*)MemoryCheck)->bytes, ((Mem*)MemoryCheck)->parentMem);
-	if (MM.gcTrace) PRINTF(LOG_SYS, "> " LSD " blocks, " LSD " bytes, fast=" LSD "\n",MM.blocs_nb,MM.blocs_length,MM.fastAlloc);
+	if (MM.gcTrace) PRINTF(LOG_SYS, "> " LSD " blocks, " LSD " bytes, fast=" LSD "\n",MM.blocs_nb,MM.blocs_length,MM.safeAlloc);
 	systemTerminate();
 	lockDelete(&MM.lock);
 	return MM.reboot;

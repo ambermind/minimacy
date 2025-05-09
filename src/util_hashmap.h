@@ -31,6 +31,7 @@ struct HashSlots
 	LINT nb;
 	LINT nbits;
 	LB* table;
+	LB* save;	// used only in GC compact
 };
 
 HashSlots* hashSlotsCreate(LINT nbits, LW type);
@@ -47,5 +48,7 @@ LB* hashmapDictGetOpti(HashSlots* h,char* key,LINT len,LINT index);
 int hashsetContains(HashSlots* h, LW key, int type);
 int hashsetRemove(HashSlots* h, LW key, int type);
 int hashsetAdd(HashSlots* h, LW key, int type);
+
+void hashSlotsRecompute(HashSlots* h);
 
 #endif

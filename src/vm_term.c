@@ -462,7 +462,7 @@ void itemEcho(int mask, LW v, int type, int ln)
 
 void itemHeader(int mask,LB* p)
 {
-	PRINTF(mask, "header: " LSX " " LSX " " LSX "(%s) at " LSX "\n", p->sizeAndType, p->nextBlock, p->lifo, (p->lifo==MM.USELESS)?"useless":"useful", p);
+	PRINTF(mask, "header: " LSX " " LSX " " LSX "(%s) at " LSX "\n", p->sizeAndType, p->nextBlock, p->listMark, (p->listMark==MM.USELESS)?"useless":"useful", p);
 }
 
 void termEchoSourceLine(Pkg* pkg,int mask,char* srcName, char* src, int index)

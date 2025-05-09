@@ -30,9 +30,8 @@ compiler_struct.o \
 compiler_sum.o \
 compiler_term.o \
 compiler_try.o \
-crypto_adler32.o \
 crypto_aes.o \
-crypto_crc32.o \
+crypto_checksum.o \
 crypto_des.o \
 crypto_hash.o \
 crypto_rc4.o \

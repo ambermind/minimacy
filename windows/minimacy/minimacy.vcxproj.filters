@@ -86,13 +86,10 @@
     <ClCompile Include="..\..\src\compiler_try.c">
       <Filter>Source Files\src</Filter>
     </ClCompile>
-    <ClCompile Include="..\..\src\crypto_adler32.c">
-      <Filter>Source Files\src</Filter>
-    </ClCompile>
     <ClCompile Include="..\..\src\crypto_aes.c">
       <Filter>Source Files\src</Filter>
     </ClCompile>
-    <ClCompile Include="..\..\src\crypto_crc32.c">
+    <ClCompile Include="..\..\src\crypto_checksum.c">
       <Filter>Source Files\src</Filter>
     </ClCompile>
     <ClCompile Include="..\..\src\crypto_des.c">
@@ -268,13 +265,10 @@
     <ClInclude Include="..\..\src\compiler_parser.h">
       <Filter>Source Files\src</Filter>
     </ClInclude>
-    <ClInclude Include="..\..\src\crypto_adler32.h">
-      <Filter>Source Files\src</Filter>
-    </ClInclude>
     <ClInclude Include="..\..\src\crypto_aes.h">
       <Filter>Source Files\src</Filter>
     </ClInclude>
-    <ClInclude Include="..\..\src\crypto_crc32.h">
+    <ClInclude Include="..\..\src\crypto_checksum.h">
       <Filter>Source Files\src</Filter>
     </ClInclude>
     <ClInclude Include="..\..\src\crypto_des.h">

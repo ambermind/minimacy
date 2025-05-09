@@ -541,6 +541,62 @@ void _bitmapComponents(LBitmap* d, LINT r, LINT g, LINT b, LINT a)
 	}
 }
 
+#define C_LEFT(z) (w1-(z))
+#define C_RIGHT(z) (d->w - w +(z))
+#define C_TOP(z) (w1-(z))
+#define C_BOTTOM(z) (d->h - w +(z))
+
+#define CORNER_HALF(leftRight,topBottom,x,y) { \
+	lchar* p=&d->start8[topBottom(y) * d->next8 + (leftRight(x) << 2) + 3];	\
+	*p = COLORMUL(*p,(lchar)alpha);	\
+}
+
+#define CORNER(leftRight,topBottom) {\
+	CORNER_HALF(leftRight,topBottom,x,y) \
+	if (x!=y) CORNER_HALF(leftRight,topBottom,y,x) \
+}
+
+void _bitmapCorners(LBitmap* d, LINT w, LINT mask)
+{
+	LINT x, y, R0, R1, w1;
+	if (!d) return;
+	if (w > (d->w >> 1)) w = d->w >> 1;
+	if (w > (d->h >> 1)) w = d->h >> 1;
+	if (w <= 1) return;
+	w1 = w - 1;
+	R0 = w1*w1;
+	R1 = w*w;
+	if (!mask) mask = -1;
+	for(x=0;x<w;x++)
+		for (y = 0; y <= x; y++) {
+			LINT r = x * x + y * y;
+			LINT alpha = (r <= R0) ? 255 : ((r >= R1) ? 0 : 255 - ((r - R0)<<8) / (R1 - R0));
+			if (mask & CORNER_TOP_LEFT) CORNER(C_LEFT,C_TOP)
+			if (mask & CORNER_TOP_RIGHT) CORNER(C_RIGHT, C_TOP)
+			if (mask & CORNER_BOTTOM_LEFT) CORNER(C_LEFT, C_BOTTOM)
+			if (mask & CORNER_BOTTOM_RIGHT) CORNER(C_RIGHT, C_BOTTOM)
+		}
+}
+void _bitmapGradient(LBitmap* d, LINT col00, LINT colw0, LINT col0h)
+{
+	LINT i, x, y, w1, h1;
+	if (!d) return;
+	w1 = d->w - 1; if (w1 < 1) w1 = 1;
+	h1 = d->h - 1; if (h1 < 1) h1 = 1;
+	for (i = 0; i < 4; i++) {
+		LINT shift = i * 8;
+		LINT b0 = (col00>>shift) & 255;
+		LINT bw = ((colw0 >> shift) & 255) - b0;
+		LINT bh = ((col0h >> shift) & 255) - b0;
+		for (y = 0; y < d->h; y++)
+			for (x = 0; x < d->w; x++) {
+				LINT val = b0 + bw * x / w1 + bh * y / h1;
+				if (val < 0) val = 0;
+				else if (val > 255) val = 255;
+				d->start8[y * d->next8 + (x << 2) + i] = (char)val;
+			}
+	}
+}
 int _rgbFromYCrCb(LINT rgb)
 {
 	lchar y = (rgb >> 16) & 255;

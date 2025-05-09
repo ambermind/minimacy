@@ -390,11 +390,11 @@ WORKER_START _deflate(volatile Thread* th)
 
 void _deflateMark(LB* user)
 {
-	if (MM.updating) {
+	if (MOVING_BLOCKS) {
 		Deflate* z = (Deflate*)user;
-		MEMORY_MARK(z->srcBlock);
+		MARK_OR_MOVE(z->srcBlock);
 		z->src = STR_START(z->srcBlock);
-		if (z->link) *z->link = (Deflate*)z->header.lifo;
+		if (z->link) *z->link = (Deflate*)z->header.listMark;
 	}
 }
 

@@ -12,7 +12,7 @@
 
 #ifdef USE_MEMORY_C
 
-#define BMM_SIZE(p) ((HEADER_TYPE(p)==TYPE_FREE)?(HEADER_SIZE(p)):BLOCK_TOTAL_MEMORY(HEADER_TYPE(p), HEADER_SIZE(p)))
+#define BMM_SIZE(p) ((LINT)((HEADER_TYPE(p)==TYPE_FREE)?(HEADER_SIZE(p)):BLOCK_TOTAL_MEMORY(HEADER_TYPE(p), HEADER_SIZE(p))))
 
 #define BMM_MASK (LWLEN-1)
 
@@ -30,6 +30,9 @@ LINT BmmTotalSize=MEMORY_C_SIZE;
 #endif
 LINT BmmTotalFree = 0;
 LINT BmmMaxSize=0;
+BMM* BmmRoot;
+BMM* BmmReserve = NULL;
+int BmmWrongPointer;
 
 char* bmmAllocForEver(LINT size)
 {
@@ -37,41 +40,7 @@ char* bmmAllocForEver(LINT size)
 	BmmTotalSize-=size;
 	return &MemoryStrip[BmmTotalSize];
 }
-int checkPointer(LINT p)
-{
-	LINT start=(LINT)MemoryStrip;
-	if (!p) return 1;
-	if (p<start || p>=start+BmmTotalSize) {
-		PRINTF(LOG_DEV,">>>>>>>>>>>Invalid pointer "LSX"\n", p);
-		return 0;
-	}
-	return 1;
-}
-LINT relativePointer(LB* p)
-{
-	return (LINT)(((char*)p) - MemoryStrip);
-}
-int checkListPointer(char* title, LB* p)
-{
-	LB* pLast;
 
-	PRINTF(LOG_DEV, ">>>>>>>>>>>Check %s pointers from "LSX"\n", title, (LINT)p);
-	pLast = p;
-	while (p) {
-		if (!checkPointer((LINT)p)) {
-			PRINTF(LOG_DEV, "error in "LSX"\n", relativePointer(pLast));
-			PRINTF(LOG_DEV, "stopped\n");
-			return 0;
-		}
-//		if (MM.gcTrace > 1) printf(LSX":%d(%d). ", relativePointer(p), (INT_FROM_VAL(HEADER_DBG(p)) - 1) / 2, HEADER_SIZE(p));
-		pLast = p;
-		p = p->nextBlock;
-	}
-	return 1;
-}
-
-BMM* BmmRoot;
-BMM* BmmReserve = NULL;
 void _bmmDump(BMM* node,int depth)
 {
 	int n = 0;
@@ -139,14 +108,7 @@ int _bmmAdd(BMM** parentLink, BMM* nodeToAdd)
 	size = BMM_SIZE(nodeToAdd);
 	if (size > BMM_SIZE(node)) return _bmmAdd(&node->right, nodeToAdd);
 	if (size < BMM_SIZE(node)) return _bmmAdd(&node->left, nodeToAdd);
-/*	// insert sort
-	if (((LINT)nodeToAdd) >((LINT)node)) {
-		while (node->next && (((LINT)nodeToAdd) > ((LINT)node->next))) node = node->next;
-		nodeToAdd->next = node->next;
-		node->next = nodeToAdd;
-		return 0;
-	}
-*/	nodeToAdd->left = node->left;
+	nodeToAdd->left = node->left;
 	nodeToAdd->right = node->right;
 	node->left = node->right = NULL;
 	nodeToAdd->next = node;
@@ -315,12 +277,61 @@ void bmmSetTotalSize(LINT size)
 {
 	BmmTotalSize=size;
 }
+void bmmCheckOrMoveMM()
+{
+	MARK_OR_MOVE(MM.system);
+	MARK_OR_MOVE(MM.scheduler);
+	MARK_OR_MOVE(MM.tmpStack);
+	MARK_OR_MOVE(MM.tmpBuffer);
+	MARK_OR_MOVE(MM.args);
+	MARK_OR_MOVE(MM.fun_u0_list_u0_list_u0);
+	MARK_OR_MOVE(MM.fun_array_u0_I_u0);
+	MARK_OR_MOVE(MM.funStart);
+	MARK_OR_MOVE(MM.roots);
+	MARK_OR_MOVE(MM.popOblivions);
+	MARK_OR_MOVE(MM.listOblivions);
+	MARK_OR_MOVE(MM.tmpRoot);
+	MARK_OR_MOVE(MM.partitionsFS);
+	romdiskMark(NULL);
 
+	MARK_OR_MOVE(MM.listMark);
+	MARK_OR_MOVE(MM.listBlocks);
+	MARK_OR_MOVE(MM.listCheck);
+	MARK_OR_MOVE(MM.listSafe);
+
+	MARK_OR_MOVE(MM.listThreads);
+	MARK_OR_MOVE(MM.listPkgs);
+	MARK_OR_MOVE(MM.currentPkg);
+
+	MARK_OR_MOVE(MM._true);
+	MARK_OR_MOVE(MM._false);
+	MARK_OR_MOVE(MM.loopMark);
+	MARK_OR_MOVE(MM.abortMark);
+
+	MARK_OR_MOVE(MM.ansiVolume);
+	MARK_OR_MOVE(MM.romdiskVolume);
+
+	MARK_OR_MOVE(MM.Int);
+	MARK_OR_MOVE(MM.Float);
+	MARK_OR_MOVE(MM.Str);
+	MARK_OR_MOVE(MM.Bytes);
+	MARK_OR_MOVE(MM.Boolean);
+	MARK_OR_MOVE(MM.BigNum);
+	MARK_OR_MOVE(MM.Package);
+	MARK_OR_MOVE(MM.Type);
+
+	MARK_OR_MOVE(FM.READ_ONLY);
+	MARK_OR_MOVE(FM.REWRITE);
+	MARK_OR_MOVE(FM.READ_WRITE);
+	MARK_OR_MOVE(FM.APPEND);
+}
 LINT bmmCompact(void)
 {
 	LINT index, indexAfterMove;
+	HashSlots* hashslots = NULL;
+
 	if (MM.gcTrace) PRINTF(LOG_SYS, "> GC: compacting memory...\n");
-	while (memoryGetFast()) memoryLeaveFast();
+	while (MM.safeAlloc) memoryLeaveSafe();
 	memoryFinalizeGC();
 	memoryFinalizeGC();
 
@@ -330,10 +341,10 @@ LINT bmmCompact(void)
 	workerWaitUntilAllInactive();
 
 	lockEnter(&MM.lock);
-	while (MM.lifo) {
-		LB* p = MM.lifo->lifo;
-		MM.lifo->lifo = MM.USELESS;
-		MM.lifo = p;
+	while (MM.listMark) {
+		LB* p = MM.listMark->listMark;
+		MM.listMark->listMark = MM.USELESS;
+		MM.listMark = p;
 	}
 
 	indexAfterMove = index = 0;
@@ -343,12 +354,11 @@ LINT bmmCompact(void)
 		LINT size= BMM_SIZE((BMM*)node);
 		index += size;
 		if (HEADER_TYPE(node) == TYPE_FREE) continue;
-		node->lifo=(LB*)&MemoryStrip[indexAfterMove];
+		node->listMark=(LB*)&MemoryStrip[indexAfterMove];
 		indexAfterMove += size;
 	}
 
-	// updating pointers
-	MM.updating = 1;
+	MM.blockOperation=MEMORY_MOVE;
 	index = 0;
 	while (index < BmmTotalSize)
 	{
@@ -358,15 +368,15 @@ LINT bmmCompact(void)
 		index += size;
 
 		if (type == TYPE_FREE) continue;
-		MEMORY_MARK(node->nextBlock);
-		MEMORY_MARK(node->pkg);
+		MARK_OR_MOVE(node->nextBlock);
+		MARK_OR_MOVE(node->pkg);
 
 		if ((type == TYPE_ARRAY) && (HEADER_DBG(node) != DBG_STACK)) {
 			LINT i, l;
 			l = ARRAY_LENGTH(node);
 			for (i = 0; i < l; i++) if (ARRAY_IS_PNT(node, i)) {
 				LB* pnt=ARRAY_PNT(node, i);
-				MEMORY_MARK(pnt);
+				MARK_OR_MOVE(pnt);
 				ARRAY_GET(node, i)=VAL_FROM_PNT(pnt);
 			}
 		}
@@ -376,52 +386,10 @@ LINT bmmCompact(void)
 			MARK mark = (MARK)q[NATIVE_MARK];
 			if (mark) (*mark)(node);
 		}
-		if (DBG_IS_PNT(node->data[0])) node->data[0] = VAL_FROM_PNT(PNT_FROM_VAL(node->data[0])->lifo);
+		if (DBG_IS_PNT(node->data[0])) node->data[0] = VAL_FROM_PNT(PNT_FROM_VAL(node->data[0])->listMark);
 	}
-
-	MEMORY_MARK(MM.system);
-	MEMORY_MARK(MM.scheduler);
-	MEMORY_MARK(MM.tmpStack);
-	MEMORY_MARK(MM.tmpBuffer);
-	MEMORY_MARK(MM.args);
-	MEMORY_MARK(MM.fun_u0_list_u0_list_u0);
-	MEMORY_MARK(MM.fun_array_u0_I_u0);
-	MEMORY_MARK(MM.funStart);
-	MEMORY_MARK(MM.roots);
-	MEMORY_MARK(MM.popOblivions);
-	MEMORY_MARK(MM.listOblivions);
-	MEMORY_MARK(MM.tmpRoot);
-	MEMORY_MARK(MM.partitionsFS);
-	romdiskMark(NULL);
-
-	MEMORY_MARK(MM.listBlocks);
-	MEMORY_MARK(MM.listCheck);
-	MEMORY_MARK(MM.listFast);
-
-	MEMORY_MARK(MM.listThreads);
-	MEMORY_MARK(MM.listPkgs);
-	MEMORY_MARK(MM.currentPkg);
-
-	MEMORY_MARK(MM._true);
-	MEMORY_MARK(MM._false);
-
-	MEMORY_MARK(MM.ansiVolume);
-	MEMORY_MARK(MM.romdiskVolume);
-
-	MEMORY_MARK(MM.Int);
-	MEMORY_MARK(MM.Float);
-	MEMORY_MARK(MM.Str);
-	MEMORY_MARK(MM.Bytes);
-	MEMORY_MARK(MM.Boolean);
-	MEMORY_MARK(MM.BigNum);
-	MEMORY_MARK(MM.Package);
-	MEMORY_MARK(MM.Type);
-
-	MEMORY_MARK(FM.READ_ONLY);
-	MEMORY_MARK(FM.REWRITE);
-	MEMORY_MARK(FM.READ_WRITE);
-	MEMORY_MARK(FM.APPEND);
-	MM.updating = 0;
+	bmmCheckOrMoveMM();
+	MM.blockOperation = MEMORY_MARK;
 
 	index = 0;
 	while (index < BmmTotalSize)
@@ -431,14 +399,19 @@ LINT bmmCompact(void)
 		LINT size = BMM_SIZE((BMM*)node);
 		index += size;
 		if (HEADER_TYPE(node) == TYPE_FREE) continue;
-		newNode = node->lifo;
+		newNode = node->listMark;
 		if (node != newNode) {
 			LINT* src = (LINT*)node;
 			LINT* dst = (LINT*)newNode;
 			size >>= LSHIFT;
 			while (size--) *(dst++) = *(src++);
 		}
-		newNode->lifo = _USELESS;
+		if ((HEADER_DBG(newNode) == DBG_HASHSET) || (HEADER_DBG(newNode) == DBG_HASHMAP)) {
+			HashSlots* h = (HashSlots*)newNode;
+			h->save = (LB*)hashslots;
+			hashslots = h;
+		}
+		newNode->listMark = MM.USEFUL;
 	}
 	BmmRoot =(BMM*)&MemoryStrip[indexAfterMove];
 	HEADER_SET_SIZE_AND_TYPE(BmmRoot, BmmTotalSize- indexAfterMove, TYPE_FREE);
@@ -451,6 +424,164 @@ LINT bmmCompact(void)
 	if (MM.gcTrace && BmmReserve) PRINTF(LOG_SYS, "> GC: restored a reserve of %d bytes\n", MEMORY_SAFE_SIZE);
 	bmmComputeMaxSize();
 	if (MM.gcTrace) PRINTF(LOG_SYS, "> GC: Larger block: %d\n", BmmMaxSize);
+//	memoryCheck(1); 
+	while (hashslots) {
+		HashSlots* next = (HashSlots * )hashslots->save;
+		hashSlotsRecompute(hashslots);
+		hashslots = next;
+	}
 	return BmmMaxSize;
+}
+int checkPointer(LB* p)
+{
+	LINT index = ((LINT)p) - ((LINT)MemoryStrip);
+	if (!p) return 1;
+	if ((index < 0) || ((index+4*((LINT)sizeof(LB*))) >= BmmTotalSize) ) {
+		PRINTF(LOG_USER, "> Invalid pointer "LSX" (index "LSD")\n", (LINT)p,index);
+		goto fault;
+	}
+	index = 0;
+	while (index < BmmTotalSize)
+	{
+		LB* node = (LB*)&MemoryStrip[index];
+		LINT size = BMM_SIZE((BMM*)node);
+		if (node == p) return 1;
+		if (size <= 0) {
+			PRINTF(LOG_USER, "> Invalid block "LSX" (index "LSD") size=%d\n", (LINT)node, index, size);
+			goto fault;
+		}
+		index += size;
+	}
+	index = ((LINT)p) - ((LINT)MemoryStrip);
+	PRINTF(LOG_USER, "> Invalid pointer "LSX" (index "LSD")\n", (LINT)p, index);
+fault:
+	BmmWrongPointer++;
+	PRINTF(LOG_USER, "> you may put a breakpoint here\n");
+	return 0;
+}
+int memoryCheckStrip(void)
+{
+	LINT index = 0;
+	while (index < BmmTotalSize)
+	{
+		LB* node = (LB*)&MemoryStrip[index];
+		LINT size = BMM_SIZE((BMM*)node);
+		if (size <= 0) {
+			PRINTF(LOG_USER, "> Invalid block "LSX" (index "LSD") size=%d\n", (LINT)node, index, size);
+			return 0;
+		}
+		index += size;
+	}
+	return 1;
+}
+
+int memoryCheckTree(BMM* node,LINT minSize, LINT maxSize)
+{
+	LINT size;
+	BMM* nxt;
+	if (!node) return 1;
+	if (!checkPointer((LB*)node)) return 0;
+	size = BMM_SIZE((BMM*)node);
+	if (size <= minSize) {
+		PRINTF(LOG_USER, "> Invalid tree block "LSX" wrong size %d is not in ]%d, %d[\n", (LINT)node, minSize, maxSize);
+		return 0;
+	}
+	if ((size >= maxSize) && (maxSize!=-1)) {
+		PRINTF(LOG_USER, "> Invalid tree block "LSX" wrong size %d is not in ]%d, %d[\n", (LINT)node, minSize, maxSize);
+		return 0;
+	}
+	for (nxt = node->next; nxt; nxt = nxt->next) if (size != BMM_SIZE(nxt)) {
+		PRINTF(LOG_USER, "> Invalid tree block "LSX" wrong size %d (instead of %d)\n", (LINT)nxt, BMM_SIZE(nxt), size);
+		return 0;
+	}
+	if (!memoryCheckTree(node->left,minSize,size)) return 0;
+	return (memoryCheckTree(node->right,size,maxSize));
+}
+int memoryFindTree(BMM* node, BMM* find)
+{
+	LINT size;
+	LINT sizeFind = BMM_SIZE((BMM*)find);
+	if (!node) return 0;
+	size = BMM_SIZE((BMM*)node);
+	if (sizeFind < size) return memoryFindTree(node->left, find);
+	if (sizeFind > size) return memoryFindTree(node->right, find);
+	while (node) {
+		if (node == find) return 1;
+		node = node->next;
+	}
+	return 0;
+}
+int memoryCheckMM(void)
+{
+	BmmWrongPointer = 0;
+	MM.blockOperation = MEMORY_VALIDATE;
+	bmmCheckOrMoveMM();
+	MM.blockOperation = MEMORY_MARK;
+	if (BmmWrongPointer) {
+		PRINTF(LOG_USER, "> %d Invalid pointer(s) in MM\n", BmmWrongPointer);
+		return 0;
+	}
+	return 1;
+}
+int memoryCheckBlocks(void)
+{
+	LINT index = 0;
+	while (index < BmmTotalSize)
+	{
+		LB* node = (LB*)&MemoryStrip[index];
+		LINT size = BMM_SIZE((BMM*)node);
+		LINT type = HEADER_TYPE(node);
+		if (type == TYPE_FREE) {
+			if (!memoryFindTree(BmmRoot, (BMM*)node)) {
+				PRINTF(LOG_USER, "> Free block "LSX" (index "LSD") is not in the tree\n", (LINT)node, index);
+			}
+		}
+		else if ((MM.gcStage != GC_STAGE_SWEEP) || (node->listMark != MM.USELESS)) {
+			BmmWrongPointer = 0;
+			MM.blockOperation = MEMORY_VALIDATE;
+			if (type == TYPE_ARRAY) {
+				if (HEADER_DBG(node) != DBG_STACK)	// stack content is checked by threadMark
+				{
+					LINT i, l;
+					l = ARRAY_LENGTH(node);
+					for (i = 0; i < l; i++) if (ARRAY_IS_PNT(node, i)) {
+						LB* pnt=ARRAY_PNT(node, i);
+						MARK_OR_MOVE(pnt);
+					}
+				}
+			}
+			else if (type == TYPE_NATIVE) {
+				void** q = (void**)&node->data[1];	// complicated because of the 32/64 bits compatibility
+				MARK mark = (MARK)q[NATIVE_MARK];
+				if (mark) (*mark)(node);
+			}
+			MM.blockOperation = MEMORY_MARK;
+			if (BmmWrongPointer) {
+				PRINTF(LOG_USER, "> %d Invalid pointer(s) in block "LSX" (index "LSD") type=%d debug=%d size=%d\n", BmmWrongPointer, (LINT)node, index, type, HEADER_DBG(node), size);
+				_myHexDump((char*)node, (int)size, (LINT)node);
+			}
+		}
+		index += size;
+	}
+	return 1;
+}
+int memoryCheck(int debug)
+{
+	if (debug) PRINTF(LOG_USER, "> memoryCheck\n> -----------\n");
+
+	if (debug) PRINTF(LOG_USER, "> checking strip\n");
+	if (!memoryCheckStrip()) return 0;
+
+	if (debug) PRINTF(LOG_USER, "> checking tree\n");
+	if (!memoryCheckTree(BmmRoot,-1,-1)) return 0;
+
+	if (debug) PRINTF(LOG_USER, "> checking MM pointers\n");
+	if (!memoryCheckMM()) return 0;
+
+	if (debug) PRINTF(LOG_USER, "> checking blocks\n");
+	if (!memoryCheckBlocks()) return 0;
+
+	if (debug) PRINTF(LOG_USER, "> memoryCheck done.\n");
+	return 1;
 }
 #endif

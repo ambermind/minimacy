@@ -37,6 +37,7 @@ fun listLength l= _listlen l 0;;
 fun listGet l n= if n<=0 then head l else listGet (tail l) n-1;;
 fun listLast l= if nil==tail l then head l else listLast tail l;;
 fun listCut l n = if l<>nil && n>0 then (head l):listCut (tail l) n-1;;
+fun listSkip l n= if n<=0 then l else listSkip (tail l) n-1;;
 
 /*
 quicksort l f : fun list a0 (fun a0 a0 -> Bool) -> list a0

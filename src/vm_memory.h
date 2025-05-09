@@ -19,7 +19,7 @@ typedef char* LW;
 typedef int LINT;
 typedef unsigned int LUINT;
 typedef float LFLOAT;
-
+#define SIGN_BIT 0x80000000
 #define LSX "%x"
 #define LSD "%d"
 #else
@@ -28,6 +28,7 @@ typedef long long LW;
 typedef long long LINT;
 typedef unsigned long long LUINT;
 typedef double LFLOAT;
+#define SIGN_BIT 0x8000000000000000
 
 #define LSX "%llx"
 #define LSD "%lld"
@@ -116,7 +117,7 @@ typedef void (*MARK)(LB*);
 struct LB
 {
 	LINT sizeAndType;
-	LB *lifo;
+	LB *listMark;
 	LB *nextBlock;
 	Pkg* pkg;
 	LW data[1];
@@ -145,13 +146,13 @@ typedef struct {
 	Oblivion* popOblivions;
 	Oblivion* listOblivions;
 
-	LINT fastAlloc;
-	LINT step;	// GC step (0/1/2)
-	LB *lifo;	// list of blocks to mark (step 0)
+	LINT safeAlloc;
+	LINT gcStage;	// GC stage (0/1/2)
+	LB *listMark;	// incremental list of blocks to mark
 	LB *listBlocks;
 	LB *listCheck;
-	LB *listFast;
-	LINT updating;
+	LB *listSafe;
+	LINT blockOperation;
 
 	Thread* listThreads;
 	Pkg* listPkgs;
@@ -170,8 +171,8 @@ typedef struct {
 	Pkg* system;
 	LB * _true;
 	LB * _false;
-	LB* _loopMark;
-	LB* _abortMark;
+	LB* loopMark;
+	LB* abortMark;
 
 	LB* ansiVolume;
 	LB* romdiskVolume;
@@ -228,6 +229,15 @@ typedef int (*NATIVE)(Thread*);
 
 #define GC_PERIOD_START 20
 #define GC_PERIOD_COUNT 1000
+#define GC_STAGE_INIT 0
+#define GC_STAGE_MARK 1
+#define GC_STAGE_SWEEP 2
+
+#define MEMORY_MARK	0
+#define MEMORY_MOVE	1
+#define MEMORY_VALIDATE	2
+#define MOVING_BLOCKS	(MM.blockOperation==MEMORY_MOVE)
+
 
 #ifndef MEMORY_SAFE_SIZE
 #define MEMORY_SAFE_SIZE (1024*1024*16)
@@ -241,22 +251,20 @@ typedef int (*NATIVE)(Thread*);
 #define _USEFUL (LB*)(2)
 #define _USELESS (LB*)(3)
 
-#define BLOCK_MARK(p) { if ((p) && (((LB*)(p))->lifo==MM.USELESS)) {((LB*)(p))->lifo=MM.lifo; MM.lifo=(LB*)(p); } }
+#define BLOCK_MARK(p) { if ((p) && (((LB*)(p))->listMark==MM.USELESS)) {((LB*)(p))->listMark=MM.listMark; MM.listMark=(LB*)(p); } }
 
 #ifdef USE_MEMORY_C
-int checkPointer(LINT p);
-LINT relativePointer(LB* p);
-int checkListPointer(char* title, LB* p);
+int memoryCheck(int debug);
+int checkPointer(LB* p);
 
-#define MEMORY_MARK(p) { if (p) {	\
-		if (MM.updating) *(LB**)(&(p)) = ((LB*)(p))->lifo; \
-		else if (((LB*)(p))->lifo == MM.USELESS) {((LB*)(p))->lifo = MM.lifo; MM.lifo = (LB*)(p); } \
-} }
+#define MARK_OR_MOVE(p) { if (!MM.blockOperation) BLOCK_MARK(p) \
+		else if (p) { \
+			if (MOVING_BLOCKS) *(LB**)(&(p)) = ((LB*)(p))->listMark;	\
+			else checkPointer((LB*)p); \
+		}\
+}
 #else
-#define MEMORY_MARK(p) { if (p) {	\
-		if (MM.updating) *(LB**)(&(p)) = ((LB*)(p))->lifo; \
-		else if (((LB*)(p))->lifo == MM.USELESS) {((LB*)(p))->lifo = MM.lifo; MM.lifo = (LB*)(p); } \
-} }
+#define MARK_OR_MOVE(p) BLOCK_MARK(p)
 #endif
 
 #define NATIVE_FORGET 0
@@ -406,9 +414,8 @@ void memoryGC(LINT period);
 void memoryFinalizeGC(void);
 void memoryRecount(void);
 
-void memoryEnterFast(void); // after this, newly allocated blocks cannot be GCized until memoryLeaveFast
-void memoryLeaveFast(void);
-LINT memoryGetFast(void);
+void memoryEnterSafe(void); // after this, newly allocated blocks cannot be GCized until memoryLeaveSafe
+void memoryLeaveSafe(void);
 
 int memoryAddRoot(LB * root);
 void memorySetTmpRoot(LB* p);

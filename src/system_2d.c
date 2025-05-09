@@ -13,8 +13,8 @@
 void bitmapMark(LB* user)
 {
 	LBitmap* b = (LBitmap*)user;
-	MEMORY_MARK(b->bytes);
-	if (MM.updating) {
+	MARK_OR_MOVE(b->bytes);
+	if (MOVING_BLOCKS) {
 		b->start8 = (lchar*)STR_START(b->bytes);
 		b->start32 = (int*)b->start8;
 	}
@@ -24,7 +24,7 @@ LBitmap* _bitmapCreate(LINT w, LINT h)
 {
 	LBitmap* b;
 	LB* p;
-	memoryEnterFast();
+	memoryEnterSafe();
 	b = (LBitmap*)memoryAllocExt(sizeof(LBitmap), DBG_LOCALS, NULL, bitmapMark); if (!b) return NULL;
 	b->w = w;
 	b->h = h;
@@ -38,7 +38,7 @@ LBitmap* _bitmapCreate(LINT w, LINT h)
 #ifdef ON_WINDOWS
 	b->bmp = NULL;
 #endif
-	memoryLeaveFast();
+	memoryLeaveSafe();
 	return b;
 }
 
@@ -95,6 +95,23 @@ int fun_bitmapComponents(Thread* th)
 	LINT a = STACK_PULL_INT(th);
 	LBitmap* d = (LBitmap*)STACK_PNT(th, 0);
 	_bitmapComponents(d, r, g, b, a);
+	return 0;
+}
+int fun_bitmapCorners(Thread* th)
+{
+	LINT mask = STACK_PULL_INT(th);
+	LINT w = STACK_PULL_INT(th);
+	LBitmap* d = (LBitmap*)STACK_PNT(th, 0);
+	_bitmapCorners(d, w, mask);
+	return 0;
+}
+int fun_bitmapGradient(Thread* th)
+{
+	LINT col0h = STACK_PULL_INT(th);
+	LINT colw0 = STACK_PULL_INT(th);
+	LINT col00 = STACK_PULL_INT(th);
+	LBitmap* d = (LBitmap*)STACK_PNT(th, 0);
+	_bitmapGradient(d, col00, colw0, col0h);
 	return 0;
 }
 int fun_bitmapFill(Thread* th)
@@ -292,6 +309,10 @@ int system2dInit(Pkg *system)
 		{ NATIVE_INT, "BLEND_MUL", (void*)8, "BlendFunction"},
 		{ NATIVE_INT, "BLEND_ALPHA", (void*)9, "BlendFunction"},
 		{ NATIVE_INT, "BLEND_DESTINATION", (void*)10, "BlendFunction"},
+		{ NATIVE_INT, "CORNER_TOP_LEFT", (void*)CORNER_TOP_LEFT, "Int"},
+		{ NATIVE_INT, "CORNER_TOP_RIGHT", (void*)CORNER_TOP_RIGHT, "Int"},
+		{ NATIVE_INT, "CORNER_BOTTOM_LEFT", (void*)CORNER_BOTTOM_LEFT, "Int"},
+		{ NATIVE_INT, "CORNER_BOTTOM_RIGHT", (void*)CORNER_BOTTOM_RIGHT, "Int"},
 		{ NATIVE_FUN, "bitmapCreate", fun_bitmapCreate, "fun Int Int Int -> Bitmap"},
 		{ NATIVE_FUN, "bitmapW", fun_bitmapW, "fun Bitmap -> Int"},
 		{ NATIVE_FUN, "bitmapH", fun_bitmapH, "fun Bitmap -> Int"},
@@ -311,6 +332,8 @@ int system2dInit(Pkg *system)
 		{ NATIVE_FUN, "bitmapColoredBlit", fun_bitmapColoredBlit, "fun Bitmap Int Int Bitmap Int Int Int Int BlendFunction Int BlendFunction -> Bitmap"},
 		{ NATIVE_FUN, "bitmapResize", fun_bitmapResize, "fun Bitmap Bitmap Bool -> Bitmap"},
 		{ NATIVE_FUN, "bitmapComponents", fun_bitmapComponents, "fun Bitmap Component Component Component Component -> Bitmap"},
+		{ NATIVE_FUN, "bitmapCorners", fun_bitmapCorners, "fun Bitmap Int Int -> Bitmap"},
+		{ NATIVE_FUN, "bitmapGradient", fun_bitmapGradient, "fun Bitmap Int Int Int -> Bitmap"},
 		{ NATIVE_FUN, "rgbFromYCrCb", fun_rgbFromYCrCb, "fun Int -> Int"},
 		{ NATIVE_FUN, "yCrCbFromRgb", fun_yCrCbFromRgb, "fun Int -> Int"},
 		{ NATIVE_FUN, "bitmapFromYCrCb", fun_bitmapFromYCrCb, "fun Bitmap -> Int"},

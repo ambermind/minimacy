@@ -13,9 +13,9 @@
 void _oblivionMark(LB* user)
 {
 	Oblivion* p = (Oblivion*)user;
-	MEMORY_MARK(p->f);
-	MEMORY_MARK(p->popNext);
-	if (MM.updating) MEMORY_MARK(p->listNext);
+	MARK_OR_MOVE(p->f);
+	MARK_OR_MOVE(p->popNext);
+	if (MOVING_BLOCKS) MARK_OR_MOVE(p->listNext);
 }
 
 int fun_oblivionCreate(Thread* th)
@@ -27,7 +27,7 @@ int fun_oblivionCreate(Thread* th)
 	ob->f = f;
 	ob->listNext = MM.listOblivions;
 	MM.listOblivions = ob;
-	MEMORY_MARK(ob);
+	BLOCK_MARK(ob);
 	FUN_RETURN_PNT((LB*)ob);
 }
 int fun_oblivionPop(Thread* th)
@@ -38,7 +38,7 @@ int fun_oblivionPop(Thread* th)
 	f = ob->f;
 	ob->f = NULL;
 	MM.popOblivions = ob->popNext;
-	MEMORY_MARK(MM.popOblivions);
+	BLOCK_MARK(MM.popOblivions);
 	FUN_RETURN_PNT(f);
 }
 
@@ -232,10 +232,15 @@ int fun_memoryFree(Thread* th)
 {
 	FUN_RETURN_INT(BmmTotalFree);
 }
+int fun_memoryCheck(Thread* th)
+{
+	FUN_RETURN_BOOL(memoryCheck(STACK_BOOL(th, 0)));
+}
 #else
 int fun_memoryLargestBlock(Thread* th) FUN_RETURN_NIL
 int fun_memoryReserve(Thread* th) FUN_RETURN_NIL
 int fun_memoryFree(Thread* th) FUN_RETURN_NIL
+int fun_memoryCheck(Thread* th) FUN_RETURN_NIL
 #endif
 int fun_systemLoadAllNatives(Thread* th)
 {
@@ -606,6 +611,7 @@ int systemCoreInit(Pkg *system)
 		{ NATIVE_FUN, "memoryLargestBlock", fun_memoryLargestBlock, "fun -> Int"},
 		{ NATIVE_FUN, "memoryReserve", fun_memoryReserve, "fun -> Int"},
 		{ NATIVE_FUN, "memoryFree", fun_memoryFree, "fun -> Int"},
+		{ NATIVE_FUN, "memoryCheck", fun_memoryCheck, "fun Bool -> Bool"},
 		{ NATIVE_FUN, "systemLoadAllNatives", fun_systemLoadAllNatives, "fun -> Int"},
 		{ NATIVE_FUN, "address", fun_address, "fun a1 -> Int"},
 		{ NATIVE_FUN, "_reboot", fun_reboot, "fun -> Int"},
@@ -663,6 +669,8 @@ int systemCoreInit(Pkg *system)
 		{ NATIVE_FUN, "signExtend16", fun_signExtend16, "fun Int -> Int"},
 		{ NATIVE_FUN, "signExtend8", fun_signExtend8, "fun Int -> Int"},
 		{ NATIVE_FUN, "signExtend", fun_signExtend, "fun Int Int -> Int"},
+		{ NATIVE_INT, "signBit", (void*)SIGN_BIT, "Int" },
+
 
 		{ NATIVE_OPCODE, "abs", (void*)OPabs, "fun Int -> Int"},
 		{ NATIVE_OPCODE, "min", (void*)OPmin, "fun Int Int -> Int"},
@@ -708,7 +716,7 @@ int systemCoreInit(Pkg *system)
 
 		{ NATIVE_FUN, "time", fun_time, "fun -> Int"},
 		{ NATIVE_FUN, "timeMs", fun_timeMs, "fun -> Int"},
-		{ NATIVE_FUN, "timeSet", fun_timeSet, "fun Int -> Int"},
+		{ NATIVE_FUN, "_timeSet", fun_timeSet, "fun Int -> Int"},
 
 		{ NATIVE_FUN, "arrayCreate",fun_arrayCreate, "fun Int a1 -> array a1"},
 		{ NATIVE_FUN, "arraySlice", fun_arraySlice, "fun array a1 Int Int -> array a1"},

@@ -81,9 +81,8 @@
 		CD394AA2290A88C2007DA0CE /* AudioToolbox.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = CD394AA1290A88C2007DA0CE /* AudioToolbox.framework */; platformFilter = maccatalyst; };
 		CD4EB62D2D4F708500394323 /* system_ble.m in Sources */ = {isa = PBXBuildFile; fileRef = CD4EB62C2D4F708500394323 /* system_ble.m */; };
 		CD5CC43C28B53D3600935E7B /* system_inflate.c in Sources */ = {isa = PBXBuildFile; fileRef = CD5CC43528B53D3500935E7B /* system_inflate.c */; };
-		CD5CC43D28B53D3600935E7B /* crypto_adler32.c in Sources */ = {isa = PBXBuildFile; fileRef = CD5CC43728B53D3600935E7B /* crypto_adler32.c */; };
-		CD5CC43E28B53D3600935E7B /* crypto_crc32.c in Sources */ = {isa = PBXBuildFile; fileRef = CD5CC43828B53D3600935E7B /* crypto_crc32.c */; };
 		CD5CC43F28B53D3600935E7B /* system_deflate.c in Sources */ = {isa = PBXBuildFile; fileRef = CD5CC43928B53D3600935E7B /* system_deflate.c */; };
+		CD868C4F2DBBD5B300D631FC /* crypto_checksum.c in Sources */ = {isa = PBXBuildFile; fileRef = CD868C4E2DBBD5B300D631FC /* crypto_checksum.c */; };
 		CD8B4FDA2D6DC0C900BC57C5 /* crypto_hash.c in Sources */ = {isa = PBXBuildFile; fileRef = CD8B4FD82D6DC0C900BC57C5 /* crypto_hash.c */; };
 		CDC85C4D28F6EEA700AC8AF0 /* topLevel.mcy in Resources */ = {isa = PBXBuildFile; fileRef = CDC85C4C28F6EEA700AC8AF0 /* topLevel.mcy */; };
 		CDC85C4F28F6EEB500AC8AF0 /* rom in Resources */ = {isa = PBXBuildFile; fileRef = CDC85C4E28F6EEB500AC8AF0 /* rom */; };
@@ -212,11 +211,9 @@
 		CD4EB62C2D4F708500394323 /* system_ble.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = system_ble.m; sourceTree = "<group>"; };
 		CD5CC43528B53D3500935E7B /* system_inflate.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; name = system_inflate.c; path = ../../../src/system_inflate.c; sourceTree = "<group>"; };
 		CD5CC43628B53D3500935E7B /* system_inflate.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = system_inflate.h; path = ../../../src/system_inflate.h; sourceTree = "<group>"; };
-		CD5CC43728B53D3600935E7B /* crypto_adler32.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; name = crypto_adler32.c; path = ../../../src/crypto_adler32.c; sourceTree = "<group>"; };
-		CD5CC43828B53D3600935E7B /* crypto_crc32.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; name = crypto_crc32.c; path = ../../../src/crypto_crc32.c; sourceTree = "<group>"; };
 		CD5CC43928B53D3600935E7B /* system_deflate.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; name = system_deflate.c; path = ../../../src/system_deflate.c; sourceTree = "<group>"; };
-		CD5CC43A28B53D3600935E7B /* crypto_crc32.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = crypto_crc32.h; path = ../../../src/crypto_crc32.h; sourceTree = "<group>"; };
-		CD5CC43B28B53D3600935E7B /* crypto_adler32.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = crypto_adler32.h; path = ../../../src/crypto_adler32.h; sourceTree = "<group>"; };
+		CD868C4D2DBBD5B300D631FC /* crypto_checksum.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = crypto_checksum.h; path = ../../../src/crypto_checksum.h; sourceTree = "<group>"; };
+		CD868C4E2DBBD5B300D631FC /* crypto_checksum.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; name = crypto_checksum.c; path = ../../../src/crypto_checksum.c; sourceTree = "<group>"; };
 		CD8B4FD32D6DBFE400BC57C5 /* system_serial.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = system_serial.h; path = ../../../src/system_serial.h; sourceTree = "<group>"; };
 		CD8B4FD52D6DBFE400BC57C5 /* util_2d_const.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = util_2d_const.h; path = ../../../src/util_2d_const.h; sourceTree = "<group>"; };
 		CD8B4FD82D6DC0C900BC57C5 /* crypto_hash.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; name = crypto_hash.c; path = ../../../src/crypto_hash.c; sourceTree = "<group>"; };
@@ -318,12 +315,10 @@
 				CD0A9996284A3BAC00A51904 /* compiler_try.c */,
 				CD0A9954284A3BAB00A51904 /* compiler.c */,
 				CD0A994A284A3BAA00A51904 /* compiler.h */,
-				CD5CC43728B53D3600935E7B /* crypto_adler32.c */,
-				CD5CC43B28B53D3600935E7B /* crypto_adler32.h */,
 				CD0A9960284A3BAB00A51904 /* crypto_aes.c */,
 				CD0A9977284A3BAC00A51904 /* crypto_aes.h */,
-				CD5CC43828B53D3600935E7B /* crypto_crc32.c */,
-				CD5CC43A28B53D3600935E7B /* crypto_crc32.h */,
+				CD868C4E2DBBD5B300D631FC /* crypto_checksum.c */,
+				CD868C4D2DBBD5B300D631FC /* crypto_checksum.h */,
 				CD0A9964284A3BAB00A51904 /* crypto_des.c */,
 				CD0A9985284A3BAC00A51904 /* crypto_des.h */,
 				CD8B4FD82D6DC0C900BC57C5 /* crypto_hash.c */,
@@ -513,12 +508,12 @@
 				CD0A99CE284A3BAD00A51904 /* util_convert.c in Sources */,
 				CD0A99E2284A3BAD00A51904 /* system_tmp.c in Sources */,
 				CDF77C652C8AF362005A921C /* util_ansi_str.c in Sources */,
-				CD5CC43D28B53D3600935E7B /* crypto_adler32.c in Sources */,
 				CD0DBF522996CEC300C9121C /* hw_random.c in Sources */,
 				CD0DBF532996CEC300C9121C /* hw_time.c in Sources */,
 				CD4EB62D2D4F708500394323 /* system_ble.m in Sources */,
 				CD0DBF552996CEC300C9121C /* hw_fs_romdisk.c in Sources */,
 				CD0A99C1284A3BAD00A51904 /* compiler_match.c in Sources */,
+				CD868C4F2DBBD5B300D631FC /* crypto_checksum.c in Sources */,
 				CD0A99B4284A3BAD00A51904 /* vm_interpreter.c in Sources */,
 				CD0A99E1284A3BAD00A51904 /* minimacy.c in Sources */,
 				CD0A99A8284A3BAD00A51904 /* compiler_step4.c in Sources */,
@@ -530,7 +525,6 @@
 				CDF77C662C8AF362005A921C /* util_ansi_math.c in Sources */,
 				CD394AA0290A87D1007DA0CE /* system_audio.c in Sources */,
 				CD0A99BB284A3BAD00A51904 /* vm_thread.c in Sources */,
-				CD5CC43E28B53D3600935E7B /* crypto_crc32.c in Sources */,
 				CD0A99BD284A3BAD00A51904 /* system_socket.c in Sources */,
 				CD0A9941284A362200A51904 /* system_ui_cocoa.m in Sources */,
 				CD0A99AA284A3BAD00A51904 /* util_xml.c in Sources */,

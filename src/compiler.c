@@ -69,14 +69,14 @@ Type* compileErrorInFunction(Compiler* c, char* format, ...)
 void compilerMark(LB* user)
 {
 	Compiler* c = (Compiler*)user;
-	MEMORY_MARK(c->pkg);
-	MEMORY_MARK(c->fmk);
-	MEMORY_MARK(c->bytecode);
-	MEMORY_MARK(c->firstBytecodeBuffer);
-	MEMORY_MARK(c->parser);
-	MEMORY_MARK(c->mainParser);
-	MEMORY_MARK(c->exports);
-	MEMORY_MARK(c->def0);
+	MARK_OR_MOVE(c->pkg);
+	MARK_OR_MOVE(c->fmk);
+	MARK_OR_MOVE(c->bytecode);
+	MARK_OR_MOVE(c->firstBytecodeBuffer);
+	MARK_OR_MOVE(c->parser);
+	MARK_OR_MOVE(c->mainParser);
+	MARK_OR_MOVE(c->exports);
+	MARK_OR_MOVE(c->def0);
 }
 
 Type* compile(LB* src,Pkg* pkg,int fromImport, int* displayed)
@@ -122,7 +122,7 @@ Type* compile(LB* src,Pkg* pkg,int fromImport, int* displayed)
 
 	if (result) result = compileStep4(c);
 
-	memoryEnterFast();
+	memoryEnterSafe();
 	if (result && compileInstanceSolver(c)) result = NULL;
 
 //	if (0)
@@ -134,7 +134,7 @@ Type* compile(LB* src,Pkg* pkg,int fromImport, int* displayed)
 	if (!result)
 	{
 		pkg->importList = importsBefore;
-		MEMORY_MARK(importsBefore);
+		BLOCK_MARK(importsBefore);
 		if (c->pkg->forPrompt) pkgCleanCompileError();
 		while (pkg->first && (pkg->first != c->def0)) pkgRemoveDef(pkg->first);
 		parserRestorechar(c);
@@ -159,7 +159,7 @@ Type* compile(LB* src,Pkg* pkg,int fromImport, int* displayed)
 //	itemDump(LOG_USER, VAL_FROM_PNT(c->exports), 0);
 	TMP_PULL();	// pull compiler
 	pkg->stage = PKG_STAGE_READY;
-	memoryLeaveFast();
+	memoryLeaveSafe();
 	return result;
 }
 

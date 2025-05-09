@@ -9,28 +9,32 @@
    You should have received a copy of the GNU General Public License along
    with this program. If not, see <https://www.gnu.org/licenses/>. */
 
+// this implementation is not using milliseconds so that it works on 32 bits targets
+// the resulting time is accurate to one second
+
 const NTP_SERVER="20.101.57.9";;	// time.windows.com
 const NTP_PORT=123;;
 const DELTA1900=2208988800;;	// seconds from 01/01/1900 to 01/01/1970
 
 fun _strTime t=
-	strConcat (strInt32Msb t/1000+DELTA1900) (strInt32Msb ((t%1000)<<32)/1000);;
+	strConcat (strInt32Msb t+DELTA1900) "\0\0\0\0";;
 	
 fun _strReadTime data i=
 	let (strRead32Msb data i)-DELTA1900 -> seconds in
-	let ((strRead32Msb data i+4) * 1000)>>32 -> millis in
-	seconds*1000 + millis;;
+	seconds;;
 
 fun _ntpReceive udp t3 data=
 	udpClose udp;
 	if (strLength data)>=48 then
-		let _strReadTime data 24 -> t0 in
-		let _strReadTime data 32 -> t1 in
-		let _strReadTime data 40 -> t2 in
-		let (t1+t2)/2 -> tServer in
-		let (t0+t3)/2 -> tClient in
-		let tServer-tClient -> dt in
-		timeMs+dt;;
+	// we use bigNumbers to prevent the 'year 2038 problem' on 32 bits targets
+		let bigAbs bigFromInt _strReadTime data 24 -> t0 in
+		let bigAbs bigFromInt _strReadTime data 32 -> t1 in
+		let bigAbs bigFromInt _strReadTime data 40 -> t2 in
+		let bigAbs bigFromInt t3 -> t3 in
+		let \bigNum (t1+t2)/2 -> tServer in
+		let \bigNum (t0+t3)/2 -> tClient in
+		let intFromBig \bigNum tServer-tClient -> dt in
+		time+dt;;
 
 fun ntpRequest cb =
 	let udpCreate NTP_SERVER NTP_PORT nil NTP_PORT -> udp in
@@ -44,23 +48,24 @@ fun ntpRequest cb =
 		(strInt32Msb 0) (strInt32Msb 0)
 		(strInt32Msb 0) (strInt32Msb 0)
 		(strInt32Msb 0) (strInt32Msb 0)
-		(_strTime timeMs)
+		(_strTime time)
 	] -> trame in (
 		udpOnEvent udp (lambda data=
-			let _ntpReceive udp timeMs data -> t in (
-				timeSet t/1000;
+			let _ntpReceive udp time data -> t in (
+				timeSet t;
 				call cb t
 			)
 		) nil;
 		udpSend udp trame
 	);;
 	
+//------- demo
 fun run=
-	let timeMs -> t in
-	echoLn strFormat "local time: * *ms" (fullDate t/1000) t%1000;
+	let time -> t in
+	echoLn strFormat "local time: *" (fullDate t);
 	ntpRequest (lambda t= 
 		echoLn t;
-		let timeMs -> t in
-		echoLn strFormat "ntp time  : * *ms" (fullDate t/1000) t%1000;
+		let time -> t in
+		echoLn strFormat "ntp time  : *" (fullDate t);
 	);
 	echoLn "done";;

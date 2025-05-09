@@ -35,7 +35,7 @@ void romdiskMark(LB* user)
 	int i;
 	for (i = 0; i < ROMDISK_MAX_NB; i++) if (Romdisks[i].data && Romdisks[i].type != ROMDISK_NATIVE) {
 		char* node = Romdisks[i].data - sizeof(LB);
-		if (MM.updating) Romdisks[i].data = STR_START(((LB*)node)->lifo);
+		if (MOVING_BLOCKS) Romdisks[i].data = STR_START(((LB*)node)->listMark);
 		else BLOCK_MARK((LB*)node);
 	}
 }

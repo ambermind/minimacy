@@ -25,6 +25,7 @@ export httpSetUrlEncoded h l;;
 export httpSetMultipart h l;;
 export httpSetTimeout h timeout;;
 export httpSend h cb;;
+export httpClose h;;
 export httpGet url;;
 export httpGet12 url;;
 
@@ -360,6 +361,12 @@ fun _httpTimer h=
 		nil
 	)
 	else onTimeout 1000 (lambda = _httpTimer h);;
+
+fun httpClose h=
+	streamClose h.ttH;
+	set h.ttH=nil;
+	set h.busyH=false;
+	nil;;
 
 fun httpSend h cb=
 	if h.busyH then (threadPost h.thH (lambda = call cb nil nil); nil)

@@ -146,7 +146,7 @@ static void InvShiftRows(AesCtx* ctx)
 static void MixColumns(AesCtx* ctx)
 {
 	int i;
-	for (i = 0; i < 4; ++i)
+	for (i = 0; i < 4; i++)
 	{
 		unsigned int W = ctx->W[i];
 		unsigned int X = 0x01010101 * (255 & ((W >> 24) ^ (W >> 16) ^ (W >> 8) ^ (W)));
@@ -186,7 +186,7 @@ void AESEncrypt(AesCtx* ctx, char* data)
 
 	AddRoundKey(0);
 
-	for (round = 1; round < ctx->Nr; ++round)
+	for (round = 1; round < ctx->Nr; round++)
 	{
 		SubBytes();
 		ShiftRows(ctx);
@@ -207,7 +207,7 @@ void AESDecrypt(AesCtx* ctx, char* data)
 
 	AddRoundKey(ctx->Nr);
 
-	for (round = (ctx->Nr - 1); round > 0; --round)
+	for (round = (ctx->Nr - 1); round > 0; round--)
 	{
 		InvShiftRows(ctx);
 		InvSubBytes();

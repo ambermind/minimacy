@@ -26,11 +26,9 @@ fun _socketClose socket = call (hashmapGet SocketClose socket); nil;;
 
 //-------------------- READABLE FORMAT
 fun _strFormatMac mac i= if i<strLength mac then (strSlice mac i 2):_strFormatMac mac i+2;;
-fun _strFromMac mac i= strJoin ":" _strFormatMac (hexFromStr strSlice mac i 6) 0;;
-fun strFromMac mac = _strFromMac mac 0;;
+fun strFromMac mac = strJoin ":" _strFormatMac (hexFromStr mac) 0;;
 
-fun _strFromIp ip i=	strFormat "*.*.*.*" (strGet ip i) (strGet ip i+1) (strGet ip i+2) (strGet ip i+3);;
-fun strFromIp ip = _strFromIp ip 0;;
+fun strFromIp ip = strFormat "*.*.*.*" (strGet ip 0) (strGet ip 1) (strGet ip 2) (strGet ip 3);;
 
 fun macFromStr str = strFromHex strReplace str ":" "";;
 fun ipFromStr str = strListConcat listMap (strSplit "." str) (lambda val= strInt8 intFromDec val);;
@@ -349,15 +347,15 @@ fun dhcpHandle udp remoteAddr remotePort msg onReady=
 	let _dhcpExtract msg 240 0 nil nil nil nil nil -> [type lease submask dns gateway _] in
 	if type==DHCP_OFFER then
 	(
-		echoLn strFormat "----------<DHCP OFFER * by *" (strFromIp ipProposal) (remoteAddr) ;
-		echoLn strFormat "---------->DHCP REQUEST * for *" (remoteAddr) (strFromIp ipProposal);
+		if DEBUG then echoLn strFormat "----------<DHCP OFFER * by *" (strFromIp ipProposal) (remoteAddr) ;
+		if DEBUG then echoLn strFormat "---------->DHCP REQUEST * for *" (remoteAddr) (strFromIp ipProposal);
 		udpSendTo udp "255.255.255.255" 67 (dhcpFrame DHCP_REQUEST IP_EMPTY (ipFromStr remoteAddr) ipProposal);
 //		udpSendTo udp remoteAddr 67 (dhcpFrame DHCP_REQUEST IP_EMPTY (ipFromStr remoteAddr) ipProposal);
 		nil
 	)
 	else if type==DHCP_ACK then
 	(
-		echoLn strFormat "----------<DHCP ACK * by *" (strFromIp ipProposal) remoteAddr;
+		if DEBUG then echoLn strFormat "----------<DHCP ACK * by *" (strFromIp ipProposal) remoteAddr;
 		udpClose udp;
 		set If.ipI=ipProposal;
 		set If.submaskI=submask;
@@ -374,7 +372,7 @@ fun dhcpHandle udp remoteAddr remotePort msg onReady=
 
 fun _dhcpClientTry udp cbReady n=
 	if If.ipI==IP_EMPTY then (
-		echoLn "---------->DHCP DISCOVER";
+		if DEBUG then echoLn "---------->DHCP DISCOVER";
 		udpSendTo udp "255.255.255.255" 67 (dhcpFrame DHCP_DISCOVER IP_EMPTY nil nil);
 		if n>0 then onTimeout DHCP_RETRY_PERIOD (lambda = _dhcpClientTry udp cbReady n-1)
 		else (call cbReady false; nil)

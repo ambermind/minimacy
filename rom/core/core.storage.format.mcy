@@ -147,15 +147,16 @@ fun _fat32Format volume totalSectors sectorsPerCluster name display withMbr=
 			echoLn strFormat "image size        : $* (*)" (hexFromInt bytesPerSector*totalSectors) bytesPerSector*totalSectors;
 			echoLn strFormat "user capacity     : * bytes" bytesPerSector*(sectorsInPartition-dataStart);
 		);
-		if withMbr then call fWrite 0 mbr 0 1;	// copy mbr
-		call fWrite partitionStart boot 0 1;	// copy boot sector
-		call fWrite (partitionStart+fsInfoSector) fsInfo 0 1;	// copy fsInfo
-		call fWrite (partitionStart+backupSector) boot 0 1;	// copy boot backup sector
-		call fWrite (partitionStart+fatStart) fat 0 1;	// copy first fat
-		for i=1;i<sectorsPerFat do call fWrite (partitionStart+fatStart+i) empty 0 1;
-		call fWrite (partitionStart+fatStart+sectorsPerFat) fat 0 1;	// copy second fat
-		for i=1;i<sectorsPerFat do call fWrite (partitionStart+fatStart+sectorsPerFat+i) empty 0 1;
-		call fWrite (partitionStart+dataStart) rootDir 0 1;	// copy first entry in root directory
+		if withMbr then call fWrite 0 mbr;	// copy mbr
+		call fWrite partitionStart boot;	// copy boot sector
+		call fWrite (partitionStart+fsInfoSector) fsInfo;	// copy fsInfo
+		call fWrite (partitionStart+backupSector) boot;	// copy boot backup sector
+		call fWrite (partitionStart+fatStart) fat;	// copy first fat
+		for i=1;i<sectorsPerFat do call fWrite (partitionStart+fatStart+i) empty;
+		call fWrite (partitionStart+fatStart+sectorsPerFat) fat;	// copy second fat
+		for i=1;i<sectorsPerFat do call fWrite (partitionStart+fatStart+sectorsPerFat+i) empty;
+		call fWrite (partitionStart+dataStart) rootDir;	// copy first entry in root directory
+		for i=1;i<sectorsPerCluster do call fWrite (partitionStart+dataStart+i) empty;
 	);;
 
 

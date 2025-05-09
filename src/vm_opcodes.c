@@ -204,6 +204,34 @@ void bytecodePrint(int msk,LB* bytecode)
 		}
 	}
 }
+void bytecodeShowNatives(Buffer* buffer)
+{
+	LINT ind = 0;
+	LINT len = bufferSize(buffer);
+	char* p = bufferStart(buffer);
+
+	p += BC_OFFSET; len -= BC_OFFSET;
+	while (ind < len)
+	{
+		LINT op = 255 & (*(p++));
+		ind++;
+		if (op & 0x80) {
+			op = (op << 8) + (255 & (*p++));
+			op &= 0x7fff;
+			if ((op< NATIVE_DEF_LENGTH)&&(!(NativeDefsArgc[op] & 0x80))) {
+				Native* n = NativeDefs[op];
+				PRINTF(LOG_USER, "  %s: %s\n", n->name, n->type);
+				NativeDefsArgc[op] |=0x80;
+			}
+			ind++;
+		}
+		else {
+			p += BytecodeDef[op].argc;
+			ind += BytecodeDef[op].argc;
+		}
+	}
+	for(ind=0;ind< NATIVE_DEF_LENGTH;ind++) NativeDefsArgc[ind] &= 0x7f;
+}
 
 int bytecodeIsTfc(char* p)
 {

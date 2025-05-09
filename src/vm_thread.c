@@ -18,7 +18,7 @@ void threadDumpLoop(char* title)
 	PRINTF(LOG_DEV,"%s threads MM.USELESS="LSX"\n", title,MM.USELESS);
 	while (th)
 	{
-		PRINTF(LOG_DEV,"-> "LSX":"LSD"  lifo="LSX"\n", th, th->uid, th->header.lifo);
+		PRINTF(LOG_DEV,"-> "LSX":"LSD"  listMark="LSX"\n", th, th->uid, th->header.listMark);
 		th = th->listNext;
 	}
 }
@@ -31,26 +31,26 @@ void threadMark(LB* user)
 
 	if (!p) return;
 
-	MEMORY_MARK(th->stack);
-	MEMORY_MARK(th->user);
-	MEMORY_MARK(th->error);
+	MARK_OR_MOVE(th->stack);
+	MARK_OR_MOVE(th->user);
+	MARK_OR_MOVE(th->error);
 	// there is no need to mark any pending worker's result pointer, as these pointers are
 	// stored in the stack by workerAllocExt before they are declared as the worker's result
-	if (MM.updating) {
-		MEMORY_MARK(th->listNext);	// this special list doesn't count for marking stage
-		MEMORY_MARK(th->fun);
-		MEMORY_MARK(th->worker.buffer);	// possible because all workers are inactive at this stage, see bmmCompact() function
+	if (MOVING_BLOCKS) {
+		MARK_OR_MOVE(th->listNext);	// this special list doesn't count for marking stage
+		MARK_OR_MOVE(th->fun);
+		MARK_OR_MOVE(th->worker.buffer);	// possible because all workers are inactive at this stage, see bmmCompact() function
 		if (th->worker.type == VAL_TYPE_PNT) {
 			LB* pnt=PNT_FROM_VAL(th->worker.result);
-			MEMORY_MARK(pnt);
+			MARK_OR_MOVE(pnt);
 			th->worker.result=VAL_FROM_PNT(pnt);
 		}
 		for (i = 0; i <= th->sp; i++) if (ARRAY_IS_PNT(p, i)) {
 			LB* pnt = ARRAY_PNT(p, i);
-			MEMORY_MARK(pnt);
+			MARK_OR_MOVE(pnt);
 			ARRAY_GET(p, i) = VAL_FROM_PNT(pnt);
 		}
-		if (th->link) *th->link = (Thread*)th->header.lifo;
+		if (th->link) *th->link = (Thread*)th->header.listMark;
 	}
 	else {
 		for(i=0;i<=th->sp;i++) if (ARRAY_IS_PNT(p,i)) BLOCK_MARK(ARRAY_PNT(p,i));
@@ -70,7 +70,7 @@ int threadForget(LB* p)
 Thread* threadCreate(LINT stackLen)
 {
 	Thread* th;
-	memoryEnterFast();
+	memoryEnterSafe();
 	th=(Thread*)memoryAllocExt(sizeof(Thread),DBG_THREAD, threadForget,threadMark); if (!th) return NULL;
 	th->uid=ThreadCounter++;
 	th->count = 0;
@@ -94,7 +94,7 @@ Thread* threadCreate(LINT stackLen)
 	th->stack = NULL;	// actually useless due to the th->sp=-1, but meaningfull
 	th->stack= memoryAllocArray(stackLen,DBG_STACK); if (!th->stack) return NULL;
 	th->listNext = NULL;
-	memoryLeaveFast();
+	memoryLeaveSafe();
 	threadMark((LB*)th);
 //	PRINTF(LOG_DEV,"threadCreate %llx %llx\n",th,th->stack);
 //	PRINTF(LOG_DEV,"threadCreate %llx\n",th->uid);
@@ -230,7 +230,7 @@ int fun_threadSetUser(Thread* th)
 	Thread* t = (Thread*)STACK_PNT(th, 1);
 	if (t && STACK_IS_PNT(th, 0)) {
 		t->user = user;
-		MEMORY_MARK(t->user);
+		BLOCK_MARK(t->user);
 	}
 	STACK_DROP(th);
 	return 0;
@@ -360,7 +360,7 @@ int fun_lastError(Thread* th)
 int fun_setError(Thread* th)
 {
 	th->error=STACK_PNT(th,0);
-	MEMORY_MARK(th->error);
+	BLOCK_MARK(th->error);
 	return 0;
 }
 int systemThreadInit(Pkg *system)

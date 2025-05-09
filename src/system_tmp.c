@@ -90,15 +90,12 @@ int fun_storageWrite(Thread* th)
 {
 	LINT len;
 
-	LINT nb = STACK_INT(th, 0);
-	LINT offset = STACK_INT(th, 1);
-	LB* bytes = STACK_PNT(th, 2);
-	LINT start = STACK_INT(th, 3);
-	LINT index = STACK_INT(th, 4);	// index of storage device
-	if ((!bytes)||(offset<0)||(start < 0)||(nb<=0)) FUN_RETURN_NIL;
+	LB* bytes = STACK_PNT(th, 0);
+	LINT start = STACK_INT(th, 1);
+	LINT index = STACK_INT(th, 2);	// index of storage device
+	if ((!bytes)||(start < 0)) FUN_RETURN_NIL;
 	if (index<0 || index>=storageCount()) FUN_RETURN_NIL;
-	if (offset+storageSectorSize(index)*nb>STR_LENGTH(bytes)) FUN_RETURN_NIL;
-	len = storageWrite(index, STR_START(bytes)+offset, (int)start, (int)nb);
+	len = storageWrite(index, STR_START(bytes), (int)start, STR_LENGTH(bytes));
 	if (len < 0) FUN_RETURN_NIL;
 	FUN_RETURN_INT(len);
 }
@@ -136,7 +133,7 @@ int usrSdInit(Pkg* system)
 		{ NATIVE_FUN, "storageNbSectors", fun_storageNbSectors, "fun Int -> Int"},
 		{ NATIVE_FUN, "storageSectorSize", fun_storageSectorSize, "fun Int -> Int"},
 		{ NATIVE_FUN, "storageRead", fun_storageRead, "fun Int Int Int -> Bytes"},
-		{ NATIVE_FUN, "storageWrite", fun_storageWrite, "fun Int Int Bytes Int Int -> Int"},
+		{ NATIVE_FUN, "storageWrite", fun_storageWrite, "fun Int Int Bytes -> Int"},
 	};
 	NATIVE_DEF(nativeDefs);
 	return 0;

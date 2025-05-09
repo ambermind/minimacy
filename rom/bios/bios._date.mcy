@@ -27,9 +27,8 @@ const _Dates=
 	);;	// we will precompute some dates
 
 fun date t=
-	if t>=0 then
-	let t/86400 -> d in
-	let t%86400 -> hms in
+	let ((t>>1)&~signBit)/43200 -> d in	// prevent the 'year 2038 problem' on 32 bits targets
+	let t-d*86400 -> hms in
 	let hms/3600 -> h in
 	let hms%3600 -> ms in
 	let ms /60 -> m in
@@ -44,23 +43,19 @@ fun date t=
 	let _Dates.(d4%365) -> [month d] in [y month d w h m s];;
 
 fun fullDate t=
-	if t>=0 then
 	let date t -> [y month d w h m s] in
 	strFormat "*, * * * *:*:* UTC"
 		Days.w (decNFromInt 2 d) Months.(month-1) (decNFromInt 4 y) (decNFromInt 2 h) (decNFromInt 2 m) (decNFromInt 2 s);;
 
 fun fileDate t=
-	if t>=0 then
 	let date t -> [y month d w h m s] in
 	strFormat "*/*/* *:*" (decNFromInt 2 month) (decNFromInt 2 d) (decNFromInt 4 y) (decNFromInt 2 h) (decNFromInt 2 m);;
 
 fun fileDateSeconds t=
-	if t>=0 then
 	let date t -> [y month d w h m s] in
 	strFormat "*/*/* *:*:*" (decNFromInt 2 month) (decNFromInt 2 d) (decNFromInt 4 y) (decNFromInt 2 h) (decNFromInt 2 m) (decNFromInt 2 s);;
 
 fun smallDate t=
-	if t>=0 then
 	let date t -> [y month d w h m s] in
 	let date time -> [y0 month0 d0 w0 h0 m0 s0] in
 	if y<>y0 then decNFromInt 4 y
@@ -68,7 +63,8 @@ fun smallDate t=
 	else strFormat "*:*:*" (decNFromInt 2 h) (decNFromInt 2 m) (decNFromInt 2 s);;
 
 fun smallTime t=
-	let t%86400 -> t in
+	let ((t>>1)&~signBit)/43200 -> d in	// prevent the 'year 2038 problem' on 32 bits targets
+	let t-d*86400 -> t in
 	let t/3600 -> h in
 	let t%3600 -> t in
 	let t/60 -> m in
@@ -76,7 +72,6 @@ fun smallTime t=
 	strFormat "*:*:*" (decNFromInt 2 h) (decNFromInt 2 m) (decNFromInt 2 s);;
 
 fun yyddmmhhmmsszFromTime t=
-	if t>=0 then
 	let date t -> [y month d w h m s] in
 	strFormat "******Z" (decNFromInt 2 y%100) (decNFromInt 2 month) (decNFromInt 2 d) (decNFromInt 2 h) (decNFromInt 2 m) (decNFromInt 2 s);;
 

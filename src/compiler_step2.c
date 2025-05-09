@@ -78,7 +78,7 @@ Type* compileDefs2(Compiler* c)
 	Def* d;
 	for(d = c->pkg->first; d; d=d->next) if (d->parser && d->proto)
 	{
-		memoryEnterFast();
+		memoryEnterSafe();
 		//		PRINTF(LOG_DEV,"Compile step2 %llx '%s.%s'\n", d, defPkgName(d), defName(d));
 		if (d->code == DEF_CODE_SUM)
 		{
@@ -103,7 +103,7 @@ Type* compileDefs2(Compiler* c)
 			if (!compileType2(c, dsum, "with", 1)) return compileError(c,"error compiling type '%s'\n", defName(dsum));
 			parserReset(c);
 		}
-		memoryLeaveFast();
+		memoryLeaveSafe();
 	}
 	return MM.Boolean;	// anything not null
 }

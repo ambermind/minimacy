@@ -153,15 +153,15 @@ void defMark(LB* user)
 //	PRINTF(LOG_DEV,"\n---d %s %llx\n",STR_START(d->name),d->val);
 	if (d->valType==VAL_TYPE_PNT) {
 		LB* p=PNT_FROM_VAL(d->val);
-		MEMORY_MARK(p);
-		if (MM.updating) d->val=VAL_FROM_PNT(p);
+		MARK_OR_MOVE(p);
+		if (MOVING_BLOCKS) d->val=VAL_FROM_PNT(p);
 	}
-	MEMORY_MARK(d->type);
-	MEMORY_MARK(d->name);
-	MEMORY_MARK(d->instances);
-	MEMORY_MARK(d->parent);
-	MEMORY_MARK(d->parser);
-	MEMORY_MARK(d->next);
+	MARK_OR_MOVE(d->type);
+	MARK_OR_MOVE(d->name);
+	MARK_OR_MOVE(d->instances);
+	MARK_OR_MOVE(d->parent);
+	MARK_OR_MOVE(d->parser);
+	MARK_OR_MOVE(d->next);
 }
 
 Def* defAlloc(LINT code,LINT index,LW val,int valType,Type* type)
@@ -187,7 +187,7 @@ Def* defAlloc(LINT code,LINT index,LW val,int valType,Type* type)
 void defSetParser(Def* d, Compiler* c, LINT index)
 {
 	d->parser= c->parser;
-	MEMORY_MARK(d->parser);
+	BLOCK_MARK(d->parser);
 	d->parserIndex = (int)index;
 }
 void defSet(Def* d,LW val,int valType)
@@ -226,12 +226,12 @@ void defReverse(Pkg* p)
 void pkgMark(LB* user)
 {
 	Pkg* pkg=(Pkg*)user;
-	MEMORY_MARK(pkg->name);
-	MEMORY_MARK(pkg->first);
-	MEMORY_MARK(pkg->start);
-	MEMORY_MARK(pkg->defs);
-	MEMORY_MARK(pkg->importList);
-	if (MM.updating) MEMORY_MARK(pkg->listNext);	// this special list doesn't count for marking stage
+	MARK_OR_MOVE(pkg->name);
+	MARK_OR_MOVE(pkg->first);
+	MARK_OR_MOVE(pkg->start);
+	MARK_OR_MOVE(pkg->defs);
+	MARK_OR_MOVE(pkg->importList);
+	if (MOVING_BLOCKS) MARK_OR_MOVE(pkg->listNext);	// this special list doesn't count for marking stage
 //	PRINTF(LOG_DEV,"\n----pkg %s %llx\n",STR_START(pkg->name),pkg);
 }
 
@@ -335,7 +335,7 @@ void pkgCleanCompileError(void)
 		if ((*q)->stage != PKG_STAGE_READY)
 		{
 			*q = (*q)->listNext;
-			MEMORY_MARK((*q));
+			BLOCK_MARK((*q));
 		}
 		else q = &((*q)->listNext);
 	}
@@ -611,13 +611,13 @@ Def* pkgAddType(Pkg *pkg,char* name)
 	Def* d;
 	Type* type;
 	LB* pname;
-	memoryEnterFast();
+	memoryEnterSafe();
 	pname=memoryAllocStr(name,-1); if (!pname) return NULL;
 	type=typeAlloc(TYPECODE_PRIMARY,NULL,0); if (!type) return NULL;
 	d=defAlloc(DEF_CODE_TYPE,0,NIL,VAL_TYPE_PNT, type); if (!d) return NULL;
 	type->def = d;
 	if (pkgAddDef(pkg, pname, d)) return NULL;
-	memoryLeaveFast();
+	memoryLeaveSafe();
 //	PRINTF(LOG_DEV,"Native Type: %s\n", name);
 	return d;
 }
@@ -628,7 +628,7 @@ Def* pkgAddOpcodeStr(Pkg* pkg, char* name, LINT opcode, char* typeStr)
 	Def* d;
 	LB* pname;
 	LB* value;
-	memoryEnterFast();
+	memoryEnterSafe();
 	value = memoryAllocArray(FUN_NATIVE_LENGTH, DBG_TUPLE);
 	if (!value) return NULL;
 	pname = memoryAllocStr(name, -1); if (!pname) return NULL;
@@ -643,7 +643,7 @@ Def* pkgAddOpcodeStr(Pkg* pkg, char* name, LINT opcode, char* typeStr)
 	}
 	d = defAlloc(type->nb - 1, DEF_INDEX_OPCODE, VAL_FROM_PNT(value), VAL_TYPE_PNT, type); if (!d) return NULL;
 	if (pkgAddDef(pkg, pname, d)) return NULL;
-	memoryLeaveFast();
+	memoryLeaveSafe();
 	return d;
 }
 
@@ -652,7 +652,7 @@ Def* pkgAddConstStr(Pkg* pkg, char* name, LW value, int valType, char* typeStr)
 	Type* type;
 	Def* d;
 	LB* pname;
-	memoryEnterFast();
+	memoryEnterSafe();
 	pname = memoryAllocStr(name, -1); if (!pname) return NULL;
 	type = typeParseStatic(typeStr);
 	if (!type) {
@@ -661,7 +661,7 @@ Def* pkgAddConstStr(Pkg* pkg, char* name, LW value, int valType, char* typeStr)
 	}
 	d = defAlloc(DEF_CODE_CONST, 0, value, valType, type); if (!d) return NULL;
 	if (pkgAddDef(pkg, pname, d)) return NULL;
-	memoryLeaveFast();
+	memoryLeaveSafe();
 	return d;
 }
 Def* pkgAddConstIntStr(Pkg* pkg, char* name, LINT value, char* typeStr) { return pkgAddConstStr(pkg, name, VAL_FROM_INT(value), VAL_TYPE_INT, typeStr); }
@@ -671,11 +671,11 @@ Def* pkgAddConst(Pkg *pkg,char* name,LW value,int valType, Type* type)
 {
 	Def* d;
 	LB* pname;
-	memoryEnterFast();
+	memoryEnterSafe();
 	pname=memoryAllocStr(name,-1); if (!pname) return NULL;
 	d = defAlloc(DEF_CODE_CONST, 0, value, valType, type); if (!d) return NULL;
 	if (pkgAddDef(pkg, pname, d)) return NULL;
-	memoryLeaveFast();
+	memoryLeaveSafe();
 	return d;
 }
 Def* pkgAddConstInt(Pkg* pkg, char* name, LINT value, Type* type) { return pkgAddConst(pkg, name, VAL_FROM_INT(value), VAL_TYPE_INT, type); }
@@ -687,13 +687,13 @@ Def* pkgAddSum(Pkg *pkg,char* name)
 	Type* mainType;
 	Def* defType;
 	LB* pname;
-	memoryEnterFast();
+	memoryEnterSafe();
 	pname = memoryAllocStr(name, -1); if (!pname) return NULL;
 	mainType=typeAlloc(TYPECODE_PRIMARY, NULL,0); if (!mainType) return NULL;
 	defType=defAlloc(DEF_CODE_SUM,0,NIL, VAL_TYPE_PNT, mainType); if (!defType) return NULL;
 	mainType->def = defType;
 	if (pkgAddDef(pkg, pname, defType)) return NULL;	// this will also set defType->name
-	memoryLeaveFast();
+	memoryLeaveSafe();
 	return defType;
 }
 
@@ -702,7 +702,7 @@ Def* pkgAddCons(Pkg *pkg,char* name,Def* defType,Type* consType)
 {
 	Def* defCons;
 	LB* pname;
-	memoryEnterFast();
+	memoryEnterSafe();
 	pname=memoryAllocStr(name,-1); if (!pname) return NULL;
 	defCons=defAlloc(DEF_CODE_CONS,defType->index++,defType->val,defType->valType, consType); if (!defCons) return NULL;
 
@@ -710,7 +710,7 @@ Def* pkgAddCons(Pkg *pkg,char* name,Def* defType,Type* consType)
 	defCons->parent = defType;
 
 	if (pkgAddDef(pkg, pname, defCons)) return NULL;	// this will also set defType->name
-	memoryLeaveFast();
+	memoryLeaveSafe();
 	return defCons;
 }
 
@@ -718,7 +718,7 @@ Def* pkgAddCons0(Pkg* pkg, char* name, Def* defType)
 {
 	Def* defCons;
 	LB* pname;
-	memoryEnterFast();
+	memoryEnterSafe();
 	pname = memoryAllocStr(name, -1); if (!pname) return NULL;
 	defCons = defAlloc(DEF_CODE_CONS0, defType->index++, defType->val, defType->valType, defType->type); if (!defCons) return NULL;
 
@@ -726,7 +726,7 @@ Def* pkgAddCons0(Pkg* pkg, char* name, Def* defType)
 	defCons->parent = defType;
 
 	if (pkgAddDef(pkg, pname, defCons)) return NULL;	// this will also set defType->name
-	memoryLeaveFast();
+	memoryLeaveSafe();
 	return defCons;
 }
 

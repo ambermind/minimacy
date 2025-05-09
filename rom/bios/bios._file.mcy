@@ -14,7 +14,7 @@ extend VolumeType with sdVolume, usbVolume;;
 
 struct Volume=[
 	nameV typeV indexV writableV partitionsV
-	fReadV@(fun Int Int -> Bytes) fWriteV@(fun Int Bytes Int Int -> Int)
+	fReadV@(fun Int Int -> Bytes) fWriteV@(fun Int Bytes -> Int)
 	nbSectorsV@Int sectorSizeV@Int
 ];;
 
@@ -245,7 +245,8 @@ fun cleanPath path=
 	path;;
 
 fun parentDir f=
-	let strPosRev f "/" (strLength f)-2 -> i in
+	if nil==strPos f "/" 0 then ""
+	else let strPosRev f "/" (strLength f)-2 -> i in
 	if i<>nil then strConcat (strLeft f i) "/"
 	else "/";;
 
@@ -308,7 +309,7 @@ fun dirListInfo path= listFilter (diskListInfo path) (lambda f= f._dirFI);;
 fun fileList path= listMap (fileListInfo path) (lambda f= f._nameFI);;
 fun dirList path= listMap (dirListInfo path) (lambda f= f._nameFI);;
 
-fun fileInfo path = head diskListInfo path;;
+fun fileInfo path = listFind (diskListInfo parentDir path) (lambda f = path==f._nameFI);;
 	
 fun fileInfoName f=f._nameFI;;
 fun fileInfoSize f=f._sizeFI;;

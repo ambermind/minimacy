@@ -42,9 +42,8 @@ add_library(native-minimacy SHARED
         ../../../../../../src/compiler_sum.c
         ../../../../../../src/compiler_term.c
         ../../../../../../src/compiler_try.c
-        ../../../../../../src/crypto_adler32.c
         ../../../../../../src/crypto_aes.c
-        ../../../../../../src/crypto_crc32.c
+        ../../../../../../src/crypto_checksum.c
         ../../../../../../src/crypto_des.c
         ../../../../../../src/crypto_hash.c
         ../../../../../../src/crypto_rc4.c

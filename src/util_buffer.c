@@ -42,10 +42,10 @@ int _bufferBigger(Buffer* b,LINT neededSize)
 void bufferMark(LB* user)
 {
 	Buffer* b=(Buffer*)user;
-	MEMORY_MARK(b->bloc);
-	if (MM.updating) {
+	MARK_OR_MOVE(b->bloc);
+	if (MOVING_BLOCKS) {
 		b->buffer = BIN_START(b->bloc);
-		if (b->link) *b->link = (Buffer*)b->header.lifo;
+		if (b->link) *b->link = (Buffer*)b->header.listMark;
 	}
 }
 
@@ -54,7 +54,7 @@ Buffer* bufferCreateWithSize(LINT size)
 	Buffer* b;
 	LB* p;
 	if (size < BUFFER_SIZE0) size = BUFFER_SIZE0;
-	memoryEnterFast();
+	memoryEnterSafe();
 	b=(Buffer*)memoryAllocExt(sizeof(Buffer),DBG_BUFFER,NULL,bufferMark); if (!b) return NULL;
 	b->index=0;
 	b->size=size;
@@ -65,7 +65,7 @@ Buffer* bufferCreateWithSize(LINT size)
 	b->bloc = p;
 	b->buffer=BIN_START(b->bloc);
 //	PRINTF(LOG_DEV, "_create Buffer "LSX" size "LSD"\n", (void*)b, b->size);
-	memoryLeaveFast();
+	memoryLeaveSafe();
 	return b;
 }
 Buffer* bufferCreate(void)

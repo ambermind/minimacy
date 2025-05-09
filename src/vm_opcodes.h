@@ -141,6 +141,7 @@
 
 void opcodePrint(int msk,LINT i,char* p,LINT ind0);
 void bytecodePrint(int msk,LB* bytecode);
+void bytecodeShowNatives(Buffer* buffer);
 
 void bytecodeOptimize(LB* bytecode);
 #endif

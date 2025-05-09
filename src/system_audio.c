@@ -113,8 +113,8 @@ MLOCK AELock;
 void audioSampleMark(LB* user)
 {
 	AudioSound* as = (AudioSound*)user;
-	MEMORY_MARK(as->buffer);
-	MEMORY_MARK(as->next);
+	MARK_OR_MOVE(as->buffer);
+	MARK_OR_MOVE(as->next);
 }
 int audioSystemForget(LB* user)
 {
@@ -125,9 +125,9 @@ int audioSystemForget(LB* user)
 void audioSystemMark(LB* user)
 {
 	AudioEngine* as = (AudioEngine*)user;
-	MEMORY_MARK(as->sounds);
-	MEMORY_MARK(as->playBuffer);
-	if (MM.updating) AE = as;	// there is only one AudioEngine
+	MARK_OR_MOVE(as->sounds);
+	MARK_OR_MOVE(as->playBuffer);
+	if (MOVING_BLOCKS) AE = as;	// there is only one AudioEngine
 }
 
 int haudioPlayStop(void);
@@ -687,7 +687,7 @@ void haudioPurge(void)
 		{
 			snd->next = AE->sounds;
 			AE->sounds = snd;
-			MEMORY_MARK(snd);
+			BLOCK_MARK(snd);
 		}
 		snd = next;
 	}
@@ -736,7 +736,7 @@ int fun_soundStart(Thread* th)
 	lockEnter(&AELock);
     startNow = AE->playing?0:1;
 	as->next = AE->sounds;
-	MEMORY_MARK(as->next);
+	BLOCK_MARK(as->next);
 	AE->sounds = as;
 	lockLeave(&AELock);
 
