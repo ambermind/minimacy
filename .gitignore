@@ -1,0 +1,10 @@
+
+/obj
+
+/bin/*
+!/bin/README
+
+/windows/minimacy/.vs
+/windows/minimacy/build
+#misc
+.DS_Store

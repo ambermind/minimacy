@@ -1,0 +1,14 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2022, Sylvain Huet, Ambermind
+// Minimacy (r) User boot
+
+// it is possible to boot with a package name thanks to the 'start' function. The package will be loaded and its 'run' function evaluated.
+// start must be followed by the package name, not the *.mcy file path. In the following example, the compiler will try to open, in this order:
+// ./programs/demo.fun.queens.mcy, ./programs/demo/demo.fun.queens.mcy, ./programs/demo/fun/demo.fun.queens.mcy 
+
+//fun main() = 
+//	start("demo.fun.queens");;
+
+// or we may just start with the console prompt:
+
+fun main() = consoleStart(nil);;

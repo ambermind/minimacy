@@ -1,0 +1,80 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2022, Sylvain Huet, Ambermind
+// Minimacy (r) System
+
+export rsaPssSign(rsa, data, fHash, hashLen);;
+export rsaPssVerify(rsa, data, fHash, hashLen, signature);;
+
+use core.crypto.hash;;
+use core.crypto.rsa;;
+
+fun _mkMask(fHash, data, count, bytesToCompute)=
+	if bytesToCompute>0 then
+	let call fHash(strConcat(data, strInt32Msb(count))) -> hash in
+	hash::_mkMask(fHash, data, count+1, bytesToCompute - strLength(hash));;
+
+fun mkMask(data, blockLen, fHash, hashLen)=
+	let blockLen-hashLen-1 -> maskLen in
+	let _mkMask(fHash, data, 0, maskLen) -> mask in
+	strLeft(strListConcat(mask), maskLen);;
+
+fun checkMask1(buf, len)=
+	for i=0;i<len do if 0<>bytesGet(buf, i) then return false;
+	0x01==bytesGet(buf, len);;
+
+fun checkMask2(buf, off, len)=
+	for i=0;i<len do if 0<>bytesGet(buf, off+i) then return false;
+	true;;
+
+fun mkMask2(fHash, data, salt)=
+	let call fHash(data) -> hash in
+	call fHash(strBuild({
+		"\0\0\0\0\0\0\0\0",
+		hash,
+		salt
+	}));;
+
+fun _computeFromPublicKey(publicKey) =
+	let bigNbits(publicKey) -> rsaBitLen in 
+	let (rsaBitLen+7)>>3 -> blockLen in
+	let rsaBitLen-1 -> emBits in
+	let 0xff >> (rsaBitLen - emBits) -> firstByteMask in
+	[firstByteMask, blockLen];;
+
+fun rsaPssSign(rsa, data, fHash, hashLen)=
+	let _computeFromPublicKey(rsaModulus(rsa)) -> [firstByteMask, blockLen] in
+	let strRand(hashLen) -> salt in
+	let mkMask2(fHash, data, salt) -> mask2 in
+	let bytesCreate(blockLen, 0) -> block in
+	let mkMask(mask2, blockLen, fHash, hashLen) -> mask1 in
+	(
+		bytesSet(block, blockLen-2*hashLen-2, 0x01);
+		bytesCopy(block, blockLen-2*hashLen-1, salt, 0, nil);
+		bytesCopy(block, blockLen-hashLen-1, mask2, 0, nil);
+		bytesSet(block, blockLen-1, 0xBC);
+		bytesXor(block, 0, mask1, 0, nil);
+		bytesSet(block, 0, firstByteMask&bytesGet(block, 0));
+		let bigFromBytes(block) -> msg in
+		strFromBig(rsaComputePrivateExp(rsa, msg), blockLen)
+	);;
+	
+fun rsaPssVerify(rsa, data, fHash, hashLen, signature)=
+	let rsaModulus(rsa) -> modulus in
+	let rsaPubExp(rsa) -> pubExp in
+	let _computeFromPublicKey(modulus) -> [firstByteMask, blockLen] in
+	let strFromBig(bigExpMod(bigFromStr(signature), pubExp, modulus), blockLen) -> block in
+	if 0xbc <> strGet(block, -1) then false
+	else let strSliceOfBytes(block, 0, nil) -> buf in
+	let mkMask(strSlice(block, blockLen-hashLen-1, hashLen), blockLen, fHash, hashLen)-> mask in
+	(
+		bytesXor(buf, 0, mask, 0, nil);
+		bytesSet(buf, 0, firstByteMask&bytesGet(buf, 0));
+		let checkMask1(buf, blockLen-hashLen*2-2) -> check in
+		if check then
+		let bytesSliceOfStr(buf, blockLen-hashLen*2-1, hashLen) -> salt in
+		let mkMask2(fHash, data, salt) -> mask2 in
+		(
+			bytesXor(buf, blockLen-hashLen-1, mask2, 0, nil);
+			checkMask2(buf, blockLen-hashLen-1, hashLen)
+		)
+	);;

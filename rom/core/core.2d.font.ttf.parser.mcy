@@ -1,0 +1,440 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2022, Sylvain Huet, Ambermind
+// Minimacy (r) System
+
+// this package parse a TTF file content
+// it should be simplified as some fields are not used
+// it is easier to use function fontFromTTF from core.2d.font.ttf
+
+struct TTF=[
+	dataT,
+	tableT,
+	glyphsT,
+	ascentT,
+	descentT,
+	aboveT,
+	underT,
+	heightT,
+	unitsPerEmT, xMinT, yMinT, xMaxT, yMaxT,
+	postScriptNameT,
+	embeddableT,
+	boldT,
+	typoAscenderT, typoDescenderT,
+	capHeightT,
+	italicAngleT,
+	underlinePositionT, underlineThicknessT, isFixedPitchT,
+	charsT,
+	glyphNamesT
+];;
+struct Glyph=[offsetG, lengthG, widthG, lsbG, componentsG, nameG, xMinG, yMinG, xMaxG, yMaxG, drawingG];;
+
+fun _parseBytes(data, i, fields)=
+	if fields<>nil then
+	let head(fields)-> len in
+	let match len with
+		-2 -> signExtend16(strRead16Msb(data, i)),
+		2 -> strRead16Msb(data, i),
+		4 -> strRead32Msb(data, i),
+		_ -> nil
+	-> val in val::_parseBytes(data, i+abs(len), tail(fields));;
+
+fun _ttfParseTable(data)=
+	let strRead16Msb(data, 4) -> nbTables in
+	let hashmapCreate(4) -> tables in
+	(
+		for j=0;j<nbTables do let 12+16*j -> k in
+			let strSlice(data, k, 4) -> tag in
+			let _parseBytes(data, k+4, 4::4::4::nil) -> checksum::offset::length::_ in
+			hashmapSet(tables, tag, [checksum, offset, length]);
+		[dataT=data, tableT=tables, charsT=hashmapCreate(8)];
+	);;
+fun _ttfGetBlockStart(ttf, tag)=
+	let hashmapGet(ttf.tableT, tag) ->[_, offset, length] in offset;;
+
+fun _ttfParseHead(ttf) =
+	let _ttfGetBlockStart(ttf, "head") -> offset in
+	if offset<>nil then
+	let _parseBytes(ttf.dataT, offset+12, 4::2::2::16::(-2)::(-2)::(-2)::(-2)::6::(-2)::nil) -> magic::_::unitsPerEm::_::xmin::ymin::xmax::ymax::_::indexToLocFormat::_ in
+	if magic==0x5F0F3CF5 then
+	(
+		set ttf.unitsPerEmT=unitsPerEm;
+		set ttf.xMinT= adjustUnit(ttf, xmin);
+		set ttf.yMinT= adjustUnit(ttf, ymin);
+		set ttf.xMaxT= adjustUnit(ttf, xmax);
+		set ttf.yMaxT= adjustUnit(ttf, ymax);
+		indexToLocFormat
+	);;
+
+fun _ttfParseHhea(ttf)=
+	let _ttfGetBlockStart(ttf, "hhea") -> offset in
+	if offset<>nil then
+	let _parseBytes(ttf.dataT, offset+4, (-2)::(-2)::(13*2)::2::nil) -> ascent::descent::_::numberOfHMetrics::_ in
+	(
+		set ttf.ascentT=ascent;
+		set ttf.descentT=descent;
+		numberOfHMetrics
+	);;
+
+fun _ttfParseMaxp(ttf)=
+	let _ttfGetBlockStart(ttf, "maxp") -> offset in
+	if offset<>nil then
+	let _parseBytes(ttf.dataT, offset+4, 2::nil) -> numGlyphs::_ in
+	(
+		set ttf.glyphsT=arrayCreate(numGlyphs, nil);
+		ttf
+	);;
+
+fun _ttfParseHtmx(ttf, numberOfHMetrics)=
+	let _ttfGetBlockStart(ttf, "hmtx") -> offset in
+	if offset<>nil then
+	let 0 -> lastAdvanceWidth in
+	(
+		for i=0;i<numberOfHMetrics do
+			let _parseBytes(ttf.dataT, offset+i*4, 2::(-2)::nil) -> advanceWidth::lsb::_ in
+			set ttf.glyphsT[i]=[widthG=set lastAdvanceWidth=advanceWidth, lsbG=lsb];
+		for i=numberOfHMetrics;i<arrayLength(ttf.glyphsT) do
+			let _parseBytes(ttf.dataT, offset+numberOfHMetrics*2+i*2, (-2)::nil) -> lsb::_ in
+			set ttf.glyphsT[i]=[widthG=lastAdvanceWidth, lsbG=lsb];
+		ttf
+	);;
+
+fun _ttfParseLoca(ttf, indexToLocFormat)=
+	let _ttfGetBlockStart(ttf, "loca") -> offset in
+	if offset<>nil then
+	let arrayLength(ttf.glyphsT) -> numGlyphs in
+	let arrayInit(numGlyphs+1, lambda(i)=
+		if indexToLocFormat==0 then 2*strRead16Msb(ttf.dataT, offset+2*i)
+		else strRead32Msb(ttf.dataT, offset+4*i)
+	) -> offsets in
+	for glyph,i of ttf.glyphsT do (
+		set glyph.offsetG=offsets[i];
+		set glyph.lengthG=offsets[(i+1)] - offsets[i]
+	);;
+
+const ARG_1_AND_2_ARE_WORDS = 1;;
+const ARGS_ARE_XY_VALUES = 2;;
+const WE_HAVE_A_SCALE = 8;;
+const MORE_COMPONENTS = 32;;
+const WE_HAVE_AN_X_AND_Y_SCALE = 64;;
+const WE_HAVE_A_TWO_BY_TWO = 128;;
+
+fun __read2_14(data, i) = floatFromInt(signExtend16(strRead16Msb(data, i)))/.16384.;;
+fun __ttfParseComponents(data, i)=
+	let strRead16Msb(data, i) -> flags in
+	let strRead16Msb(data, i+2) -> index in
+	let {1., 0., 0., 0., 1., 0.} -> matrix in	// [[1 0 0] [0 1 0]] put in 1-D vector
+	let i+4 -> i in
+	let if bitTest(flags, ARG_1_AND_2_ARE_WORDS) then
+			[signExtend16(strRead16Msb(data, i)), signExtend16(strRead16Msb(data, i+2)), i+4]
+		else
+			[signExtend8(strGet(data, i)), signExtend8(strGet(data, i+1)), i+2]
+	-> [arg1, arg2, i] in (
+		if bitTest(flags, ARGS_ARE_XY_VALUES) then (
+			set matrix[2] = floatFromInt(arg1);
+			set matrix[5] = floatFromInt(arg2);
+		);
+		if bitTest(flags, WE_HAVE_A_SCALE) then (
+			set matrix[0] = set matrix[4] = __read2_14(data, i);
+			set i=i+2
+		)
+		else if bitTest(flags, WE_HAVE_AN_X_AND_Y_SCALE) then (
+			set matrix[0] = __read2_14(data, i);
+			set matrix[4] = __read2_14(data, i+2);
+			set i=i+4
+		)
+		else if bitTest(flags, WE_HAVE_A_TWO_BY_TWO) then (
+			set matrix[0] = __read2_14(data, i);
+			set matrix[1] = __read2_14(data, i+2);
+			set matrix[3] = __read2_14(data, i+4);
+			set matrix[4] = __read2_14(data, i+6);
+			set i=i+8
+		);
+		[flags, matrix, index]:: if bitTest(flags, MORE_COMPONENTS) then __ttfParseComponents(data, i)
+	);;
+
+const ON_CURVE =  1;;
+const X_IS_BYTE=  2;;
+const Y_IS_BYTE=  4;;
+const REPEAT   =  8;;
+const X_DELTA  = 0x10;;
+const Y_DELTA  = 0x20;;
+
+const IsByte={X_IS_BYTE, Y_IS_BYTE};;
+const Deltas={X_DELTA, Y_DELTA};;
+
+fun __ttfParseCoords(data, flags0, count, result, flags, val, i)=
+if count<2 then
+	if flags==nil then listReverse(result)::__ttfParseCoords(data, flags0, count+1, nil, flags0, 0, i)
+	else let head(flags) -> flag in
+	if bitTest(flag, IsByte[count]) then
+		let if bitTest(flag, Deltas[count]) then val+strGet(data, i) else val-strGet(data, i) -> val in
+		__ttfParseCoords(data, flags0, count, val::result, tail(flags), val, i+1)
+	else if bitTest(flag, Deltas[count]) then __ttfParseCoords(data, flags0, count, val::result, tail(flags), val, i)
+	else let val+signExtend16(strRead16Msb(data, i)) -> val in
+	__ttfParseCoords(data, flags0, count, val::result, tail(flags), val, i+2);;
+
+fun __ttfMakePoint(lx, ly, flags) =
+	if lx<>nil then [floatFromInt(head(lx)), floatFromInt(head(ly)), bitTest(ON_CURVE, head(flags))]::__ttfMakePoint(tail(lx), tail(ly), tail(flags));;
+
+fun __ttfParseFlags(data, result, nbPoints, nbRepeat, valRepeat, i)=
+	if nbPoints<=0 then
+		let listReverse(result) -> flags in
+		let __ttfParseCoords(data, flags, 0, nil, flags, 0, i) -> lx::ly::_ in
+		arrayFromList(__ttfMakePoint(lx, ly, flags))
+	else if nbRepeat>0 then __ttfParseFlags(data, valRepeat::result, nbPoints-1, nbRepeat-1, valRepeat, i)
+	else let strGet(data, i) -> flag in
+	if bitTest(flag, REPEAT) then __ttfParseFlags(data, flag::result, nbPoints-1, strGet(data, i+1), flag, i+2)
+	else __ttfParseFlags(data, flag::result, nbPoints-1, 0, nil, i+1);;
+
+fun __ttfParseEndContours(data, i, n)=
+	if n>0 then (1+strRead16Msb(data, i))::__ttfParseEndContours(data, i+2, n-1);;
+
+fun __ttfMakeContours(points, endContours) =	// points is an array of [x y], endContours is the reversed list of endPoints
+	if endContours<>nil then
+	let endContours -> end::start::_ in
+	listFromArray(arraySlice(points, start, end-start))::__ttfMakeContours(points, tail(endContours));;
+
+fun ttfParseDrawing(data, i) =
+	let signExtend16(strRead16Msb(data, i)) -> nbContours in
+	let i+10 -> i in
+	let __ttfParseEndContours(data, i, nbContours) -> endContours in
+	let quicksort(endContours, lambda(a, b)=a>b) -> endContours in
+	let head(endContours) -> nbPoints in
+	let i+nbContours*2 -> i in
+	let i+2+strRead16Msb(data, i) -> i in
+	let __ttfParseFlags(data, nil, nbPoints, 0, nil, i) -> points in
+	__ttfMakeContours(points, endContours);;
+
+fun mulMat23(p, q) = {
+	p[0] *. q[0] +. p[1] *. q[3],
+	p[0] *. q[1] +. p[1] *. q[4],
+	p[0] *. q[2] +. p[1] *. q[5] +. p[5],
+	p[3] *. q[0] +. p[4] *. q[3],
+	p[3] *. q[1] +. p[4] *. q[4],
+	p[3] *. q[2] +. p[4] *. q[5] +. p[5]
+};;
+
+fun __recComponents(ttf, fifo, components, matrix) =
+	for [_, m, index] in components do
+		let ttf.glyphsT[index] -> gg in
+		let if matrix==nil then m else mulMat23(matrix, m) -> m in 	// should multiply by matrix
+		if gg.drawingG==nil then __recComponents(ttf, fifo, gg.componentsG, m)
+		else
+		for contour in gg.drawingG do
+			fifoIn(fifo, listMap(contour, lambda([x, y, c]) = [
+				(x*.m[0]) +. (y*.m[1]) +. (m[2]),
+				(x*.m[3]) +. (y*.m[4]) +. (m[5]),
+				c
+			]));;
+
+fun _ttfParseGlyf(ttf) =
+	let _ttfGetBlockStart(ttf, "glyf") -> offset in
+	if offset<>nil then (
+		for g,j of ttf.glyphsT do
+			if g.lengthG>0 then
+			let offset+g.offsetG -> i in (
+				set g.xMinG=signExtend16(strRead16Msb(ttf.dataT, i+2));
+				set g.yMinG=signExtend16(strRead16Msb(ttf.dataT, i+4));
+				set g.xMaxG=signExtend16(strRead16Msb(ttf.dataT, i+6));
+				set g.yMaxG=signExtend16(strRead16Msb(ttf.dataT, i+8));
+				set ttf.aboveT=max(ttf.aboveT, g.yMaxG);
+				set ttf.underT=min(ttf.underT, g.yMinG);
+				let signExtend16(strRead16Msb(ttf.dataT, i)) -> nbContours in
+				if nbContours<0 then set g.componentsG=__ttfParseComponents(ttf.dataT, i+10)
+				else void set g.drawingG= ttfParseDrawing(ttf.dataT, i)
+			);
+		set ttf.heightT=ttf.aboveT - ttf.underT;
+		for g,i of ttf.glyphsT do
+			if g.componentsG<>nil then let fifoCreate() -> fifo in (
+				__recComponents(ttf, fifo, g.componentsG, nil);
+				set g.drawingG=fifoList(fifo)
+			)
+	);;
+
+fun __ttfFindUnicodeEncoding(data, numTables, i)=
+	if numTables>0 then
+	let _parseBytes(data, i, 2::2::4::nil) -> platformID::encodingID::offset::_ in
+	if platformID==3 && encodingID==1 then offset
+	else __ttfFindUnicodeEncoding(data, numTables-1, i+8);;
+
+fun _ttfParseCmap(ttf)=
+	let _ttfGetBlockStart(ttf, "cmap") -> offset in
+	if offset<>nil then
+	let _parseBytes(ttf.dataT, offset, 2::2::nil) -> version::numTables::_ in
+	let __ttfFindUnicodeEncoding(ttf.dataT, numTables, offset+4) -> offset31 in
+	if offset31<>nil then
+	let offset+offset31 -> offset in
+	let _parseBytes(ttf.dataT, offset, 2::2::2::2::2::2::2::nil)
+	-> format::length::language::doubleSegCount::searchRange::entrySelector::rangeShift::_ in
+	let doubleSegCount/2 -> segCount in
+	let offset+7*2 -> offset in
+	let arrayInit(segCount, lambda(i)= strRead16Msb(ttf.dataT, offset+i*2)) -> endCount in
+	let offset+segCount*2+2 -> offset in
+	let arrayInit(segCount, lambda(i)= strRead16Msb(ttf.dataT, offset+i*2)) -> startCount in
+	let offset+segCount*2 -> offset in
+	let arrayInit(segCount, lambda(i)= signExtend16(strRead16Msb(ttf.dataT, offset+i*2))) -> idDelta in
+	let offset+segCount*2 -> offset in
+	let arrayInit(segCount, lambda(i)= strRead16Msb(ttf.dataT, offset+i*2)) -> idRangeOffset in
+	(
+		for i=0;i<segCount do
+			let startCount[i] -> c1 in
+			let endCount[i] -> c2 in
+			let idDelta[i] -> d in
+			let idRangeOffset[i] -> ro in
+			let if ro>0 then arrayInit((endCount[i])+1-(startCount[i]), lambda(j)=
+				let strRead16Msb(ttf.dataT, offset+2*i+2*j+ro) -> gid in gid+if gid>0 then d
+			) -> baseGid in
+			for c=c1 ; c<=c2 do
+				if c<0xffff then
+					let 0xffff & if baseGid==nil then c+d else baseGid[(c-c1)] -> gid in
+					if gid>0 then hashmapSet(ttf.charsT, c, gid);
+		ttf
+	);;
+
+
+fun __ttfFindPostScriptName(data, stringOffset, count, i)=
+	if count>0 then
+	let _parseBytes(data, i, 2::2::2::2::2::2::nil) -> platformID::encodingID::languageID::nameID::length::offset::_ in
+	if nameID<>6 then __ttfFindPostScriptName(data, stringOffset, count-1, i+12)
+	else
+	let strSlice(data, stringOffset+offset, length) -> name in
+	strReplace(name, "\0", "");;	// why?
+
+fun _ttfParseName(ttf) =
+	let _ttfGetBlockStart(ttf, "name") -> offset in
+	if offset<>nil then
+	let _parseBytes(ttf.dataT, offset, 2::2::2::nil) -> format::count::stringOffset::_ in
+	let __ttfFindPostScriptName(ttf.dataT, offset+stringOffset, count, offset+6) -> name in
+	set ttf.postScriptNameT=name;;
+
+fun _ttfParseOS2(ttf) =
+	let _ttfGetBlockStart(ttf, "OS/2") -> offset in
+	if offset<>nil then
+	let _parseBytes(ttf.dataT, offset, 2::2::2::2::2::(11*2+10+4*4+4)::2::2::2::(-2)::(-2)::(3*2+2*4+2)::(-2)::nil) ->
+		version::xAvgCharWidth::usWeightClass::usWidthClass::fsType::_::
+		fsSelection::usFirstCharIndex::usLastCharIndex::typoAscender::typoDescender::_::capHeight::nil in
+	(
+		set ttf.embeddableT = fsType<>2 && !bitTest(fsType, 0x200);
+		set ttf.boldT = bitTest(fsSelection, 32);
+		set ttf.typoAscenderT = adjustUnit(ttf, typoAscender);
+		set ttf.typoDescenderT = adjustUnit(ttf, typoDescender);
+		set ttf.capHeightT = if version>=2 then adjustUnit(ttf, capHeight) else 0;
+		ttf
+	);;
+	
+
+fun _reduce(n, val, fReduce) =
+	for i=0;i<n do set val=call fReduce(val, i);
+	val;;
+
+fun __ttfGetGlyphNames(data, offset, N)=
+	if N>0 then
+	let strRead8(data, offset) -> len in
+	strSlice(data, offset+1, len)::__ttfGetGlyphNames(data, offset+len+1, N-1);;
+
+fun _ttfParsePost(ttf) =
+	let _ttfGetBlockStart(ttf, "post") -> offset in
+	if offset<>nil then
+	let _parseBytes(ttf.dataT, offset, 4::(-2)::2::(-2)::(-2)::4::nil) ->
+		version::italicAngle::_::underlinePosition::underlineThickness::fixedPitch::_ in (
+		set ttf.italicAngleT= italicAngle;
+		set ttf.underlinePositionT= adjustUnit(ttf, underlinePosition);
+		set ttf.underlineThicknessT= adjustUnit(ttf, underlineThickness);
+		set ttf.isFixedPitchT= fixedPitch<>0;
+		set ttf.glyphNamesT= version==0x20000;
+		if ttf.glyphNamesT then
+			let offset+ 8*2 + 4*4 + 2 -> offset in
+			let arrayLength(ttf.glyphsT) -> N in
+			let _reduce(N, 0, lambda(val, i)= max(val, strRead16Msb(ttf.dataT, offset+2*i)-258)) -> maxNameIndex in
+			let arrayFromList(__ttfGetGlyphNames(ttf.dataT, offset+N*2, maxNameIndex+1)) -> names in
+			for i=0;i<N do
+				let strRead16Msb(ttf.dataT, offset+2*i) -> index in
+				set ttf.glyphsT[i].nameG = if index>=258 then names[(index-258)] else decFromInt(index);
+		ttf
+	);;
+
+fun ttfParse(data)=
+	if strStartsWith(data, "\0\1\0\0") then
+	let _ttfParseTable(data) -> ttf in
+	let _ttfParseHead(ttf) -> indexToLocFormat in
+	let _ttfParseHhea(ttf) -> numberOfHMetrics in
+	let _ttfParseMaxp(ttf) -> ttf in
+	let _ttfParseHtmx(ttf, numberOfHMetrics) -> ttf in
+	let _ttfParseLoca(ttf, indexToLocFormat) -> _ in
+	let _ttfParseGlyf(ttf) -> _ in
+	let _ttfParseCmap(ttf) -> _ in
+	let _ttfParseName(ttf) -> _ in
+	let _ttfParseOS2(ttf) -> _ in
+	let _ttfParsePost(ttf) -> _ in
+	ttf;;
+
+const CP1252={
+0, 1, 2, 3, 4, 5, 6, 7, // .notdef .notdef .notdef .notdef .notdef .notdef .notdef .notdef
+8, 9, 10, 11, 12, 13, 14, 15, // .notdef .notdef .notdef .notdef .notdef .notdef .notdef .notdef
+16, 17, 18, 19, 20, 21, 22, 23, // .notdef .notdef .notdef .notdef .notdef .notdef .notdef .notdef
+24, 25, 26, 27, 28, 29, 30, 31, // .notdef .notdef .notdef .notdef .notdef .notdef .notdef .notdef
+32, 33, 34, 35, 36, 37, 38, 39, // space exclam quotedbl numbersign dollar percent ampersand quotesingle
+40, 41, 42, 43, 44, 45, 46, 47, // parenleft parenright asterisk plus comma hyphen period slash
+48, 49, 50, 51, 52, 53, 54, 55, // zero one two three four five six seven
+56, 57, 58, 59, 60, 61, 62, 63, // eight nine colon semicolon less equal greater question
+64, 65, 66, 67, 68, 69, 70, 71, // at A B C D E F G
+72, 73, 74, 75, 76, 77, 78, 79, // H I J K L M N O
+80, 81, 82, 83, 84, 85, 86, 87, // P Q R S T U V W
+88, 89, 90, 91, 92, 93, 94, 95, // X Y Z bracketleft backslash bracketright asciicircum underscore
+96, 97, 98, 99, 100, 101, 102, 103, // grave a b c d e f g
+104, 105, 106, 107, 108, 109, 110, 111, // h i j k l m n o
+112, 113, 114, 115, 116, 117, 118, 119, // p q r s t u v w
+120, 121, 122, 123, 124, 125, 126, 127, // x y z braceleft bar braceright asciitilde .notdef
+8364, -1, 8218, 402, 8222, 8230, 8224, 8225, // Euro .unused quotesinglbase florin quotedblbase ellipsis dagger daggerdbl
+710, 8240, 352, 8249, 338, -1, 381, -1, // circumflex perthousand Scaron guilsinglleft OE .unused Zcaron .unused
+-1, 8216, 8217, 8220, 8221, 8226, 8211, 8212, // .unused quoteleft quoteright quotedblleft quotedblright bullet endash emdash
+732, 8482, 353, 8250, 339, -1, 382, 376, // tilde trademark scaron guilsinglright oe .unused zcaron Ydieresis
+160, 161, 162, 163, 164, 165, 166, 167, // space exclamdown cent sterling currency yen brokenbar section
+168, 169, 170, 171, 172, 173, 174, 175, // dieresis copyright ordfeminine guillemotleft logicalnot hyphen registered macron
+176, 177, 178, 179, 180, 181, 182, 183, // degree plusminus twosuperior threesuperior acute mu paragraph periodcentered
+184, 185, 186, 187, 188, 189, 190, 191, // cedilla onesuperior ordmasculine guillemotright onequarter onehalf threequarters questiondown
+192, 193, 194, 195, 196, 197, 198, 199, // Agrave Aacute Acircumflex Atilde Adieresis Aring AE Ccedilla
+200, 201, 202, 203, 204, 205, 206, 207, // Egrave Eacute Ecircumflex Edieresis Igrave Iacute Icircumflex Idieresis
+208, 209, 210, 211, 212, 213, 214, 215, // Eth Ntilde Ograve Oacute Ocircumflex Otilde Odieresis multiply
+216, 217, 218, 219, 220, 221, 222, 223, // Oslash Ugrave Uacute Ucircumflex Udieresis Yacute Thorn germandbls
+224, 225, 226, 227, 228, 229, 230, 231, // agrave aacute acircumflex atilde adieresis aring ae ccedilla
+232, 233, 234, 235, 236, 237, 238, 239, // egrave eacute ecircumflex edieresis igrave iacute icircumflex idieresis
+240, 241, 242, 243, 244, 245, 246, 247, // eth ntilde ograve oacute ocircumflex otilde odieresis divide
+248, 249, 250, 251, 252, 253, 254, 255 // oslash ugrave uacute ucircumflex udieresis yacute thorn ydieresis
+};;
+
+fun adjustUnit(ttf, val) =
+	intFromFloat(round(floatFromInt(val)*.1000./.floatFromInt(ttf.unitsPerEmT)));;
+
+fun ttfGetDefaultWidth(ttf)= adjustUnit(ttf, ttf.glyphsT[(0)].widthG);;
+
+fun ttfGetWidths(ttf, encoding)=
+	let if encoding==nil then CP1252 else encoding -> encoding in
+	let ttfGetDefaultWidth(ttf) -> wDefault in
+	arrayInit(256, lambda(i) = 
+		let hashmapGet(ttf.charsT, encoding[(i)]) -> gid in
+		let ttf.glyphsT[gid] -> g in
+		adjustUnit(ttf, if g==nil then wDefault else g.widthG)
+	);;
+
+fun _ttfGetUnicodeMap(encoding, from, result)=
+	if from>=256 then result
+	else
+	let head(result) ->[from1, from2, to1] in
+	let encoding[from] -> to in
+	_ttfGetUnicodeMap(encoding, from+1,
+		if to<0 then result
+		else if (from==from2+1) && to-to1==from2+1-from1 then [from1, from, to1]::tail(result)
+		else [from, from, to]::result);;
+
+fun _ttfSplitUnicodeMap(l, ranges, chars) =
+	if l==nil then [ranges, chars]
+	else let head(l) -> [from1, from2, to1] in
+	if from1==from2 then _ttfSplitUnicodeMap(tail(l), ranges, [from1, to1]::chars)
+	else _ttfSplitUnicodeMap(tail(l), [from1, from2, to1]::ranges, chars);;
+
+fun ttfGetUnicodeMap(encoding)=
+	let if encoding==nil then CP1252 else encoding -> encoding in
+	let _ttfGetUnicodeMap(encoding, 0, nil) -> results in
+	_ttfSplitUnicodeMap(results, nil, nil);;
+

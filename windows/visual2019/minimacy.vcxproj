@@ -1,0 +1,395 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Debug|Win32">
+      <Configuration>Debug</Configuration>
+      <Platform>Win32</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|Win32">
+      <Configuration>Release</Configuration>
+      <Platform>Win32</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Debug|x64">
+      <Configuration>Debug</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|x64">
+      <Configuration>Release</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="..\..\src\compiler.c" />
+    <ClCompile Include="..\..\src\compiler_call.c" />
+    <ClCompile Include="..\..\src\compiler_globals.c" />
+    <ClCompile Include="..\..\src\compiler_instances.c" />
+    <ClCompile Include="..\..\src\compiler_letgetset.c" />
+    <ClCompile Include="..\..\src\compiler_locals.c" />
+    <ClCompile Include="..\..\src\compiler_loops.c" />
+    <ClCompile Include="..\..\src\compiler_match.c" />
+    <ClCompile Include="..\..\src\compiler_parser.c" />
+    <ClCompile Include="..\..\src\compiler_prog.c" />
+    <ClCompile Include="..\..\src\compiler_step1.c" />
+    <ClCompile Include="..\..\src\compiler_step2.c" />
+    <ClCompile Include="..\..\src\compiler_step3.c" />
+    <ClCompile Include="..\..\src\compiler_step4.c" />
+    <ClCompile Include="..\..\src\compiler_struct.c" />
+    <ClCompile Include="..\..\src\compiler_sum.c" />
+    <ClCompile Include="..\..\src\compiler_term.c" />
+    <ClCompile Include="..\..\src\compiler_try.c" />
+    <ClCompile Include="..\..\src\crypto_aes.c" />
+    <ClCompile Include="..\..\src\crypto_checksum.c" />
+    <ClCompile Include="..\..\src\crypto_des.c" />
+    <ClCompile Include="..\..\src\crypto_hash.c" />
+    <ClCompile Include="..\..\src\crypto_rc4.c" />
+    <ClCompile Include="..\..\src\hw.c" />
+    <ClCompile Include="..\..\src\hw_console.c" />
+    <ClCompile Include="..\..\src\hw_fs.c" />
+    <ClCompile Include="..\..\src\hw_fs_ansi.c" />
+    <ClCompile Include="..\..\src\hw_fs_romdisk.c" />
+    <ClCompile Include="..\..\src\hw_random.c" />
+    <ClCompile Include="..\..\src\hw_thread.c" />
+    <ClCompile Include="..\..\src\hw_time.c" />
+    <ClCompile Include="..\..\src\minimacy.c" />
+    <ClCompile Include="..\..\src\system.c" />
+    <ClCompile Include="..\..\src\system_2d.c" />
+    <ClCompile Include="..\..\src\system_audio.c" />
+    <ClCompile Include="..\..\src\system_bignum.c" />
+    <ClCompile Include="..\..\src\system_binary.c" />
+    <ClCompile Include="..\..\src\system_buffer.c" />
+    <ClCompile Include="..\..\src\system_bytes.c" />
+    <ClCompile Include="..\..\src\system_convert.c" />
+    <ClCompile Include="..\..\src\system_core.c" />
+    <ClCompile Include="..\..\src\system_crypto.c" />
+    <ClCompile Include="..\..\src\system_deflate.c" />
+    <ClCompile Include="..\..\src\system_event.c" />
+    <ClCompile Include="..\..\src\system_file.c" />
+    <ClCompile Include="..\..\src\system_inflate.c" />
+    <ClCompile Include="..\..\src\system_lzw.c" />
+    <ClCompile Include="..\..\src\system_serial.c" />
+    <ClCompile Include="..\..\src\system_socket.c" />
+    <ClCompile Include="..\..\src\system_str.c" />
+    <ClCompile Include="..\..\src\system_tmp.c" />
+    <ClCompile Include="..\..\src\system_ui.c" />
+    <ClCompile Include="..\..\src\system_ui_gl.c" />
+    <ClCompile Include="..\..\src\system_ui_win.c" />
+    <ClCompile Include="..\..\src\system_ui_x11.c" />
+    <ClCompile Include="..\..\src\system_worker.c" />
+    <ClCompile Include="..\..\src\util.c" />
+    <ClCompile Include="..\..\src\util_2d.c" />
+    <ClCompile Include="..\..\src\util_ansi_math.c" />
+    <ClCompile Include="..\..\src\util_ansi_str.c" />
+    <ClCompile Include="..\..\src\util_buffer.c" />
+    <ClCompile Include="..\..\src\util_convert.c" />
+    <ClCompile Include="..\..\src\util_hashmap.c" />
+    <ClCompile Include="..\..\src\util_xml.c" />
+    <ClCompile Include="..\..\src\vm_interpreter.c" />
+    <ClCompile Include="..\..\src\vm_malloc.c" />
+    <ClCompile Include="..\..\src\vm_memory.c" />
+    <ClCompile Include="..\..\src\vm_opcodes.c" />
+    <ClCompile Include="..\..\src\vm_term.c" />
+    <ClCompile Include="..\..\src\vm_thread.c" />
+    <ClCompile Include="..\..\src\vm_types.c" />
+    <ClCompile Include="wincmd.c" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="..\..\src\compiler.h" />
+    <ClInclude Include="..\..\src\compiler_globals.h" />
+    <ClInclude Include="..\..\src\compiler_locals.h" />
+    <ClInclude Include="..\..\src\compiler_parser.h" />
+    <ClInclude Include="..\..\src\crypto_aes.h" />
+    <ClInclude Include="..\..\src\crypto_checksum.h" />
+    <ClInclude Include="..\..\src\crypto_des.h" />
+    <ClInclude Include="..\..\src\crypto_hash.h" />
+    <ClInclude Include="..\..\src\crypto_rc4.h" />
+    <ClInclude Include="..\..\src\hw.h" />
+    <ClInclude Include="..\..\src\hw_fs.h" />
+    <ClInclude Include="..\..\src\hw_thread.h" />
+    <ClInclude Include="..\..\src\minimacy.h" />
+    <ClInclude Include="..\..\src\system.h" />
+    <ClInclude Include="..\..\src\system_2d.h" />
+    <ClInclude Include="..\..\src\system_audio.h" />
+    <ClInclude Include="..\..\src\system_bignum.h" />
+    <ClInclude Include="..\..\src\system_core.h" />
+    <ClInclude Include="..\..\src\system_event.h" />
+    <ClInclude Include="..\..\src\system_file.h" />
+    <ClInclude Include="..\..\src\system_inflate.h" />
+    <ClInclude Include="..\..\src\system_socket.h" />
+    <ClInclude Include="..\..\src\system_tmp.h" />
+    <ClInclude Include="..\..\src\system_ui.h" />
+    <ClInclude Include="..\..\src\system_ui_gl.h" />
+    <ClInclude Include="..\..\src\system_ui_keydef.h" />
+    <ClInclude Include="..\..\src\system_worker.h" />
+    <ClInclude Include="..\..\src\util.h" />
+    <ClInclude Include="..\..\src\util_2d.h" />
+    <ClInclude Include="..\..\src\util_2d_const.h" />
+    <ClInclude Include="..\..\src\util_ansi.h" />
+    <ClInclude Include="..\..\src\util_buffer.h" />
+    <ClInclude Include="..\..\src\util_convert.h" />
+    <ClInclude Include="..\..\src\util_hashmap.h" />
+    <ClInclude Include="..\..\src\vm_interpreter.h" />
+    <ClInclude Include="..\..\src\vm_memory.h" />
+    <ClInclude Include="..\..\src\vm_opcodes.h" />
+    <ClInclude Include="..\..\src\vm_term.h" />
+    <ClInclude Include="..\..\src\vm_thread.h" />
+    <ClInclude Include="..\..\src\vm_types.h" />
+    <ClInclude Include="resource.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="..\..\programs\demo\demo.fun.boing.mcy" />
+    <None Include="..\..\rom\bios\bios.mcy" />
+    <None Include="..\..\rom\bios\bios._admin.mcy" />
+    <None Include="..\..\rom\bios\bios._console.mcy" />
+    <None Include="..\..\rom\bios\bios._date.mcy" />
+    <None Include="..\..\rom\bios\bios._file.mcy" />
+    <None Include="..\..\rom\bios\bios._io.mcy" />
+    <None Include="..\..\rom\bios\bios._keyboard.mcy" />
+    <None Include="..\..\rom\bios\bios._lock.mcy" />
+    <None Include="..\..\rom\bios\bios._net.mcy" />
+    <None Include="..\..\rom\bios\bios._pkg.mcy" />
+    <None Include="..\..\rom\bios\bios._scheduler.mcy" />
+    <None Include="..\..\rom\bios\bios._start.mcy" />
+    <None Include="..\..\rom\bios\bios._thread.mcy" />
+    <None Include="..\..\rom\bios\bios._timer.mcy" />
+    <None Include="..\..\rom\bios\bios._ui.mcy" />
+    <None Include="..\..\rom\bios\bios._util.mcy" />
+    <None Include="..\..\rom\bios\bios._worker.mcy" />
+    <None Include="..\..\rom\core\core.2d.bmp.mcy" />
+    <None Include="..\..\rom\core\core.2d.font.maker.mcy" />
+    <None Include="..\..\rom\core\core.2d.font.mcy" />
+    <None Include="..\..\rom\core\core.2d.font.ttf.mcy" />
+    <None Include="..\..\rom\core\core.2d.font.ttf.parser.mcy" />
+    <None Include="..\..\rom\core\core.2d.gif.maker.mcy" />
+    <None Include="..\..\rom\core\core.2d.gif.mcy" />
+    <None Include="..\..\rom\core\core.2d.gl.mcy" />
+    <None Include="..\..\rom\core\core.2d.jpg.maker.mcy" />
+    <None Include="..\..\rom\core\core.2d.jpg.mcy" />
+    <None Include="..\..\rom\core\core.2d.png.maker.mcy" />
+    <None Include="..\..\rom\core\core.2d.png.mcy" />
+    <None Include="..\..\rom\core\core.2d.polygon.mcy" />
+    <None Include="..\..\rom\core\core.2d.qrcode.mcy" />
+    <None Include="..\..\rom\core\core.2d.quantization.mcy" />
+    <None Include="..\..\rom\core\core.3d.gl.mcy" />
+    <None Include="..\..\rom\core\core.crypto.aes.mcy" />
+    <None Include="..\..\rom\core\core.crypto.asn1.mcy" />
+    <None Include="..\..\rom\core\core.crypto.block.mcy" />
+    <None Include="..\..\rom\core\core.crypto.cer.mcy" />
+    <None Include="..\..\rom\core\core.crypto.curve25519.mcy" />
+    <None Include="..\..\rom\core\core.crypto.des.mcy" />
+    <None Include="..\..\rom\core\core.crypto.ec.mcy" />
+    <None Include="..\..\rom\core\core.crypto.ed25519.mcy" />
+    <None Include="..\..\rom\core\core.crypto.hash.mcy" />
+    <None Include="..\..\rom\core\core.crypto.key.mcy" />
+    <None Include="..\..\rom\core\core.crypto.oaep.mcy" />
+    <None Include="..\..\rom\core\core.crypto.oid.mcy" />
+    <None Include="..\..\rom\core\core.crypto.pem.mcy" />
+    <None Include="..\..\rom\core\core.crypto.pkcs1.mcy" />
+    <None Include="..\..\rom\core\core.crypto.primal.mcy" />
+    <None Include="..\..\rom\core\core.crypto.rsa.mcy" />
+    <None Include="..\..\rom\core\core.crypto.rsapss.mcy" />
+    <None Include="..\..\rom\core\core.crypto.shamir.mcy" />
+    <None Include="..\..\rom\core\core.crypto.sign.mcy" />
+    <None Include="..\..\rom\core\core.db.inMemory.maker.mcy" />
+    <None Include="..\..\rom\core\core.db.inMemory.mcy" />
+    <None Include="..\..\rom\core\core.db.kv.mcy" />
+    <None Include="..\..\rom\core\core.net.dns.mcy" />
+    <None Include="..\..\rom\core\core.net.http.cli.mcy" />
+    <None Include="..\..\rom\core\core.net.http.mcy" />
+    <None Include="..\..\rom\core\core.net.http.srv.mcy" />
+    <None Include="..\..\rom\core\core.net.ipOverEth.mcy" />
+    <None Include="..\..\rom\core\core.net.mime.mcy" />
+    <None Include="..\..\rom\core\core.net.mysql.mcy" />
+    <None Include="..\..\rom\core\core.net.ssh.mcy" />
+    <None Include="..\..\rom\core\core.net.ssh.sftp.mcy" />
+    <None Include="..\..\rom\core\core.net.ssh.shell.mcy" />
+    <None Include="..\..\rom\core\core.net.ssh.shell.srv.mcy" />
+    <None Include="..\..\rom\core\core.net.tls.mcy" />
+    <None Include="..\..\rom\core\core.net.tls12.mcy" />
+    <None Include="..\..\rom\core\core.net.tls13.mcy" />
+    <None Include="..\..\rom\core\core.net.websocket.mcy" />
+    <None Include="..\..\rom\core\core.storage.fat32.mcy" />
+    <None Include="..\..\rom\core\core.storage.format.mcy" />
+    <None Include="..\..\rom\core\core.storage.romdisk.mcy" />
+    <None Include="..\..\rom\core\core.util.base64.mcy" />
+    <None Include="..\..\rom\core\core.util.cache.mcy" />
+    <None Include="..\..\rom\core\core.util.gzip.mcy" />
+    <None Include="..\..\rom\core\core.util.hashmap.mcy" />
+    <None Include="..\..\rom\core\core.util.huffman.mcy" />
+    <None Include="..\..\rom\core\core.util.insertsort.mcy" />
+    <None Include="..\..\rom\core\core.util.json.mcy" />
+    <None Include="..\..\rom\core\core.util.marshal.maker.mcy" />
+    <None Include="..\..\rom\core\core.util.marshal.mcy" />
+    <None Include="..\..\rom\core\core.util.quicksort.mcy" />
+    <None Include="..\..\rom\core\core.util.regexp.mcy" />
+    <None Include="..\..\rom\core\core.util.table.mcy" />
+    <None Include="..\..\rom\core\core.util.tar.mcy" />
+    <None Include="..\..\rom\core\core.util.token.mcy" />
+    <None Include="..\..\rom\core\core.util.tree1D.mcy" />
+    <None Include="..\..\rom\core\core.util.tree23.mcy" />
+    <None Include="..\..\rom\core\core.util.xml.mcy" />
+    <None Include="..\..\rom\core\core.util.zip.mcy" />
+    <None Include="..\..\programs\boot.mcy" />
+    <None Include="..\..\programs\demo\demo.2d.qrcode.mcy" />
+    <None Include="..\..\programs\demo\demo.fun.mandelbrot.mcy" />
+    <None Include="..\..\programs\demo\demo.fun.maze.mcy" />
+    <None Include="..\..\programs\demo\demo.fun.queens.mcy" />
+    <None Include="..\..\programs\demo\demo.fun.tetris.mcy" />
+  </ItemGroup>
+  <ItemGroup>
+    <ResourceCompile Include="minimacy.rc" />
+  </ItemGroup>
+  <ItemGroup>
+    <Image Include="minimacy.ico" />
+  </ItemGroup>
+  <PropertyGroup Label="Globals">
+    <VCProjectVersion>16.0</VCProjectVersion>
+    <Keyword>Win32Proj</Keyword>
+    <ProjectGuid>{8c9b576d-b579-48cd-b206-73febf194723}</ProjectGuid>
+    <RootNamespace>minimacy</RootNamespace>
+    <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <UseDebugLibraries>true</UseDebugLibraries>
+    <PlatformToolset>v142</PlatformToolset>
+    <CharacterSet>MultiByte</CharacterSet>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <PlatformToolset>v142</PlatformToolset>
+    <WholeProgramOptimization>true</WholeProgramOptimization>
+    <CharacterSet>MultiByte</CharacterSet>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <UseDebugLibraries>true</UseDebugLibraries>
+    <PlatformToolset>v142</PlatformToolset>
+    <CharacterSet>MultiByte</CharacterSet>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <PlatformToolset>v142</PlatformToolset>
+    <WholeProgramOptimization>true</WholeProgramOptimization>
+    <CharacterSet>MultiByte</CharacterSet>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <ImportGroup Label="ExtensionSettings">
+  </ImportGroup>
+  <ImportGroup Label="Shared">
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <PropertyGroup Label="UserMacros" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
+    <LinkIncremental>true</LinkIncremental>
+    <OutDir>$(SolutionDir)..\..\bin\</OutDir>
+    <IntDir>build\$(Platform)\$(Configuration)\</IntDir>
+    <TargetName>minimacy</TargetName>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
+    <LinkIncremental>false</LinkIncremental>
+    <OutDir>$(SolutionDir)..\..\bin\</OutDir>
+    <IntDir>build\$(Platform)\$(Configuration)\</IntDir>
+    <TargetName>minimacy</TargetName>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <LinkIncremental>true</LinkIncremental>
+    <OutDir>$(SolutionDir)..\..\bin\</OutDir>
+    <TargetName>minimacy</TargetName>
+    <IntDir>build\$(Platform)\$(Configuration)\</IntDir>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <LinkIncremental>false</LinkIncremental>
+    <OutDir>$(SolutionDir)..\..\bin\</OutDir>
+    <TargetName>minimacy</TargetName>
+    <IntDir>build\$(Platform)\$(Configuration)\</IntDir>
+  </PropertyGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
+    <ClCompile>
+      <WarningLevel>Level3</WarningLevel>
+      <SDLCheck>true</SDLCheck>
+      <PreprocessorDefinitions>WIN32;_DEBUG;_CONSOLE;ATOMIC_32;ON_WINDOWS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <ConformanceMode>true</ConformanceMode>
+      <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
+      <DisableSpecificWarnings>4996;4090</DisableSpecificWarnings>
+    </ClCompile>
+    <Link>
+      <SubSystem>Console</SubSystem>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <AdditionalDependencies>kernel32.lib;user32.lib;wsock32.lib;opengl32.lib;glu32.lib;winmm.lib;SetupAPI.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <ProgramDatabaseFile>$(SolutionDir)build\$(Platform)\$(Configuration)\$(TargetName).pdb</ProgramDatabaseFile>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
+    <ClCompile>
+      <WarningLevel>Level3</WarningLevel>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+      <IntrinsicFunctions>true</IntrinsicFunctions>
+      <SDLCheck>true</SDLCheck>
+      <PreprocessorDefinitions>WIN32;NDEBUG;_CONSOLE;ATOMIC_32;ON_WINDOWS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <ConformanceMode>true</ConformanceMode>
+      <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
+      <DisableSpecificWarnings>4996;4090</DisableSpecificWarnings>
+    </ClCompile>
+    <Link>
+      <SubSystem>Console</SubSystem>
+      <EnableCOMDATFolding>true</EnableCOMDATFolding>
+      <OptimizeReferences>true</OptimizeReferences>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <AdditionalDependencies>kernel32.lib;user32.lib;wsock32.lib;opengl32.lib;glu32.lib;winmm.lib;SetupAPI.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <ProgramDatabaseFile>$(SolutionDir)build\$(Platform)\$(Configuration)\$(TargetName).pdb</ProgramDatabaseFile>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <ClCompile>
+      <WarningLevel>Level3</WarningLevel>
+      <SDLCheck>true</SDLCheck>
+      <PreprocessorDefinitions>_DEBUG;_CONSOLE;ON_WINDOWS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <ConformanceMode>true</ConformanceMode>
+      <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
+      <DisableSpecificWarnings>4996;4090</DisableSpecificWarnings>
+    </ClCompile>
+    <Link>
+      <SubSystem>Console</SubSystem>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <AdditionalDependencies>kernel32.lib;user32.lib;wsock32.lib;opengl32.lib;glu32.lib;winmm.lib;SetupAPI.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <ProgramDatabaseFile>$(SolutionDir)build\$(Platform)\$(Configuration)\$(TargetName).pdb</ProgramDatabaseFile>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <ClCompile>
+      <WarningLevel>Level3</WarningLevel>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+      <IntrinsicFunctions>true</IntrinsicFunctions>
+      <SDLCheck>true</SDLCheck>
+      <PreprocessorDefinitions>NDEBUG;_CONSOLE;ON_WINDOWS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <ConformanceMode>true</ConformanceMode>
+      <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
+      <DisableSpecificWarnings>4996;4090</DisableSpecificWarnings>
+    </ClCompile>
+    <Link>
+      <SubSystem>Console</SubSystem>
+      <EnableCOMDATFolding>true</EnableCOMDATFolding>
+      <OptimizeReferences>true</OptimizeReferences>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <AdditionalDependencies>kernel32.lib;user32.lib;wsock32.lib;opengl32.lib;glu32.lib;winmm.lib;SetupAPI.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <ProgramDatabaseFile>$(SolutionDir)build\$(Platform)\$(Configuration)\$(TargetName).pdb</ProgramDatabaseFile>
+    </Link>
+  </ItemDefinitionGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <ImportGroup Label="ExtensionTargets">
+  </ImportGroup>
+</Project>

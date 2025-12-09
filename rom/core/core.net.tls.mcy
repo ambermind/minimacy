@@ -1,0 +1,176 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2022, Sylvain Huet, Ambermind
+// Minimacy (r) System
+
+
+// this file contains common ressources for tls12 and tls13
+
+use core.crypto.oid;;
+use core.crypto.cer;;
+use core.crypto.x25519;;
+use core.crypto.ec;;
+
+const HANDSHAKE_BLOCK_MAX = 65536;;
+
+const TLS_CLIENT_HELLO        = 1;;
+const TLS_SERVER_HELLO        = 2;;
+const TLS_NEWSESSION_TICKET   = 4;;
+const TLS_END_OF_EARLY_DATA   = 5;;
+const TLS_ENCRYPTED_EXTENSIONS= 8;;
+const TLS_CERTIFICATE         = 11;;
+const TLS_SERVER_KEY_EXCHANGE = 12;;
+const TLS_CERTIFICATE_REQUEST = 13;;
+const TLS_SERVER_DONE         = 14;;
+const TLS_CERTIFICATE_VERIFY  = 15;;
+const TLS_CLIENT_KEY_EXCHANGE = 16;;
+const TLS_FINISHED            = 20;;
+const TLS_CERTIFICATE_URL     = 21;;
+const TLS_CERTIFICATE_STATUS  = 22;;
+const TLS_SUPPLEMENTAL_DATA   = 23;;
+const TLS_KEY_UPDATE          = 24;;
+
+const TLS_CHANGE_CIPHER_SPEC  = 0x14;;
+const TLS_ALERT_RECORD        = 0x15;;
+const TLS_HANDSHAKE           = 0x16;;
+const TLS_APPLICATION_DATA    = 0x17;;
+
+const EXT_SERVER_NAME                 =0x0000;;
+const EXT_STATUS_REQUEST              =0x0005;;
+const EXT_SUPPORTED_GROUPS            =0x000a;;
+const EXT_EC_POINT_FORMATS            =0x000b;;
+const EXT_SIGNATURE_ALGORITHMS        =0x000d;;
+const EXT_SIGNED_CERTIFICATE_TIMESTAMP=0x0012;;
+const EXT_ENCRYPT_THEN_MAC            =0x0016;;
+const EXT_EXTENDED_MASTER_SECRET      =0x0017;;
+const EXT_SUPPORTED_VERSIONS          =0x002b;;
+const EXT_PSK_KEX_MODES               =0x002d;;
+const EXT_CERTIFICATE_AUTHORITIES     =0x002f;;
+const EXT_KEY_SHARE                   =0x0033;;
+const EXT_RENEGOTIATE                 =0xff01;;
+
+const EC_POINT_FORMAT_UNCOMPRESSED=0;;
+
+const SIGN_RSA=1;;
+
+const COMPRESSION_METHOD_NO=0;;
+
+const ALERT_LEVEL_WARNING=1;;
+const ALERT_TYPE_CLOSE_NOTIFY=0;;
+
+const TLS_1_1= strInt16Msb(0x301);;
+const TLS_1_2= strInt16Msb(0x303);;
+const TLS_1_3= strInt16Msb(0x304);;
+
+const TLS_MAX_DATA_BLOCK=0x3000;;
+
+
+const TLS_secp256r1 = 0x0017;;
+const TLS_secp384r1 = 0x0018;;
+const TLS_secp521r1 = 0x0019;;
+const TLS_x25519    = 0x001d;;
+
+// TLS1.2 ciphersuites
+const TLS_RSA_WITH_AES_128_CBC_SHA = 0x002f;;
+const TLS_RSA_WITH_AES_256_CBC_SHA = 0x0035;;
+const TLS_RSA_WITH_AES_128_CBC_SHA256 = 0x003c;;
+const TLS_RSA_WITH_AES_256_CBC_SHA256 = 0x003d;;
+const TLS_RSA_WITH_AES_128_GCM_SHA256 = 0x009c;;
+const TLS_RSA_WITH_AES_256_GCM_SHA384 = 0x009d;;
+const TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA = 0xc013;;
+const TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA = 0xc014;;
+const TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256 = 0xc027;;
+const TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA384 = 0xc028;;
+const TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256 = 0xc02f;;
+const TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384 = 0xc030;;
+
+const TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256 = 0xc02b;;
+const TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384 = 0xc02c;;
+
+// TLS1.3 ciphersuites
+const TLS_AES_128_GCM_SHA256 = 0x1301;;
+const TLS_AES_256_GCM_SHA384 = 0x1302;;
+
+struct TlsCrypto=[nameC, publicKeyC, dhC];;
+
+fun parse16MsbList(data, i, end)= if i<end then strRead16Msb(data, i)::parse16MsbList(data, i+2, end);;
+fun parseShortList(data, i, end)= if i<end then strSlice(data, i, 2)::parseShortList(data, i+2, end);;
+fun parseByteList(data, i, end)= if i<end then strRead8(data, i)::parseByteList(data, i+1, end);;
+
+fun _structFromEc(ec) =
+	let ecCreate(ec) -> key in
+	[
+		publicKeyC= ecKeyPubStr(key),
+		dhC= lambda(pub)= ecEcdhStr(key, pub)
+	];;
+
+fun makeCurve(curveInfo)=
+//echoLn ["curveInfo ", hexFromInt curveInfo];
+	let match curveInfo with
+		TLS_x25519 -> let x25519KeyPair(nil) -> privateKey in
+			[
+				publicKeyC=  x25519KeyPub(privateKey),
+				dhC=lambda(pub)= x25519Ecdh(privateKey, pub)
+			],
+		TLS_secp256r1 -> _structFromEc(ecSecp256r1()),
+		TLS_secp384r1 -> _structFromEc(ecSecp384r1()),
+		TLS_secp521r1 -> _structFromEc(ecSecp521r1())
+	-> curve in (
+		set curve.nameC=curveInfo;
+		curve
+	);;
+
+fun ecdhePremaster(curve, peerPublicKey)= call curve.dhC(peerPublicKey);;
+
+fun mkBlock8(data)=
+	let strBuild(data) -> data in
+	let strInt8(strLength(data)) -> size in
+	strConcat(size, data);;
+
+fun mkBlock16(data)=
+	let strBuild(data) -> data in
+	let strInt16Msb(strLength(data)) -> size in
+	strConcat(size, data);;
+
+fun mkBlock24(data)=
+	let strInt24Msb(strLength(data)) -> size in
+	strConcat(size, data);;
+
+fun mkExtension(type, data)=
+	let strBuild(data) -> data in
+	let strInt16Msb(strLength(data)) -> size in
+	{strInt16Msb(type), size, data};;
+
+fun mkTypedBlock24(type, data)=
+	let strBuild(data) -> data in
+	let strInt24Msb(strLength(data)) -> size in
+	strBuild({strInt8(type), size, data});;
+
+fun mkRecord(protocol, data)=
+	strBuild({
+		strInt8(TLS_HANDSHAKE),
+		protocol,
+		mkBlock16(data)
+	});;
+
+fun mkCipherSuites(cipherSuites)=
+	mkBlock16({
+		strBuild(listMap(cipherSuites, #strInt16Msb))
+	});;
+
+fun client_ext_server_name(name)=
+	mkExtension(EXT_SERVER_NAME, {
+		mkBlock16({
+			strInt8(0),
+			mkBlock16({
+				name
+			})
+		})
+	});;
+fun client_ext_supported_groups(supportedGroups)=
+	mkExtension(EXT_SUPPORTED_GROUPS, mkBlock16({
+		strBuild(listMap(supportedGroups, #strInt16Msb))
+	}));;
+fun client_ext_signature_algorithms(signatureAlgorithms)=
+	mkExtension(EXT_SIGNATURE_ALGORITHMS, mkBlock16({
+		listMap(signatureAlgorithms, #strInt16Msb)
+	}));;

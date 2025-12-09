@@ -1,0 +1,42 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2022, Sylvain Huet, Ambermind
+// Minimacy (r) Demonstration
+
+const WIDTH=100.;;
+
+fun converge(x, y, cx, cy, n)=
+	if n<=0 then true
+	else 
+	\float
+		if x*x+y*y <=4 then converge(x*x-y*y +cx, 2*x*y +cy, cx, cy, \integer n-1);;
+
+fun mandelbrot(x0, y0, dx, dy, N)=
+\float
+	let 0.5*dy*WIDTH/dx -> HEIGHT in
+	for j=0;j<HEIGHT;j+1 do
+	(
+		for i=0;i<WIDTH;i+1 do
+			let converge(0., 0., x0+dx*i/WIDTH, y0-dy*j/HEIGHT, N) -> result in
+			echo if result then "*" else " ";
+		//echo y0+dy*j/HEIGHT; 
+		echoLn ""
+	);;
+
+fun julia(x0, y0, dx, dy, jx, jy, N)=
+\float
+	let 0.5*dy*WIDTH/dx -> HEIGHT in
+	for j=0;j<HEIGHT;j+1 do
+	(
+		for i=0;i<WIDTH;i+1 do
+			let converge(x0+dx*i/WIDTH, y0-dy*j/HEIGHT, jx, jy, N) -> result in
+			echo if result then "*" else " ";
+		//echo y0+dy*j/HEIGHT; 
+		echoLn ""
+	);;
+
+fun main()=
+mandelbrot(-2., 1., 2.5, 2., 150);
+mandelbrot(-0.5, 1., 0.5, 0.5, 200);
+mandelbrot(-0.25, 1., 0.25, 0.25, 300);
+mandelbrot(-0.125, 0.94, 0.06, 0.1, 300);
+julia(-1.1, 1.1, 2.2, 2.2, 0.3, 0.5, 150);;

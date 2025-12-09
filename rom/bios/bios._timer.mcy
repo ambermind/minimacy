@@ -1,0 +1,43 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2022, Sylvain Huet, Ambermind
+// Minimacy (r) System
+
+//------------ TIMERS
+struct _Timer=[_thTM, _timeTM, _cbTM];;
+
+var _TimerList;;
+
+fun _timerTimeout()=
+	set _TimerList= listFilter(_TimerList, (lambda(p)= p._thTM._stateT<>_THREAD_DONE));
+	let head(_TimerList) -> t in t._timeTM;;
+
+fun __timerCheck(l, now)=
+	if l<>nil then let head(l) -> p in
+	if (p._timeTM-now)>0 then l	// we assume that the list is sorted
+	else let p._thTM._stateT -> state in
+	(
+		if (p._cbTM==nil)&&(state==_THREAD_WAIT) then _threadUnfreeze(p._thTM, nil);
+		if p._cbTM<>nil then threadPost(p._thTM, (lambda ()= call p._cbTM()));
+		__timerCheck(tail(l), now)
+	);;
+
+fun _timerCheck()= set _TimerList=__timerCheck(_TimerList, timeMs());;
+
+fun onTimeout(ms, f)=
+	let timeMs()+ms -> t in
+	let [_thTM= _This, _timeTM=t, _cbTM=if f<>nil then (lambda ()= call f();0)] -> p in
+	// if two timers have the same time, keep their declaration order:
+	\atomic (set _TimerList=listInsert(_TimerList, p, (lambda(p, q)= p._timeTM<q._timeTM)); if f==nil then _threadHoldOn());
+	true;;
+
+fun sleepMs(ms)= onTimeout(ms, nil);;
+
+fun _timerList()= listMap(_TimerList, lambda(p)= [p._timeTM, p._thTM]);;
+
+fun _timerAlive()= _TimerList<>nil;;
+
+fun timeSet(t)=
+\atomic (
+	let (t-time())*1000 -> dt in for p in _TimerList do set p._timeTM= p._timeTM+dt;
+	_timeSet(t)
+);;

@@ -1,0 +1,40 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2022, Sylvain Huet, Ambermind
+// Minimacy (r) System
+use core.crypto.sign;;
+use core.crypto.key;;
+use core.util.base64;;
+
+fun signFileData(data, pem, pwd)=
+	let keyFromPEM(pem, pwd) -> key in
+	if key<>nil then
+	let if nil<>rsaFromKey(key) then RSA_PSS_RSAE_SHA512 else ECDSA_SECP256R1_SHA256 -> algo in
+	let signatureGenerate(algo, key, data) -> sign in
+	let strFormat("*:*", hexFromInt(algo), b64Encode(sign)) -> signValue in
+	signValue;;
+
+fun signFile(path, pem, pwd)=
+	let load(path) -> data in
+	if data<>nil then
+	let signFileData(data, pem, pwd) -> signValue in
+	if signValue<>nil then
+	let strConcat(path, ".sign") -> signPath in
+	(
+		save(signValue, signPath);
+		signPath
+	);;
+
+fun signFileVerifyData(data, signValue, pem)=
+	let keyFromPEM(pem, nil) -> key in
+	if key<>nil then
+	let strSplit(":", signValue) -> hexAlgo::hexSign::_ in
+	let intFromHex(hexAlgo) -> algo in
+	let b64Decode(hexSign) -> signature in
+	signatureCheck(algo, key, data, signature);;
+
+fun signFileVerify(path, pem)=
+	let load(path) -> data in
+	if data<>nil then
+	let load(strConcat(path, ".sign")) -> signValue in
+	if signValue<>nil then
+	signFileVerifyData(data, signValue, pem);;

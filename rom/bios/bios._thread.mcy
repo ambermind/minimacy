@@ -1,0 +1,166 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2022, Sylvain Huet, Ambermind
+// Minimacy (r) System
+
+//------------ THREAD
+const _BiosLock=lockCreate();;
+
+fun _threadFull(th)= fifoCount(th._tasksT)>=_MAX__THREAD_TASKS ;;
+
+fun _threadUnfreeze(th, val)=
+	if th._stateT==_THREAD_WAIT then
+	(
+		_threadResume(th._threadT, val);
+		_scheduleThread(th);
+		true
+	);;
+
+fun _threadUnblockPosting(th)=
+	let fifoOut(th._postingT) -> thBlocked in
+	_threadUnfreeze(thBlocked, nil);;
+
+fun _threadsCheckPendingTasks(th) =
+	if th._stateT==_THREAD_IDLE then
+	let fifoOut(th._tasksT) -> task in
+	if task<>nil then
+	(
+		_threadExec(th._threadT, task);
+		_scheduleThread(th);
+		_threadUnblockPosting(th);
+	);;
+
+fun threadPost(th, task)=
+	if th<>nil then
+	if th._stateT<>_THREAD_DONE then
+	let (lambda ()= call task();0) -> task in
+	(
+		if _threadFull(th) && (th<> _This) && ( _This<>_ThreadBios) then
+		\atomic (
+			fifoIn(th._postingT, _This);
+			_threadHoldOn()
+		);
+		fifoIn(th._tasksT, task);
+		\atomic _threadsCheckPendingTasks(th);
+		true
+	);;
+
+fun _threadNew(name, caller, start)=
+	if strStartsWith(name, "_")&&_This<>_ThreadBios then (
+		echoLn strFormat("> User thread name '*' can't start with underscore", name);
+		nil
+	)
+	else let _threadCreate() -> sysThread in
+	if sysThread<>nil then
+	let caller ->[funName, _, _, pkg] in
+	let [
+		_threadT=sysThread,
+		_nameT=name,
+		_echoEnableT=_This._echoEnableT,
+		_postingT=fifoCreate(), _tasksT=fifoCreate(),
+		_callerT=strBuild([pkgName(pkg), ".", funName]),
+		_cyclesT=0, _t0T=time(),
+		_stateT= _THREAD_IDLE
+	] -> th in
+	(
+		_threadSetUser(sysThread, th);
+		if start<>nil then threadPost(th, start);
+		th
+	);;
+
+fun threadStart(name, start) = _threadNew(name, caller(), start);;
+
+fun appStart(lck, fIsStarted, name, fStart)=
+	let caller() -> caller in
+	lockSync(if lck==nil then _BiosLock else lck, lambda()=
+		if !call fIsStarted() then
+		let joinCreate() -> join in
+		(
+			_threadNew(name, caller, (lambda()=
+				joinSend(join, call fStart());
+				//joinSend join true
+			));
+			joinWait(join)
+		)
+	);;
+
+fun _launchRun(def)=
+	if def<>nil then
+	if "main" <> defName(def) then _launchRun(defNext(def))
+	else call _defSimpleFunction(def)();;
+
+fun _checkPkgName(str, i)=
+	if i>=strLength(str) then true
+	else let strGet(str, i) -> c in
+	if (c>='a' && c<='z')||(c>='A' && c<='Z')||(c=='_')||(c=='.')||(c>='0' && c<='9') then _checkPkgName(str, i+1);;
+
+fun _launchApp(pkgName, compile, callerFun)=
+	if !_checkPkgName(pkgName, 0) then ( // check syntax of pkgName
+		echoLn strFormat("Invalid package name '*'", pkgName);
+		nil
+	)
+	else
+	let strFormat("use *;;", pkgName) -> src in
+	let pkgCreate(nil, nil) -> dummyPkg in
+	if compile then
+	(
+		_compile src dummyPkg;
+		_echoEnable(false);
+		nil
+	)
+	else
+	let if callerFun==nil then caller() else callerFun -> callerFun in
+	_threadNew(pkgName, callerFun, (lambda ()=
+		let timeMs() -> t0 in
+		let _prompt src dummyPkg -> [type, val] in
+		if type<>nil then
+		let
+			if _systemLogIsEnabled() then echoLn strFormat("> compiled in * ms\n", timeMs()-t0);
+			head(_pkgImports(dummyPkg)) 
+		->[name, p] in
+		_launchRun(pkgDefs(p));
+		nil
+	));
+	true;;
+
+fun compile(pkgName)= _launchApp(pkgName, true, nil); _echoEnable(true);;
+
+fun start(pkgName)= gcCompact(); _launchApp(pkgName, false, caller()); true;;
+
+fun threadStop(th)=
+	if th<>nil && th._stateT<>_THREAD_DONE then
+	\atomic (
+		_threadClear(th._threadT);
+		_lockFreeThread(th);
+		while nil<>fifoNext(th._postingT) do _threadUnblockPosting(th);
+		_uiStopThread(th);
+		set th._stateT=_THREAD_DONE;
+		true
+	);;
+
+fun exit()=
+	threadStop(_This);
+	_exit();;
+
+fun threadId(th)= _threadId(th._threadT);;
+fun threadName(th)= th._nameT;;
+fun threadOrigin(th)= th._callerT;;
+fun threadState(th)= th._stateT;;
+fun threadCycles(th)= th._cyclesT;;
+fun threadT0(th)= th._t0T;;
+fun threadCallstack(th)= _callstack(th._threadT);;
+fun threadTaskCount(th)= fifoCount(th._tasksT);;
+
+fun _threadById(id)=
+	if id==nil then  _This
+	else
+	\atomic
+		for t=_threadNext(nil); t<>nil; _threadNext(t) do if id==_threadId(t) then return _threadUser(t);;
+
+fun _threadList(t)= if t<>nil then _threadUser(t)::_threadList(_threadNext(t));;
+fun _threads()= _threadList(_threadNext(nil));;
+
+fun thisThread()= _This;;
+
+fun echoEnable(enable)= _echoEnable(set _This._echoEnableT=enable);;
+fun systemLogEnable(enable)= _systemLogEnable(enable);;
+

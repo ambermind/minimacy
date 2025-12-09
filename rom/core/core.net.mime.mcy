@@ -1,0 +1,52 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2022, Sylvain Huet, Ambermind
+// Minimacy (r) System
+
+const _MimeFromExt= hashmapInit(5,
+["png", "image/png"]:: 
+["jpeg", "image/jpeg"]:: 
+["jpg", "image/jpeg"]:: 
+["gif", "image/gif"]:: 
+["bmp", "image/bmp"]:: 
+["ico", "image/x-icon"]:: 
+["svg", "image/svg+xml"]:: 
+["txt", "text/plain"]:: 
+["htm", "text/html"]:: 
+["html", "text/html"]:: 
+["css", "text/css"]:: 
+["js", "application/javascript"]:: 
+["json", "application/json"]:: 
+["xml", "application/xml"]:: 
+["zip", "application/zip"]:: 
+["rar", "application/x-rar-compressed"]:: 
+["exe", "application/x-msdownload"]:: 
+["msi", "application/x-msdownload"]:: 
+["cab", "application/vnd.ms-cab-compressed"]:: 
+["tar", "application/x-tar"]:: 
+["gz", "application/x-gzip"]:: 
+["tgz", "application/x-gzip"]:: 
+["pdf", "application/pdf"]:: 
+["doc", "application/msword"]:: 
+["docx", "application/msword"]:: 
+["rtf", "application/rtf"]:: 
+["xls", "application/vnd.ms-excel"]:: 
+["ppt", "application/vnd.ms-powerpoint"]:: 
+["odt", "application/vnd.oasis.opendocument.text"]:: 
+["ods", "application/vnd.oasis.opendocument.spreadsheet"]:: 
+["mp3", "audio/mpeg"]:: 
+["mp4", "video/mp4"]::
+["mov", "video/quicktime"]:: 
+["mpeg", "video/mpeg"]:: 
+["mpg", "video/mpeg"]:: 
+["wav", "audio/wav"]:: 
+["aiff", "audio/aiff"]:: 
+["aif", "audio/aiff"]:: 
+["avi", "video/msvideo"]:: 
+["wmv", "video/x-ms-wmv"]:: 
+["ogg", "application/ogg"]:: 
+["flv", "video/x-flv"]:: 
+nil);;
+
+fun mimeFromFilename(file)=
+	let strPosRev(file, ".", nil) -> i in
+	if i<>nil then hashmapGet(_MimeFromExt, strSlice(file, i+1, nil));;

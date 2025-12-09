@@ -1,0 +1,150 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2022, Sylvain Huet, Ambermind
+// Minimacy (r) System
+
+//-------------- PACKAGES
+
+fun _pkgList(p)= if p<>nil then p::_pkgList(_pkgNext(p));;
+fun pkgs()= _pkgList(_pkgNext(nil));;
+
+fun pkgByName(name)=
+	for p in pkgs() do if name==pkgName(p) then return p;
+	nil;;
+
+var _PkgCount=-1;;
+fun pkgCreate(name, importList)=
+	let if name==nil then strFormat("_tmp*_", decFromInt(set _PkgCount=_PkgCount+1)) else name -> name in
+	_pkgCreate(name, importList);;
+
+fun pkgList()= for p in pkgs() do echoLn {"   ", pkgName(p)};true;;
+
+fun _pkgScopeDisplay(l)=
+	let 0->wName in
+	let 0->wCode in
+	let 0->wType in
+	(
+		for [name, code, type] in l do
+		(
+			set wName=max(wName, strLength(name));
+			set wCode=max(wCode, strLength(code));
+			set wType=max(wType, strLength(type))
+		);
+		let strCreate(max(wName, wCode), 32) -> spaces in
+		let strCreate(max(wName, max(wCode, wType)), '-') -> line in
+		let ["LABEL", "CODE", "TYPE"]::
+			[strLeft(line, wName), strLeft(line, wCode), strLeft(line, wType)]::
+			l -> l2 in
+		for [name, code, type] in l2 do
+			let strLeft(spaces, wName - strLength(name)) -> sep1 in
+			let strLeft(spaces, wCode - strLength(code)) -> sep2 in
+			echoLn strBuild({"| ", name, sep1, " | ", code, sep2, " | ", type});
+		echoLn ["Found ",listLength(l)," label(s)\n"]
+	);;
+
+fun _pkgScope(output, h, p, fFilter)=
+	for def=pkgDefs(p); def<>nil; defNext(def) do
+		let call fFilter(def) -> [key, name] in 
+		if name<>nil then
+		if nil==hashmapGet(h, key) then
+		(
+			hashmapSet(h, key, def);
+			refSet(output, [name, defCodeName(def), strFromType(defType(def))]::refGet(output))
+		);
+	nil;;
+
+fun pkgScope(p)=
+	let lambda(def)=[defName(def), strBuild({"{", pkgName(defPkg(def)), ".} ", defName(def)})]  -> fLocalFilter in
+	let lambda(def)=if !strStartsWith(defName(def), "_") then [defName(def), strBuild({"{", pkgName(defPkg(def)), ".} ", defName(def)})] -> fImportFilter in
+	let hashmapCreate(8) -> h in
+	let refCreate(nil) -> output in
+	(
+		_pkgScope(output, h, p, fLocalFilter);
+		for [alias, p] in _pkgImports( p) do
+		(
+			if alias<>nil then _pkgScope(output, h, p, (lambda(def)=
+				if !strStartsWith(defName(def), "_") then
+					let strBuild({alias, ".", defName(def)}) -> name in
+					[name, name]
+			));
+			if p<>pkg then _pkgScope(output, h, p, fImportFilter);
+		);
+		_pkgScope(output, h, pkg, fImportFilter);
+		echoLn {"\nList all visible labels for package '", pkgName(p), "':"};
+		_pkgScopeDisplay(refGet(output));
+		nil
+	);;
+
+
+fun _pkgOverloadDisplay(l)=
+	if l==nil then echoLn "No overloading\n"
+	else
+	let 0->wName in
+	(
+		for [name, existing] in l do set wName=max(wName, strLength(name));
+		let strCreate(wName, 32) -> spaces in
+		for [name, existing] in l do
+			let strLeft(spaces, wName - strLength(name)) -> sep1 in
+			echoLn strBuild({"| '", name, "'", sep1, " overloaded by '", existing, "'"});
+		echoLn ["Found ", listLength(l)," overloading(s)\n"];
+		nil
+	);;
+fun _pkgOverload(output, h, p, fFilter)=
+	for def=pkgDefs(p); def<>nil; defNext(def) do
+		let call fFilter(def) -> [key, name] in 
+		if name<>nil then
+		let hashmapGet(h, key) -> existing in
+		if nil==existing then
+		(
+			hashmapSet(h, key, strBuild({pkgName(defPkg(def)), ".", defName(def)}));
+			nil
+		)
+		else refSet(output, ([name, existing]::refGet(output)));
+	nil;;
+
+fun pkgOverload (p)=
+	let lambda(def)=if !strStartsWith(defName(def), "_") then [defName(def), strBuild({pkgName(defPkg(def)), ".", defName(def)})] -> fImportFilter in
+	let hashmapCreate(8) -> h in
+	let refCreate(nil) -> output in
+	(
+		_pkgOverload(output, h, p, fImportFilter);
+		for [_, p] in _pkgImports(p) do if p<>pkg then _pkgOverload(output, h, p, fImportFilter);
+		_pkgOverload(output, h, pkg, fImportFilter);
+		echoLn {"\nCheck overloaded labels for package '", pkgName(p), "':"};
+		_pkgOverloadDisplay(refGet(output));
+		nil
+	);;
+
+fun _firstWord(src, i)=
+	let strGet(src, i) -> c in
+	if (c>='a' && c<='z')||(c>='A' && c<='Z')||(c=='_')||(c>='0' && c<='9') then _firstWord(src, i+1)
+	else strLeft(src, i);;
+
+fun _appendEndPattern(s)=
+	if strEndsWith(s, ";;") then s
+	else strConcat(s, ";;");;
+
+const _DECLARATIONS=strSplit(" ", "fun var const enum use struct sum extend");;
+
+fun _makeprompt(src, caller)=
+	let strTrim(src) -> src in
+	let _firstWord(src, 0) -> key in
+	if listContains(_DECLARATIONS, key) then _appendEndPattern(src)
+	else _appendEndPattern(strFormat("fun _init()=\n*", src));;
+
+var _Silent;;
+fun silentPrompt()= set _Silent=true;;
+
+fun _promptTry(src, p)=
+	set _Silent=false;
+	if p<>nil && p<>_SystemPkg then
+		let _makeprompt(src, caller()) -> src in
+		if src<>nil then
+		let _prompt src p -> [type, val] in
+		if type<>nil then
+		if !_Silent then
+		(
+			echo strFormat("-> *: ", type);
+			_dump2(val)
+		);
+	0;;	// this will prevent typing error from the threads
+

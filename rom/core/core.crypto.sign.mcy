@@ -1,0 +1,86 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2022, Sylvain Huet, Ambermind
+// Minimacy (r) System
+use core.crypto.oid;;
+use core.crypto.asn1;;
+use core.crypto.hash;;
+use core.crypto.pkcs1;;
+use core.crypto.rsapss;;
+use core.crypto.ec;;
+use core.crypto.ed25519;;
+use core.crypto.key;;
+
+const RSA_PKCS1_SHA1   = 0x201;;
+const RSA_PKCS1_SHA256 = 0x401;;
+const RSA_PKCS1_SHA384 = 0x501;;
+const RSA_PKCS1_SHA512 = 0x601;;
+
+const ECDSA_SECP256R1_SHA256= 0x0403;;
+const ECDSA_SECP384R1_SHA384= 0x0503;;
+
+const RSA_PSS_RSAE_SHA256=0x804;;
+const RSA_PSS_RSAE_SHA384=0x805;;
+const RSA_PSS_RSAE_SHA512=0x806;;
+
+const ED25519=0x0807;;
+
+//https://lipm-gitlab.toulouse.inra.fr/LIPM-BIOINFO/nodccaat-webapp/blob/develop/node_modules/browserify-sign/browser/algorithms.json
+const ANS1_SHA1_MAGIC  ="3021300906052b0e03021a05000414";;
+const ANS1_SHA256_MAGIC="3031300d060960864801650304020105000420";;
+const ANS1_SHA384_MAGIC="3041300d060960864801650304020205000430";;
+const ANS1_SHA512_MAGIC="3051300d060960864801650304020305000440";;
+
+fun signAlgoByOID(oid)=
+	match oid with
+		OID_RSA_PKCS1_SHA1   -> RSA_PKCS1_SHA1,
+		OID_RSA_PKCS1_SHA256 -> RSA_PKCS1_SHA256,
+		OID_RSA_PKCS1_SHA384 -> RSA_PKCS1_SHA384,
+		OID_RSA_PKCS1_SHA512 -> RSA_PKCS1_SHA512,
+		OID_ecdsa_with_SHA256 -> ECDSA_SECP256R1_SHA256,
+		OID_ecdsa_with_SHA384 -> ECDSA_SECP384R1_SHA384,
+		OID_ed25519 -> ED25519;;
+
+// return :
+// - nil : unknown algorithm
+// - true : good signature
+// - false : wrong signature
+fun signatureCheck(algo, key, data, signature)=
+	match algo with
+		RSA_PSS_RSAE_SHA256 -> rsaPssVerify(rsaFromKey(key), data, #sha256, 32, signature),
+		RSA_PSS_RSAE_SHA384 -> rsaPssVerify(rsaFromKey(key), data, #sha384, 48, signature),
+		RSA_PSS_RSAE_SHA512 -> rsaPssVerify(rsaFromKey(key), data, #sha512, 64, signature),
+		RSA_PKCS1_SHA1 -> rsaPkcs1SignatureCheck(rsaFromKey(key), data, signature, ANS1_SHA1_MAGIC, #sha1),
+		RSA_PKCS1_SHA256 -> rsaPkcs1SignatureCheck(rsaFromKey(key), data, signature, ANS1_SHA256_MAGIC, #sha256),
+		RSA_PKCS1_SHA384 -> rsaPkcs1SignatureCheck(rsaFromKey(key), data, signature, ANS1_SHA384_MAGIC, #sha384),
+		RSA_PKCS1_SHA512 -> rsaPkcs1SignatureCheck(rsaFromKey(key), data, signature, ANS1_SHA512_MAGIC, #sha512),
+		ECDSA_SECP256R1_SHA256 -> ecVerify(ecFromKey(key), ecPointFromAsn1(signature), data, #sha256),
+		ECDSA_SECP384R1_SHA384 -> ecVerify(ecFromKey(key), ecPointFromAsn1(signature), data, #sha384),
+		ED25519 -> ed25519Verify(ed25519FromKey(key), data, signature),
+		_ -> (echoLn ["unknown signature check ", hexFromInt(algo)] ; nil);;
+
+fun signatureGenerate(algo, key, data)=
+	match algo with
+		RSA_PSS_RSAE_SHA256 -> rsaPssSign(rsaFromKey(key), data, #sha256, 32),
+		RSA_PSS_RSAE_SHA384 -> rsaPssSign(rsaFromKey(key), data, #sha384, 48),
+		RSA_PSS_RSAE_SHA512 -> rsaPssSign(rsaFromKey(key), data, #sha512, 64),
+		RSA_PKCS1_SHA1 -> rsaPkcs1Sign(rsaFromKey(key), data, ANS1_SHA1_MAGIC, #sha1),
+		RSA_PKCS1_SHA256 -> rsaPkcs1Sign(rsaFromKey(key), data, ANS1_SHA256_MAGIC, #sha256),
+		RSA_PKCS1_SHA384 -> rsaPkcs1Sign(rsaFromKey(key), data, ANS1_SHA384_MAGIC, #sha384),
+		RSA_PKCS1_SHA512 -> rsaPkcs1Sign(rsaFromKey(key), data, ANS1_SHA512_MAGIC, #sha512),
+		ECDSA_SECP256R1_SHA256 -> asn1EcPoint(ecSign(ecFromKey(key), data, #sha256)),
+		ECDSA_SECP384R1_SHA384 -> asn1EcPoint(ecSign(ecFromKey(key), data, #sha384)),
+		ED25519 -> ed25519Sign(ed25519FromKey(key), data),
+		_ -> (echoLn ["unknown signature generate ", hexFromInt(algo)] ; nil);;
+
+fun signatureForRsa(algo) =
+	(algo==RSA_PSS_RSAE_SHA256)||
+	(algo==RSA_PSS_RSAE_SHA384)||
+	(algo==RSA_PSS_RSAE_SHA512)||
+	(algo==RSA_PKCS1_SHA1)||
+	(algo==RSA_PKCS1_SHA256)||
+	(algo==RSA_PKCS1_SHA384)||
+	(algo==RSA_PKCS1_SHA512);;
+
+fun signatureForEc(algo) =
+	(algo==ECDSA_SECP256R1_SHA256)||
+	(algo==ECDSA_SECP384R1_SHA384);;

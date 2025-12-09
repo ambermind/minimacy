@@ -1,0 +1,207 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2022, Sylvain Huet, Ambermind
+// Minimacy (r) System
+
+export RegExp;;
+// test regexp at a given position i. Return all the patterns starting at this position.
+export regexpTest(src, pattern, i);;
+
+// search for the next matching position "i" and return this position and all the patterns starting at this position
+export regexpNext(src, pattern, i);;
+export regexpCreate(str);;
+
+
+sum RegExp= mRepeat _ _ _ _, mAny _, mStr _ _, mInTable _ _, mNotInTable _ _, mOr _ _, mDone, mEOF, mBegin _;;
+
+fun fMATCH_ALL ()= bytesCreate(256, 0);;
+fun fMATCH_CHAR(c, table) = bytesSet(table, c, 1);;
+fun fMATCH_RANGE(a0, a1, table) = for i=a0;i<=a1 do bytesSet(table, i, 1); table;;
+fun fMATCH_LOWER(table) = for i='a';i<='z' do bytesSet(table, i, 1);;
+fun fMATCH_UPPER(table) = for i='A';i<='Z' do bytesSet(table, i, 1);;
+fun fMATCH_DIGITS(table) = for i='0';i<='9' do bytesSet(table, i, 1);;
+fun fMATCH_HEX(table) = for i='a';i<='f' do bytesSet(table, i, 1); for i='A';i<='F' do bytesSet(table, i, 1); fMATCH_DIGITS(table);;
+fun fMATCH_PRINTABLE(table) = for i=20;i<127 do bytesSet(table, i, 1);;
+fun fMATCH_LETTER(table) = fMATCH_LOWER(fMATCH_UPPER(table));;
+fun fMATCH_LABEL(table)= fMATCH_LOWER(fMATCH_UPPER(fMATCH_DIGITS(fMATCH_CHAR('_', table))));;
+fun fMATCH_INVERT(invert, table)= for i=0;i<256 do if 0==bytesGet(invert, i) then bytesSet(table, i, 1); table;;
+
+fun _matchRepeat(src, i, mn, mx, a, next, count, fFound)=
+	if mx==nil || count<=mx then
+	(
+		if count>=mn then _matchCheck(src, next, i, fFound);
+		_matchCheck(src, a, i, lambda(j)=
+			_matchRepeat(src, j, mn, mx, a, next, count+1, fFound)
+		)
+	);;
+
+fun _matchCheck(src, pattern, i, fFound)=
+	if i<>nil && i<=strLength(src) then
+	match pattern with
+		mAny next -> _matchCheck(src, next, i+1, fFound),
+		mInTable table next -> if 0<>bytesGet(table, strGet(src, i)) then _matchCheck(src, next, i+1, fFound),
+		mNotInTable table next -> if 0==bytesGet(table, strGet(src, i)) then _matchCheck(src, next, i+1, fFound),
+		mOr a b -> (_matchCheck(src, a, i, fFound); _matchCheck(src, b, i, fFound)),
+		mRepeat mn mx a next -> _matchRepeat(src, i, mn, mx, a, next, 0, fFound),
+		mStr str next -> if i==strPosRev(src, str, i) then _matchCheck(src, next, i+strLength(str), fFound),
+		mDone -> call fFound(i),
+		mEOF -> if i==strLength(src) then call fFound(i),
+		mBegin next -> if i==0 then _matchCheck(src, next, i, fFound);;
+
+//------------------------
+
+fun _tokenError(str)= setError(msgError strBuild(str)); abort;;
+
+fun _tokenizeRepeat(str, i, val, result)=
+	if i>=strLength(str) then result
+	else let strGet(str, i) -> c in
+	if c>='0' && c<='9' then _tokenizeRepeat(str, i+1, val*10+(c-'0'), result)
+	else if c==',' then _tokenizeRepeat(str, i+1, nil, ","::if val<>nil then decFromInt(val)::result else result)
+	else if c=='}' then _tokenize(str, i+1, "}"::if val<>nil then decFromInt(val)::result else result)
+	else _tokenError(strBuild(["unexpected char in repeat, found ", c]));;
+
+fun _tokenize(str, i, result)=
+	if i>=strLength(str) then result
+	else let strGet(str, i) -> c in
+	if c==92 then _tokenize(str, i+2, strSlice(str, i, 2)::result)
+	else if '-'==strGet(str, i+1) then _tokenize(str, i+3, strSlice(str, i, 3)::result)
+	else if c=='{' then _tokenizeRepeat(str, i+1, nil, "{"::result)
+	else _tokenize(str, i+1, strFromChar(c)::result);;
+
+fun tokenCreate(str)= refCreate(_tokenize(str, 0, nil));;
+
+fun tokenVal(t)= head(refGet(t));;
+fun tokenNext(t)= refSet(t, tail(refGet(t))); t;;
+
+//------------------------
+
+fun _rAssume(tokens, val)=
+	let tokenNext(tokens) -> tokens in
+	let tokenVal(tokens) -> token in
+	if token<>val then _tokenError(strBuild(["'",val,"' expected, found: ", token]));;
+	
+fun _rLoop(tokens, next)=
+	let _rOr(tokens, next) -> next in
+	let tokenVal(tokens) -> token in
+	match token with
+		"(" -> (tokenNext(tokens); next),
+		_ ->  _tokenError(strBuild(["( expected, found ", token]));;
+
+fun _rStr(tokens, token, next)=
+	let if 92==strGet(token, 0) then strSlice(token, 1, nil) else token -> token in
+	match next with
+		mStr str next -> mStr strConcat(token, str) next,
+		_ -> mStr token next;;
+
+fun _rClass(tokens, next, table)=
+	tokenNext(tokens);
+	let tokenVal(tokens) -> token in
+	match token with
+		"["-> (tokenNext(tokens); mInTable table next),
+		"^"-> (_rAssume(tokens, "["); tokenNext(tokens); mNotInTable table next),
+		_ ->
+			if 1==strLength(token) then _rClass(tokens, next, fMATCH_CHAR(strGet(token, 0), table))
+			else if 3==strLength(token) then _rClass(tokens, next, fMATCH_RANGE(strGet(token, 0), strGet(token, 2), table))
+			else match token with
+				"\\d" -> _rClass(tokens, next, fMATCH_DIGITS(table)),
+				"\\D" -> _rClass(tokens, next, fMATCH_INVERT(fMATCH_DIGITS(fMATCH_ALL()), table)),
+				"\\w" -> _rClass(tokens, next, fMATCH_LABEL(table)),
+				"\\W" -> _rClass(tokens, next, fMATCH_INVERT(fMATCH_LABEL(fMATCH_ALL()), table)),
+				"\\a" -> _rClass(tokens, next, fMATCH_LETTER(table)),
+				"\\l" -> _rClass(tokens, next, fMATCH_LOWER(table)),
+				"\\u" -> _rClass(tokens, next, fMATCH_UPPER(table)),
+				"\\p" -> _rClass(tokens, next, fMATCH_PRINTABLE(table)),
+				"\\n" -> _rClass(tokens, next, fMATCH_CHAR(10, table)),
+				"\\r" -> _rClass(tokens, next, fMATCH_CHAR(13, table)),
+				"\\f" -> _rClass(tokens, next, fMATCH_CHAR(12, table)),
+				"\\t" -> _rClass(tokens, next, fMATCH_CHAR(9, table)),
+				"\\s" -> _rClass(tokens, next, fMATCH_CHAR(32, fMATCH_CHAR(9, fMATCH_CHAR(13, fMATCH_CHAR(10, fMATCH_CHAR(12, table)))))),
+				"\\S" -> _rClass(tokens, next, fMATCH_INVERT(fMATCH_CHAR(32, fMATCH_CHAR(9, fMATCH_CHAR(13, fMATCH_CHAR(10, fMATCH_CHAR(12, fMATCH_ALL()))))), table)),
+				_ ->  if 92==strGet(token, 0) then _rClass(tokens, next, fMATCH_CHAR(strGet(token, 1), table))
+					else _tokenError(strBuild(["unknown token in class definition: ", token]));;
+
+fun _rChar(tokens, next)=
+	let tokenVal(tokens) -> token in
+	match token with
+		")" -> _rLoop(tokenNext(tokens), next),
+		"]" -> _rClass(tokens, next, fMATCH_ALL()),
+		"^" -> (tokenNext(tokens); if nil==tokenVal(tokens) then mBegin next
+			else _tokenError("^ must be at the beginning of the Regexp")),
+		"." -> (tokenNext(tokens); mAny next),
+		_ -> match strLength(token) with
+				1 -> if !strContains("()[]{}|,.", token) then (tokenNext(tokens); _rStr(tokens, token, next))
+					else next,
+				2 -> if 92==strGet(token, 0) then
+					let match token with
+						"\\n" -> "\n",
+						"\\r" -> "\r",
+						"\\f" -> "\12",
+						"\\t" -> "\t",
+						_ -> strRight(token, 1)
+					-> str in (tokenNext(tokens); _rStr(tokens, str, next))
+					else _tokenError(strBuild(["expected token ", token])),
+				_ -> _tokenError(strBuild(["expected token ", token]));;
+
+fun _rRange(tokens, next)=
+	let tokenVal(tokens) -> token in
+	let if token<>"," then (tokenNext(tokens); intFromDec(token)) -> mx in
+	let tokenVal(tokens) -> token in
+	if token=="{" then mRepeat mx mx _rChar(tokenNext(tokens), mDone) next
+	else if token=="," then
+	let tokenNext(tokens) -> tokens in
+	let tokenVal(tokens) -> token in
+	let if token<>"{" then (tokenNext(tokens); intFromDec(token)) -> mn in
+	let tokenVal(tokens) -> token in
+	if token=="{" then mRepeat mn mx _rChar(tokenNext(tokens), mDone) next
+	else _tokenError(strBuild(["} expected, found ", token]));;
+
+fun _rTerm(tokens, next)=
+	let tokenVal(tokens) -> token in
+	match token with
+		nil -> next,
+		"?" -> mRepeat 0 1 _rChar(tokenNext(tokens), mDone) next,
+		"+" -> mRepeat 1 nil _rChar(tokenNext(tokens), mDone) next,
+		"*" -> mRepeat 0 nil _rChar(tokenNext(tokens), mDone) next,
+		"}" -> _rRange(tokenNext(tokens), next),
+		_ ->  if !strContains("([|,", token) then _rChar(tokens, next) else next;;
+
+fun _rExpr(tokens, next)=
+	let _rTerm(tokens, next) -> next2 in
+	if next==next2 then next
+	else _rExpr(tokens, _rTerm(tokens, next2));;
+
+fun _rSeqPipe(tokens, next, other1)=
+	let tokenVal(tokens) -> token in
+	match token with
+		"|" -> 
+			let _rExpr(tokenNext(tokens), next) -> other2 in
+			let mOr other2 other1 -> other in
+			_rSeqPipe(tokens, next, other),
+		_ -> other1;;
+
+fun _rOr(tokens, next)=
+	let _rExpr(tokens, next) -> other in
+	_rSeqPipe(tokens, next, other);;
+
+//--------------API
+// test regexp at a given position i. Return all the patterns starting at this position.
+fun regexpTest(src, pattern, i)=
+	let fifoCreate() -> fifo in
+	(
+		_matchCheck(src, pattern, i, (lambda(j)= fifoIn(fifo, strSlice(src, i, j-i))));
+		fifoList(fifo)
+	);;
+
+// search for the next matching position "i" and return this position and all the patterns starting at this position
+fun regexpNext(src, pattern, i)=
+	if i<strLength(src) then
+	let regexpTest(src, pattern, i) -> l in
+	if l<>nil then [i, l]
+	else regexpNext(src, pattern, i+1);;
+
+fun regexpCreate(str)=
+	try
+	let tokenCreate(str) -> tokens in
+	let tokenVal(tokens) -> token in
+	if token=="$" then _rOr(tokenNext(tokens), mEOF)
+	else _rOr(tokens, mDone);;
+

@@ -1,0 +1,82 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2022, Sylvain Huet, Ambermind
+// Minimacy (r) System
+
+
+var _B64Encode={
+	'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z',
+	'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z',
+	'0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '+', '/'
+};;
+
+
+fun b64Encode(str)=
+	let strLength(str) -> len in
+	let ((len+2)/3)*4 -> lenOutput in
+	let bytesCreate(lenOutput, 0) -> b in
+	let 0-> j in
+	(
+		for i=0;i<len;i+3 do
+			let strGet(str, i)<<16 +
+				strGet(str, i+1)<<8 +
+				strGet(str, i+2)
+			-> v in
+			(
+				bytesSet(b, j, _B64Encode[((v>>18)&63)]);
+				bytesSet(b, j+1, _B64Encode[((v>>12)&63)]);
+				bytesSet(b, j+2, _B64Encode[((v>>6)&63)]);
+				bytesSet(b, j+3, _B64Encode[(v&63)]);
+				set j=j+4
+			);
+		let len%3 -> p in
+			if p>0 then
+			(
+				bytesSet(b, lenOutput-1, '=');
+				if p==1 then bytesSet(b, lenOutput-2, '=')
+			);
+		strFromBytes(b)
+	);;
+
+const _B64Decode={
+	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 
+	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 62, 0, 0, 0, 63, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 0, 0, 0, 0, 0, 0, 0,
+	0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 0, 0, 0, 0, 0, 0, 
+	26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 0, 0, 0, 0, 0
+};;
+
+fun b64Decode(str)=
+	let strLength(str) -> len in
+	if 0<> len&3 then nil
+	else let len*3/4 -> _len in
+	let
+		if '=' <> strGet(str, len-1) then _len
+		else if '=' <> strGet(str, len-2) then _len-1
+		else _len-2
+	-> lenOutput in
+	let bytesCreate(lenOutput, 0) -> b in
+	let 0-> j in
+	(
+		for i=0;i<len;i+4 do
+			let (_B64Decode[ strGet(str, i)])<<18 +
+				(_B64Decode[ strGet(str, i+1)])<<12 +
+				(_B64Decode[ strGet(str, i+2)])<<6 +
+				(_B64Decode[ strGet(str, i+3)])
+			-> v in
+			(
+				bytesSet(b, j, v>>16);
+				bytesSet(b, j+1, v>>8);
+				bytesSet(b, j+2, v);
+				set j=j+3
+			);
+		strFromBytes(b)
+	);;
+
+fun urlFromB64(str)= strReplace(strReplace(strReplace(str, "+", "-"), "/", "_"), "=", "");;
+fun b64FromUrl(str)=
+	let strReplace(strReplace(str, "-", "+"), "_", "/") -> data in
+	let strLength(data)&3 -> finalBlockLen in
+	match finalBlockLen with
+	0->data,
+	1->nil,
+	2->strConcat(data, "=="),
+	3->strConcat(data, "=");;

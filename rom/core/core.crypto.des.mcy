@@ -1,0 +1,57 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2022, Sylvain Huet, Ambermind
+// Minimacy (r) System
+
+use core.crypto.block;;
+
+//--- DES
+fun desCreateKey ()= strRand(8);;
+
+fun desEncryptEcb(key, msg)= 
+	let desCreate(key) -> des in
+	strListConcat(ecbEncrypt(msg, DES_BLOCK, 0, lambda(data, i) = desOutput(desEncrypt(des, msg, i))));;
+
+fun desDecryptEcb(key, msg)= 
+	let desCreate(key) -> des in
+	strListConcat(ecbDecrypt(msg, DES_BLOCK, 0, lambda(data, i)= desOutput(desDecrypt(des, msg, i))));;
+
+fun desEncryptCbc(key, iv, msg)= 
+	let desCreate(key) -> des in
+	strListConcat(cbcEncrypt(msg, iv, 0, lambda(data, i) = desOutput(desEncrypt(des, msg, i))));;
+
+fun desDecryptCbc(key, iv, msg)= 
+	let desCreate(key) -> des in
+	strBuild(cbcDecrypt(msg, iv, 0, lambda(data, i)= desOutput(desDecrypt(des, msg, i))));;
+
+//--- DES3
+fun des3CreateKey ()= strRand(24);;
+
+fun des3Key192(key)= [desCreate(strSlice(key, 0, 8)), desCreate(strSlice(key, 8, 8)), desCreate(strSlice(key, 16, 8))];;
+
+fun des3Encrypt(keys, msg, i)=
+	let keys->[k1, k2, k3] in
+		let desOutput(desEncrypt(k1, msg, i)) -> buf in 
+		let desOutput(desDecrypt(k2, buf, 0)) -> buf in 
+		desOutput(desEncrypt(k3, buf, 0));;
+
+fun des3Decrypt(keys, msg, i)=
+	let keys->[k1, k2, k3] in
+		let desOutput(desDecrypt(k3, msg, i)) -> buf in 
+		let desOutput(desEncrypt(k2, buf, 0)) -> buf in 
+		desOutput(desDecrypt(k1, buf, 0));;
+
+fun des3EncryptEcb(keys, msg)= 
+	let des3Key192(keys) -> k3 in
+	strListConcat(ecbEncrypt(msg, DES_BLOCK, 0, lambda(data, i) = des3Encrypt(k3, data, i)));;
+
+fun des3DecryptEcb(keys, msg)= 
+	let des3Key192(keys) -> k3 in
+	strListConcat(ecbDecrypt(msg, DES_BLOCK, 0, lambda(data, i)=des3Decrypt(k3, msg, i)));;
+
+fun des3EncryptCbc(keys, iv, msg)= 
+	let des3Key192(keys) -> k3 in
+	strListConcat(cbcEncrypt(msg, iv, 0, lambda(data, i) = des3Encrypt(k3, data, i)));;
+
+fun des3DecryptCbc(keys, iv, msg)= 
+	let des3Key192(keys) -> k3 in
+	strBuild(cbcDecrypt(msg, iv, 0, lambda(data, i)=des3Decrypt(k3, msg, i)));;

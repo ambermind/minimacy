@@ -1,0 +1,208 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2022, Sylvain Huet, Ambermind
+// Minimacy (r) System
+
+//------------- ECB
+fun ecbEncryptIntoBytes(msg, blockLen, f)=
+	let strLength(msg) -> n in
+	for i=0;i<n;i+blockLen do call f(msg, i);
+	0;;
+
+fun ecbDecryptIntoBytes(msg, blockLen, f)= ecbEncryptIntoBytes(msg, blockLen, f);;	// !!
+
+fun ecbEncrypt(msg, blockLen, i, f)=
+	if i<strLength(msg) then
+	let call f(msg, i) -> out in out::ecbEncrypt(msg, blockLen, i+blockLen, f);;
+
+fun ecbDecrypt(msg, blockLen, i, f)=ecbEncrypt(msg, blockLen, i, f);;	// !!
+
+//------------- CBC
+struct CBC=[_fC, _ivC, _outC, _iC, _lenC, _bufC];;
+
+fun cbcCreate(iv, out, i0, f)=
+	let strLength(iv) -> blockLen in
+	if blockLen>0 then
+	let strSliceOfBytes(iv, 0, nil) -> iv in
+	let (lambda(a, b, c) = call f(a, b, c); true) -> f in
+	[_fC=f, _ivC=iv, _outC=out, _iC=i0, _lenC=blockLen, _bufC=bytesCreate(blockLen, 0)];;
+
+fun cbcEncryptIntoBytes(cbc, msg, i0, i1) =
+	let cbc._lenC -> blockLen in
+	let cbc._bufC -> buffer in
+	for i=i0;i<i1;i+blockLen do
+	(
+		bytesCopy(buffer, 0, msg, i, nil);
+		bytesXorBytes(buffer, 0, cbc._ivC, 0, nil);
+		call cbc._fC(strFromBytes(buffer), 0, cbc._iC);
+		bytesCopyBytes(cbc._ivC, 0, cbc._outC, cbc._iC, blockLen);
+		set cbc._iC=(cbc._iC+blockLen);
+		if cbc._iC >= bytesLength(cbc._outC) then set cbc._iC=0;
+	);;
+
+fun cbcDecryptIntoBytes(cbc, msg) =
+	let strLength(msg) -> n in
+	let cbc._lenC -> blockLen in
+	let cbc._bufC -> buffer in
+	for i=0;i<n;i+blockLen do
+	(
+		call cbc._fC(msg, i, cbc._iC);
+		bytesXorBytes(cbc._outC, cbc._iC, cbc._ivC, 0, nil);
+		bytesCopy(cbc._ivC, 0, msg, i, blockLen);
+		set cbc._iC=cbc._iC+blockLen
+	);;
+
+fun cbcEncrypt(msg, iv, i, f)=
+	if i<strLength(msg) then
+	let strLength(iv) -> len in
+	let strSliceOfBytes(msg, i, len) -> buffer in
+	(
+		bytesXor(buffer, 0, iv, 0, nil);
+		let call f(strFromBytes(buffer), 0) -> out in
+		let out -> iv in
+		out::cbcEncrypt(msg, iv, i+len, f)
+	);;
+
+fun cbcDecrypt(msg, iv, i, f)=
+	if i<strLength(msg) then
+	let strLength(iv) -> len in
+	let call f(msg, i) -> decode in
+	let strSliceOfBytes(decode, 0, nil) -> buffer in
+	(
+		bytesXor(buffer, 0, iv, 0, nil);
+		let strSlice(msg, i, len) -> iv in
+		buffer::cbcDecrypt(msg, iv, i+len, f)
+	);;
+
+//------------- CRT
+
+// with CRT, encrypt and decrypt are the same function!
+fun ctrEncrypt(msg, blockLen, count, i, fencrypt, fcount)=
+	let strLength(msg) -> n in
+	if i<n then
+	let call fencrypt(strFromBig(count, blockLen)) ->  out in
+	let if (n-i)<blockLen then strLeft(out, n-i) else out -> out in
+	let strSliceOfBytes(out, 0, nil) -> out in
+	(
+		bytesXor(out, 0, msg, i, nil);
+		out::ctrEncrypt(msg, blockLen, call fcount(count), i+blockLen, fencrypt, fcount)
+	);;
+
+fun ctrEncryptRef(msg, blockLen, count, i, fencrypt, fInc)=
+	let strLength(msg) -> n in
+	if i<n then
+	let call fencrypt(strFromBig(refGet(count), blockLen)) ->  out in
+	let if (n-i)<blockLen then strLeft(out, n-i) else out -> out in
+	let strSliceOfBytes(out, 0, nil) -> out in
+	(
+		bytesXor(out, 0, msg, i, nil);
+		call fInc(count);
+		out::ctrEncryptRef(msg, blockLen, count, i+blockLen, fencrypt, fInc)
+	);;
+
+fun ctrEncryptOpti(msg, blockLen, count, fencrypt, fcount)=
+	let strLength(msg) -> n in
+	let bytesCreate(n, 0) -> buffer in
+	(
+		for i=0;i<n;i+blockLen do
+			let call fencrypt(strFromBig(count, blockLen)) ->  out in
+			(
+				set count=call fcount(count);
+				bytesCopy(buffer, i, out, 0, nil)
+			);
+		bytesXor(buffer, 0, msg, 0, nil);
+		strFromBytes(buffer)
+	);;
+
+// we could also optimize with a ctrEncryptIntoBytes function
+
+//----- GCM
+
+fun _gcmHashLoop(src, i, blockLen, Y, mulH)=
+	if i>=strLength(src) then Y
+	else let bytesXor(Y, 0, src, i, nil) -> _ in
+	_gcmHashLoop(src, i+blockLen, blockLen, call mulH(strFromBytes(Y)), mulH);;
+
+fun _gcmLen(blockLen, A, C)=
+	let 8*strLength(A) -> lenA in
+	let 8*strLength(C) -> lenC in
+	let strCreate((blockLen>>1)-4, 0) -> leftPadding in
+	strBuild({leftPadding, strInt32Msb(lenA), leftPadding, strInt32Msb(lenC)});;
+
+fun _gcmGhash(blockLen, mulH, A, C)=
+	let _gcmLen(blockLen, A, C) -> len in
+	let strBuild({
+		A, paddingZero(A, blockLen),
+		C, paddingZero(C, blockLen),
+		len
+	}) -> src in
+	_gcmHashLoop(src, 0, blockLen, bytesCreate(blockLen, 0), mulH);;
+
+fun _gcmCountFromIv(mulH, iv, blockLen)=
+	if blockLen==4+strLength(iv) 
+	then (bytesFormat("**", iv, strInt32Msb(1)))
+	else
+	_gcmGhash(blockLen, mulH, "", iv);;
+
+fun gcmProcess(data, blockLen, iv, A, encrypt, fEncrypt, fNextCount, fMakeMulH)=
+	let bigFromStr(call fEncrypt(strCreate(blockLen, 0))) -> H in
+	let call fMakeMulH(H) -> mulH in
+	let bigFromBytes(_gcmCountFromIv(mulH, iv, blockLen)) -> count in
+
+	let call fEncrypt(strFromBig(count, blockLen)) -> last in
+	let call fNextCount(count) -> count in
+
+	let ctrEncryptOpti(data, blockLen, count, fEncrypt, fNextCount) -> C in
+	let if C==nil then "" else C -> C in
+	let if encrypt then C else data -> src in
+	let _gcmGhash(blockLen, mulH, A, src) -> Y in
+	let strFromBytes(bytesXor(Y, 0, last, 0, nil)) -> T in 
+	[C, T];;
+	
+fun gcmEncrypt(msg, blockLen, iv, A, fEncrypt, fNextCount, fMakeMulH)=
+	gcmProcess(msg, blockLen, iv, A, true, fEncrypt, fNextCount, fMakeMulH);;
+
+fun gcmDecrypt(cipher, T, blockLen, iv, A, fEncrypt, fNextCount, fMakeMulH)=
+	let gcmProcess(cipher, blockLen, iv, A, false, fEncrypt, fNextCount, fMakeMulH) -> [msg, T2] in
+	if T==T2 then msg;;
+
+//------------- padding
+// assuming blockLen is a power of two
+fun paddingZero(str, blockLen)=	// pad with zero (nothing if already a multiple of blockLen)
+	let blockLen-(strLength(str)&(blockLen-1)) -> n in
+	let n&(blockLen-1) -> n in
+	strCreate(n, 0);;
+
+fun paddingANSI_X9_23(str, blockLen)=
+	let blockLen-(strLength(str)&(blockLen-1)) -> n in
+	let bytesCreate(n, 0) -> bytes in
+	strFromBytes(bytesSet(bytes, n-1, n));;
+
+fun paddingISO_10126(str, blockLen)=
+	let blockLen-(strLength(str)&(blockLen-1)) -> n in
+	let bytesCreate(n, n) -> bytes in
+	strFromBytes(bytesRand(bytes, 0, n-1));;
+
+fun paddingPKCS_5(str, blockLen)=
+	let blockLen-(strLength(str)&(blockLen-1)) -> n in
+	strCreate(n, n);;
+
+fun paddingISO_7816_4(str, blockLen)=
+	let blockLen-(strLength(str)&(blockLen-1)) -> n in
+	let bytesCreate(n, 0) -> bytes in
+	strFromBytes(bytesSet(bytes, 0, 0x80));;
+
+fun paddingTLS(str, blockLen)=	// see https://tools.ietf.org/html/rfc2246#section-6.2.3.2
+	let blockLen-(strLength(str)&(blockLen-1)) -> n in
+	strCreate(n, n-1);;
+
+fun unPaddingANSI_X9_23(str)=
+	let strLength(str) -> len in
+	let strGet(str, len-1) -> n in
+	len-n;;
+
+fun unPaddingISO_10126(str)= unPaddingANSI_X9_23(str);;
+fun unPaddingPKCS_5(str)= unPaddingANSI_X9_23(str);;
+fun unPaddingTLS(str)= unPaddingANSI_X9_23(str)-1;;
+
+fun unPaddingISO_7816_4(str)=
+	strPosRev(str, "\$80", nil);;

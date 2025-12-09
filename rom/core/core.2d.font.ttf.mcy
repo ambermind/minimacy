@@ -1,0 +1,222 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2022, Sylvain Huet, Ambermind
+// Minimacy (r) System
+
+// this package allows to create a font from a TTF file. This font may be used with the functions from core.2d.font
+// it does not implement True Type "instructions". Therefore fonts may not be displayed nicely at small sizes
+// the specified height is the height in pixels that contains every glyphs
+export fontFromTTF(ttfContent, height, cMax);;
+export ttfDrawChar(bmp, x, y, height, c, ttf, color, blend);;
+
+use core.2d.font;;
+use core.2d.font.ttf.parser;;
+//use core.2d.png.maker;;
+
+// TTF glyphs use only quadratic bezier curves and linear segments
+// when two consecutive points aren't on curve, their middle must be inserted as "on curve"
+
+struct Arc=[xA, yA, xxA, yyA, xbA, ybA];;	// xbA=ybA=nil if linear, else it is quadratic bezier ('b' like bezier)
+
+fun _startAndFinishOnCurve(plots)=	// we make sure the list of plots starts and finishes with a point on the curve
+	let plots ->[x, y, c]::[xx, yy, cc]::_ in 
+	if c then listConcat(plots, head(plots)::nil)
+	else if cc then _startAndFinishOnCurve(listConcat(tail(plots), head(plots)::nil))
+	// maybe there are only plots outside the curve, then we add one
+	else _startAndFinishOnCurve(listConcat(\float [(x+xx)/2, (y+yy)/2, true]::tail(plots), head(plots)::nil));;
+
+fun _addImplicit(plots) =
+	// plots is the list of plots, the final plot is already equal to the first, and is on the curve
+	// we insert implicit "on the curve" plots, and convert the 3-tuple list input to the more convenient Arc list
+	let plots ->[x, y, c]::[xx, yy, cc]::[xxx, yyy, ccc]::_ in 
+	if xx<>nil then
+	if cc then
+		if y<>yy then [xA=x, yA=y, xxA=xx, yyA=yy]::_addImplicit(tail(plots))
+		else _addImplicit(tail(plots))
+	else if !ccc then _addImplicit(\float head(plots)::head(tail(plots))::[(xx+xxx)/2, (yy+yyy)/2, true]::tail(tail(plots)))
+	else if y<>yyy then [xA=x, yA=y, xxA=xxx, yyA=yyy, xbA=xx, ybA=yy]::_addImplicit(tail(tail(plots)))
+	else _addImplicit(tail(tail(plots)));;
+
+fun _contourTop(arcs, i0, y0, i)=
+	let arcs[i] -> p in
+	if p==nil then i0
+	else if i0==nil || p.yA<.y0 then _contourTop(arcs, i, p.yA, i+1)
+	else _contourTop(arcs, i0, y0, i+1);;
+
+fun _contourDown(arcs, iEnd, i, result)=
+	let arcs[i] -> q in
+	if i==iEnd then result::nil
+	else if q==nil then _contourDown(arcs, iEnd, 0, result)
+	else if q.yyA<=.q.yA then _contourDown(arcs, iEnd, i+1, q::result)
+	else result::_contourUp(arcs, iEnd, i+1, q::nil);;
+
+fun _contourUp(arcs, iEnd, i, result)=
+	let arcs[i] -> q in
+	if q==nil then _contourUp(arcs, iEnd, 0, result)
+	else if q.yyA>=.q.yA then _contourUp(arcs, iEnd, i+1, q::result)
+	else listReverse(result)::_contourDown(arcs, iEnd, i+1, q::nil);;
+
+fun _glyphPrecomputeVerticals(g) =
+	let fifoCreate() -> fifo in (
+		for plots in g.drawingG do 
+			let arrayFromList(_addImplicit(_startAndFinishOnCurve(plots)))-> arcs in
+			let _contourTop(arcs, nil, nil, 0)-> iMin in
+			let arcs[iMin] -> p in
+			let _contourUp(arcs, iMin, iMin+1, p::nil) -> verticals in
+			for vertical in verticals do 
+				let listReduce(vertical, (head(vertical)).yA, lambda(y, p)= minf(y, minf(p.yA, p.yyA))) -> ymin in
+				let listReduce(vertical, (head(vertical)).yA, lambda(y, p)= maxf(y, maxf(p.yA, p.yyA))) -> ymax in
+				if ymin<>ymax then fifoIn(fifo, [ymin, ymax, vertical]);
+		let fifoList(fifo) -> verticals in
+		quicksort(verticals, lambda([ym0, _, _], [ym1, _, _])= ym0<.ym1)
+	);;
+
+fun arcLine(xt, y0, x1, y1, x2, y2)=
+	if y2<>y1 then
+	let maxf(y1, y2) -> ymax in (
+		set xt[(y0-intFromFloat(y1))]=x1;
+		set xt[(y0-intFromFloat(y2))]=x2;
+		for y=minf(y1, y2);y<=.ymax;y+.1. do set xt[(y0-intFromFloat(y))] = \float x1+ (y-y1)*(x2-x1)/(y2-y1)
+	);;	
+
+fun _arcQuad(xt, y0, x1, y1, x2, y2, x3, y3)=
+	if \float absf(y3-.y1)>.0.5 then
+	let \float (y1+y2+y2+y3)/4 -> ym in
+	let \float (x1+x2+x2+x3)/4 -> xm in
+	let y0-intFromFloat(ym) -> y in (
+		set xt[y] = if xt[y]==nil then xm else
+			if y1<.y3 then minf(xt[y], xm) else maxf(xt[y], xm);
+		\float _arcQuad(xt, y0, x1, y1, (x1+x2)/2, (y1+y2)/2, xm, ym);
+		\float _arcQuad(xt, y0, xm, ym, (x2+x3)/2, (y2+y3)/2, x3, y3);
+	);;
+
+fun arcQuad(xt, y0, x1, y1, x2, y2, x3, y3)=
+	if y3<>y1 then
+	(
+		set xt[(y0-intFromFloat(y1))]=x1;
+		set xt[(y0-intFromFloat(y3))]=x3;
+		_arcQuad(xt, y0, x1, y1, x2, y2, x3, y3)
+	);;
+
+fun verticalCompute(x, y, k, verticals) =	// compute verticals with p/q scale
+	listMap(verticals, lambda([ymin, ymax, arcs])=
+		let intFromFloat(y-.k*.ymin) -> ymin in
+		let intFromFloat(y-.k*.ymax) -> ymax in
+		let arrayCreate(ymin-ymax+1, nil) -> xt in (
+			for p in arcs do 
+				if p.xbA==nil then arcLine(xt, ymin, x+.k*.p.xA, y-.k*.p.yA, x+.k*.p.xxA, (y-.k*.p.yyA))
+				else arcQuad(xt, ymin, x+.k*.p.xA, y-.k*.p.yA, x+.k*.p.xbA, y-.k*.p.ybA, x+.k*.p.xxA, (y-.k*.p.yyA));
+			let head(arcs) -> p in
+			[ymin, xt, if p.yA<.p.yyA then 1 else -1]
+		)
+	);;
+
+fun scanlineInsert(y, new, currents)=
+	if currents==nil then new::nil
+	else
+	let new ->[y0, xt, d] in
+	let head(currents) ->[yy0, xtt, dd] in
+	if xt[(y0-y)] <. xtt[(yy0-y)] then new::currents
+	else if (xt[(y0-y)] == xtt[(yy0-y)]) && d>dd then new::currents
+	else head(currents)::scanlineInsert(y, new, tail(currents));;
+
+fun scanlineReorder(y, currents)=
+	if nil==tail(currents) then currents
+	else
+	let head(currents) -> v in
+	let scanlineReorder(y, tail(currents)) -> currents in
+	scanlineInsert(y, v, currents);;
+
+fun scanlineDraw(bmp, color, blend, y, currents, delta) =
+	let currents ->[y0, xt, d]::[yy0, xtt, _]::_ in
+	if yy0<>nil then
+	let d+delta -> delta in (
+		if delta>0 then bitmapLine(bmp, intFromFloat(xt[(y0-y)]), y, intFromFloat(xtt[(yy0-y)]), y, color, blend);
+		scanlineDraw(bmp, color, blend, y, tail(currents), delta)
+	);;
+
+fun scanline(bmp, color, blend, y, verticals, currents)=
+	let head(verticals)->[yy, xTable, _] in
+	if yy==y then scanline(bmp, color, blend, y, tail(verticals), head(verticals)::currents)
+	else
+	let listFilter(currents, lambda([yy, xt, _])= y>=yy-arrayLength(xt)+1) -> currents in
+	if currents==nil then (
+		if verticals<>nil then let head(verticals) ->[y0, _, _] in scanline(bmp, color, blend, y0, verticals, nil)
+	)
+	else let scanlineReorder(y, currents) -> currents in (
+		scanlineDraw(bmp, color, blend, y, currents, 0);
+		scanline(bmp, color, blend, y-1, verticals, currents)
+	);;
+
+fun ttfDrawChar(bmp, x, y, height, c, ttf, color, blend)=
+	let hashmapGet(ttf.charsT, c) -> gid in
+	let ttf.glyphsT[gid] -> g in
+	let floatFromInt(height)/.floatFromInt(ttf.heightT) -> k in
+	(
+		if g.drawingG<>nil then
+			let _glyphPrecomputeVerticals(g) -> verticals in
+			let verticalCompute(x, y, k, verticals) -> verticals in
+			let head(verticals) ->[y0, _, _] in
+			scanline(bmp, color, blend, y0, verticals, nil);
+//		bitmapLine bmp (intFromFloat x) (intFromFloat y) (intFromFloat x +. 0.5*.k *.floatFromInt g.widthG) (intFromFloat y) 0xff0000 nil;
+		k*.floatFromInt(g.widthG)
+	);;
+
+// we oversample the rendering which is purely black/white, then downsample it for anti-aliasing
+// downsampling is much faster when OVERSAMPLE is 2 or 4. See _bitmapResizeSmooth in util_2d.c
+const OVERSAMPLE=4;;
+const FONT_BITMAP_WIDTH=2048;;	// FONT_BITMAP_WIDTH*OVERSAMPLE must be less than 16384 (bitmapCreate limitation)
+
+fun _fontComputePositions(ttf, height, k, lChars, chars)=
+	let arrayLength(chars) -> cMax in
+	let 0->x in let 0->y in (
+		for [c, index] in lChars do
+			if c<cMax then
+			let ttf.glyphsT[index] -> g in
+			let intFromFloat(\float -floor(k*floatFromInt(min(0x00, g.xMinG)))) -> dxLeft in
+			let intFromFloat(\float ceil(k*floatFromInt(max(g.widthG, g.xMaxG)))) -> dxRight in
+			let dxLeft+dxRight -> dw in
+			let intFromFloat(ceil(k*.floatFromInt(g.widthG))) -> dwNext in (
+				if x+dw > FONT_BITMAP_WIDTH then (	// go on the next line if there is no place anymore on the line
+					set x=0;
+					set y=y+height+1
+				);
+				set chars[c]={x, y, dw, height, dxLeft, dwNext};
+				set x=x+1+dw
+			);
+		y+height
+	);;
+
+fun _fontDrawGlyphs(bmp, ttf, height, baseline, lChars, chars)=
+	for [c, index] in lChars do
+		let chars[c] -> v in
+		if v<>nil then
+		// just the draw the glyph at the position we computed above, applying a scale of OVERSAMPLE
+		let ttf.glyphsT[index] -> g in 
+		let floatFromInt(OVERSAMPLE*(v[BBX] + v[DX])) -> x in
+		let floatFromInt(OVERSAMPLE*(v[BBY] + height - baseline)) -> y in
+		let OVERSAMPLE*height -> hh in
+		ttfDrawChar(bmp, x, y, hh, c, ttf, 0xffffffff, nil);;
+
+fun fontFromTTF(ttfContent, height, cMax) =
+	let ttfParse(ttfContent) -> ttf in
+	if ttf<>nil then
+	let floatFromInt(height)/.floatFromInt(ttf.heightT) -> k in	// coeff applied to glyph native coordinates
+	let listFromHashmap(ttf.charsT) -> lChars in
+	// first we need to determine the maximum index of chars
+	// cMax can be specified (for example to limit to 128 or 256), or, when nil, computed based on the TTF content
+	let if cMax<>nil then cMax else 1+listReduce(lChars, 0, lambda(cMax, [c, _]) = max(cMax, c)) -> cMax in
+	let arrayCreate(cMax, nil) -> chars in
+	// now we feed the array of chars with an array {BBX BBY BBH BBW DX W}. See core.2d.font
+	// we'll draw the glyphs in a bitmap of width FONT_BITMAP_WIDTH
+	let _fontComputePositions(ttf, height, k, lChars, chars) -> yMax in
+	let intFromFloat(ceil(k*.floatFromInt(-ttf.underT))) -> baseline in
+	let bitmapCreate(FONT_BITMAP_WIDTH*OVERSAMPLE, OVERSAMPLE*yMax, 0xffffff) -> bmp in
+	let bitmapCreate(FONT_BITMAP_WIDTH, yMax, nil) -> final in (
+		// we draw the glyphs onto the bitmap bmp
+		_fontDrawGlyphs(bmp, ttf, height, baseline, lChars, chars);
+	//		save (pngFromBitmap bmp true) echoLn "oversampled.png";
+		bitmapResize(final, bmp, true);	// downsample to the final bitmap
+		// build and return the Font structure:
+		[hF=height, baseLineF=baseline, bmpF=final, charsF=chars]
+	);;
+

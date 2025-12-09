@@ -1,0 +1,186 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2022, Sylvain Huet, Ambermind
+// Minimacy (r) System
+
+struct TcpSrv=Stream+[nameTS, onAcceptTS];;
+struct Tcp=Stream+[remoteAddrT, remotePortT, incomingT, nameT];;
+struct Udp=Stream+[remoteAddrU, remotePortU, localAddrU, localPortU, nameU];;
+
+var _UdpCreateFunction=#udpCreateNative;;
+var _TcpOpenFunction=#tcpOpenNative;;
+var _TcpSrvCreateFunction=#tcpSrvCreateNative;;
+
+fun ipStackOverwriteUdp(fUdpCreate) = set _UdpCreateFunction = fUdpCreate;;
+fun ipStackOverwriteTcp(fTcpOpen) = set _TcpOpenFunction = fTcpOpen;;
+fun ipStackOverwriteTcpSrv(fTcpSrv) = set _TcpSrvCreateFunction = fTcpSrv;;
+
+fun strFromMac(mac) = if mac<>nil then strJoin(":", arrayInit(6, lambda(i) = hexFromIntN(2, strGet(mac, i))));;
+fun strFromIp(ip) = strFormat("*.*.*.*", strGet(ip, 0), strGet(ip, 1), strGet(ip, 2), strGet(ip, 3));;
+fun ipFromStr(str) = if !strEmpty(str) then strListConcat(listMap(strSplit(".", str), lambda(val)= strInt8(intFromDec(val))));;
+fun macFromStr(str) = if !strEmpty(str) then strFromHex(strReplace(str, ":", ""));;
+
+//-------------- Bsd TCP server
+fun tcpSrvClose(tcpSrv)= streamClose(TcpSrv<tcpSrv);;
+
+fun tcpSrvCreateNative(addr, port)=
+	let _tcpListen(addr, port) -> socket in
+	if socket<>nil then
+	let [
+		nameTS=strFormat("*:*", addr, port)
+	] -> tcpSrv in
+	streamInit(tcpSrv, socket,
+		lambda ()=	// onSelectRead
+			let _tcpAccept(socket) -> [socket, addr, port] in
+			let _tcpCreate(socket, addr, port, true) -> tcp in 
+			call tcpSrv.onAcceptTS(tcp)
+		,
+		nil,	// write
+		(lambda ()= _socketClose(socket); streamCommonClose(tcpSrv)),	// close
+		lambda(fEcho)= call fEcho("TCPsrv", tcpSrv.nameTS));;	// show
+
+fun tcpSrvCreate(addr, port)= call _TcpSrvCreateFunction(addr, port);;
+
+fun tcpSrvOnAccept(tcpSrv, onAccept)=
+	set tcpSrv._thS= _This;
+	set tcpSrv.onAcceptTS= if onAccept<>nil then (lambda(tcp)= void call onAccept(tcp));
+	if onAccept<>nil then _streamAddToList(tcpSrv);
+	_socketSetSelectRead(streamSocket(tcpSrv), onAccept<>nil);
+	tcpSrv;;
+
+//-------------- Bsd TCP
+fun tcpClose(tcp)= streamClose(Tcp<tcp);;
+
+fun _tcpCreate(socket, addr, port, incoming)=
+	let [
+		remoteAddrT=addr,
+		remotePortT=port,
+		incomingT=incoming,
+		nameT= strFormat("*:*", addr, port)
+	] -> tcp in
+	streamInit(tcp, socket,
+		lambda ()=	// onSelectRead
+			let _tcpRead(socket) -> data in (
+				streamReadEvent(tcp, data);
+				if data==nil then void tcpClose(tcp);
+			)
+		,
+		lambda(data, start) = _tcpWrite(socket, data, start) ,	// write
+		(lambda ()= _socketClose(socket); streamCommonClose(tcp)),	// close
+		lambda(fEcho)= call fEcho(if tcp.incomingT then "TCPin" else "TCPout", tcp.nameT));;	// show
+
+fun tcpOnEvent(tcp, onRead, onWrite)= streamOnEvent(Tcp<tcp, onRead, onWrite);;
+
+fun tcpOpenNative(addr, port) =
+	let _tcpOpen(addr, port) -> socket in
+	if socket<>nil then _tcpCreate(socket, addr, port, false);;
+
+fun tcpOpen(addr, port) = call _TcpOpenFunction(addr, port);;
+
+fun tcpWrite(tcp, data, start)= streamWrite(Tcp<tcp, data, start);;
+fun tcpRemoteIp(tcp)= tcp.remoteAddrT;;
+fun tcpRemotePort(tcp)= tcp.remotePortT;;
+
+fun tcpNoDelay(tcp, noDelay)= _tcpNoDelay((Tcp<tcp)._socketS, noDelay); tcp;;
+
+//-------------- Bsd UDP
+fun udpClose(udp)= streamClose(Udp<udp);;
+
+fun udpCreateNative(remoteAddr, remotePort, localAddr, localPort)=
+	let _udpCreate(localAddr, localPort) -> socket in
+	if socket<>nil then
+	let [
+		localAddrU=localAddr,
+		localPortU=localPort,
+		nameU= strFormat("*:*", localAddr, localPort),
+		remoteAddrU=remoteAddr,
+		remotePortU=remotePort
+	] -> udp in
+	streamInit(udp, socket,
+		lambda ()=	// onSelectRead
+			let _udpRead(socket) -> [data, ip, port] in
+			if port<>nil then (
+				set udp.remoteAddrU=ip;
+				set udp.remotePortU=port;
+				streamReadEvent(udp, data)
+			)
+		,
+		lambda(data, start) =	// write
+			_udpSend(socket, udp.remoteAddrU, udp.remotePortU, strTail(data, start))
+		,
+		(lambda ()= _socketClose(socket); streamCommonClose(udp)),	// close
+		lambda(fEcho)= call fEcho("UDP", udp.nameU));;	// show
+
+fun udpCreate(remoteAddr, remotePort, localAddr, localPort)=
+	call _UdpCreateFunction(remoteAddr, remotePort, localAddr, localPort);;
+
+fun udpSend(udp, msg)= streamWrite(Udp<udp, msg, 0);;
+fun udpSendTo(udp, addr, port, msg)=
+	set udp.remoteAddrU=addr;
+	set udp.remotePortU=port;
+	udpSend(udp, msg);;
+
+fun udpRemoteIp(udp)= udp.remoteAddrU;;
+fun udpRemotePort(udp)= udp.remotePortU;;
+
+fun udpOnEvent(udp, onRead, onWrite)= streamOnEvent(Udp < udp, onRead, onWrite);;
+
+//-------------- Ethernet low-level
+struct Network= Stream+[nameI, macI, mtuI, fActivateI, ipI, submaskI, gatewayI, dnsI, ipIntI, submaskIntI, dhcpI:(fun Str Str Int -> Bool), loI];;
+// macI is 6 bytes
+// ipI, submaskI, gatewayI, dnsI are 4 bytes
+// ipInt, submaskIntI are integers
+
+const AF_INET=2;;
+var _NetList;;
+
+fun netList ()= _NetList;;
+fun netDefault ()= head(_NetList);;
+
+fun netAdd(net) = set _NetList=(Network<net)::_NetList; net;;
+fun netSetFirst(net) = (\atomic if listContains(_NetList, net) then set _NetList=net::listRemove(_NetList, net)); net;;
+fun netIsActive(net) = net._socketS<>nil;;
+fun netSetup(net, name, mac, mtu) =
+	set net.nameI= name;
+	set net.macI= macFromStr(mac);
+	set net.mtuI=mtu;
+	net;; 
+
+fun netUpdateAddr(net, ip, submask, gateway, dns)=
+	set net.ipI=ipFromStr(ip);
+	set net.submaskI=ipFromStr(submask);
+	set net.gatewayI=ipFromStr(gateway);
+	set net.dnsI=ipFromStr(dns);
+	set net.ipIntI =strRead32Msb(net.ipI, 0);
+	set net.submaskIntI =strRead32Msb(net.submaskI, 0);
+	net;;
+
+fun netOnActivate(net, fActivate) = set net.fActivateI=fActivate;;
+
+fun netActivate(net)=
+	if !netIsActive(net) then call net.fActivateI();
+	net;;
+
+fun _nativeNetworksInit ()=	// declare native Ethernet Interfaces if any
+	let netSetup([loI=true], "lo", nil, nil) -> net in (
+		netOnActivate(net, (lambda ()= void set net._socketS= socketEmpty()));
+		netUpdateAddr(net, "127.0.0.1", "255.0.0.0", nil, nil);
+		netAdd(net)
+	);
+	for [index, name, family, mac, mtu, ip, submask] in _ethList() do
+	if mac<>"\0\0\0\0\0\0" then
+	let netSetup([Network], name, mac, mtu) -> net in (
+		netOnActivate(net, (lambda ()=
+			let _ethCreate(index) -> socket in
+			if socket<>nil then
+			streamInit(net, socket,
+				lambda ()=	// onSelectRead
+					let _ethRead(socket) -> data in
+					streamReadEvent(net, data)
+				,
+				lambda(data, start) = _ethSend(socket, index, strTail(data, start)),	// write
+				lambda ()= streamCommonClose(net),	// close
+				lambda(fEcho)=	call fEcho("ethernet", net.nameI))// show
+		));
+		netUpdateAddr(net, ip, submask, nil, nil);
+		netAdd(net)
+	);;

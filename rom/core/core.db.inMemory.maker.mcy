@@ -1,0 +1,338 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2022, Sylvain Huet, Ambermind
+// Minimacy (r) System
+
+export dbCompile(src, pkgName);;
+
+//-----------GENERATOR
+fun initialUpper(src)= let strLeft(src, 1) -> first in let strSlice(src, 1, nil) -> next in strConcat(strUppercase(first), next);;
+fun initialGenerator(src) = let strLeft(src, 1) -> first in let strSlice(src, 1, nil) -> next in
+	[strConcat(strUppercase(first), next), strConcat(strLowercase(first), next)];;
+
+fun _dbGenerator(ll, database, tables, table, fields, indexes, volatiles, extras) =
+	if ll==nil then
+		let if table<>nil then [table, listReverse(fields), listReverse(indexes), listReverse(volatiles), extras]::tables else tables -> tables in
+		[database, listReverse(tables)]
+	else let head(ll) -> l in
+	match head(l) with
+		"database"-> let tail(l)-> (name::strNum::_) in _dbGenerator(tail(ll), [if name<>nil then name else "db", intFromDec(strNum)], nil, nil, nil, nil, nil, nil),
+		"table"-> let tail(l) ->(name::strNum::_) in let [name, intFromDec(strNum)] -> nextTable in
+			if table==nil then _dbGenerator(tail(ll), database, tables, nextTable, nil, nil, nil, nil)
+			else _dbGenerator(tail(ll), database, [table, listReverse(fields), listReverse(indexes), listReverse(volatiles), extras]::tables, nextTable, nil, nil, nil, nil) ,
+		"field"-> let tail(l)->(strNum::name::type::_) in _dbGenerator(tail(ll), database, tables, table, [initialUpper(name), intFromDec(strNum), type]::fields, indexes, volatiles, extras),
+		"index"-> let tail(l)->(name::strSize::_) in _dbGenerator(tail(ll), database, tables, table, fields, [initialUpper(name), intFromDec(if strSize==nil then "0" else strSize)]::indexes, volatiles, extras),
+		"volatile"-> let tail(l)->(name::_) in _dbGenerator(tail(ll), database, tables, table, fields, indexes, initialUpper(name)::volatiles, extras),
+		"extra"-> let tail(l)->(name::_) in _dbGenerator(tail(ll), database, tables, table, fields, indexes, volatiles, name::extras),
+		_ -> _dbGenerator(tail(ll), database, tables, table, fields, indexes, volatiles, extras)
+	;;
+
+fun checkLabel(src) =
+	for i=0;i<strLength(src) do let strGet(src, i) -> c in
+		if !(
+			(c>='A' && c<='Z')||
+			(c>='a' && c<='z')||
+			(i>0 && (c>='0' && c<='9'))
+		) then checkError(["wrong label: ",src]);;
+
+fun checkError(msg) = echo "Compile error: "; echoLn msg; abort;;
+
+var TableNames;;
+var TableNums;;
+var FieldNames;;
+var FieldNums;;
+var IndexesNames;;
+var ExtrasNames;;
+
+const Types="Str"::"Int"::"Float"::"UInt"::"Bool"::"BigNum"::"Time"::nil;;
+
+fun checkTable(p)=
+	set FieldNames=hashsetCreate(4);
+	set FieldNums=hashsetCreate(4);
+	set IndexesNames=hashsetCreate(4);
+	set ExtrasNames=hashsetCreate(4);
+	let p->[t, fields, indexes, volatiles, extras] in
+	let t->[table, num] in
+	(
+		checkLabel(table);
+
+		if hashsetContains(TableNames, table) then checkError(["table name '", table, "' used twice"]);
+		hashsetAdd(TableNames, table);
+
+		if hashsetContains(TableNums, num) then checkError(["table num '", num, "' used twice"]);
+		hashsetAdd(TableNums, num);
+
+		if num<=0 then checkError(["wrong table number '",num,"' in table '", table, "'"]);
+
+		for [field, num, type] in fields do
+		(
+			checkLabel(field);
+			
+			if hashsetContains(FieldNames, field) then checkError(["field name '",field,"' used twice in table '",table,"'"]);
+			
+			if num==nil || num<0 || num>255 then checkError(["wrong field number '",num,"' in table '",table,"', field '", field,"'"]);
+			
+			if hashsetContains(FieldNums, num) then checkError(["field num '", num, "' used twice in table '",table,"'"]);
+			hashsetAdd(FieldNums, num);
+
+			if !listTest(Types, lambda(t)= t==type) then checkError(["field unknown type '",type,"' in table '",table,"', field '", field,"'"]);
+			hashsetAdd(FieldNames, field);
+		);
+
+		for field in volatiles do
+		(
+
+			checkLabel(field);
+			if hashsetContains(FieldNames, field) then checkError(["volatile name '",field,"' used twice in table '",table,"'"]);
+
+			hashsetAdd(FieldNames, field);
+		);
+		for name in extras do
+		(
+
+			checkLabel(name);
+			if hashsetContains(ExtrasNames, name) then checkError(["extra name '",name,"' used twice in table '",table,"'"]);
+			hashsetAdd(ExtrasNames, name);
+		);
+		for [index, size] in indexes do
+		(
+
+			checkLabel(index);
+
+			if hashsetContains(IndexesNames, index) then checkError(["index name '",index,"' used twice in table '",table,"'"]);
+			hashsetAdd(IndexesNames, index);
+
+			if !hashsetContains(FieldNames, index) then checkError(["index name '",index,"' is not a field of table '",table,"'"])
+		);
+		[t, fields, indexes, volatiles, extras]
+	);;
+
+fun checkDatabase(database, tables)=
+	set TableNames=hashsetCreate(4);
+	set TableNums=hashsetCreate(4);
+	try (
+		if database==nil then checkError(["no database definition"]);
+		let database -> [name, strMaxMem] in
+		checkLabel(name);
+		listMap(tables, #checkTable)
+	);;
+
+fun maxTableNum(l)=
+	if l==nil then 0
+	else let head(l) -> [[name, num], fields, indexes, volatiles, extras] in max(num, maxTableNum(tail(l)));;
+fun maxFieldNum(l)=
+	if l==nil then 0
+	else let head(l) ->[Field, num, type] in max(num, maxFieldNum(tail(l)));;
+	
+fun dbBuild(src, database, tables)= 
+	let database -> [name, maxMem] in
+	let initialGenerator(name) -> [Db, db] in
+	strBuild([
+"// Database definition - 2022 - Sylvain Huet
+//------------------------------------------
+// File generated by core.db.inMemory.maker
+// Do not edit this file
+
+/*
+definition:
+
+",src,"
+*/
+",
+
+"
+use core.db.inMemory as parent;;
+use core.util.table as table;;
+var DEBUG=false;;
+var __",Db,";;
+var __",Db,"Lock = lockCreate();;
+",
+listMap(tables, lambda([[name, num], fields, indexes, volatiles, extras]) =
+	let initialGenerator(name) -> [Table, table] in [
+"
+struct _",Table,"=Block+[",
+listMap(fields, lambda([Field, _, _])= [" _",table, Field,", "]),
+listMap(volatiles, lambda(Field) = [" _",table, Field,", "]),
+listMap(extras, lambda(x)= [" ", x,", "]),
+" ];;
+fun _",db, Table,"(x)= _",Table,"<Block x;;
+var __",Table,";;
+",
+listMap(indexes, lambda([Field, size]) = [
+"var __",Table, Field,"Index;;
+"
+])
+]),
+//------------------
+"
+fun _",db,"Load(path) =
+	set __",Db,"=parent.dbOpen(path, ",maxTableNum(tables),",);
+",
+listMap(tables, lambda([[name, num], fields, indexes, volatiles, extras]) =
+	let initialGenerator(name) -> [Table, table] in [
+"	set __",Table,"= parent.dbTable(__",Db,", ",num,", ",maxFieldNum(fields),",lambda()= Block< [_",Table,"]);
+	set __",Table,".makeDataT= (lambda(row)=
+		let _",Table,"<Block row -> row in parent.dbMakeContent(__",Table,", row,
+		[
+",
+listMap(fields, lambda([Field, num, type]) = [
+"			parent.dbUpdate",type,"(",sourceFromStr(strVarUInt(num)), ",row._",table, Field,"),
+"
+]),
+"		])
+	);
+",
+listMap(indexes, lambda([Field, size]) = [
+"	set __",Table, Field,"Index= parent.dbCreateMap(",size,");
+"
+]),
+
+listMap(fields, lambda([Field, num, type]) = [
+"	parent.dbField( __",Table,", ",num,", lambda(src, i, len, row)=",
+listMap(indexes, lambda([Field2, size]) = if Field==Field2 then [
+" parent.dbAddMap(__",Db,", __",Table, Field,"Index, (_",Table,"<Block row), "
+]),
+" set (_",Table,"<Block row)._",table, Field," = ",
+	(match type with
+		"Str" -> "strSlice(src, i, len)",
+		"Int" -> "strReadVarInt(src, i)",
+		"UInt" -> "strReadVarUInt(src, i)",
+		"Time" -> "strReadVarUInt(src, i)",
+		"Bool" -> "(0<>strGet(src, i))",
+		"Float" -> "strReadFloat(src, i)",
+		"BigNum" -> "bigFromSignedStr(strSlice(src, i), len)"
+	),
+listMap(indexes, lambda([Field2, size]) = if Field==Field2 then [
+")"
+]),
+	"; 0);
+"
+])
+]),
+"	parent.dbLoad(__",Db,");
+	true;;
+
+//----------USER API
+
+fun ",db,"Open(path) = parent.dbCheck(__",Db,"Lock, (lambda()= __",Db,"<>nil), pkg, lambda()=_",db,"Load(path));;
+fun ",db,"Dump()= parent.dbDump(__",Db,");;
+fun ",db,"Status()= parent.dbStatus(__",Db,");;
+fun ",db,"Export(output)= parent.dbExport(__",Db,", output);;
+
+",
+listMap(tables, lambda([[name, num], fields, indexes, volatiles, extras]) =
+	let initialGenerator(name) -> [Table, table] in [
+"
+//----------Table __",Table,"
+fun _",db, Table,"Debug(action,row)= if DEBUG then echoLn strFormat(\"* ",db,Table,".*\",action,parent.dbId (_",Table,"< row)); row;;
+
+fun ",db, Table,"Id(row)= parent.dbId (_",Table,"< row);;
+fun ",db, Table,"ById(id)= _",Table,"<Block parent.dbById(__",Table,", id);;
+
+fun ",db, Table,"Visit(f)= parent.dbVisit(__",Table,", false, f, #_",db, Table,");;
+fun ",db, Table,"VisitDesc(f)= parent.dbVisit(__",Table,", true, f, #_",db, Table,");;
+fun ",db, Table,"Filter(f)= parent.dbFilter(__",Table,", false, f, #_",db, Table,");;
+fun ",db, Table,"FilterDesc(f)= parent.dbFilter(__",Table,", true, f, #_",db, Table,");;
+fun ",db, Table,"Map(f)= parent.dbMap(__",Table,", false, f, #_",db, Table,");;
+fun ",db, Table,"MapDesc(f)= parent.dbMap(__",Table,", true, f, #_",db, Table,");;
+",
+listMap(indexes, lambda([Field, size]) = [
+"fun ",db, Table, Field,"Index(val)= hashmapGet(__",Table, Field,"Index, val);;
+"
+]),
+"
+",
+listMap(fields, lambda([Field, num, type]) = [
+"fun ",db, Table, Field,"(row) = row._",table, Field,";;
+fun ",db, Table, "Set", Field,"(v, row) = if DEBUG then echoLn strFormat(\"set ",db,Table,".*.",Field," = '*'\",parent.dbId (_",Table,"< row),v); ",
+listMap(indexes, lambda([Field2, size]) = if Field==Field2 then [
+" parent.dbUpdateMap(__",Db,", __",Table, Field,"Index, row, row._",table, Field,", "
+]),
+" set row._",table, Field," = v",
+listMap(indexes, lambda([Field2, size]) = if Field==Field2 then [
+")"
+]),
+"; row;;
+
+"
+]),
+
+listMap(volatiles, lambda(Field) = [
+"fun ",db, Table, Field,"(row)= row._",table, Field,";;
+fun ",db, Table, "Set", Field,"(v, row)= if DEBUG then echoLn strFormat(\"set ",db,Table,".*.",Field," = [volatile]\"); ",
+listMap(indexes, lambda([Field2, size]) = if Field==Field2 then [
+" parent.dbUpdateMap(__",Db,", __",Table, Field,"Index, row, row._",table, Field,", "
+]),
+" set row._",table, Field," = v",
+listMap(indexes, lambda([Field2, size]) = if Field==Field2 then [
+")"
+]),
+"; row;;
+
+"
+]),
+
+"fun ",db, Table,"Flush(row)= if DEBUG then _",db, Table,"Debug(\"flush\",row); _",Table,"<Block parent.dbUpdate(__",Table,", Block< (_",Table,"< row));;
+fun ",db, Table,"Insert()= _",db, Table,"Debug(\"insert\",*) _",Table,"<Block parent.dbInsert(__",Table,", Block< [_",Table,"], nil);;
+fun ",db, Table,"InsertId(id) =  _",db, Table,"Debug(\"insert\",*) _",Table,"<Block parent.dbInsert(__",Table,", Block< [_",Table,"], id);;
+fun ",db, Table,"Delete(row) = if DEBUG then _",db, Table,"Debug(\"delete\",row); parent.dbDelete(__",Table,", Block<",
+listMap(indexes, lambda([Field, size]) = [
+" parent.dbDeleteMap(__",Db,", __",Table, Field,"Index, row._",table, Field,","
+]),
+"(_",Table,"< row)",
+listMap(indexes, lambda([Field, size]) = [
+")"
+]),
+"); true;;
+
+const ",Db, Table,"Columns={\"Id\"",
+listMap(fields, lambda([Field, num, type]) = [", \"", Field, "\""]),
+
+"};;
+fun ",db, Table,"ToTable(row)={decFromInt(parent.dbId(_",Table,"< row)), ",
+listMap(fields, lambda([Field, num, type]) = [
+	match type with
+		"Int" -> "decFromInt(",
+		"UInt" -> "decFromInt(",
+		"Time" -> "fileDateSeconds(",
+		"Float" -> "strFromFloat(",
+		"Bool" -> "strFromBool(",
+		"BigNum" -> "decFromBig(",
+		_ -> "(",
+	"row._",table, Field, "), "
+]),
+"};;
+fun ",db, Table,"Print(f)= parent.dbTablePrint(#",db, Table,"Visit, ",Db, Table,"Columns, #",db, Table,"ToTable, f);;
+fun ",db, Table,"Count()= __",Table,".countT;;
+"
+])
+]);;
+
+fun _dbFilterComments(l)=
+	if l<>nil then let l -> (a::next) in
+	if (!strStartsWith(a, "#"))&&(!strStartsWith(a, "#")) then a::_dbFilterComments(next);;
+
+fun dbFilterComments(ll)=
+	if ll<>nil then _dbFilterComments(head(ll))::dbFilterComments(tail(ll));;
+
+fun wordExtract(src)=
+	let strLines(src) -> lines in
+	listMap(lines, lambda(line)=
+		let strReplace(strTrim(line), "\9", " ") -> line in
+		listFilter(strSplit(" ", line), lambda(w)= 0<strLength(w))
+	);;
+
+fun dbCompile(src, pkgName)= 
+	let _dbGenerator(wordExtract(src), nil, nil, nil, nil, nil, nil, nil) -> [database, tables] in
+	let	checkDatabase(database, tables)-> tables in
+	if tables<>nil then
+	let dbBuild(src, database, tables) -> content in
+	let database -> [name, strMaxMem] in
+	let initialGenerator(name) -> [Db, db] in
+	let if pkgName==nil then "db" else pkgName -> pkgName in
+	let strFormat("*._db.mcy", pkgName) -> fileName in
+	(
+		save(content, fileName);
+		echoLn "\n] Compilation successful!";
+		echoLn ["] Database stored in: ", fileName];
+		fileName
+	);;

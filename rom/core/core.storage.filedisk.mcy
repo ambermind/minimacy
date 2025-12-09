@@ -1,0 +1,34 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2022, Sylvain Huet, Ambermind
+// Minimacy (r) System
+
+use core.storage.fat32;;
+use core.storage.format;;
+
+//---------------- fileVolume
+extend VolumeType with fileVolume;;
+
+fun fileReadFunction(file) = lambda(sector, nbSectors) = bytesFromStr(fileRead(file, sector*SECTOR_SIZE, nbSectors*SECTOR_SIZE));;
+fun fileWriteFunction(file) = lambda(sector, data) = fileWrite(file, sector*SECTOR_SIZE, bytesSliceOfStr(data, 0, nil), 0, nil);;
+
+fun _volumeFromFile(file, nbSectors, writable) =
+	if file<>nil then
+	let if nbSectors==nil then fileSize(file)/SECTOR_SIZE else nbSectors -> nbSectors in
+	volumeCreate(fileVolume, nil, writable, fileReadFunction(file), fileWriteFunction(file), nbSectors, SECTOR_SIZE);;
+
+fun volumeFileOpen(path)=
+	let if strStartsWith(path, "/dev/") then devNbSectors(path) -> nbSectors in
+	let fileOpen(path, FILE_READ_WRITE) -> file in
+	if file<>nil then _volumeFromFile(file, nbSectors, true)
+	else
+	let fileOpen(path, FILE_READ_ONLY) -> file in
+	if file<>nil then _volumeFromFile(file, nbSectors, false);;
+
+fun volumeFileNew(path, kilobytes, sectorsPerCluster, name)=
+	let strCreate(kilobytes*1024, 0xaa) -> img in
+	let fileOpen(path, FILE_REWRITE) -> file in
+	if file<>nil then (
+		fileWrite(file, 0, img, 0, nil);
+		let _volumeFromFile(file, nil, true) -> volume in
+		volumeFormatFat32(volume, nil, sectorsPerCluster, name, true)
+	);;

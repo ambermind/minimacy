@@ -1,0 +1,845 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2022, Sylvain Huet, Ambermind
+// Minimacy (r) System
+
+use core.net.dns;;
+
+const DEBUG=false;;
+
+const MAC_BROADCAST="\$ff\$ff\$ff\$ff\$ff\$ff";;
+const MAC_EMPTY="\0\0\0\0\0\0";;
+const IP_BROADCAST="\$ff\$ff\$ff\$ff";;
+const IP_EMPTY="\0\0\0\0";;
+
+const _LockIp=lockCreate();;
+
+fun _ipOverEthSetup ()=
+	ipStackOverwriteUdp(#udpCreate);
+	ipStackOverwriteTcp(#tcpOpen);
+	ipStackOverwriteTcpSrv(#tcpSrvCreate);;
+
+fun netUp(name)=
+	_ipOverEthSetup();
+	let listFind(netList(), lambda(eth)= eth.nameI==name) -> net in
+	if net<>nil then
+	appStart(nil, nil, name, (lambda()=
+		netActivate(net);
+		streamOnEvent(net, lambda(msg)= ethHandle(net, msg), nil);
+		netSetFirst(net);
+	));;
+
+fun netStatic(net, ip, submask, gateway, dns)=
+	netUpdateAddr(net, ip, submask, gateway, dns);
+	echoLn ["ETH    : ", net.nameI];
+	echoLn ["mac    : ", strFromMac(net.macI)];
+	echoLn ["ip     : ", ip];
+	echoLn ["mask   : ", submask];
+	echoLn ["gateway: ", gateway];
+	echoLn ["dns    : ", dns];
+	if dns<>nil && (net==netDefault()) then dnsSetServer(dns);
+	true;;
+
+fun netDhcp(net) =
+	netUpdateAddr(net, "0.0.0.0", nil, nil, nil);
+	await(lambda(join)= dhcpClientStart(net, lambda(result) = joinSend(join, result)));;
+
+//-------------------- ETHERNET
+const ETH_ARP="\$08\$06";;
+const ETH_IPV4="\$08\$00";;
+
+fun ethHandle(net, msg)=
+//	echoTime strFormat("<ETH *", strLength(msg));
+	//if (intRand&3)==0 then void echoLn ">>>>>>RANDOM MISSING RECEIVE"
+	//else
+	if strLength(msg)>0 then
+	if strLength(msg)<14 then (echoLn " MALFORMED";nil)
+	else
+	let strSlice(msg, 0, 6) -> localMac in
+	let strSlice(msg, 6, 6) -> remoteMac in
+	let localMac<>net.macI && localMac<>MAC_BROADCAST -> promiscuous in 
+	let strRead16Msb(msg, 12) -> protocol in (
+//		echoTime strFormat(" (*) -> (*) * *", strFromMac(remoteMac), strFromMac(localMac), if incoming then " in" else "out", hexFromInt(protocol));
+//		hexDump msg;
+		match protocol with
+			0x800 -> ipHandle(net, promiscuous, remoteMac, msg, 14),
+			0x806 -> arpHandle(net, promiscuous, remoteMac, msg, 14);
+//		echoLn ""
+	);;
+
+fun ethSendFrame(net, macDest, protocol, msg)=
+	//if (intRand&3)==0 then void echoLn ">>>>>>RANDOM MISSING SEND"
+	//else
+	let strBuild([macDest, net.macI, protocol, msg]) -> frame in
+	let if strLength(frame)<60 then strCreate(60-strLength(frame), 0) -> padding in
+	(
+		if DEBUG then echoTime strFormat(">ETH */* *", strFromMac(macDest), hexFromStr(protocol), strLength(frame));
+		if DEBUG then hexDump frame;
+		let streamWrite(net, strConcat(frame, padding), 0) -> result in
+		if DEBUG then echoTime strFormat(">ETH *", result)
+		
+	);;
+
+//-------------------- ARP
+const ARP_REQUEST=1;;
+const ARP_ANSWER=2;;
+const ARP_RETRY=20;;
+
+sum ArpEntry = macA _, pendingA _;;
+const ArpBase = hashmapCreate(8);;
+const ArpLock = lockCreate();;
+
+fun arpFrame(net, op, mac, ip) = [
+	"\$00\$01\$08\$00\$06\$04\$00",
+	strInt8(op),
+	net.macI,
+	net.ipI,
+	mac,
+	ip
+];;
+
+fun arpHandle(net, promiscuous, remoteMac, msg, i0)=
+	let strRead8(msg, i0+7) -> arpType in
+	let strSlice(msg, i0+8, 6) -> remoteMac in
+	let strSlice(msg, i0+14, 4) -> remoteAddr in
+	let strSlice(msg, i0+18, 6) -> localMac in
+	let strSlice(msg, i0+24, 4) -> localAddr in
+	match arpType with
+		ARP_REQUEST -> 
+			(
+				if localAddr==net.ipI then (
+					if DEBUG then echoTime strFormat("<>ARP REQUESTED by * (*) who is *", strFromMac(remoteMac), strFromIp(remoteAddr), strFromIp(localAddr));
+					ethSendFrame(net, MAC_BROADCAST, ETH_ARP, arpFrame(net, ARP_ANSWER, remoteMac, remoteAddr));
+				);
+				nil;
+			),
+		ARP_ANSWER ->
+			(
+				if !promiscuous then (
+					if DEBUG then echoTime strFormat("<ARP ANSWERED * is *", strFromMac(remoteMac), strFromIp(remoteAddr));
+					arpFeed(remoteAddr, remoteMac, false)
+				);
+				nil
+			);;
+
+fun _arpAddPending(ip, lPending, cb)=
+	let thisThread() -> th in
+	hashmapSet(ArpBase, ip, pendingA (lambda(mac) = threadPost(th, lambda ()= call cb(mac)))::lPending);;
+
+fun _arpRequest(net, ip, i, nbRetry)=
+	if DEBUG then echoTime strFormat(">ARP REQUEST * *", strFromIp(ip), if i<>0 then strFormat("#*/*", i, nbRetry));
+	ethSendFrame(net, MAC_BROADCAST, ETH_ARP, arpFrame(net, ARP_REQUEST, MAC_EMPTY, ip));
+	if i<nbRetry then onTimeout(1000, lambda ()=
+		match hashmapGet(ArpBase, ip) with pendingA _ -> _arpRequest(net, ip, i+1, nbRetry)
+	);;
+fun arpRequest(net, ip, cb)=
+	let (lambda(mac) = call cb(mac);true) -> cb in
+	if ip==IP_BROADCAST then call cb(MAC_BROADCAST)
+	else
+	let lockSync(ArpLock, lambda ()=
+		match hashmapGet(ArpBase, ip) with
+			macA mac -> mac,
+			pendingA lPending -> (_arpAddPending(ip, lPending, cb); nil),
+			_ -> (
+				_arpAddPending(ip, nil, cb);
+				_arpRequest(net, ip, 0, ARP_RETRY);
+				nil
+			)
+	) -> mac in
+	if mac<>nil then call cb(mac);;
+
+fun arpFeed(ip, mac, silent)=
+	if DEBUG then if !silent then echoTime strFormat(">ARP feed * is *", strFromIp(ip), strFromMac(mac));
+	let lockSync(ArpLock, lambda ()=
+		let hashmapGet(ArpBase, ip) -> current in (
+			hashmapSet(ArpBase, ip, macA mac);
+			current
+		)
+	) -> current in
+	match current with 
+		pendingA lPending -> (
+			for cb in listReverse(lPending) do call cb(mac);
+			true
+		);;
+
+//-------------------- IP
+const IP_UDP=17;;
+const IP_TCP=6;;
+const IP_ICMP=1;;
+
+fun _netByIp(ip)=
+	let strRead32Msb(ip, 0) -> ipInt in
+	for net in netList() do
+		if netIsActive(net) && net.ipI<>nil then
+		if (net.ipIntI&net.submaskIntI)==(ipInt&net.submaskIntI) then return net;
+	netDefault();;
+
+fun ipLocalOrBroadcast(net, ip)=
+	let strRead32Msb(ip, 0) -> ipInt in
+	(net.submaskIntI | ipInt)==0xffffffff || ((net.submaskIntI & ipInt)==(net.submaskIntI & net.ipIntI));;
+
+fun ipIsBroadcast(net, ip)= (net.submaskIntI | strRead32Msb(ip, 0))==0xffffffff;;
+
+fun ipHandle(net, promiscuous, remoteMac, msg, i0)=
+	let strRead16Msb(msg, i0+2) -> ipLength in
+	let strRead8(msg, i0+9) -> type in
+	let strSlice(msg, i0+12, 4) -> remoteAddr in
+	let strSlice(msg, i0+16, 4) -> localAddr in (
+		if remoteAddr<>IP_BROADCAST && remoteAddr<>IP_EMPTY then
+			arpFeed(remoteAddr, remoteMac, true);
+//		echoLn strFormat(">IP *: * -> *", type, strFromIp(remoteAddr), strFromIp(localAddr));
+//echoLn strFormat("* + *", ipLength, strLength(msg)-ipLength);
+		if !promiscuous then
+		let strSlice(msg, i0+20, ipLength-20) -> msg in
+		match type with
+//			IP_ICMP -> (echoLn ""; hexDump msg;nil),
+			IP_TCP -> tcpHandle(net, remoteAddr, localAddr, msg),
+			IP_UDP -> udpHandle(net, remoteAddr, localAddr, msg);
+		nil
+	);;
+
+fun ipSend(net, ipDest, protocol, msg)=
+	let strBuild([
+		"\$45\$00",
+		strInt16Msb(20+strLength(msg)),
+		strInt16Msb(intRand()),
+		"\$40\$00\$40",
+		strInt8(protocol)
+	]) -> headerStart in
+	let strConcat(net.ipI, ipDest) -> headerEnd in
+	let if ipLocalOrBroadcast(net, ipDest) then ipDest else net.gatewayI -> ipTransfer in
+	arpRequest(net, ipTransfer, lambda(macTransfer) =
+		ethSendFrame(net, macTransfer, ETH_IPV4, [
+			headerStart,
+			ipChecksumFinal(
+				ipChecksum(headerStart,
+				ipChecksum(headerEnd, 
+				0)))
+			,
+			headerEnd,
+			msg
+		])
+	);;
+
+//-------------------- UDP
+const UdpListener=hashmapCreate(8);;
+
+struct UdpOverEth=Udp+[_fifoU];;
+
+fun _ipSrvKey(ip, port)= strConcat(if ip<>IP_EMPTY then ip, strInt16Msb(port));;
+fun _ipSrv(h, ip, port)=
+	let hashmapGet(h, _ipSrvKey(ip, port)) -> srv in
+	if srv<>nil then srv
+	else hashmapGet(h, _ipSrvKey(nil, port));;
+
+fun udpHandle(net, remoteAddr, localAddr, msg)=
+	let strRead16Msb(msg, 0) -> remotePort in
+	let strRead16Msb(msg, 2) -> localPort in
+	let strFromIp(remoteAddr) -> remoteAddr in (
+		if DEBUG then echoTime strFormat("<UDP *:* -> :* *", remoteAddr, remotePort, localPort, strLength(msg)-8);
+		if DEBUG then hexDump msg;
+		if localPort==68 then void call net.dhcpI(strSlice(msg, 8, nil), remoteAddr, remotePort)
+		else
+		let _ipSrv(UdpListener, localAddr, localPort) -> udp in
+		if udp<>nil then (
+			fifoIn(udp._fifoU, [strTail(msg, 8), strFromIp(remoteAddr), remotePort]);
+			void streamSetReadable(udp, true)
+		)
+	);;
+
+fun _udpSendLo(net, localPort, remoteAddr, remotePort, msg)=
+	let _ipSrv(UdpListener, remoteAddr, remotePort) -> udp in
+	if udp<>nil then (
+		fifoIn(udp._fifoU, [msg, strFromIp(net.ipI), localPort]);
+		void streamSetReadable(udp, true)
+	);;
+
+fun _udpSendNet(net, localPort, remoteAddr, remotePort, msg)=	// remoteAddr is 4 binary bytes
+	if DEBUG then echoLn [" -> ", net.nameI];
+	if net.loI then _udpSendLo(net, localPort, remoteAddr, remotePort, msg)
+	else
+	let strInt16Msb(8+strLength(msg)) -> udpLen in
+	let strBuild([
+		strInt16Msb(localPort),
+		strInt16Msb(remotePort),
+		udpLen
+	]) -> headerStart in
+	let ipSend(net, remoteAddr, IP_UDP, strBuild([
+		headerStart,
+		ipChecksumFinal(
+			ipChecksum(headerStart, 
+			ipChecksum(msg, 
+			ipChecksum(net.ipI, 
+			ipChecksum(remoteAddr, 
+			ipChecksum("\0\17",
+			ipChecksum(udpLen,
+			0)))))))
+		,
+		msg
+	])) -> result in
+	if result then strLength(msg);;
+
+fun _udpSend(udp, msg)=
+	if DEBUG then echoTime strFormat(">UDP *:* -> *:* *", udp.localAddrU, udp.localPortU, udp.remoteAddrU, udp.remotePortU, strLength(msg));
+	let ipFromStr(udp.localAddrU) -> localAddr in
+	let ipFromStr(udp.remoteAddrU) -> remoteAddr in
+	let false -> sent in (
+		for net in netList() do	// search for direct route and handle broadcast
+			if netIsActive(net) && net.ipI<>nil then
+			if localAddr==nil || localAddr==net.ipI then
+			if ipLocalOrBroadcast(net, remoteAddr) then (
+				set sent=true;
+				_udpSendNet(net, udp.localPortU, remoteAddr, udp.remotePortU, msg)
+			);
+		if !sent then	// when not found, user the default net gateway
+			let netDefault() -> net in
+			if netIsActive(net) && net.ipI<>nil then
+			if localAddr==nil || localAddr==net.ipI then
+			_udpSendNet(net, udp.localPortU, remoteAddr, udp.remotePortU, msg)
+	);;
+
+fun udpCreate(remoteAddr, remotePort, localAddr, localPort)=
+lockSync(_LockIp, lambda()=
+	let _ipSrvKey(ipFromStr(localAddr), localPort) -> key in 
+	if nil==hashmapGet(UdpListener, key) then 
+	let [
+		_fifoU=fifoCreate(),
+		localAddrU=localAddr,
+		localPortU=localPort,
+		nameU= strFormat("*:*", localAddr, localPort),
+		remoteAddrU=remoteAddr,
+		remotePortU=remotePort
+	] -> udp in (
+		hashmapSet(UdpListener, key, udp);
+		streamInit(udp, nil,
+			lambda ()=	// onSelectRead
+				if fifoCount(udp._fifoU)>=1 then
+				let fifoOut(udp._fifoU) -> [data, ip, port] in
+				if port<>nil then (
+					set udp.remoteAddrU=ip;
+					set udp.remotePortU=port;
+					streamReadEvent(udp, data);
+					void streamSetReadable(udp, 1<fifoCount(udp._fifoU))
+				)
+			,
+			lambda(data, start) = _udpSend(udp, strTail(data, start)),	// write
+			(lambda ()= hashmapSet(UdpListener, key, nil); streamCommonClose(udp)),	// close
+			(lambda(fEcho)= call fEcho("UDP", udp.nameU)));	// show
+		streamSetWritable(udp, true);
+		Udp<udp
+	));;
+		
+
+//-------------------- DHCP CLIENT
+const DHCP_DISCOVER=1;;
+const DHCP_OFFER=2;;
+const DHCP_REQUEST=3;;
+const DHCP_DECLINE=4;;
+const DHCP_ACK=5;;
+const _DHCP_PADDING=strCreate(236-34, 0);;
+
+const DHCP_RETRY_NB=10;;
+const DHCP_RETRY_PERIOD=1000;;
+
+fun dhcpFrame(net, op, netip, hostip, newip) =
+	strBuild([
+		"\1\1\6\0\0\0\0\0\0\0\0\0",
+		netip,
+		"\0\0\0\0\0\0\0\0\0\0\0\0",
+		net.macI,
+		_DHCP_PADDING,
+		"\99\130\83\99\53\1",
+		strInt8(op),
+		"\61\7\1",
+		net.macI,
+		"\12\7Pabcdef\55\3\1\3\6",
+		if op==DHCP_REQUEST then {
+			"\54\4",
+			hostip,
+			"\50\4",
+			newip
+		},
+		"\255"
+	]);;
+
+fun _dhcpExtract(src, i, type, lease, submask, dns, gateway, mac)=
+	if i<strLength(src) then
+	let strRead8(src, i) -> c in
+	if c==255 then [type, lease, submask, dns, gateway, mac]
+	else let strRead8(src, i+1) -> len in
+	let i+2->i in
+	if c==53 then _dhcpExtract(src, i+len, strRead8(src, i), lease, submask, dns, gateway, mac)
+	else if c==51 then _dhcpExtract(src, i+len, type, strRead16Msb(src, i), submask, dns, gateway, mac)
+	else if c==1 then _dhcpExtract(src, i+len, type, lease, strSlice(src, i, 4), dns, gateway, mac)
+	else if c==6 then _dhcpExtract(src, i+len, type, lease, submask, strSlice(src, i, 4), gateway, mac)
+	else if c==3 then _dhcpExtract(src, i+len, type, lease, submask, dns, strSlice(src, i, 4), mac)
+	else if c==61 then _dhcpExtract(src, i+len, type, lease, submask, dns, gateway, strSlice(src, i+1, 6))
+	else _dhcpExtract(src, i+len, type, lease, submask, dns, gateway, mac);;
+
+fun dhcpHandle(net, remoteAddr, remotePort, msg, onReady)=
+//	hexDump strSlice(msg, i0, nil);
+	let strRead8(msg, 0) -> type in
+	if type==2 then	// Boot Reply
+	let strSlice(msg, 16, 4) -> ipProposal in
+	let _dhcpExtract(msg, 240, 0, nil, nil, nil, nil, nil) -> [type, lease, submask, dns, gateway, _] in
+	if type==DHCP_OFFER then
+	(
+		if DEBUG then echoLn strFormat("----------<DHCP OFFER * by *", strFromIp(ipProposal), (remoteAddr)) ;
+		if DEBUG then echoLn strFormat("---------->DHCP REQUEST * for *", remoteAddr, strFromIp(ipProposal));
+		_udpSendNet(net, 68, IP_BROADCAST, 67, dhcpFrame(net, DHCP_REQUEST, IP_EMPTY, ipFromStr(remoteAddr), ipProposal));
+		nil
+	)
+	else if type==DHCP_ACK then
+	(
+		if DEBUG then echoLn strFormat("----------<DHCP ACK * by *", strFromIp(ipProposal), remoteAddr);
+		set net.dhcpI=nil;
+		netStatic(net, strFromIp(ipProposal), strFromIp(submask), strFromIp(gateway), strFromIp(dns));
+		call onReady(true);
+		true
+	);;
+
+fun _dhcpClientTry(net, cbReady, n)=
+	if net.ipI==IP_EMPTY then (
+		if DEBUG then echoLn "---------->DHCP DISCOVER";
+		_udpSendNet(net, 68, IP_BROADCAST, 67, dhcpFrame(net, DHCP_DISCOVER, IP_EMPTY, nil, nil));
+		if n>0 then onTimeout(DHCP_RETRY_PERIOD, (lambda ()= _dhcpClientTry(net, cbReady, n-1)))
+		else void(
+			set net.dhcpI=nil;
+			call cbReady(false)
+		)
+	);;
+
+fun dhcpClientStart(net, cbReady)=
+	set net.ipI=IP_EMPTY;
+	set net.dhcpI=(lambda(data, remoteAddr, remotePort) = dhcpHandle(net, remoteAddr, remotePort, data, cbReady));
+	_dhcpClientTry(net, cbReady, DHCP_RETRY_NB);;
+
+//-------------------- TCP
+const TCP_FIN=0x01;;
+const TCP_SYN=0x02;;
+const TCP_RST=0x04;;
+const TCP_PSH=0x08;;
+const TCP_ACK=0x10;;
+const TCP_URG=0x20;;
+
+const TCP_RETRY_SEND=5;;
+
+const TCP_FLAGS="FIN"::"SYN"::"RST"::"PSH"::"ACK"::"URG"::"ECE"::"CWR"::nil;;
+
+fun _tcpFlagName(flag, bit, l)=
+	if l<>nil then if bitTest(flag, bit) then head(l)::_tcpFlagName(flag, bit<<1, tail(l))
+	else _tcpFlagName(flag, bit<<1, tail(l));;
+
+fun tcpFlagName(flag)= strJoin("|", _tcpFlagName(flag, 1, TCP_FLAGS));;
+
+const TCP_SEND_MAX_LEN=458;;
+//const TCP_SEND_MAX_LEN=0x600 - 54;;
+
+const TCP_WINDOW=1024*8;;
+const TCP_WINDOW_MAX_LEN=1024*8;;
+
+sum TcpState= synSentTcp, establishedTcp, finSentTcp, eolTcp, terminatedTcp;;
+
+struct TcpLoopBack=Tcp+[fifoLO];;
+
+struct TcpSrvOverEth=TcpSrv+[keyS, fifoS];;
+struct TcpOverEth=Tcp+[
+	netT,
+	localPortT,
+	_remoteAddrT,
+	keyT,
+	seq0T,
+	seqT,	// sequence number of next sending
+	ackT,	// sequence number acknowledged by peer
+	peer0T,	// first acknowledged peer's sequence number (to display a readable seq number)
+	peerT,	// last acknowledged peer's sequence number
+	windowT,
+	stateT,
+	lockT,
+	fifoRxT	// Rx fifo: messages to send to the onRead callback
+];;
+
+const TcpListener=hashmapCreate(8);;	// port -> TcpOverEth
+const TcpSrvListener = hashmapCreate(4);;	// port -> TcpSrvOverEth
+
+const TcpLock = lockCreate();;
+var TcpPortCounter = time()+intRand();;
+
+fun _tcpRoute(t)= strFormat("*:* -> *:*", strFromIp(t.netT.ipI), t.localPortT, t.remoteAddrT, t.remotePortT);;
+fun _tcpRouteReverse(t)= strFormat("*:* -> *:*", t.remoteAddrT, t.remotePortT, strFromIp(t.netT.ipI), t.localPortT) ;;
+
+fun _seqNext(seq, flag, msg)= 0xffffffff &(seq+strLength(msg)+(if bitTest(flag, TCP_SYN|TCP_FIN) then 1 else 0));;
+fun _seqIsBefore(a, b) = (signExtend32(a)-signExtend32(b))<=0;;
+fun _seqIsBeforeStrict(a, b) = (signExtend32(a)-signExtend32(b))<0;;
+
+fun _tcpKey(remoteAddr, localAddr, remotePort, localPort)=
+	strFormat("****", remoteAddr, localAddr, strInt16Msb(remotePort), strInt16Msb(localPort));;
+
+//----------- SENDING
+fun __tcpSendFrame(t, seq, flag, data)=
+	if DEBUG then echoTime strFormat(">TCP * * seq=* ack=* len=* *",
+		tcpFlagName(flag), _tcpRoute(t),
+		(seq-t.seq0T)&0xffffffff,
+		(t.peerT-t.peer0T)&0xffffffff,
+		strLength(data));
+	let if bitTest(flag, TCP_SYN) then 
+		// Maximum segment size : 1460 (0x02=option id, 0x04=option length, 0x05b4=1460).
+		// 1460 = 1500 - 20 - 20 (1500=eth mtu, 20=IP header, 20=TCP header)
+		"\2\4\5\$b4"
+		else ""-> options in
+	let 20+strLength(options) -> headerLength in
+	let strInt16Msb(headerLength+strLength(data)) -> tcpLen in
+	let strBuild([
+		strInt16Msb(t.localPortT),
+		strInt16Msb(t.remotePortT),
+		strInt32Msb(seq),
+		strInt32Msb(t.peerT),
+		strInt8(4*headerLength),
+		strInt8(flag),
+		strInt16Msb(TCP_WINDOW)
+	]) -> headerStart in 
+	let strBuild([
+		headerStart,
+		ipChecksumFinal(
+			ipChecksum(headerStart, 
+			ipChecksum(options, 
+			ipChecksum(data, 
+			ipChecksum(t.netT.ipI,
+			ipChecksum(t._remoteAddrT, 
+			ipChecksum("\0\6",
+			ipChecksum(tcpLen,
+			0))))))))
+		,
+		"\0\0",	// urgent pointer
+		options,
+		data
+	]) -> frame in
+	ipSend(t.netT, t._remoteAddrT, IP_TCP, frame);;
+
+fun _tcpSendWithRetry(t, seq, flag, data, nbRetry)=
+	if t.stateT<>terminatedTcp then
+	if _seqIsBefore(t.ackT, seq) then 
+	if nbRetry>0 then (
+		__tcpSendFrame(t, seq, flag, data);
+		void onTimeout(1000, (lambda ()= _tcpSendWithRetry(t, seq, flag, data, nbRetry-1)));
+	)
+	else (
+		echoTime ">>>>>>>>TIMEOUT";
+		_tcpStopRetries(t);
+		if t.stateT<>eolTcp then _tcpEol(t);
+	);;
+
+fun _tcpSendFrame(t, flag, data)=
+	lockSync(t.lockT, lambda ()=
+	let t.seqT -> seq in
+	(
+		set t.seqT=_seqNext(t.seqT, flag, data);
+		if seq<>t.seqT then	_tcpSendWithRetry(t, seq, flag, data, TCP_RETRY_SEND)
+		else void __tcpSendFrame(t, seq, flag, data)
+	));;
+
+fun _tcpWriteLoop(t, data, start, lenToSend)=
+	if lenToSend<=0 then start
+	else 
+	let min(lenToSend, TCP_SEND_MAX_LEN) -> send in
+	let if send==lenToSend then TCP_PSH else 0 -> psh in (
+		_tcpSendFrame(t, TCP_ACK|psh, strSlice(data, start, send));
+		// we don't use the result (_tcpSendFrame is asynchronous)
+		// => the network stack takes responsability of lenToSend bytes
+		_tcpWriteLoop(t, data, start+send, lenToSend-send)
+	);;
+
+fun _tcpWrite(t, data, start)=
+	if data<>nil then
+lockSync(TcpLock, lambda ()=
+	if t.stateT==establishedTcp then
+	let min(strLength(data)-start,
+			(t.windowT)-(((t.seqT)-(t.ackT))&0xffffffff))
+	-> lenToSend in
+	_tcpWriteLoop(t, data, start, lenToSend));;
+
+//----------- CREATION
+fun _tcpClose(t)=
+lockSync(TcpLock, lambda ()=
+	fifoList(t.fifoRxT);	// clear fifoRx
+	streamSetReadable(t, false);
+	streamSetWritable(t, false);
+	match t.stateT with
+		synSentTcp -> void (
+			_tcpSendFrame(t, TCP_RST, "");
+			streamSetWritable(t, false);
+			_tcpTerminate(t)
+		),
+		establishedTcp -> void (
+			_tcpSendFrame(t, TCP_ACK|TCP_FIN, "");
+			streamSetWritable(t, false);
+			set t.stateT=finSentTcp;
+		),
+		finSentTcp -> nil,
+		eolTcp -> nil;
+	true);;
+
+fun _tcpCreate(incoming, net, remoteAddr, remotePort, localPort)=
+	let _tcpKey(remoteAddr, net.ipI, remotePort, localPort) -> key in
+	if nil == hashmapGet(TcpListener, key) then	// check existing connection
+	let intRand() & 0xffffffff-> seq0 in
+	let [
+		incomingT=incoming,
+		nameT= strFormat("*:*", remoteAddr, remotePort),
+		netT=net,
+		keyT=key,
+		remoteAddrT=strFromIp(remoteAddr),	// clear text format (xx.xx.xx.xx)
+		_remoteAddrT=remoteAddr,	// binary format (4 bytes)
+		remotePortT=remotePort,
+		localPortT=localPort,
+		seq0T=seq0,
+		seqT= seq0,
+		ackT= seq0,
+		peerT=0,
+		windowT=1024,	// this value will be updated at each received frame
+		fifoRxT=fifoCreate(),
+		lockT=lockCreate()
+	] -> t in (
+		hashmapSet(TcpListener, key, t);
+		streamInit(t, nil,
+			(lambda ()=	// onSelectRead
+				if fifoCount(t.fifoRxT)>=1 then
+					let fifoOut(t.fifoRxT) -> data in streamReadEvent(t, data);
+					streamSetReadable(t, 0<fifoCount(t.fifoRxT));
+				void _tcpCheckEol(t);
+			),
+			lambda(data, start) = _tcpWrite(t, data, start),	// write
+			lambda ()= _tcpClose(t),	// close
+			(lambda(fEcho)= call fEcho(if t.incomingT then "TCPin" else "TCPout", t.nameT)));	// show
+		t
+	);;
+
+fun _tcpLoopbackCreate(remoteAddr, remotePort, localPort, incoming) = [
+		fifoLO=fifoCreate(),
+		remoteAddrT=strFromIp(remoteAddr),
+		remotePortT=remotePort,
+		incomingT=incoming,
+		nameT= strFormat("lo:*->*", localPort, remotePort)
+	];;
+
+fun _tcpLoopbackInit(lo, peer)=
+	streamInit(lo, nil,
+		lambda ()=	// onSelectRead
+			let fifoOut(lo.fifoLO) -> data in (
+				streamReadEvent(lo, data);
+				if data==nil then streamClose(lo);
+				void streamSetReadable(lo, 0<fifoCount(lo.fifoLO))					
+			)
+		,
+		(lambda(data, start) = echoLn "LoWrite"; fifoIn(peer.fifoLO, strTail(data, start)); streamSetReadable(peer, true); strLength(data)),	// write
+		(lambda ()= fifoIn(peer.fifoLO, nil); streamSetReadable(peer, true); streamCommonClose(lo)),	// close
+		lambda(fEcho)= call fEcho(if lo.incomingT then "TCPin" else "TCPout", lo.nameT));;	// show
+
+fun _tcpLoopback(net, remoteAddr, remotePort, localPort)=
+	let _ipSrv(TcpSrvListener, remoteAddr, remotePort) -> srv in
+	if srv<>nil then
+	let _tcpLoopbackCreate(net.ipI, remotePort, localPort, false) -> cliLo in
+	let _tcpLoopbackCreate(net.ipI, localPort, remotePort, true) -> srvLo in (
+		_tcpLoopbackInit(cliLo, srvLo);
+		_tcpLoopbackInit(srvLo, cliLo);
+		fifoIn(srv.fifoS, Tcp<srvLo);
+		streamSetReadable(srv, true);
+		streamSetWritable(cliLo, true);
+		streamSetWritable(srvLo, true);
+		Tcp<cliLo
+	);;
+
+fun tcpOpen(addr, port)=
+	if DEBUG then echoLn strFormat("tcpOpen * *", addr, port);
+lockSync(TcpLock, lambda ()=
+	let ipFromStr(addr) -> remoteAddr in
+	let 0x8000|set TcpPortCounter=(TcpPortCounter+1)&0x7fff -> localPort in
+	let _netByIp(remoteAddr) -> net in
+	if !ipIsBroadcast(net, remoteAddr) then
+	if net.loI then _tcpLoopback(net, remoteAddr, port, localPort)
+	else
+	let _tcpCreate(false, net, remoteAddr, port, localPort) -> t in
+	if t<>nil then (
+		if DEBUG then echoLn strFormat("---------->TCP *", _tcpRoute(t), tcpFlagName(TCP_SYN));
+		_tcpSendFrame(t, TCP_SYN, nil);
+		set t.stateT=synSentTcp;
+		Tcp<t
+	));;
+
+fun tcpSrvCreate(addr, port)=
+	if DEBUG then echoLn strFormat("tcpSrvCreate * *", addr, port);
+lockSync(TcpLock, lambda ()=
+	let _ipSrvKey(ipFromStr(addr), port) -> key in
+	if nil == hashmapGet(TcpSrvListener, key) then	// check existing connection
+	let [
+		nameTS=strFormat("*:*", addr, port),
+		keyS=key,
+		fifoS=fifoCreate()
+	] -> tcpSrv in (
+		hashmapSet(TcpSrvListener, key, tcpSrv);
+		streamInit(tcpSrv, nil,
+			(lambda ()=	// onSelectRead
+				if fifoCount(tcpSrv.fifoS)>=1 then
+					let fifoOut(tcpSrv.fifoS) -> tcp in
+					if tcp<>nil then
+					call tcpSrv.onAcceptTS(tcp);
+				void streamSetReadable(tcpSrv, 0<fifoCount(tcpSrv.fifoS))
+			),
+			nil,	// write
+			(lambda ()= 	// close
+				hashmapSet(TcpSrvListener, key, nil);
+				// should we also close all the tcp streams issued from this server?
+				streamCommonClose(tcpSrv)
+			),
+			(lambda(fEcho)= call fEcho("TCPsrv", tcpSrv.nameTS)));	// show
+		TcpSrv<tcpSrv
+	));;
+
+//----------- HANDLE NETWORK INPUTS
+fun _tcpFifoIn(t, data)=
+	fifoIn(t.fifoRxT, data);
+	streamSetReadable(t, fifoCount(t.fifoRxT)>0);;
+
+fun _tcpTerminate(t)=
+	set t.stateT=terminatedTcp;
+	hashmapSet(TcpListener, t.keyT, nil);
+	streamCommonClose(t);;
+
+fun _tcpEol(t)=
+	_tcpFifoIn(t, nil);
+	streamSetWritable(t, false);
+	set t.stateT=eolTcp;;
+
+fun _tcpCheckEol(t)=
+	if t.stateT==eolTcp && (0==fifoCount(t.fifoRxT)) && (t.ackT==t.seqT) then _tcpTerminate(t);;
+
+fun _tcpStopRetries(t)=
+	set t.ackT=t.seqT;;
+
+
+fun _tcpHandleStateMachine(t, flag, data)=
+	match t.stateT with
+		establishedTcp -> void (
+			if !strEmpty(data) then (
+				_tcpFifoIn(t, data);	// bitTest flag TCP_PSH;
+				streamSetWritable(t, t.windowT>((t.seqT-t.ackT)&0xffffffff));
+				_tcpSendFrame(t, TCP_ACK, "")
+			);
+			if bitTest(flag, TCP_FIN) then (
+				_tcpSendFrame(t, TCP_ACK|TCP_FIN, "");
+				_tcpEol(t);
+			);
+			if bitTest(flag, TCP_RST) then (
+				_tcpStopRetries(t);
+				_tcpEol(t);
+			)
+		),
+		synSentTcp -> void (
+			if bitTest(flag, TCP_SYN)&&bitTest(flag, TCP_ACK) then (
+				streamSetWritable(t, true);
+				_tcpSendFrame(t, TCP_ACK, "");
+				set t.stateT=establishedTcp;
+			);
+			if bitTest(flag, TCP_FIN) then (
+				_tcpSendFrame(t, TCP_ACK|TCP_FIN, "");
+				_tcpEol(t);
+			);
+			if bitTest(flag, TCP_RST) then (
+				_tcpStopRetries(t);
+				_tcpEol(t);
+			)
+		),
+		finSentTcp -> void (
+			if bitTest(flag, TCP_FIN) then (
+				_tcpSendFrame(t, TCP_ACK, "");
+				_tcpTerminate(t)
+			);
+			if bitTest(flag, TCP_RST) then 
+				_tcpTerminate(t)
+			;
+		),
+		eolTcp -> (
+			if bitTest(flag, TCP_RST) then 
+				_tcpStopRetries(t)
+			;
+			_tcpCheckEol(t);
+		);;
+
+fun _tcpHandle(t, msg)=
+	let strRead32Msb(msg, 4) -> seqPeer in
+	let strRead32Msb(msg, 8) -> ack in
+	let strRead8(msg, 12)>>2 -> offset in
+	let strRead8(msg, 13) -> flag in
+	let strRead16Msb(msg, 14) -> window in
+	let strSlice(msg, offset, nil) -> data in
+	(
+		if DEBUG then echoLn strFormat("state = *", t.stateT);
+		set t.windowT= min(TCP_WINDOW_MAX_LEN, window);
+		if bitTest(flag, TCP_SYN) then (
+			set t.peer0T=set t.peerT=seqPeer;
+			if t.ackT==0 then set t.ackT=ack
+		);
+		if DEBUG then echoTime strFormat("<TCP * * ack=* seq=* len=* (w=*)", tcpFlagName(flag), _tcpRoute(t), (ack-t.seq0T)&0xffffffff, (seqPeer-t.peer0T)&0xffffffff, strLength(data), window);
+		if bitTest(flag, TCP_ACK) && _seqIsBefore(t.ackT, ack) then set t.ackT=ack;
+		if t.peerT==seqPeer then (	// we process only the next expected packet
+			set t.peerT=_seqNext(t.peerT, flag, data);
+			_tcpHandleStateMachine(t, flag, data);
+			if DEBUG then echoLn strFormat("-> *", t.stateT);
+		)
+		else	// we acknowledge past packets (the peer did not receive the ack)
+		if _seqIsBefore(seqPeer, t.peerT) then
+		if 0<>_seqNext(0, flag, data) then
+		void _tcpSendFrame(t, TCP_ACK, "");
+	);;
+
+fun _tcpAckAny(net, flag, remoteAddr, remotePort, localPort, seqPeer, ack) =
+	let [
+		netT=net,
+		peerT=seqPeer,
+		_remoteAddrT=remoteAddr,
+		remotePortT=remotePort, 
+		localPortT=localPort
+	] -> t in (
+		if DEBUG then echoTime strFormat(">TCP * * ack=* seq=* AUTO_ACK", tcpFlagName(flag), _tcpRouteReverse(t), ack&0xffffffff, seqPeer&0xffffffff);
+		__tcpSendFrame(t, ack, flag, "")
+	);;
+
+fun _tcpHandleSyn(net, remoteAddr, localAddr, remotePort, localPort, flag, msg)=
+	if DEBUG then echoTime strFormat("<TCP * *:* -> *:*", tcpFlagName(flag), strFromIp(remoteAddr), remotePort, strFromIp(localAddr), localPort);
+	let _ipSrv(TcpSrvListener, localAddr, localPort) -> srv in
+	if srv==nil then
+		let strRead32Msb(msg, 4) -> seqPeer in
+		let strRead32Msb(msg, 8) -> ack in
+		void _tcpAckAny(net, TCP_RST|TCP_ACK, remoteAddr, remotePort, localPort, seqPeer+1, ack)
+	else
+	let _tcpCreate(true, net, remoteAddr, remotePort, localPort) -> t in
+	let strRead16Msb(msg, 14) -> window in
+	let strRead32Msb(msg, 4) -> seqPeer in (
+		set t.stateT=establishedTcp;
+		set t.peer0T= seqPeer;
+		set t.peerT= seqPeer+1;
+		set t.windowT= window;
+		_tcpSendFrame(t, TCP_SYN|TCP_ACK, nil);
+		fifoIn(srv.fifoS, Tcp<t);
+		streamSetReadable(srv, true);
+		streamSetWritable(t, true);
+		nil
+	);;
+
+fun tcpHandle(net, remoteAddr, localAddr, msg)=
+lockSync(TcpLock, lambda ()=
+	let strRead16Msb(msg, 0) -> remotePort in
+	let strRead16Msb(msg, 2) -> localPort in
+	let strRead8(msg, 13) -> flag in
+	if flag==TCP_SYN then void _tcpHandleSyn(net, remoteAddr, localAddr, remotePort, localPort, flag, msg)
+	else
+	let _tcpKey(remoteAddr, localAddr, remotePort, localPort) -> key in
+	let hashmapGet(TcpListener, key) -> t in
+	if t<>nil then void _tcpHandle(t, msg)
+	else
+	let strRead32Msb(msg, 4) -> seqPeer in
+	let strRead32Msb(msg, 8) -> ack in
+	if bitTest(flag, TCP_FIN) then
+		_tcpAckAny(net, flag, remoteAddr, remotePort, localPort, seqPeer+1, ack)
+	else
+		_tcpAckAny(net, TCP_RST|TCP_ACK, remoteAddr, remotePort, localPort, seqPeer, ack));;
+

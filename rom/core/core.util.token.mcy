@@ -1,0 +1,207 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2022, Sylvain Huet, Ambermind
+// Minimacy (r) System
+
+struct Token{a}=[_iP, _srcP, _fifoP:(fifo a)];;
+
+const TOKEN_BACKSLASH= 92;;
+const TOKEN_QUOTE= 39;;
+const TOKEN_DOUBLEQUOTE= 34;;
+
+const TOKEN_SPACES= arrayInit(33, lambda(c)= true);;	// 0-32
+const TOKEN_NUMERIC= arrayInit('9'+1, lambda(c)=c>='0' && c<='9');;
+const TOKEN_HEXA= arrayInit('F'+1, lambda(c)=(c>='a' && c<='f')||(c>='A' && c<='F')||(c>='0' && c<='9'));;
+const TOKEN_ALPHANUM_UNDER= arrayInit(128, lambda(c)=(c>='a' && c<='z')||(c>='A' && c<='Z')||(c=='_')||(c>='0' && c<='9'));;
+
+fun _tokenApplyFilters(t, lFilters)=
+	if lFilters<>nil then
+	let call head(lFilters)(t._fifoP, t._srcP, t._iP) -> j in
+	if j<>nil then j
+	else _tokenApplyFilters(t, tail(lFilters));;
+
+fun tokenCreate(src, iStart)=[_iP=iStart, _srcP=src, _fifoP=fifoCreate()];;
+fun tokenDone(t)= t._iP>=strLength(t._srcP);;
+fun tokenIndex(t) = t._iP;;
+fun tokenContextError(t, n)=
+	if nil<>fifoNext(t._fifoP) then fifoNext(t._fifoP)
+	else strSlice(t._srcP, t._iP, n);;
+
+
+fun tokenNext(t, lFilters)=
+	if nil<>fifoNext(t._fifoP) then fifoNext(t._fifoP)
+	else
+	if !tokenDone(t) then
+	let _tokenApplyFilters(t, lFilters) -> j in
+	if j<>nil then
+	(
+		set t._iP=j;
+		tokenNext(t, lFilters)
+	);;
+fun tokenMoveOn(t) = fifoOut(t._fifoP); t;;
+fun tokenTake(t, lFilters) = 
+	let tokenNext(t, lFilters) -> val in
+	if val<>nil then (
+		tokenMoveOn(t);
+		val
+	);;
+		
+fun _tokenCutAll(t, lFilters)=
+	let tokenNext(t, lFilters) -> word in
+	if word<>nil then word::_tokenCutAll(tokenMoveOn(t), lFilters);;
+	
+fun tokenCutAll(src, lFilters)=
+	let tokenCreate(src, 0) -> t in
+	_tokenCutAll(t, lFilters);;
+
+// filters : fifo str iStart -> iEnd ou nil
+// side effect: fifoIn token
+
+fun tokenFilterSkip(keep) = lambda(fifo, str, i)=
+	if TOKEN_SPACES[strGet(str, i)] then
+	for j=i+1;true do if !TOKEN_SPACES[strGet(str, j)] then 
+	(
+		if keep then fifoIn(fifo, strSlice(str, i, j-i));
+		return j
+	)
+;;
+	
+fun _tokenBuildKeywordsTable(lKeywords)=
+	let arrayCreate(256, nil) -> table in
+	(
+		for kw in lKeywords do
+			let strGet(kw, 0) ->c in
+			set table[c] = kw::(table[c]);
+		table
+	);;
+			
+fun tokenFilterKeywords(lKeywords)=
+	let _tokenBuildKeywordsTable(lKeywords) -> table in (lambda(fifo, str, i)=
+	let strGet(str, i) -> c in 
+	for kw in table[c] do if strCheckPos(str, kw, i) then
+	(
+		fifoIn(fifo, kw);
+		return i+strLength(kw)
+	);
+	nil
+);;
+
+fun tokenFilterCommentLine(keep) = lambda(fifo, str, i)=
+	if strCheckPos(str, "//", i) then
+	let strPos(str, "\n", i+2) -> j in
+	let if j==nil then strLength(str) else j -> j in
+	(
+		if keep then fifoIn(fifo, strSlice(str, i, j-i));
+		return j
+	)
+;;
+
+fun tokenFilterComment(keep) = lambda(fifo, str, i)=
+	if strCheckPos(str, "/*", i) then
+	let strPos(str, "*/", i+2) -> j in
+	if j<>nil then
+	let j+2 -> j in
+	(
+		if keep then fifoIn(fifo, strSlice(str, i, j-i));
+		return j
+	)
+;;
+
+fun tokenFilterUntil(tag)= lambda(fifo, str, i)=
+	let strPos(str, tag, i) -> j in
+	let if j==nil then strLength(str) else j -> j in
+	if j<>i then
+	(
+		fifoIn(fifo, strSlice(str, i, j-i));
+		return j
+	)
+;;
+
+fun tokenFilterHexa ()= lambda(fifo, str, i)=
+	if strCheckPos(str, "0x", i)||strCheckPos(str, "0X", i) then
+	for j=i+2;true do if !TOKEN_HEXA[strGet(str, j)] then 
+	(
+		fifoIn(fifo, strSlice(str, i, j-i));
+		return j
+	)
+;;
+
+fun tokenFilterInteger ()= lambda(fifo, str, i)=
+	if TOKEN_NUMERIC[strGet(str, i)] then
+	for j=i+1;true do if !TOKEN_NUMERIC[strGet(str, j)] then 
+	(
+		fifoIn(fifo, strSlice(str, i, j-i));
+		return j
+	)
+;;
+
+fun tokenFilterFloat ()= lambda(fifo, str, i)=
+	if TOKEN_NUMERIC[strGet(str, i)] then
+	for j=i+1;true do if !TOKEN_NUMERIC[strGet(str, j)] then 
+	
+		if '.'<>strGet(str, j) then return nil
+		else
+		for k=j+1;true do if !TOKEN_NUMERIC[strGet(str, k)] then 
+		(
+			fifoIn(fifo, strSlice(str, i, k-i));
+			return k
+		)
+	
+;;
+
+fun tokenFilterWord ()= lambda(fifo, str, i)=
+	if TOKEN_ALPHANUM_UNDER[strGet(str, i)] then
+	if !TOKEN_NUMERIC[strGet(str, i)] then
+	for j=i+1;true do if !TOKEN_ALPHANUM_UNDER[strGet(str, j)] then 
+	(
+		fifoIn(fifo, strSlice(str, i, j-i));
+		return j
+	)
+;;
+fun tokenFilterString(delimiter)= lambda(fifo, str, i)=
+	if delimiter==strGet(str, i) then
+	for j=i+1;true do match strGet(str, j) with
+		delimiter -> (
+			fifoIn(fifo, strSlice(str, i, j+1-i));
+			return j+1
+		),
+		nil -> break nil,
+		TOKEN_BACKSLASH -> set j=j+1
+;;
+
+fun tokenFilterNumber ()= lambda(fifo, str, i) =
+	let if '-'==strGet(str, i) then i+1 else i -> j in
+	if TOKEN_NUMERIC[strGet(str, j)] then
+	let true -> commaAccept in
+	for j=j+1;true do if !TOKEN_NUMERIC[strGet(str, j)] then 
+	(
+		if commaAccept && ('.'==strGet(str, j)) then set commaAccept=false
+		else
+		(
+			if nil<> strCharPos("eE", strGet(str, j), 0) then
+			(
+				set j=j+1;
+				if nil<> strCharPos("+-", strGet(str, j), 0) then set j=j+1;
+				if !TOKEN_NUMERIC[strGet(str, j)] then return nil;
+				for k=j+1;true do if !TOKEN_NUMERIC[strGet(str, k)] then 
+				(
+					fifoIn(fifo, strSlice(str, i, k-i));
+					return k
+				)
+			);
+			fifoIn(fifo, strSlice(str, i, j-i));
+			return j
+		);
+		nil
+	)
+;;
+fun tokenFilterAnyChar ()= (lambda(fifo, str, i) =
+	fifoIn(fifo, strSlice(str, i, 1));
+	i+1
+);;
+
+fun tokenIsNumber(str)=
+	(TOKEN_NUMERIC[strGet(str, 0)])||
+	(('-'==strGet(str, 0))&&TOKEN_NUMERIC[strGet(str, 1)]);;
+
+fun tokenIsWord(str)=
+	(TOKEN_ALPHANUM_UNDER[strGet(str, 0)])&&!TOKEN_NUMERIC[strGet(str, 0)];;

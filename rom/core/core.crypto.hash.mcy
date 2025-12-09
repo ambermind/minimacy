@@ -1,0 +1,58 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2022, Sylvain Huet, Ambermind
+// Minimacy (r) System
+
+
+fun sha256(msg)= sha256Output(sha256Process(sha256Create(), msg, 0, nil));;
+fun sha384(msg)= sha384Output(sha384Process(sha384Create(), msg, 0, nil));;
+fun sha512(msg)= sha512Output(sha512Process(sha512Create(), msg, 0, nil));;
+fun sha1(msg)= sha1Output(sha1Process(sha1Create(), msg, 0, nil));;
+fun md5(msg)= md5Output(md5Process(md5Create(), msg, 0, nil));;
+
+fun _sha512double(msg1, msg2)= sha512Output(sha512Process(sha512ProcessBytes(sha512Create(), msg1, 0, nil), msg2, 0, nil));;
+fun _sha256double(msg1, msg2)= sha256Output(sha256Process(sha256ProcessBytes(sha256Create(), msg1, 0, nil), msg2, 0, nil));;
+fun _sha384double(msg1, msg2)= sha384Output(sha384Process(sha384ProcessBytes(sha384Create(), msg1, 0, nil), msg2, 0, nil));;
+fun _sha1double(msg1, msg2)= sha1Output(sha1Process(sha1ProcessBytes(sha1Create(), msg1, 0, nil), msg2, 0, nil));;
+fun _md5double(msg1, msg2)= md5Output(md5Process(md5ProcessBytes(md5Create(), msg1, 0, nil), msg2, 0, nil));;
+
+fun _hmacCommon(inLen, key, data, hash, hashdouble)=
+	let if strLength(key)>inLen then (call hash(key)) else key -> key in
+	let bytesCreate(inLen, 0) -> k_ipad in
+	let bytesCreate(inLen, 0) -> k_opad in
+	let strCreate(inLen, 0x36) -> msk36 in
+	let strCreate(inLen, 0x5c) -> msk5c in
+	(
+		bytesCopy(k_ipad, 0, key, 0, nil);
+		bytesCopy(k_opad, 0, key, 0, nil);
+		bytesXor(k_ipad, 0, msk36, 0, nil);
+		bytesXor(k_opad, 0, msk5c, 0, nil);
+		let call hashdouble(k_ipad, data) -> mac in
+		call hashdouble(k_opad, mac)
+	);;
+
+fun hmacSha512(key, data)= _hmacCommon(128, key, data, #sha512, #_sha512double);;	// see bouncycastle\crypto\macs\HMac.java
+fun hmacSha384(key, data)= _hmacCommon(128, key, data, #sha384, #_sha384double);;	// see bouncycastle\crypto\macs\HMac.java
+fun hmacSha256(key, data)= _hmacCommon(64, key, data, #sha256, #_sha256double);;
+fun hmacSha1(key, data)= _hmacCommon(64, key, data, #sha1, #_sha1double);;
+fun hmacMd5(key, data)= _hmacCommon(64, key, data, #md5, #_md5double);;
+
+fun _pbkdf2(pwd, salt, count, len, fHash, i)=
+	if len>0 then
+	let call fHash(pwd, strConcat(salt, strInt32Msb(i))) -> U in
+	let bytesFromStr(U) -> bytes in (
+		for i=1;i<count do (
+			set U=call fHash(pwd, U);
+			bytesXor(bytes, 0, U, 0, nil)
+		);
+		strFromBytes(bytes)::_pbkdf2(pwd, salt, count, len-bytesLength(bytes), fHash, i+1)
+	);;
+
+fun pbkdf2(pwd, salt, count, len, fHash) =
+	let strListConcat(_pbkdf2(pwd, salt, count, len, fHash, 1)) -> result in
+	strLeft(result, len);;
+
+//---- password derivation for pem private key (PKCS#5 v1.5 EVP_BytesToKey)
+fun _bytesToKey(src, last, len)= if len>0 then
+	let md5Output(md5Process(md5Process(md5Create(), last, 0, nil), src, 0, nil)) -> result in
+	result::_bytesToKey(src, result, len-strLength(result));;
+fun bytesToKey(pwd, salt, len)= strLeft(strListConcat(_bytesToKey(strConcat(pwd, salt), "", len)), len);;

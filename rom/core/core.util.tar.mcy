@@ -1,0 +1,157 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2022, Sylvain Huet, Ambermind
+// Minimacy (r) System
+
+export TarFile;;
+export tarFileName(t);;
+export tarSize(t);;
+export tarContent(t);;
+export tarUpdate(t);;
+export tarMode(t);;
+
+export tarLoadContent(src, t);;
+export tarExtractDirectories(src);;
+// the main decoding function:
+export tarExtractFiles(src, withContent);;
+// encode from disk files:
+export tarFromFileInfoList(lFileInfo);;	// lFileInfo: list of FileInfo structures (see bios functions fileListInfo, fileInfo)
+// encode from memory data:
+export tarFromFileList(lData);;	// lData : list of [fileName updateTime content]
+
+/*
+0	100	File name
+100	8	File mode (octal)
+108	8	Owner's numeric user ID (octal)
+116	8	Group's numeric user ID (octal)
+124	12	File size in bytes (octal)
+136	12	Last modification time in numeric Unix time format (octal)
+148	8	Checksum for header record
+156	1	Link indicator (file type)
+157	100	Name of linked file
+
+257	6	UStar indicator "ustar" then NUL
+263	2	UStar version "00"
+265	32	Owner user name
+297	32	Owner group name
+329	8	Device major number
+337	8	Device minor number
+345	155	Filename prefix
+
+type:
+'0' or (ASCII NUL)	Normal file
+'1'	Hard link
+'2'	Symbolic link
+'3'	Character special
+'4'	Block special
+'5'	Directory
+'6'	FIFO
+'7'	Contiguous file
+'g'	Global extended header with meta data (POSIX.1-2001)
+'x'	Extended header with meta data for the next file in the archive (POSIX.1-2001)
+*/
+const TAR_HEADER=100::8::8::8::12::12::8::1::100::6::nil;;
+const TAR_USTAR=2::32::32::8::8::155::12::nil;;
+
+const TAR_NORMAL="0";;
+const TAR_DIR="5";;
+
+const TAR_ZEROS=strCreate(512, 0);;
+
+struct TarFile=[typeT, fileNameT, modeT, sizeT, offsetT, contentT, updateT, userNameT, groupNameT];;
+
+fun _intFromOctal(src)=
+	let 0->v in for i=0;i<strLength(src) do set v=v*8+strGet(src, i)-'0';;
+
+fun _octalFromInt(val)=
+	if val<=0 then "0"
+	else let nil -> lChars in
+	(
+		while val<>0 do (
+			set lChars=decFromInt(val&7)::lChars;
+			set val=val>>3
+		);
+		strListConcat(lChars)
+	);;
+
+fun _checksum(src, i, until)=
+	let 0->s in for j=i;j<until do set s=s+strGet(src, j);;
+
+//----------- decode
+fun _tarField(src, i, maxLen)=
+	let strCharPos(src, 0, i) -> j in
+	let if j==nil then strLength(src) else j -> j in
+	strSlice(src, i, min(maxLen, j-i));;
+
+fun _tarHeader(src, i, l)=
+	if l<>nil then let head(l) -> maxLen in _tarField(src, i, maxLen)::_tarHeader(src, i+maxLen, tail(l));;
+
+fun _tarExtract(src, i)=
+	if i<strLength(src) then
+	let _tarHeader(src, i, TAR_HEADER) -> (fileName::fileModeS::ownerS::groupS::sizeS::modifS::checksumS::type::linkName::ustar::_) in
+	let if strStartsWith(ustar, "ustar") then _tarHeader(src, i+263, TAR_USTAR) ->(version::userName::groupName::majorS::minorS::prefix::_) in
+	let _intFromOctal(sizeS) -> size in
+	let i+512+((size+511)&~511) -> iNext in
+	if fileName==nil then _tarExtract(src, iNext)
+	else
+	let strConcat(prefix, fileName) -> fileName in
+//	let _intFromOctal(checksumS) -> checksum in
+//	let _checksum(src, i, i+148)+8*32+_checksum(src, i+156, i+512) -> checksumComputed in
+	let _intFromOctal(modifS) -> update in
+	[typeT=type, fileNameT=fileName, offsetT=i+512, sizeT=size, modeT=fileModeS, updateT=update, userNameT=userName, groupNameT=groupName]::_tarExtract(src, iNext);;
+
+//----------- encode
+fun _tarMakeField(data, size)=
+	[data, strLeft(TAR_ZEROS, size-strLength(data))];;
+
+fun _tarMakeHeader(lSize, lData)=
+	if lSize<>nil then _tarMakeField(head(lData), head(lSize))::_tarMakeHeader(tail(lSize), tail(lData));;
+
+fun _tarEncode(fileName, update, content)=
+	let strLength(content) -> size in
+	let _tarMakeHeader(TAR_HEADER, fileName::"0100777"::"0000000"::"0000000"::_octalFromInt(size)::_octalFromInt(update)::"        "::TAR_NORMAL::""::"ustar"::nil) -> header in
+	let _tarMakeHeader(TAR_USTAR, "00"::nil) -> ustar in
+	let strBuild([header, ustar]) -> header in
+	let _checksum(header, 0, strLength(header)) -> checksum in
+	let _octalFromInt(checksum) -> checksumS in
+	let strFormat("***", strLeft(header, 148), _tarMakeField(checksumS, 8), strSlice(header, 156, nil)) -> header in
+	let ((size+511)&~511)-size -> padding in
+	[
+		header,
+		content,
+		strLeft(TAR_ZEROS, padding)
+	];;
+
+fun _tarFinalize(lBlocks)= strBuild([ lBlocks, TAR_ZEROS, TAR_ZEROS ]);;
+
+fun tarExtract(src)= _tarExtract(src, 0);;
+
+//----------------API
+//fun tarType(t)=t.typeT;;	// useless for now
+fun tarFileName(t)=t.fileNameT;;
+fun tarSize(t)=t.sizeT;;
+fun tarContent(t)=t.contentT;;
+fun tarUpdate(t)=t.updateT;;
+fun tarMode(t)=t.modeT;;
+
+fun tarLoadContent(src, t)= set t.contentT=strSlice(src, t.offsetT, t.sizeT);;
+
+fun tarExtractDirectories(src)=
+	listFilter(tarExtract(src), lambda(t)= t.typeT==TAR_DIR);;
+
+// the main decoding function:
+fun tarExtractFiles(src, withContent)=
+	listFilter(tarExtract(src), lambda(t)=
+		if t.typeT==TAR_NORMAL then (
+			if withContent then tarLoadContent(src, t);
+			true
+		)
+	);;
+
+
+// encode from disk files:
+fun tarFromFileInfoList(lFileInfo)=	// lFileInfo: list of FileInfo structures (see bios functions fileListInfo, fileInfo)
+	_tarFinalize(listMap(lFileInfo, lambda(f)=_tarEncode(fileInfoName(f), fileInfoUpdate(f), load(fileInfoName(f)))));;
+
+// encode from memory data:
+fun tarFromFileList(lData)=	// lData : list of [fileName updateTime content]
+	_tarFinalize(listMap(lData, lambda([fileName, updateTime, content])=_tarEncode(fileName, updateTime, content)));;

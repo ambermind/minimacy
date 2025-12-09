@@ -1,0 +1,6 @@
+
+How to install the extension
+----------------------------
+Just copy the .vs directory in you home directory, the one containing Desktop, Downloads, Documents (...) Windows directories.
+
+And then restart VisualStudio 2019 or VisualStudio 2022

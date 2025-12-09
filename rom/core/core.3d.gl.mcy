@@ -1,0 +1,427 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2022, Sylvain Huet, Ambermind
+// Minimacy (r) System
+
+
+var ProgramMono;;
+var ProgramColors;;
+var ProgramColors1Light;;
+var ProgramColors2Lights;;
+var ProgramTexture;;
+
+const FRAGMENT_MONO="
+	uniform vec4 uColor;
+
+	void main(void) 
+	{
+		gl_FragColor = uColor;
+	}
+";;
+const FRAGMENT_COLORS="
+	varying vec4 vColor;
+
+	void main(void) 
+	{
+		gl_FragColor = vColor;
+	}
+";;
+const FRAGMENT_TEXTURE="
+	uniform vec4 uColor;
+	uniform sampler2D uSampler;
+
+	varying vec2 vTextureCoord;
+
+	void main(void) 
+	{
+		vec4 textureColor = texture2D(uSampler, vec2(vTextureCoord.s, vTextureCoord.t));
+		gl_FragColor = uColor*textureColor;
+	}
+";;
+
+const VERTEX_MONO="
+	attribute vec3 aVertexPosition;
+
+	uniform mat4 uPMatrix;
+
+	void main(void) 
+	{
+		gl_Position = uPMatrix * vec4(aVertexPosition, 1.0);
+	}
+";;
+const VERTEX_COLORS="
+	attribute vec3 aVertexPosition;
+	attribute vec4 aVertexColor;
+
+	uniform mat4 uPMatrix;
+
+	varying vec4 vColor;
+
+	void main(void) 
+	{
+		gl_Position = uPMatrix * vec4(aVertexPosition, 1.0);
+		vColor=aVertexColor;
+	}
+";;
+const VERTEX_COLORS_1LIGHT="
+	attribute vec3 aVertexPosition;
+	attribute vec3 aVertexNormal;
+	attribute vec4 aVertexColor;
+
+	uniform vec4 uLightVector0;
+	uniform vec4 uLightAmbiant0;
+	uniform vec4 uLightDiffuse0;
+
+	uniform mat4 uPMatrix;
+	uniform mat4 uNMatrix;
+
+	varying vec4 vColor;
+
+	void main(void) 
+	{
+		gl_Position = uPMatrix * vec4(aVertexPosition, 1.0);
+		vec4 transformedNormal = (uNMatrix * vec4(aVertexNormal,0.0));
+		float I0=max(dot(transformedNormal, uLightVector0), 0.0);
+		vec4 light=uLightAmbiant0+I0*uLightDiffuse0;
+		vColor=light*aVertexColor;
+		vColor[3]=aVertexColor[3];
+	}
+";;
+const VERTEX_COLORS_2LIGHTS="
+	attribute vec3 aVertexPosition;
+	attribute vec3 aVertexNormal;
+	attribute vec4 aVertexColor;
+
+	uniform vec4 uLightVector0;
+	uniform vec4 uLightAmbiant0;
+	uniform vec4 uLightDiffuse0;
+
+	uniform vec4 uLightVector1;
+	uniform vec4 uLightAmbiant1;
+	uniform vec4 uLightDiffuse1;
+
+	uniform mat4 uPMatrix;
+	uniform mat4 uNMatrix;
+
+	varying vec4 vColor;
+
+	void main(void) 
+	{
+		gl_Position = uPMatrix * vec4(aVertexPosition, 1.0);
+		vec4 transformedNormal = (uNMatrix * vec4(aVertexNormal,0.0));
+		float I0=max(dot(transformedNormal, uLightVector0), 0.0);
+		float I1=max(dot(transformedNormal, uLightVector1), 0.0);
+		vec4 light=uLightAmbiant0+I0*uLightDiffuse0 + uLightAmbiant1+I1*uLightDiffuse1;
+		vColor=light*aVertexColor;
+		vColor[3]=aVertexColor[3];
+	}
+";;
+const VERTEX_TEXTURE=
+"
+	attribute vec3 aVertexPosition;
+	attribute vec2 aTextureCoord;
+
+	uniform mat4 uPMatrix;
+
+	varying vec2 vTextureCoord;
+
+	void main(void) 
+	{
+		gl_Position = uPMatrix * vec4(aVertexPosition, 1.0);
+		vTextureCoord=aTextureCoord;
+	}
+";;
+
+fun loadShader(tp, src)=
+	let glCreateShader(tp) -> shader in
+	let strConcat(if glES() then "precision mediump float;\n", src) -> src in
+	(
+		glShaderSource(shader, src);
+		if glCompileShader(shader) then shader
+	);;
+fun loadProgram(vertexShader, fragmentShader, attributes, uniforms)=
+	let loadShader(GL_VERTEX_SHADER, vertexShader) -> vertexShader in
+	if vertexShader!=nil then
+	let loadShader(GL_FRAGMENT_SHADER, fragmentShader) -> fragmentShader in
+	if fragmentShader!=nil then
+	let glCreateProgram() -> program in
+	let hashmapCreate(3) -> hAttributes in
+	let hashmapCreate(3) -> hUniforms in
+	(
+		glAttachShader(program, vertexShader);
+		glAttachShader(program, fragmentShader);
+		glLinkProgram(program);
+		for v in attributes do hashmapSet(hAttributes, v, glGetAttribLocation(program, v)); 
+		for v in uniforms do hashmapSet(hUniforms, v, glGetUniformLocation(program, v));
+		[program, hAttributes, hUniforms]
+	);;
+
+fun useProgram(w) = let w->[program, _, _] in glUseProgram(program);;
+fun getUniform(w, v)= let w->[_, _, hUniforms] in hashmapGet(hUniforms, v);;
+fun getAttrib(w, v)= let w->[_, hAttributes, _] in hashmapGet(hAttributes, v);;
+
+var Matrix={matId()::nil, matId()::nil};;
+var MatrixId=0;;
+var LastMatrix;;
+
+// matrix are organized by columns. The first row is m.0 m.4 m.8 m.12
+
+fun matId ()= {1., 0., 0., 0., 0., 1., 0., 0., 0., 0., 1., 0., 0., 0., 0., 1. };;
+fun matCopy(a) = arrayInit(16, lambda(i)=a[i]);;
+fun matTransp(a) = { a[0], a[4], a[8], a[12], a[1], a[5], a[9], a[13], a[2], a[6], a[10], a[14], a[3], a[7], a[11], a[15]};;
+fun matNormalize(a)= let 1./.sqrt(sqr(a[0])+.sqr(a[1])+.sqr(a[2])) -> k in {
+	k*.a[0], k*.a[1], k*.a[2], 0.,
+	k*.a[4], k*.a[5], k*.a[6], 0.,
+	k*.a[8], k*.a[9], k*.a[10], 0.,
+	0., 0., 0., 0.
+};;
+
+fun frustum(left, right, bottom, top, near, far)=
+\float {
+		2*near/(right-left), 0, 0, 0,
+		0, 2*near/(top-bottom), 0, 0,
+		(right+left)/(right-left), (top+bottom)/(top-bottom), -(far+near)/(far-near), -1,
+		0, 0, (-2)*far*near/(far-near), 0
+	};;
+
+// ortho projection assume that the visible side is for z in [-near, -far]
+// thus near and far are positive, z should be negative and (x, y, z) is a direct base
+fun ortho(left, right, bottom, top, near, far)=
+\float {
+		2/(right-left), 0, 0, 0,
+		0, 2/(top-bottom), 0, 0,
+		0, 0, (-2)/(far-near), 0,
+		(right+left)/(left-right), (top+bottom)/(bottom-top), (far+near)/(near-far), 1
+	};;
+
+fun translate(x, y, z)={ 1., 0., 0., 0., 0., 1., 0., 0., 0., 0., 1., 0., x, y, z, 1.};;
+fun scale(x, y, z)={ x, 0., 0., 0., 0., y, 0., 0., 0., 0., z, 0., 0., 0., 0., 1.};;
+fun rotate(a, x, y, z)= 
+\float
+	let sqrt(x*x+y*y+z*z) -> n in
+	let x/n -> x in let y/n -> y in let z/n -> z in 
+	let a*pi/180 -> a in let cos(a)-> c in let sin(a) -> s in let 1-c -> c1 in
+	{
+		x*x*c1+c, x*y*c1+z*s, x*z*c1-y*s, 0,
+		x*y*c1-z*s, y*y*c1+c, y*z*c1+x*s, 0,
+		x*z*c1+y*s, y*z*c1-x*s, z*z*c1+c, 0,
+		0, 0, 0, 1
+	};;
+
+fun mulMatScalar(a, k)= {
+	k*.a[0], k*.a[1], k*.a[2], k*.a[3],
+	k*.a[4], k*.a[5], k*.a[6], k*.a[7], 
+	k*.a[8], k*.a[9], k*.a[10], k*.a[11],
+	k*.a[12], k*.a[13], k*.a[14], k*.a[15]
+};;
+
+fun mulMatVec4(a, b)= {
+	(a[0] )*.(b[0] )+.(a[4] )*.(b[1] )+.(a[8] )*.(b[2] )+.(a[12])*.(b[3] ),
+	(a[1] )*.(b[0] )+.(a[5] )*.(b[1] )+.(a[9] )*.(b[2] )+.(a[13])*.(b[3] ),
+	(a[2] )*.(b[0] )+.(a[6] )*.(b[1] )+.(a[10])*.(b[2] )+.(a[14])*.(b[3] ),
+	(a[3] )*.(b[0] )+.(a[7] )*.(b[1] )+.(a[11])*.(b[2] )+.(a[15])*.(b[3] )	
+};;
+ 
+fun mulMat4(a, b)= {
+	(a[0] )*.(b[0] )+.(a[4] )*.(b[1] )+.(a[8] )*.(b[2] )+.(a[12])*.(b[3] ),
+	(a[1] )*.(b[0] )+.(a[5] )*.(b[1] )+.(a[9] )*.(b[2] )+.(a[13])*.(b[3] ),
+	(a[2] )*.(b[0] )+.(a[6] )*.(b[1] )+.(a[10])*.(b[2] )+.(a[14])*.(b[3] ),
+	(a[3] )*.(b[0] )+.(a[7] )*.(b[1] )+.(a[11])*.(b[2] )+.(a[15])*.(b[3] ),
+
+	(a[0] )*.(b[4] )+.(a[4] )*.(b[5] )+.(a[8] )*.(b[6] )+.(a[12])*.(b[7] ),
+	(a[1] )*.(b[4] )+.(a[5] )*.(b[5] )+.(a[9] )*.(b[6] )+.(a[13])*.(b[7] ),
+	(a[2] )*.(b[4] )+.(a[6] )*.(b[5] )+.(a[10])*.(b[6] )+.(a[14])*.(b[7] ),
+	(a[3] )*.(b[4] )+.(a[7] )*.(b[5] )+.(a[11])*.(b[6] )+.(a[15])*.(b[7] ),
+
+	(a[0] )*.(b[8] )+.(a[4] )*.(b[9] )+.(a[8] )*.(b[10])+.(a[12])*.(b[11]),
+	(a[1] )*.(b[8] )+.(a[5] )*.(b[9] )+.(a[9] )*.(b[10])+.(a[13])*.(b[11]),
+	(a[2] )*.(b[8] )+.(a[6] )*.(b[9] )+.(a[10])*.(b[10])+.(a[14])*.(b[11]),
+	(a[3] )*.(b[8] )+.(a[7] )*.(b[9] )+.(a[11])*.(b[10])+.(a[15])*.(b[11]),
+
+	(a[0] )*.(b[12])+.(a[4] )*.(b[13])+.(a[8] )*.(b[14])+.(a[12])*.(b[15]),
+	(a[1] )*.(b[12])+.(a[5] )*.(b[13])+.(a[9] )*.(b[14])+.(a[13])*.(b[15]),
+	(a[2] )*.(b[12])+.(a[6] )*.(b[13])+.(a[10])*.(b[14])+.(a[14])*.(b[15]),
+	(a[3] )*.(b[12])+.(a[7] )*.(b[13])+.(a[11])*.(b[14])+.(a[15])*.(b[15])
+};;
+
+fun _set_uNMatrix(w)=
+	glUniformMatrix4fv(getUniform(w, "uNMatrix"), 1, 0, floatsFromArray(matNormalize(glMatrix(GL_MODELVIEW_MATRIX))));;
+
+fun _set_uPMatrix(w)=
+	let glMatrix(GL_MODELVIEW_MATRIX) -> mvMatrix in
+	let glMatrix(GL_PROJECTION_MATRIX) -> pMatrix in
+	let set LastMatrix=mulMat4(pMatrix, mvMatrix) -> matrix in
+	glUniformMatrix4fv(getUniform(w, "uPMatrix"), 1, 0, floatsFromArray(matrix));;
+
+struct Texture=[glT, wT, hT, bmpT];;
+var GL_PROJECTION=0;;
+var GL_MODELVIEW=1;;
+var GL_PROJECTION_MATRIX=0;;
+var GL_MODELVIEW_MATRIX=1;;
+
+fun glInitShaders ()=
+	echoLn strJoin(" | ", [glGetString(GL_VERSION), glGetString(GL_VENDOR), glGetString(GL_RENDERER), glGetString(GL_SHADING_LANGUAGE_VERSION)]);
+	set ProgramMono= loadProgram(VERTEX_MONO, FRAGMENT_MONO, "aVertexPosition"::nil, "uColor"::"uPMatrix"::nil);
+	set ProgramColors= loadProgram(VERTEX_COLORS, FRAGMENT_COLORS, "aVertexPosition"::"aVertexColor"::nil, "uPMatrix"::nil);
+	set ProgramColors1Light=loadProgram(VERTEX_COLORS_1LIGHT, FRAGMENT_COLORS,
+		"aVertexPosition"::"aVertexNormal"::"aVertexColor"::nil,
+		"uPMatrix"::"uNMatrix"::"uLightVector0"::"uLightAmbiant0"::"uLightDiffuse0"::nil);
+	set ProgramColors2Lights=loadProgram(VERTEX_COLORS_2LIGHTS, FRAGMENT_COLORS,
+		"aVertexPosition"::"aVertexNormal"::"aVertexColor"::nil,
+		"uPMatrix"::"uNMatrix"::"uLightVector0"::"uLightAmbiant0"::"uLightDiffuse0"::"uLightVector1"::"uLightAmbiant1"::"uLightDiffuse1"::nil);
+	set ProgramTexture= loadProgram(VERTEX_TEXTURE, FRAGMENT_TEXTURE, "aVertexPosition"::"aTextureCoord"::nil, "uColor"::"uPMatrix"::nil);;
+
+fun glPushMatrix()= set Matrix[MatrixId]=matCopy(head(Matrix[MatrixId]))::Matrix[MatrixId]; 0;;
+fun glPopMatrix()= set Matrix[MatrixId]=tail(Matrix[MatrixId]); 0;;
+fun glLoadIdentity()= set Matrix[MatrixId]=matId()::tail(Matrix[MatrixId]); 0;;	
+fun glMatrix(v)= head(Matrix[v]);;
+fun glMatrixMode(v)= set MatrixId=v;0;;
+fun glFrustum(left, right, bottom, top, near, far) = set Matrix[MatrixId]=frustum(left, right, bottom, top, near, far)::tail(Matrix[MatrixId]); 0;;	
+fun glOrtho(left, right, bottom, top, near, far) = set Matrix[MatrixId]=ortho(left, right, bottom, top, near, far)::tail(Matrix[MatrixId]); 0;;	
+fun glTranslate(x, y, z)= set Matrix[MatrixId] = mulMat4(head(Matrix[MatrixId]), translate(x, y, z))::tail(Matrix[MatrixId]); 0;;	
+fun glScale(x, y, z)= set Matrix[MatrixId] = mulMat4(head(Matrix[MatrixId]), scale(x, y, z))::tail(Matrix[MatrixId]); 0;;	
+fun glRotate(a, x, y, z)= set Matrix[MatrixId] = mulMat4(head(Matrix[MatrixId]), rotate(a, x, y, z))::tail(Matrix[MatrixId]); 0;;	
+fun glMultMatrix(m)= set Matrix[MatrixId] = mulMat4(head(Matrix[MatrixId]), m)::tail(Matrix[MatrixId]); 0;;	
+
+fun glProject3d(x, y, z)=
+	let mulMatVec4(glMatrix(GL_PROJECTION_MATRIX), mulMatVec4(glMatrix(GL_MODELVIEW_MATRIX), {x, y, z, 1.})) -> v in
+	let v[3] -> div in let if div!=0.0 then div else 1. -> div in
+	[(v[0])/.div, (v[1])/.div, (v[2])/.div];;
+
+// partial rendering functions
+fun _renderFinal(prg, mode, vertices)=
+	let getAttrib(prg, "aVertexPosition") -> aVertexPosition in
+	(
+		_set_uPMatrix(prg);
+		glEnableVertexAttribArray(aVertexPosition);
+		glVertexAttribPointer(aVertexPosition, 3, 0, 0, vertices, 0);
+		glDrawArrays(mode, 0, floatsLength(vertices)/3);
+		glDisableVertexAttribArray(aVertexPosition);
+	);;
+
+fun _renderColor(prg, color, fNext)=
+	glUniform4fv(getUniform(prg, "uColor"), 1, color);
+	call fNext();;
+
+fun _renderColors(prg, colors, fNext)=
+	let getAttrib(prg, "aVertexColor") -> aVertexColor in
+	(
+		glEnableVertexAttribArray(aVertexColor);
+		glVertexAttribPointer(aVertexColor, 4, 0, 0, colors, 0);
+		call fNext();
+		glDisableVertexAttribArray(aVertexColor);
+	);;
+
+fun _renderNormals(prg, normals, fNext)=
+	let getAttrib(prg, "aVertexNormal") -> aVertexNormal in
+	(
+		_set_uNMatrix(prg);
+		glEnableVertexAttribArray(aVertexNormal);
+		glVertexAttribPointer(aVertexNormal, 3, 0, 0, normals, 0);
+		call fNext();
+		glDisableVertexAttribArray(aVertexNormal);
+	);;
+
+fun _renderLight0(prg, light, fNext)=
+	let light -> [lightVector, lightAmbiant, lightDiffuse] in (
+		glUniform4fv(getUniform(prg, "uLightVector0"), 1, lightVector);
+		glUniform4fv(getUniform(prg, "uLightAmbiant0"), 1, lightAmbiant);
+		glUniform4fv(getUniform(prg, "uLightDiffuse0"), 1, lightDiffuse)
+	);
+	call fNext();;
+
+fun _renderLight1(prg, light, fNext)=
+	let light -> [lightVector, lightAmbiant, lightDiffuse] in (
+		glUniform4fv(getUniform(prg, "uLightVector1"), 1, lightVector);
+		glUniform4fv(getUniform(prg, "uLightAmbiant1"), 1, lightAmbiant);
+		glUniform4fv(getUniform(prg, "uLightDiffuse1"), 1, lightDiffuse)
+	);
+	call fNext();;
+
+fun _renderTexture(prg, uv, fNext)=
+	let getAttrib(prg, "aTextureCoord") -> aTextureCoord in
+	(
+		glActiveTexture(GL_TEXTURE0);
+		glEnableVertexAttribArray(aTextureCoord);
+		glVertexAttribPointer(aTextureCoord, 2, 0, 0, uv, 0);
+		call fNext();
+		glDisableVertexAttribArray(aTextureCoord);
+	);;
+
+fun _renderProgram(p, fNext)=
+	if p<>nil then (
+		useProgram(p);
+		call fNext
+	());;
+
+// public rendering functions
+fun renderFlat(mode, vertices, color)=
+	let ProgramMono -> prg in
+	_renderProgram(prg,
+		lambda()=_renderColor(prg, color,
+		lambda()=_renderFinal(prg, mode, vertices)));;
+
+fun renderColors(mode, vertices, colors)=
+	let ProgramColors -> prg in
+	_renderProgram(prg,
+		lambda()=_renderColors(prg, colors,
+		lambda()=_renderFinal(prg, mode, vertices)));;
+
+fun renderColors1Light(mode, vertices, normals, colors, light)=
+	let ProgramColors1Light -> prg in
+	_renderProgram(prg,
+		lambda()=_renderColors(prg, colors,
+		lambda()=_renderNormals(prg, normals,
+		lambda()=_renderLight0(prg, light,
+		lambda()=_renderFinal(prg, mode, vertices)))));;
+
+fun renderColors2Lights(mode, vertices, normals, colors, light0, light1)=
+	let ProgramColors2Lights -> prg in
+	_renderProgram(prg,
+		lambda()=_renderColors(prg, colors,
+		lambda()=_renderNormals(prg, normals,
+		lambda()=_renderLight0(prg, light0,
+		lambda()=_renderLight1(prg, light1,
+		lambda()=_renderFinal(prg, mode, vertices))))));;
+
+fun renderTexture(mode, vertices, uv, color)=
+	let ProgramTexture -> prg in
+	_renderProgram(prg,
+		lambda()=_renderColor(prg, color,
+		lambda()=_renderTexture(prg, uv,
+		lambda()=_renderFinal(prg, mode, vertices))));;
+
+fun colorMakeARGB(argb)= floatsFromArray({
+	floatFromInt((argb>>16)&255)/.255.,
+	floatFromInt((argb>>8)&255)/.255.,
+	floatFromInt((argb)&255)/.255.,
+	floatFromInt((argb>>24)&255)/.255.
+});;
+
+fun textureCreate(bmp, linear)=
+	let glCreateTexture() -> texture in
+	let floatFromInt(bitmapW(bmp)) -> w in
+	let floatFromInt(bitmapH(bmp)) -> h in
+	(
+		glBindTexture(GL_TEXTURE_2D, texture) ;
+		glTexParameteri(GL_TEXTURE_2D,  GL_TEXTURE_MAG_FILTER, if linear then GL_LINEAR else GL_NEAREST);
+		glTexParameteri(GL_TEXTURE_2D,  GL_TEXTURE_MIN_FILTER, if linear then GL_LINEAR else GL_NEAREST);
+		glTexParameteri(GL_TEXTURE_2D,  GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+		glTexParameteri(GL_TEXTURE_2D,  GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+		glTexImage2D(texture, GL_TEXTURE_2D, 0, GL_RGBA, 0, bmp);
+		[glT=texture, wT=w, hT=h, bmpT=bmp]
+	);;
+
+fun textureUpdate(texture)=
+	glTexSubImage2D(texture.glT, GL_TEXTURE_2D, 0, 0, 0, bitmapW(texture.bmpT), bitmapH(texture.bmpT), texture.bmpT);;
+
+fun textureUpdateRegion(texture, x, y, w, h)=
+	glTexSubImage2D(texture.glT, GL_TEXTURE_2D, 0, x, y, w, h, bitmapCopy(texture.bmpT, x, y, w, h));;
+
+fun textureComputeRectangleUV(texture, x, y, w, h)=
+	let texture.wT -> wt in
+	let texture.hT -> ht in
+	let floatFromInt(x)/.wt -> u0 in
+	let floatFromInt(y)/.ht -> v0 in
+	let floatFromInt(x+w)/.wt -> u1 in
+	let floatFromInt(y+h)/.ht -> v1 in
+	floatsFromArray({ u0, v0,  u1, v0,  u0, v1,  u1, v1});;

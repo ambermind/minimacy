@@ -1,0 +1,73 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2022, Sylvain Huet, Ambermind
+// Minimacy (r) System
+
+extend Error with msgError _:Str, testError _ _;;	// TODO, remove testError
+const TestError = testError "foo" "bar";;
+
+sum _State= _THREAD_RUN, _THREAD_WAIT, _THREAD_DONE, _THREAD_IDLE;;
+
+struct Thread=[
+	_threadT,
+	_nameT,
+	_callerT,
+
+	_echoEnableT, 
+
+	_stateT,
+	
+	_postingT,
+	_tasksT,
+	_cyclesT,
+	_t0T,
+	_locksT 
+];;
+struct Stream=[
+	_socketS,
+	_thS,
+	_onSelectReadS,
+	_writeS,
+	_onReadS,
+	_onWriteS,
+	_closeS,
+	_showS
+];;
+
+
+fun stateName(s)= match s with _THREAD_IDLE-> "IDLE", _THREAD_DONE -> "DONE", _THREAD_WAIT -> "WAIT", _THREAD_RUN -> "RUN";;
+
+const _MAX_THREAD_EXEC=1000*1000;;	// queens16@thinkpad -> 25M in 170ms -> 150M opcodes per second. 1M -> at least 150 tasks switch/s
+const _MAX__THREAD_TASKS=10;;	// postMessage will freeze the caller if there are too many tasks in the callee's queue 
+
+const _SELECT_TIMEOUT=10000;;
+
+const SOURCE_EXTENSION=".mcy";;
+
+const _SystemPkg=pkg;;
+
+var _HardStop=false;;
+var _NiceStop=false;;
+
+const _ThreadBios=[_threadT=_threadCurrent(), _nameT="_BIOS_", _callerT="system",
+	_echoEnableT=_echoIsEnabled(),
+	_stateT=_THREAD_RUN,
+	_t0T=time()];;
+var _This=_ThreadBios;;
+
+//------------------------------
+include bios._start;;
+include bios._util;;
+include bios._lock;;
+include bios._io;;
+include bios._worker;;
+include bios._keyboard;;
+include bios._timer;;
+include bios._net;;
+include bios._file;;
+include bios._scheduler;;
+include bios._thread;;
+include bios._date;;
+include bios._pkg;;
+include bios._admin;;
+include bios._ui;;
+include bios._console;;

@@ -1,0 +1,44 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2022, Sylvain Huet, Ambermind
+// Minimacy (r) Demonstration
+
+fun _queens2(i, j, n, mleft, mcenter, mright, l)=
+	if i>=n then nil
+	else if j>=n then l
+	else let 1<<i -> m in
+	let !bitTest(m, mleft|mcenter|mright) -> possible in
+	let if possible then _queens2(0, j+1, n, (mleft|m)<<1, mcenter|m, (mright |m)>>1, i::l) -> solution in
+	if solution==nil then _queens2(i+1, j, n, mleft, mcenter, mright, l)
+	else solution;;
+
+fun _queens(n)=
+	_queens2(0, 0, n, 0, 0, 0, nil);;
+
+fun showrow(i, x, n)=
+	if i<n then
+	(
+		if i==x then echo "x|"
+		else echo "_|";
+		showrow(i+1, x, n)
+	);;
+fun showrows(l, size)=
+	if l!=nil then
+	(
+		showrow(0, head(l), size);
+		echoLn "";
+		showrows(tail(l), size)
+	);;
+
+fun queens(size)=
+	echoLn ["Queens puzzle / size=", size];
+	let timeMs() -> t0 in
+	let _queens(size) -> result in
+	let timeMs() - t0 -> dt in
+	(
+		echoLn strJoin(" ", result);
+		showrows(result, size);
+		echo "dt=";echoLn dt
+	);
+	0;;
+
+fun main()=queens(16);;

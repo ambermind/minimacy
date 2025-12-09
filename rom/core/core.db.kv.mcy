@@ -1,0 +1,192 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2022, Sylvain Huet, Ambermind
+// Minimacy (r) System
+// key-value database
+
+use core.util.tree23;;
+
+const DB_MAGIC="lambdaKV";;
+const DB_HEADER=strConcat(DB_MAGIC, "________");;
+const DB_HEADER_LENGTH= strLength(DB_HEADER);;
+
+const DB_ALIGN=8;;
+const DB_PADDING= strCreate(DB_ALIGN, 0xAA);;
+const DB_FILE_BATCH=1024*32;;
+
+fun _diskSize(size)= (size+DB_ALIGN-1)&~(DB_ALIGN-1);;
+
+struct EmptyBlock=[startE, sizeE];;
+struct DB=[
+	lockD,
+	nameD,
+	fileD,
+	lengthD,
+	dataD,
+	startD,
+	endD,
+	availableD
+];;
+const FBefore=lambda(a, b)= a.sizeE<b.sizeE;;
+
+fun hashNbits(nb)= if nb>0 then 1+hashNbits(nb>>1);;
+
+fun hashSize(nb)= max(8, hashNbits(nb)-4);;
+
+fun _dbWrite(db, start, block)=
+	fileWrite(db.fileD, start, block, 0, nil);
+	set db.lengthD=max(start+strLength(block), db.lengthD);;
+
+fun _dbAddEmpty(db, start, size)=
+	let [startE=start, sizeE=size] -> empty in
+	(
+		hashmapSet(db.startD, start, empty);
+		hashmapSet(db.endD, start+size, empty);
+		set db.availableD=tree23Insert(db.availableD, empty, FBefore)
+	);;
+
+fun _dbRemoveEmpty(db, empty)=
+	hashmapSet(db.endD, empty.startE+empty.sizeE, nil);
+	hashmapSet(db.startD, empty.startE, nil);
+	set db.availableD=tree23Delete(db.availableD, empty, FBefore);;
+
+fun __dbFill(db, buffer, start)=
+	if start+4>strLength(buffer) then
+	(
+		set buffer=strConcat(strSlice(buffer, start, nil), fileRead(db.fileD, nil, DB_FILE_BATCH));
+		set start=0
+	);
+	if start<strLength(buffer) then
+	let strRead24Msb(buffer, start) -> size in
+	let _diskSize(size) -> diskSize in
+	let start+diskSize -> endDisk in
+	(
+		if endDisk>strLength(buffer) then
+		(
+			set buffer=strConcat(strSlice(buffer, start, nil), fileRead(db.fileD, nil, max(strLength(buffer)-diskSize, DB_FILE_BATCH)));
+			set start=0
+		);
+		let start+size -> end in
+		if end <=strLength(buffer) then 
+		(
+			set db.lengthD=endDisk;
+			if 0==strRead8(buffer, start+3) then (_dbAddEmpty(db, start, diskSize); nil)
+			else
+			let strCharPos(buffer, 0, start+3) -> i in
+			if i < end then hashmapSet(db.dataD, strSlice(buffer, start+3, i-(start+3)), [start, endDisk, strSlice(buffer, i+1, end-i-1)]);
+			__dbFill(db, buffer, endDisk)
+		)
+	);;
+
+fun _dbFill(db) =
+	__dbFill(db, fileRead(db.fileD, 0, max(DB_HEADER_LENGTH, DB_FILE_BATCH)), DB_HEADER_LENGTH);;
+
+fun _dbMakeContent(data)=
+	let 3+strLength(data) -> size in
+	let _diskSize(size) -> diskSize in
+	let strLeft(DB_PADDING, diskSize - size) -> padding in
+	strBuild({ strInt24Msb(size), data, padding});;
+
+fun _dbAdd(db, key, val)=
+	let _dbMakeContent(strBuild([ key, "\0", val])) -> content in
+	let strLength(content) -> diskSize in
+	let tree23AtLeast(db.availableD, lambda(a)= a.sizeE>=diskSize) -> empty in
+	if empty==nil then let db.lengthD -> start in
+	(
+		hashmapSet(db.dataD, key, [db.lengthD, diskSize, val]);
+		_dbWrite(db, db.lengthD, content)
+	)
+	else let empty.startE -> start in
+	(
+		_dbRemoveEmpty(db, empty);
+		hashmapSet(db.dataD, key, [start, diskSize, val]);
+		if empty.sizeE>diskSize then
+		let start+diskSize -> emptyStart in
+		let empty.sizeE-diskSize -> emptySize in
+		(
+				_dbAddEmpty(db, emptyStart, emptySize);
+				_dbWrite(db, start, strBuild({content, strInt24Msb(emptySize), "\0"}))
+		)
+		else _dbWrite(db, start, content);
+	);;
+
+fun _dbMergeLeft(db, start, size)=
+	let hashmapGet(db.endD, start) -> empty in
+	if empty==nil then [start, size]
+	else
+	(
+		_dbRemoveEmpty(db, empty);
+		[empty.startE, size+empty.sizeE]
+	);;
+
+fun _dbMergeRight(db, start, size)=
+	let hashmapGet(db.startD, start+size) -> empty in
+	if empty==nil then [start, size]
+	else
+	(
+		_dbRemoveEmpty(db, empty);
+		[start, size+empty.sizeE]
+	);;
+
+fun _dbDel(db, key)=
+	let hashmapGet(db.dataD, key) -> [start, size, _] in
+	if start<>nil then
+	let _dbMergeLeft(db, start, size) -> [start, size] in
+	let _dbMergeRight(db, start, size) -> [start, size] in
+	(
+		_dbAddEmpty(db, start, size);
+		hashmapSet(db.dataD, key, nil);
+		_dbWrite(db, start, strBuild({ strInt24Msb(size), "\0"}))
+	);;
+
+fun _dbCheckHeader(file)=
+	let fileRead(file, 0, DB_HEADER_LENGTH) -> header in
+	if header==nil || 0==strLength(header) then 
+	(
+		fileWrite(file, 0, DB_HEADER, 0, nil);
+		true
+	)
+	else strStartsWith(header, DB_MAGIC);;
+
+//----------USER API
+fun kvOpen(size) =
+	let caller() ->[_, _, _, pkg] in
+	let strConcat(pkgName(pkg), ".kv") -> name in
+	let fileOpen(name, FILE_READ_WRITE)-> file in
+	if file<>nil then
+	if _dbCheckHeader(file) then
+	let [
+		lockD=lockCreate(),
+		nameD=name,
+		fileD=file,
+		lengthD= DB_HEADER_LENGTH,
+		dataD= hashmapCreate(hashSize(size)),
+		startD= hashmapCreate(8),
+		endD= hashmapCreate(8),
+		availableD= nil
+	] -> db in
+	(
+		_dbFill(db);
+		db
+	);;
+
+fun kvGet(db, key)=
+	let hashmapGet(db.dataD, key) -> [_, _, val] in val;;
+
+fun kvSet(db, key, val)=
+	if key<>nil && 0<strLength(key) then lockSync(db.lockD, lambda()=
+		let kvGet(db, key) -> previous in
+		if val<>kvGet(db, key) then
+		(
+			if previous<>nil then _dbDel(db, key);
+			if val<>nil then _dbAdd(db, key, val)
+		)
+	);;
+
+fun kvFlush(db)= nil;;
+fun kvDump(db)=hexDump dump load(db.nameD); true;;
+fun kvVisit(db, f)=
+	let 1<<hashmapBitSize(db.dataD) -> nb in
+	for i=0;i<nb do
+	for p=hashmapGetSlot(db.dataD, i); p<>nil ; let p->[_, _, next] in next do
+		let p->[key, [_, _, val], _] in if !(call f(key, val)) then return false;
+	true;;

@@ -1,0 +1,378 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2022, Sylvain Huet, Ambermind
+// Minimacy (r) System
+
+//----------- FILE SYSTEM
+extend VolumeType with sdVolume, usbVolume;;
+
+struct Volume=[
+	nameV, typeV, indexV, writableV, partitionsV,
+	fReadV:(fun Int Int -> Bytes), fWriteV:(fun Int Bytes -> Int),
+	nbSectorsV:Int, sectorSizeV:Int
+];;
+
+struct Partition=[
+	nameP,
+	volumeP,
+	writableP,
+	openP,
+	diskListP,
+	fileDeleteP,
+	userSectorsP
+//	dirDeleteP
+];;
+
+struct Mount=[
+	_partitionM,
+	_writableM,
+	_mountPathM,
+	_partitionPathM,
+	_indexM
+];;
+
+struct File=[sizeF, tellF, closeF, writeF, readF];;
+struct FileWithContent=File+[indexF, contentF];;
+
+var _Volumes;;
+var _Mounts;;
+
+fun _strFromPath(path)= if strEmpty(path) then "[empty]" else path;;
+
+// Volumes
+fun volumeCreate(type, index, writable, fRead, fWrite, nbSectors, sectorSize)=
+	let if index<>nil then index
+		else listReduce(_Volumes, 0, lambda(index, v)= if v.typeV==type then max(index, 1+v.indexV) else index)
+	-> index in
+	let strFormat("**", _strFromVolumeType(type), index) -> name in
+	[
+		nameV=name, typeV=type, indexV=index, writableV=writable,
+		fReadV=fRead, fWriteV=fWrite, nbSectorsV=nbSectors, sectorSizeV=sectorSize
+	];;
+
+fun fsAddVolume(volume)=
+	set _Volumes=volume::_Volumes;
+	volume;;
+
+fun volumeIsWritable(volume) = volume.writableV;;
+
+fun volumeAddPartition(volume, partition) =
+	set volume.partitionsV= partition::volume.partitionsV;
+	partition;;
+
+// Partitions
+fun _mkAnsiPartition(volume, name, writable)=
+	let writable&&volume.writableV -> writable in
+	volumeAddPartition(volume, [
+		nameP=name,
+		volumeP=volume,
+		writableP=writable,
+		openP=_mkAnsiOpen(writable),
+		diskListP= (lambda(output, path)= _workerEnter(); _ansiDiskList(output, path)),
+		fileDeleteP=#_ansiFileDelete
+	]);;
+
+fun _mkRomdiskPartition(volume, index, name)= 
+	volumeAddPartition(volume, [
+		nameP= name,
+		volumeP=volume,
+		writableP=false,
+		openP=_mkRomdiskOpen(index),
+		diskListP=lambda(output, path)= _romdiskList(index, output, path),
+		fileDeleteP=nil,
+		userSectorsP=volume.nbSectorsV
+	]);;
+
+// Mounts
+fun _mountUpdate()=
+	let listFind(_Mounts, lambda(m)=
+		let m._partitionM.volumeP -> v in
+		v.typeV==romdiskVolume && v.nameV=="romdisk0"
+	) -> bootdisk in
+	if bootdisk<>nil then set _Mounts=bootdisk::listRemove(_Mounts, bootdisk);
+	listReduce(_Mounts, 0, (lambda(i, m)= set m._indexM=i; i+1));
+	let listMap(_Mounts, lambda(m)=
+		let m._partitionM.volumeP -> v in
+		if v.typeV==ansiVolume || v.typeV==romdiskVolume then
+		if strEmpty(m._mountPathM) then
+		[v.typeV, v.indexV, m._partitionPathM]
+	) -> partitions in
+	_setPartitions(partitions);
+	true;;
+
+fun _partitionAddMount(partition, mount) =
+	set _Mounts= mount::_Mounts;
+	_mountUpdate();
+	mount;;
+
+fun partitionMount(partition, writable, mountPath, partitionPath)=
+	let writable&&partition.writableP -> writable in
+	_partitionAddMount(partition, [
+		_partitionM=partition,
+		_writableM=writable,
+		_mountPathM=mountPath,
+		_partitionPathM=partitionPath
+	]);;
+
+fun partitionsMount(partitions, writable, mountPath, partitionPath)=
+	listMap(partitions, lambda(partition)= partitionMount(partition, writable, mountPath, partitionPath));;
+
+fun mountList()= _Mounts;;
+fun mountByIndex(i) = listGet(_Mounts, i);;
+fun mountIndex(m)= m._indexM;;
+fun mountPartitionName(m) = m._partitionM.nameP;;
+fun mountMountPath(m) = m._mountPathM;;
+fun mountPartitionPath(m) = m._partitionPathM;;
+fun mountsByVolumeName(name) = listMap(_Mounts, lambda(m)= if m._partitionM.volumeP.nameV == name then m._indexM);;
+
+fun _fsInit(programDir) =
+	for [type, index, writable, nbSectors, sectorSize] in _volumes() do fsAddVolume(volumeCreate(type, index, writable, nil, nil, nbSectors, sectorSize));
+	for [type, index, root] in listReverse(_partitions()) do
+		let listFind(_Volumes, lambda(v) = v.typeV==type && v.indexV==index) -> volume in
+		if volume<>nil then
+		match type with
+			ansiVolume -> let _mkAnsiPartition(volume, "Ansi", true) -> partition in (
+				partitionMount(partition, false, "", root);
+				let if programDir<>nil then programDir else strConcat(strLeft(root, -4), "programs/") -> programDir in
+					partitionMount(partition, true, "", programDir);
+				partitionMount(partition, true, "/", "/");
+			),
+			romdiskVolume -> let _mkRomdiskPartition(volume, index, if index==0 then "BOOTLOADER" else "NATIVE") -> partition in 
+				partitionMount(partition, false, "", root)
+			,
+			_ -> nil;
+	true;;
+
+fun romdiskImport(name, data) =
+	let _romdiskImport(data) -> index in
+	if index<>nil then
+	let fsAddVolume(volumeCreate(romdiskVolume, index, false, nil, nil, 1, strLength(data)))-> volume in
+	let _mkRomdiskPartition(volume, index, name) -> partition in
+	partitionMount(partition, false, "", "");;
+
+fun fileFromContent(content)=
+	if content<>nil then
+	let [
+		indexF=0,
+		contentF=content,
+		sizeF= lambda ()= strLength(content),
+		closeF= lambda ()= nil,
+		writeF= lambda(seek, src, start, len) = nil
+	] -> file in (
+		set file.tellF= (lambda ()= file.indexF);
+		set file.readF= (lambda(seek, len) =
+			if seek<>nil then set file.indexF=seek;
+			let strSlice(file.contentF, file.indexF, len) -> data in (
+				set file.indexF= file.indexF+strLength(data);
+				data
+			)
+		);
+		File<file
+	);;
+
+fun _mkAnsiFileWrite(file) = lambda(seek, src, start, len) =
+	if len==0 then 0
+	else if !(len<0) then
+	(
+		_workerEnter();
+		_ansiFileWrite(file, seek, src, start, len)
+	)
+;;	
+
+fun _mkAnsiFileRead(file) = lambda(seek, len) =
+	if len==0 then ""
+	else if !(len<0) then
+	let bytesCreate(len, 0) -> buffer in
+	(
+		_workerEnter(); 
+		let _ansiFileRead(file, seek, buffer, 0, len) -> len2 in
+		strLeftBytes(buffer, len2)
+	)
+;;
+
+fun _mkAnsiOpen(writable)=
+	lambda(path, mode) =
+		if mode==FILE_READ_ONLY || writable then 
+		let (_workerEnter(); _ansiFileOpen(path, mode)) -> f in
+		if f<>nil then [
+			sizeF= (lambda ()= _workerEnter(); _ansiFileSize(f)),
+			tellF= lambda ()= _ansiFileTell(f),
+			closeF= (lambda ()= _workerEnter(); _ansiFileClose(f)),
+			writeF= if writable then _mkAnsiFileWrite(f),
+			readF= _mkAnsiFileRead(f)
+		];;
+
+fun _mkRomdiskOpen(index)=
+	lambda(path, mode) =
+		let _romdiskLoad(index, path) -> content in
+		fileFromContent(content);;
+
+fun _strFromVolumeType(type) = strReplace(strBuild(type), "Volume", "");;
+
+fun fsClear ()=
+	set _Mounts= nil; _mountUpdate(); true;;
+
+struct FileInfo=[_dirFI, _nameFI, _sizeFI, _updateFI, _mountFI];;
+
+fun mkFileInfo(mount, dir, name, size, update)=
+	[_dirFI=dir, _nameFI=name, _sizeFI=size, _updateFI=update, _mountFI=mount];;
+
+fun _absoluteDir(a)= ('/'==strGet(a, 0))||(':'==strGet(a, 1));;
+
+fun _cleanHome(path)=
+	let strPos(path, "/~/", 0) -> i in
+	if i==nil then path
+	else _cleanHome(strConcat(userDir, strSlice(path, i+3, nil)));;
+	
+fun _clean2points(path)=
+	let strPos(path, "/../", 0) -> i in
+	if i==nil then path
+	else let strCharPosRev(path, '/', i-1) -> j in
+	if j<>nil then
+	let strConcat(strLeft(path, j), strSlice(path, i+3, nil)) -> path in
+	_clean2points(path);;
+
+fun _clean1point(path)=
+	let strPos(path, "/./", 0) -> i in
+	if i==nil then path
+	else _clean1point(strConcat(strLeft(path, i), strSlice(path, i+2, nil)));;
+
+fun _cleanRoot(path)=
+	let strPos(path, "//", 0) -> i in
+	if i==nil then path
+	else _cleanRoot(strSlice(path, i+1, nil));;
+
+fun cleanPath(path)=
+	let _clean2points(path) -> path in
+	let _clean1point(path) -> path in
+	let _cleanHome(path) -> path in
+	let _cleanRoot(path) -> path in
+	path;;
+
+fun parentDir(f)=
+	if nil==strPos(f, "/", 0) then ""
+	else let strPosRev(f, "/", strLength(f)-2) -> i in
+	if i<>nil then strConcat(strLeft(f, i), "/")
+	else "/";;
+
+//----------- DIR
+fun _filesSort(lFiles) = quicksort(lFiles, lambda(a, b)= strCmp(a._nameFI, b._nameFI)<0);;
+
+fun _mountFilter(m, path) =
+	let cleanPath(path) -> path in
+	if _absoluteDir(m._mountPathM)==_absoluteDir(path) then
+	if strEmpty(m._mountPathM) then strConcat(m._partitionPathM, path)
+	else if m._mountPathM=="/" && m._partitionPathM=="/" then path
+	else if strStartsWith(path, m._mountPathM) then
+	strConcat(m._partitionPathM, strSlice(path, strLength(m._mountPathM), nil));;
+
+fun __decodeDir(mount, path0, l)=
+	if l<>nil then let l ->(name::attr::next) in
+	if strEmpty(name) || name=="." || name==".." then __decodeDir(mount, path0, next)
+	else
+	let strSplit(" ", attr) ->(hexSize::hexTime::type::nil) in
+	let type=="d" -> directory in
+	let strFormat("***", path0, name, if directory then "/") -> fileName in
+	mkFileInfo(mount, directory, fileName, intFromHex(hexSize), intFromHex(hexTime))::__decodeDir(mount, path0, next);;
+
+fun _decodeDir(mount, path0, str)= __decodeDir(mount, path0, strSplit("\0", str));;
+
+fun mountDiskList(m, path0)=
+	let if path0<>"" && !strEndsWith(path0, "/") then strConcat(path0, "/") else path0 -> path0 in
+	let _mountFilter(m, path0) -> path in
+	if path==nil then (
+		let cleanPath(path0) -> path in
+		if _absoluteDir(m._mountPathM)==_absoluteDir(path) then
+		if strStartsWith(m._mountPathM, path) then
+		let strLength(path) -> i in
+		let strPos(m._mountPathM, "/", i) -> j in
+		if j<>nil then 
+		mkFileInfo(m._indexM, true, strLeft(m._mountPathM, j+1), 0, nil)::nil
+	)
+	else let bufferCreateWithSize(2048) -> output in (
+		call m._partitionM.diskListP(output, path);
+		_decodeDir(m._indexM, path0, strFromBuffer(output))
+	);;
+
+fun _diskListInfo(path, lMounts)=
+	let hashmapCreate(8) -> h in
+	(
+		for m in lMounts do
+			let mountDiskList(m, path) -> lFiles in
+			for f in lFiles do if nil==hashmapGet(h, f._nameFI) then hashmapSet(h, f._nameFI, f);
+		listMap(listFromHashmap(h), lambda([key, val])=val)
+	);;
+
+fun diskListInfo(path)= _diskListInfo(path, _Mounts);;
+fun mountListInfo(i, path)= _diskListInfo(path, mountByIndex(i)::nil);;
+
+fun fileListInfo(path)= listFilter(diskListInfo(path), lambda(f)= !f._dirFI);;
+fun dirListInfo(path)= listFilter(diskListInfo(path), lambda(f)= f._dirFI);;
+fun fileList(path)= listMap(fileListInfo(path), lambda(f)= f._nameFI);;
+fun dirList(path)= listMap(dirListInfo(path), lambda(f)= f._nameFI);;
+
+fun fileInfo(path) = listFind(diskListInfo(parentDir(path)), lambda(f) = path==f._nameFI);;
+	
+fun fileInfoName(f)=f._nameFI;;
+fun fileInfoSize(f)=f._sizeFI;;
+fun fileInfoUpdate(f)=f._updateFI;;
+fun fileInfoIsDir(f)=f._dirFI;;
+
+//----------- FILES
+fun _fileOpen(mounts, path, mode)=
+	if !strEmpty(path) then
+	if !strEndsWith(path, "/") then
+	for m in mounts do
+		let _mountFilter(m, path) -> path in
+		if path<>nil then
+		if mode==FILE_READ_ONLY || m._writableM then
+		let call m._partitionM.openP(path, mode) -> f in
+		if f<>nil then return f;
+	nil;;
+fun fileOpen(path, mode)= _fileOpen(_Mounts, path, mode);;
+fun mountFileOpen(i, path, mode)= _fileOpen(mountByIndex(i)::nil, path, mode);;
+
+fun fileSize(file) = call file.sizeF();;
+fun fileTell(file) = call file.tellF();;
+fun fileClose(file) = call file.closeF();;
+fun fileWrite(file, seek, src, start, len)= call file.writeF(seek, src, start, len);;
+fun fileRead(file, seek, len)= call file.readF(seek, len);;
+
+fun _fileDelete(mounts, path)=
+	for m in mounts do
+		let _mountFilter(m, path) -> path in
+		if path<>nil then
+		let call m._partitionM.openP(path, FILE_READ_ONLY) -> f in
+		if f<>nil then (
+			fileClose(f);
+			return if m._writableM then call m._partitionM.fileDeleteP(path)
+		);;
+fun fileDelete(path)= _fileDelete(_Mounts, path);;
+fun mountFileDelete(i, path)= _fileDelete(mountByIndex(i)::nil, path);;
+
+fun _load(file)=
+	if file<>nil then
+	let fileSize(file) -> size in
+	let fileRead(file, nil, size) -> data in (
+		fileClose(file);
+		data
+	);;
+fun load(fileName) = _load(fileOpen(fileName, FILE_READ_ONLY));;
+fun mountLoad(i, fileName) = _load(mountFileOpen(i, fileName, FILE_READ_ONLY));;
+
+fun _save(data, file)=
+	if file<>nil then
+	let if 0==strLength(data) then 0 else fileWrite(file, nil, data, 0, nil) -> len in
+	fileClose(file);;
+fun save(data, fileName) =
+	if data==nil then fileDelete(fileName)
+	else _save(data, fileOpen(fileName, FILE_REWRITE));;
+fun mountSave(i, data, fileName) =
+	if data==nil then mountFileDelete(i, fileName)
+	else _save(data, mountFileOpen(i, fileName, FILE_REWRITE));;
+
+fun append(data, fileName) =
+	if data==nil then fileDelete(fileName)
+	else _save(data, fileOpen(fileName, FILE_APPEND));;
+fun mountAppend(i, data, fileName) =
+	if data==nil then mountFileDelete(i, fileName)
+	else _save(data, mountFileOpen(i, fileName, FILE_APPEND));;

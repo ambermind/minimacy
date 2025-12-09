@@ -1,0 +1,456 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2022, Sylvain Huet, Ambermind
+// Minimacy (r) System
+
+
+use core.net.ssh;;
+
+const SFTP_VERSION = 3;;
+
+const SSH_FXP_INIT          =1;;
+const SSH_FXP_VERSION       =2;;
+const SSH_FXP_OPEN          =3;;
+const SSH_FXP_CLOSE         =4;;
+const SSH_FXP_READ          =5;;
+const SSH_FXP_WRITE         =6;;
+const SSH_FXP_LSTAT         =7;;
+const SSH_FXP_FSTAT         =8;;
+const SSH_FXP_SETSTAT       =9;;
+const SSH_FXP_FSETSTAT      =10;;
+const SSH_FXP_OPENDIR       =11;;
+const SSH_FXP_READDIR       =12;;
+const SSH_FXP_REMOVE        =13;;
+const SSH_FXP_MKDIR         =14;;
+const SSH_FXP_RMDIR         =15;;
+const SSH_FXP_REALPATH      =16;;
+const SSH_FXP_STAT          =17;;
+const SSH_FXP_RENAME        =18;;
+const SSH_FXP_READLINK      =19;;
+const SSH_FXP_SYMLINK       =20;;
+const SSH_FXP_STATUS        =101;;
+const SSH_FXP_HANDLE        =102;;
+const SSH_FXP_DATA          =103;;
+const SSH_FXP_NAME          =104;;
+const SSH_FXP_ATTRS         =105;;
+const SSH_FXP_EXTENDED      =200;;
+const SSH_FXP_EXTENDED_REPLY=201;;
+
+const SSH_FX_OK               =0;;
+const SSH_FX_EOF              =1;;
+const SSH_FX_NO_SUCH_FILE     =2;;
+const SSH_FX_PERMISSION_DENIED=3;;
+const SSH_FX_FAILURE          =4;;
+const SSH_FX_BAD_MESSAGE      =5;;
+const SSH_FX_NO_CONNECTION    =6;;
+const SSH_FX_CONNECTION_LOST  =7;;
+const SSH_FX_OP_UNSUPPORTED   =8;;
+
+const SSH_FXF_READ  =0x00000001;;
+const SSH_FXF_WRITE =0x00000002;;
+const SSH_FXF_APPEND=0x00000004;;
+const SSH_FXF_CREAT =0x00000008;;
+const SSH_FXF_TRUNC =0x00000010;;
+const SSH_FXF_EXCL  =0x00000020;;
+
+const SSH_FILEXFER_ATTR_SIZE       =0x00000001;;
+const SSH_FILEXFER_ATTR_UIDGID     =0x00000002;;
+const SSH_FILEXFER_ATTR_PERMISSIONS=0x00000004;;
+const SSH_FILEXFER_ATTR_ACMODTIME  =0x00000008;;
+const SSH_FILEXFER_ATTR_EXTENDED   =0x80000000;;
+
+// permission bits
+const _S_IFIFO	=0x1000;; // FIFO
+const _S_IFCHR	=0x2000;; // Character
+const _S_IFBLK	=0x3000;; // Block
+const _S_IFDIR	=0x4000;; // Directory
+const _S_IFREG	=0x8000;; // Regular : normal file
+
+const _S_IFMT	=0xF000;; // File type mask
+
+const _S_IEXEC	=0x0040;;
+const _S_IWRITE	=0x0080;;
+const _S_IREAD	=0x0100;;
+
+
+sum SftpCallback= fileListS _, handleS _, errorS _ _, fileContentS _, attrS _, okS;;
+sum SftpSort=
+	SORT_BY_NAME, SORT_BY_NAME_DESC, SORT_BY_SIZE, SORT_BY_SIZE_DESC,
+	SORT_BY_MODIFICATION_TIME, SORT_BY_MODIFICATION_TIME_DESC,
+	SORT_BY_ACCESS_TIME, SORT_BY_ACCESS_TIME_DESC;;
+
+struct Sftp=SSH + [
+	channelS,
+	fNotifyEventS,
+	countSF,
+	cbSF,
+	homeSF,
+	offsetSF,
+	pendingDataSF,
+	sendingDataSF,
+	sendingOffsetSF
+];;
+struct SftpFile=[
+	shortF,
+	longF,
+	sizeF,
+	uidF,
+	gidF,
+	permissionsF,
+	atimeF,
+	mtimeF,
+	extendedF
+];;
+
+fun sftpOnEvent(h, fNotify)= set h.fNotifyEventS=(lambda(code, data) = call fNotify(h, code, data);0);;
+fun sftpNotifyEvent(h, code, data)=
+	if SSH_DEBUG then echoLn strFormat("> sftpNotifyEvent code *", code);
+	call h.fNotifyEventS(code, data);;
+
+fun _nextCount(h)= set h.countSF=h.countSF+1;;
+
+fun _getAndClearCb(h)=
+	let h.cbSF -> cb in
+	(
+		set h.cbSF=nil;
+		cb
+	);;
+
+fun ___sftpParseExtended(words, result, len)=
+	if words==nil then [len, listReverse(result)]
+	else let words->(type::data::next) in
+	___sftpParseExtended(next, [type, data]::result, len+8+strLength(type)+strLength(data));;
+
+fun _sftpParseExtended(data, i, count)=
+	let sshParseVals(data, i, count*2) -> words in
+	___sftpParseExtended(words, nil, i);;
+
+fun _sftpParseAttrs(f, data, i)=
+	let strRead32Msb(data, i) -> mask in
+	let i+4->i in
+	(
+		if 0<> (mask&SSH_FILEXFER_ATTR_SIZE) then
+		(
+			set f.sizeF= (strRead32Msb(data, i)<<32)+strRead32Msb(data, i+4);
+			set i=i+8
+		);
+		if 0<> (mask&SSH_FILEXFER_ATTR_UIDGID) then
+		(
+			set f.uidF= strRead32Msb(data, i);
+			set f.gidF= strRead32Msb(data, i+4);
+			set i=i+8
+		);
+		if 0<> (mask&SSH_FILEXFER_ATTR_PERMISSIONS) then
+		(
+			set f.permissionsF= strRead32Msb(data, i);
+			set i=i+4
+		);
+		if 0<> (mask&SSH_FILEXFER_ATTR_ACMODTIME) then
+		(
+			set f.atimeF= strRead32Msb(data, i);
+			set f.mtimeF= strRead32Msb(data, i+4);
+			set i=i+8
+		);
+		if 0<> (mask&SSH_FILEXFER_ATTR_EXTENDED) then
+		let strRead32Msb(data, i) -> count in
+		let _sftpParseExtended(data, i+4, count*2) -> [iNext, extended] in
+		(
+			set f.extendedF=extended;
+			set i=iNext
+		);
+		i
+	);;
+
+fun _sftpParseName(data, i, count)=
+	if count>0 then
+	let sshParseVals(data, i, 2) -> (short::long::_) in
+	let [shortF=short, longF=long] -> file in
+	let i+4+strLength(short)+4+strLength(long) -> i in
+	let _sftpParseAttrs(file, data, i) -> i in
+	file::_sftpParseName(data, i, count-1);;
+
+//--------------------------------
+
+fun sftpSend(h, code, data, cb)=
+	set h.cbSF=(lambda(arg)=call cb(arg);0);
+	sshSendChannelData(h.channelS, sshMsgStr(strBuild([strInt8(code), sshMsgInt(_nextCount(h)), data])));
+	nil;;
+
+fun sftpParseVersion(h, data)=
+	if SSH_DEBUG then echoLn "sftpParseVersion";
+	let strRead32Msb(data, 1) -> version in
+	let _sftpParseExtended(data, 5, 100) -> [i, options] in
+	(
+		if SSH_DEBUG then echoLn ["version ",version];
+		if SSH_DEBUG then echoLn ["options ", strJoin(",", options)];
+
+		sftpSend(h, SSH_FXP_REALPATH, sshMsgStr("."), lambda(arg)=
+			match arg with
+				fileListS fileList-> (
+					set h.homeSF=(head(fileList)).shortF;
+					sshNotifyEvent(h, SSH_READY, nil)
+				),
+				errorS code msg -> sshNotifyEvent(h, SSH_ERROR, msg)
+		)
+	);;
+
+fun sftpParseName(h, data)=
+	if SSH_DEBUG then echoLn "sftpParseName";
+	let strRead32Msb(data, 1) -> id in
+	let strRead32Msb(data, 5) -> count in
+	let _sftpParseName(data, 9, count) -> listNames in
+	call _getAndClearCb(h)(fileListS listNames);;
+
+fun sftpParseAttrs(h, data)=
+	if SSH_DEBUG then echoLn "sftpParseAttrs";
+	let strRead32Msb(data, 1) -> id in
+	let [SftpFile] -> attrs in
+	(
+		_sftpParseAttrs(attrs, data, 5);
+		call _getAndClearCb(h)(attrS attrs)
+	);;
+
+fun sftpParseHandle(h, data)=
+	if SSH_DEBUG then echoLn "sftpParseHandle";
+	let strRead32Msb(data, 1) -> id in
+	let sshParseVals(data, 5, 1) -> (handle::_) in
+	call _getAndClearCb(h)(handleS handle);;
+
+fun sftpParseStatus(h, data)=
+	if SSH_DEBUG then echoLn "sftpParseStatus";
+	let strRead32Msb(data, 1) -> id in
+	let strRead32Msb(data, 5) -> code in
+	let sshParseVals(data, 9, 2) -> (message::lang::_) in
+	call _getAndClearCb(h)(if code==SSH_FX_OK then okS else errorS code message);;
+
+fun sftpParseData(h, data)=
+	if SSH_DEBUG then echoLn "sftpParseData";
+	let strRead32Msb(data, 1) -> id in
+	let sshParseVals(data, 5, 1) -> (content::_) in
+	call _getAndClearCb(h)(fileContentS content);;
+
+fun _sftpParseChannelData(h, data)=
+	if SSH_DEBUG then echoLn ["_sftpParseChannelData Ready code=", strGet(data, 0)];
+	let strGet(data, 0) -> code in
+	match code with
+		SSH_FXP_DATA -> sftpParseData(h, data),
+		SSH_FXP_VERSION -> sftpParseVersion(h, data),
+		SSH_FXP_NAME -> sftpParseName(h, data),
+		SSH_FXP_HANDLE -> sftpParseHandle(h, data),
+		SSH_FXP_STATUS -> sftpParseStatus(h, data),
+		SSH_FXP_ATTRS -> sftpParseAttrs(h, data),
+		_ -> (echoLn ["unknown code ", code];nil);;
+
+fun _sftpProcessFrames(h)=
+	let strRead32Msb(h.pendingDataSF, 0) -> frameSize in
+	if (frameSize+4)<= strLength(h.pendingDataSF) then
+	let strSlice(h.pendingDataSF, 4, frameSize) -> data in
+	(
+		set h.pendingDataSF=strSlice(h.pendingDataSF, 4+frameSize, nil);
+		_sftpParseChannelData(h, data);
+		_sftpProcessFrames(h)
+	);;
+
+fun sftpOpenSubsystem(h) =
+	sshSendChannelRequest(h.channelS, "subsystem", true, sshMsgStr("sftp"));
+	sshOnChannelEvent(h.channelS, lambda(code, data)=
+		if code==SSH_OK then 
+			sshSendChannelData(h.channelS, sshMsgStr(strBuild([strInt8(SSH_FXP_INIT), sshMsgInt(SFTP_VERSION)])))
+		
+		else if code==SSH_DATA then (
+			set h.pendingDataSF=strConcat(h.pendingDataSF, data);
+			_sftpProcessFrames(h)
+		)
+		else sftpNotifyEvent(h, code, data)
+	);;
+
+fun sftpFtpStartSession(h)=
+	set h.channelS=sshSendChannelOpen(h, "session", 0);
+	sshOnChannelEvent(h.channelS, lambda(code, data)=
+		if code==SSH_OK then void sftpOpenSubsystem(h)
+		else sftpNotifyEvent(h, code, data)
+	);;
+
+fun _sftpMakeCb(cb)= (lambda(arg)=call cb(arg);nil);;
+
+fun _sftpSimpleRequest(h, code, data, cb)=
+	let _sftpMakeCb(cb) ->cb in
+	sftpSend(h, code, data, cb);;
+
+// ------------------------ ASYNC API
+
+fun sftpConnectAsync(ip, port, login, auth, fNotify)=
+	let [Sftp] -> h in (
+		sftpOnEvent(h, fNotify);
+		sshConnect(h, ip, port, login, auth, (lambda(code, data)=
+			if code==SSH_OK then void sftpFtpStartSession(h)
+			else sftpNotifyEvent(h, code, data)
+		));
+		h
+	);;
+
+fun _sftpDir(h, handle, cb, result)=
+	sftpSend(h, SSH_FXP_READDIR, sshMsgStr(handle), (lambda(arg)=
+		match arg with
+			fileListS fileList-> return _sftpDir(h, handle, cb, listConcat(fileList, result)),
+			errorS code msg -> if code==SSH_FX_EOF then return sftpSend(h, SSH_FXP_CLOSE, sshMsgStr(handle), (lambda(arg)=
+				call cb(if arg==okS then fileListS result else arg)
+			));
+		call cb(arg);
+	));;
+
+fun sftpDirAsync(h, path, cb)=
+	let _sftpMakeCb(cb) ->cb in
+	sftpSend(h, SSH_FXP_OPENDIR, sshMsgStr(path), (lambda(arg)=
+		match arg with handleS handle-> return _sftpDir(h, handle, cb, nil);
+		call cb(arg)
+	));;
+
+fun sftpMkdirAsync(h, path, attr, cb)=
+	let if attr==nil then {sshMsgInt(SSH_FILEXFER_ATTR_PERMISSIONS), sshMsgInt(0x1ff)} else attr->attr in
+	_sftpSimpleRequest(h, SSH_FXP_MKDIR, [ sshMsgStr(path), attr ], cb);;
+
+fun sftpRmdirAsync(h, path, cb)= _sftpSimpleRequest(h, SSH_FXP_RMDIR, [ sshMsgStr(path) ], cb);;
+
+fun _sftpGet(h, handle, cb, result)=
+	sftpSend(h, SSH_FXP_READ, {sshMsgStr(handle), sshMsgInt64(h.offsetSF), sshMsgInt(0x8000)}, (lambda(arg)=
+		match arg with
+			fileContentS content-> (
+				set h.offsetSF=h.offsetSF+strLength(content);
+				_sftpGet(h, handle, cb, content::result);
+				return nil
+			),
+			errorS code msg ->
+				if code==SSH_FX_EOF then return sftpSend(h, SSH_FXP_CLOSE, sshMsgStr(handle), (lambda(arg)=
+					call cb(if arg==okS then (fileContentS strListConcat(listReverse(result))) else arg)
+				));
+		call cb(arg)
+	));;
+
+fun sftpGetAsync(h, path, cb)=
+	set h.offsetSF=0;
+	let _sftpMakeCb(cb) ->cb in
+	sftpSend(h, SSH_FXP_OPEN, {sshMsgStr(path), sshMsgInt(SSH_FXF_READ), sshMsgInt(0)},lambda(arg)=
+		match arg with
+			handleS handle-> _sftpGet(h, handle, cb, nil),
+			_ -> call cb(arg)
+	);;
+
+fun sftpStatAsync(h, path, cb)=
+	let _sftpMakeCb(cb) ->cb in
+	sftpSend(h, SSH_FXP_STAT, sshMsgStr(path), cb);;
+
+fun sftpLStatAsync(h, path, cb)=
+	let _sftpMakeCb(cb) ->cb in
+	sftpSend(h, SSH_FXP_LSTAT, sshMsgStr(path), cb);;
+
+fun _sftpPut(h, handle, cb)=
+	if h.sendingOffsetSF>= strLength(h.sendingDataSF) then
+		sftpSend(h, SSH_FXP_CLOSE, sshMsgStr(handle), cb)
+	else
+		let strSlice(h.sendingDataSF, h.sendingOffsetSF, h.channelS.peerPacketMaxSizeC) -> content in
+		sftpSend(h, SSH_FXP_WRITE, {sshMsgStr(handle), sshMsgInt64(h.sendingOffsetSF), sshMsgStr(content)}, (lambda(arg)=
+			set h.sendingOffsetSF=h.sendingOffsetSF+strLength(content);
+			if arg==okS then _sftpPut(h, handle, cb)
+			else call cb(arg)
+		));;
+
+fun sftpPutAsync(h, path, content, attr, cb)=
+	let if attr==nil then {sshMsgInt(SSH_FILEXFER_ATTR_PERMISSIONS), sshMsgInt(0644)} else attr->attr in
+	let _sftpMakeCb(cb) ->cb in
+	sftpSend(h, SSH_FXP_OPEN, [
+		sshMsgStr(path),
+		sshMsgInt(SSH_FXF_WRITE|SSH_FXF_CREAT|SSH_FXF_TRUNC) ,
+		attr
+	],
+	lambda(arg)=
+		match arg with
+			handleS handle->
+			(
+				set h.sendingDataSF=content;
+				set h.sendingOffsetSF=0;
+				_sftpPut(h, handle, cb)
+			),
+			_ -> call cb(arg)
+	);;
+
+fun sftpSetStatAsync(h, path, attr, cb)= _sftpSimpleRequest(h, SSH_FXP_SETSTAT, [ sshMsgStr(path), attr ], cb);;
+
+fun sftpRenameAsync(h, oldPath, newPath, cb)= _sftpSimpleRequest(h, SSH_FXP_RENAME, [ sshMsgStr(oldPath), sshMsgStr(newPath) ], cb);;
+
+fun sftpRemoveAsync(h, path, cb)= _sftpSimpleRequest(h, SSH_FXP_REMOVE, [ sshMsgStr(path) ], cb);;
+
+//--------------------- SYNC API
+fun sftpIsDir(permission)= (permission & _S_IFMT)==_S_IFDIR;;
+
+fun sftpEchoDir(fileList)=
+	for f in fileList do echoLn f.longF;
+	fileList;;
+
+fun sftpAttrFromPermission(permission)= {sshMsgInt(SSH_FILEXFER_ATTR_PERMISSIONS), sshMsgInt(permission)};;
+
+fun sftpHome(h)= h.homeSF;;
+
+fun sftpSort(sort, fileList) =
+	quicksort(fileList, match sort with
+	SORT_BY_SIZE -> (lambda(a, b)= a.sizeF<b.sizeF),
+	SORT_BY_SIZE_DESC -> (lambda(a, b)= a.sizeF>b.sizeF),
+	SORT_BY_MODIFICATION_TIME -> (lambda(a, b)= a.mtimeF<b.mtimeF),
+	SORT_BY_MODIFICATION_TIME_DESC -> (lambda(a, b)= a.mtimeF>b.mtimeF),
+	SORT_BY_ACCESS_TIME -> (lambda(a, b)= a.atimeF<b.atimeF),
+	SORT_BY_ACCESS_TIME_DESC -> (lambda(a, b)= a.atimeF>b.atimeF),
+	SORT_BY_NAME_DESC -> (lambda(a, b)= 0<strCmp(a.shortF, b.shortF)),
+	_ -> lambda(a, b)= 0>strCmp(a.shortF, b.shortF));;
+
+fun sftpConnect(ip, port, login, auth)=
+	await(lambda(join)=sftpConnectAsync(ip, port, login, auth, lambda(h, code, data)= joinSend(join, if code==SSH_READY then h)));;
+
+fun sftpDir(h, path)=
+	await(lambda(join)=sftpDirAsync(h, path, lambda(arg)= joinSend(join, match arg with fileListS fileList -> fileList)));;
+
+fun sftpMkdir(h, path, attr)=
+	await(lambda(join)=sftpMkdirAsync(h, path, attr, lambda(arg)= joinSend(join, match arg with okS -> true)));;
+
+fun sftpRmdir(h, path)= 
+	await(lambda(join)=sftpRmdirAsync(h, path, lambda(arg)= joinSend(join, match arg with okS -> true)));;
+
+fun sftpGet(h, path)=
+	await(lambda(join)=sftpGetAsync(h, path, lambda(arg)= joinSend(join, match arg with fileContentS data -> data)));;
+
+fun sftpStat(h, path)=
+	await(lambda(join)=sftpStatAsync(h, path, lambda(arg)= joinSend(join, match arg with attrS attr -> attr)));;
+
+fun sftpLStat(h, path)=
+	await(lambda(join)=sftpLStatAsync(h, path, lambda(arg)= joinSend(join, match arg with attrS attr -> attr)));;
+
+fun sftpPut(h, path, content, attr)=
+	await(lambda(join)=sftpPutAsync(h, path, content, attr, lambda(arg)= joinSend(join, match arg with okS -> true)));;
+
+fun sftpSetStat(h, path, attr)=
+	await(lambda(join)=sftpSetStatAsync(h, path, attr, lambda(arg)= joinSend(join, match arg with okS -> true)));;
+
+fun sftpRename(h, oldPath, newPath)= 
+	await(lambda(join)=sftpRenameAsync(h, oldPath, newPath, lambda(arg)= joinSend(join, match arg with okS -> true)));;
+
+fun sftpRemove(h, path)= 
+	await(lambda(join)=sftpRemoveAsync(h, path, lambda(arg)= joinSend(join, match arg with okS -> true)));;
+
+fun _sftpMkPath(h, www, uri, i)=
+	let strPos(uri, "/", i) -> i in
+	if i<>nil then
+	(
+		dump sftpMkdir(h, echoLn strConcat(www, strLeft(uri, i)), nil);
+		_sftpMkPath(h, www, uri, i+1)
+	);;
+
+// make sure that the remote path of www/uri exists, assuming that www already exists
+fun sftpMkPath(h, www, uri)= _sftpMkPath(h, www, strFromUrl(uri), 1);;	// 1 -> skip the initial '/' of the uri
+
+fun sftpWWWSend(ip, port, login, auth, www, uri, content)=
+	let sftpConnect(ip, port, login, auth) -> h in
+	if h<>nil then
+	(
+		sftpMkPath(h, www, uri);
+		dump sftpPut(h, strConcat(www, uri), content, nil);
+		dump sshClose(h);
+
+	);;

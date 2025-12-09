@@ -1,0 +1,88 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2022, Sylvain Huet, Ambermind
+// Minimacy (r) System
+use core.crypto.hash;;
+use core.crypto.rsa;;
+
+// pkcs1
+const _HEADER=10;;
+
+fun _inputBlockSize (nbits, forEncryption)= ((nbits+7)>>3) - forEncryption;;
+fun _outputBlockSize(nbits, forEncryption)= ((nbits+7)>>3) + forEncryption -1 ;;
+fun _pkcs1InputBlockSize(nbits, forEncryption)= _inputBlockSize( nbits, forEncryption)-forEncryption*_HEADER;;
+fun _pkcs1OutputBlockSize(nbits, forEncryption)= _outputBlockSize( nbits, forEncryption)-(1-forEncryption)*_HEADER;;
+
+// fexp B->B is supposed to encode the bignum with the key 
+fun _pkcs1Encrypt(N, data, forPrivateKey, fexp)=
+	let strLength(data) -> dataLen in
+	let bigNbits(N) -> nbits in
+	let _inputBlockSize(nbits, 1) -> blockLen in
+	let bytesCreate(blockLen, 0xff) -> block in
+	let blockLen-dataLen-1 -> headerLen in
+	(
+		if forPrivateKey then bytesSet(block, 0, 0x01)
+		else
+		(
+			bytesRand(block, 0, headerLen);
+			bytesSet(block, 0, 0x02);
+			for i=1;i<headerLen do if 0==bytesGet(block, i) then bytesSet(block, i, i);
+		);
+		bytesSet(block, headerLen, 0x00);
+		bytesCopy(block, headerLen+1, data, 0, nil);
+		let bigFromBytes(block) -> bignum in
+		let call fexp(bignum) -> encoded in
+		strFromBig(encoded, _pkcs1OutputBlockSize(nbits, 1))
+	);;
+
+fun _pkcs1Decrypt(N, data, forPrivateKey, fexp)=
+	let bigNbits(N) -> nbits in
+	let bigFromStr(data) -> bignum in
+	let call fexp(bignum) -> decoded in
+	let _outputBlockSize(nbits, 0) -> blockLen in
+	let strFromBig(decoded, blockLen) -> block in
+	let strGet(block, 0) -> type in
+	if (!forPrivateKey && type==1)||(forPrivateKey && type==2) then	// no else, this returns nil when wrong header byte
+	(
+		for i=1;i<blockLen do if 0==strGet(block, i) then return strTail(block, i+1);
+		nil
+	);;
+
+fun _pkcs1LoopEncrypt(N, data, i, blockLen, forPrivateKey, fexp)=
+	if i<strLength(data) then _pkcs1Encrypt(N, strSlice(data, i, blockLen), forPrivateKey, fexp)::_pkcs1LoopEncrypt(N, data, i+blockLen, blockLen, forPrivateKey, fexp);;
+
+fun _pkcs1LoopDecrypt(N, data, i, blockLen, forPrivateKey, fexp)=
+	if i<strLength(data) then _pkcs1Decrypt(N, strSlice(data, i, blockLen), forPrivateKey, fexp)::_pkcs1LoopDecrypt(N, data, i+blockLen, blockLen, forPrivateKey, fexp);;
+
+fun _pkcs1Process(N, data, forEncryption, forPrivateKey, fexp)=
+	if N<>nil then
+	let bigNbits(N) -> nbits in
+	let _pkcs1InputBlockSize(nbits, forEncryption) -> inputBlockLen in
+	let strLength(data) -> dataLen in
+	if (forEncryption<>0)||(0==(dataLen%inputBlockLen)) then // no else, this returns nil when decrypting data with wrong size
+	strListConcat(if forEncryption<>0 then _pkcs1LoopEncrypt(N, data, 0, inputBlockLen, forPrivateKey, fexp)
+		else _pkcs1LoopDecrypt(N, data, 0, inputBlockLen, forPrivateKey, fexp));;
+
+fun pkcs1EncryptPub(N, exponent, data) = _pkcs1Process(N, data, 1, false, lambda(msg)=bigExpMod(msg, exponent, N));;
+fun pkcs1DecryptPub(N, exponent, data) = _pkcs1Process(N, data, 0, false, lambda(msg)=bigExpMod(msg, exponent, N));;
+fun pkcs1EncryptPriv(N, data, fexp)= _pkcs1Process(N, data, 1, true, fexp);;
+fun pkcs1DecryptPriv(N, data, fexp)= _pkcs1Process(N, data, 0, true, fexp);;
+
+fun pkcs1EncryptPubRsa(rsa, data)= pkcs1EncryptPub(rsaModulus(rsa), rsaPubExp(rsa), data);;
+fun pkcs1DecryptPubRsa(rsa, data)= pkcs1DecryptPub(rsaModulus(rsa), rsaPubExp(rsa), data);;
+fun pkcs1EncryptPrivRsa(rsa, data) = pkcs1EncryptPriv(rsaModulus(rsa), data, lambda(msg) = rsaComputePrivateExp(rsa, msg));;
+fun pkcs1DecryptPrivRsa(rsa, data) = pkcs1DecryptPriv(rsaModulus(rsa), data, lambda(msg) = rsaComputePrivateExp(rsa, msg));;
+
+fun rsaPkcs1Sign(rsa, data, magic, fHash)=
+	let strConcat(strFromHex(magic), call fHash(data)) -> hash in
+	pkcs1EncryptPrivRsa(rsa, hash);;
+
+fun rsaPkcs1SignatureCheck(rsa, data, signature, magic, fHash)=
+/*	echoLn "=======================rsaPkcs1SignatureCheck";
+	dump certificate;
+	hexDump data;
+	dump signature;
+*/
+	let strConcat(strFromHex(magic), call fHash(data)) -> hash in
+	if hash<>nil then
+	let pkcs1DecryptPubRsa(rsa, signature) -> decode in
+	hash==decode;;

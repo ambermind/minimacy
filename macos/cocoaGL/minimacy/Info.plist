@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>NSBluetoothAlwaysUsageDescription</key>
+	<string>Bluetooth required for testing.</string>
+	<key>NSBluetoothPeripheralUsageDescription</key>
+	<string>Bluetooth required for testing.</string>
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>Location required for testing.</string>
+	<key>NSLocationAlwaysUsageDescription</key>
+	<string>Location required for testing.</string>
+	<key>NSLocationUsageDescription</key>
+	<string>Location required for testing.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Location required for testing.</string>
+	<key>CFBundleDocumentTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeIconFile</key>
+			<string></string>
+			<key>CFBundleTypeName</key>
+			<string>Minimacy file</string>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>LSHandlerRank</key>
+			<string>Default</string>
+			<key>LSItemContentTypes</key>
+			<array>
+				<string>com.ambermind.minimacy.mcy</string>
+			</array>
+			<key>NSDocumentClass</key>
+			<string></string>
+		</dict>
+	</array>
+	<key>UTExportedTypeDeclarations</key>
+	<array>
+		<dict>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.data</string>
+			</array>
+			<key>UTTypeDescription</key>
+			<string>Minimacy file</string>
+			<key>UTTypeIcons</key>
+			<dict/>
+			<key>UTTypeIdentifier</key>
+			<string>com.ambermind.minimacy.mcy</string>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>mcy</string>
+				</array>
+			</dict>
+		</dict>
+	</array>
+	<key>NSHumanReadableCopyright</key>
+	<string>Copyright (c) 2022, Sylvain Huet</string>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>bluetooth-central</string>
+	</array>
+</dict>
+</plist>

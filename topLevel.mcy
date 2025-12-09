@@ -1,0 +1,4 @@
+// minimacy TopLevel - Sylvain Huet - 2020
+fun main() = 
+	consoleStart(nil);;
+

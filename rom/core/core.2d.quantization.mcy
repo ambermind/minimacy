@@ -1,0 +1,278 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2022, Sylvain Huet, Ambermind
+// Minimacy (r) System
+
+export quantifyFrame(quantifiedOctree, paletteMaxLength, frame);;
+export paletteFromQuantization(quantifiedOctree);;
+export paletteProject(aPalette, paletteOctree, rgb);;
+export bitmapPalettize(frame, paletteOctree, aPalette);;
+export quantization(bmp, paletteMaxLength);;
+
+// we use an octree with leafs having 1 or 2 colors. Each time a new color is added, if we exceed the palette size,
+// we fusion the deepest 2-colors leaf and smallest distance
+// Maths prove that there is always a 2-colors leaf at the deepest level of the octree 
+sum Octree2Colors= color1T _ _, color2T _ _ _ _ _, internalT _ _ _ _;;
+
+//color1T rgb1 n1 : n1=weight during octree creation, then palette index after palette creation
+//color2T rgb1 n1 rgb2 n2 proximity : n1, n2 =weight during octree creation, then palette index after palette creation
+//internalT t1 t2 nb proximity : t1 t2= childs, nb = number of colors in childs
+
+//proximity is a 'distance' score. The closest, the more proximity
+//in color2T it is: DISTANCE_MAX-distance between the two colors
+//we add DISTANCE_MAX at each level of the tree, so that running through the tree following the max proximity leads to a color2T in the lowest level
+
+const DISTANCE_MAX=256;;	// we use a max distance on the color components distances
+
+// split plan :
+// dx=dy=dz -> x (r)
+// 2dx=dy=dz -> y (g)
+// 2dx=2dy=dz -> z (b)
+
+fun colorDist(a, b)=
+	max(abs((255&(a>>16))-(255&(b>>16))),
+	max(abs((255&(a>>8))-(255&(b>>8))),
+	    abs((255&(a))-(255&(b)))));;
+
+fun _componentAverage(a, wa, b, wb)= (a*wa + b*wb +((wa+wb)>>1))/(wa+wb);;
+
+fun colorAverage(a, wa, b, wb)=
+	 ( _componentAverage(255&(a>>16), wa, 255&(b>>16), wb) <<16)
+	|( _componentAverage(255&(a>>8), wa, 255&(b>>8), wb) <<8)
+	|( _componentAverage(255&(a), wa, 255&(b), wb));;
+
+fun _ocNb(t) =
+	match t with
+	color1T _ _-> 1,
+	color2T _ _ _ _ _-> 2,
+	internalT _ _ nb _ -> nb,
+	_ -> 0;;
+fun _ocProximity(t) =
+	match t with
+	color1T _ _ -> 0,
+	color2T _ _ _ _ proximity -> proximity,
+	internalT _ _ _ proximity -> proximity,
+	_ -> 0;;
+
+fun _ocInternal(t1, t2) =
+	let max(_ocProximity(t1), _ocProximity(t2)) -> d in
+	internalT t1 t2 _ocNb(t1)+_ocNb(t2) if d==0 then 0 else DISTANCE_MAX+d;;
+fun _ocColor2(rgb1, w1, rgb2, w2)=
+	color2T rgb1 w1 rgb2 w2 DISTANCE_MAX-colorDist(rgb1, rgb2);;
+
+
+fun _ocSplitDirect(rgb0, v0, w0, rgb1, v1, w1, rgb2, v2, w2)=
+	if v0<0 then
+		if v1<0 then _ocInternal(_ocColor2(rgb0, w0, rgb1, w1), (color1T rgb2 w2))
+		else if v2<0 then _ocInternal(_ocColor2(rgb0, w0, rgb2, w2), (color1T rgb1 w1))
+		else _ocInternal(color1T rgb0 w0, _ocColor2(rgb1, w1, rgb2, w2))
+	else
+		if v1>=0 then _ocInternal(color1T rgb2 w2, _ocColor2(rgb0, w0, rgb1, w1))
+		else if v2>=0 then _ocInternal(color1T rgb1 w1, _ocColor2(rgb0, w0, rgb2, w2))
+		else _ocInternal(_ocColor2(rgb1, w1, rgb2, w2), color1T rgb0 w0);;
+
+fun _ocSplit(x, dx, y, dy, z, dz, rgb0, w0, rgb1, w1, rgb2, w2, v0, v1, v2, ax, ay, az)=
+	if (v0<0) && (v1<0) && (v2<0) then _ocInternal(ocSplit(x, dx, y, dy, z, dz, rgb0, w0, rgb1, w1, rgb2, w2), nil)
+	else if (v0>=0) && (v1>=0) && (v2>=0) then _ocInternal(nil, ocSplit(x+ax, dx, y+ay, dy, z+az, dz, rgb0, w0, rgb1, w1, rgb2, w2))
+	else _ocSplitDirect(rgb0, v0, w0, rgb1, v1, w1, rgb2, v2, w2);;
+
+// we have 3 colors on the same leaf
+// we need to split them in a tree where the lower level has 2 brother leafs, one with color1T, the over with color2T
+fun ocSplit(x, dx, y, dy, z, dz, rgb0, w0, rgb1, w1, rgb2, w2) =
+	let nil -> t1 in let nil -> t2 in
+	if dy<>dz then let dz>>1 -> dz2 in let z+dz2 -> cut in
+		let (rgb0&255)-cut-> v0 in let (rgb1&255)-cut-> v1 in let (rgb2&255)-cut-> v2 in 
+		_ocSplit(x, dx, y, dy, z, dz2, rgb0, w0, rgb1, w1, rgb2, w2, v0, v1, v2, 0, 0, dz2)
+	else if dx<>dy then let dy>>1 -> dy2 in let y+dy2 -> cut in
+		let ((rgb0>>8)&255)-cut-> v0 in let ((rgb1>>8)&255)-cut-> v1 in let ((rgb2>>8)&255)-cut-> v2 in 
+		_ocSplit(x, dx, y, dy2, z, dz, rgb0, w0, rgb1, w1, rgb2, w2, v0, v1, v2, 0, dy2, 0)
+	else let dx>>1 -> dx2 in let x+dx2 -> cut in
+		let ((rgb0>>16)&255)-cut-> v0 in let ((rgb1>>16)&255)-cut-> v1 in let ((rgb2>>16)&255)-cut-> v2 in 
+		_ocSplit(x, dx2, y, dy, z, dz, rgb0, w0, rgb1, w1, rgb2, w2, v0, v1, v2, dx2, 0, 0);;
+
+fun ocAdd(t, x, dx, y, dy, z, dz, rgb)=// echo strFormat "+ * * * " dx dy dz; 
+	match t with
+	color1T rgb1 w1 -> if rgb==rgb1 then (color1T rgb1 w1+1) else _ocColor2(rgb1, w1, rgb, 1),
+	color2T rgb1 w1 rgb2 w2 proximity ->
+		if rgb==rgb1 then color2T rgb1 w1+1 rgb2 w2 proximity
+		else if rgb==rgb2 then color2T rgb1 w1 rgb2 w2+1 proximity
+		else ocSplit(x, dx, y, dy, z, dz, rgb, 1, rgb1, w1, rgb2, w2),
+	internalT t1 t2 _ _ ->
+		if dy<>dz then let dz>>1 -> dz2 in
+			if (rgb&255)<z+dz2 then _ocInternal(ocAdd(t1, x, dx, y, dy, z, dz2, rgb), t2)
+			else _ocInternal(t1, ocAdd(t2, x, dx, y, dy, z+dz2, dz2, rgb))
+		else if dx<>dy then let dy>>1 -> dy2 in
+			if ((rgb>>8)&255)<y+dy2 then _ocInternal(ocAdd(t1, x, dx, y, dy2, z, dz, rgb), t2)
+			else _ocInternal(t1, ocAdd(t2, x, dx, y+dy2, dy2, z, dz, rgb))
+		else let dx>>1 -> dx2 in
+			if ((rgb>>16)&255)<x+dx2 then _ocInternal(ocAdd(t1, x, dx2, y, dy, z, dz, rgb), t2)
+			else _ocInternal(t1, ocAdd(t2, x+dx2, dx2, y, dy, z, dz, rgb)),
+	_ -> color1T rgb 1;;
+
+fun ocAddColor(t, rgb)=ocAdd(t, 0, 256, 0, 256, 0, 256, rgb&0xffffff);;	// 256: because each component is 8 bits
+/*
+// this fusion algorithm optimizes the tree after fusion
+// it removes parents with one empty child and no more than 2 colors in their descendants
+// -> no real impact on the speed, lower quality (subjective)
+fun _ocLeafColor1 t= match t with
+	color1T _ _ -> t,
+	internalT t1 t2 _ _ -> _ocLeafColor1 if t1<>nil then t1 else t2;;
+	
+fun _ocFusionInternal t1 t2=
+	let _ocNb t1 -> nb1 in
+	let _ocNb t2 -> nb2 in
+	if nb1==0 then t2
+	else if nb2==0 then t1
+	else if nb1>1 || nb2>1 then _ocInternal t1 t2
+	else
+	match _ocLeafColor1 t1 with color1T rgb1 w1 ->
+	match _ocLeafColor1 t2 with color1T rgb2 w2 -> _ocColor2 rgb1 w1 rgb2 w2;;
+	
+fun ocFusion t = match t with
+	color2T rgb1 w1 rgb2 w2 _ -> color1T (colorAverage rgb1 w1 rgb2 w2) w1+w2,
+	internalT t1 t2 _ _ ->
+		if (_ocProximity t1)>(_ocProximity t2) then _ocFusionInternal (ocFusion t1) t2
+		else _ocFusionInternal t1 (ocFusion t2),
+	_ -> t;;
+*/
+// this fusion algorithm doesn't optimize the tree after fusion
+// -> no real impact on the speed, but better quality (subjective)
+// various 'match' miss some constructors cases because they are mathematicaly impossible!
+fun ocFusion(t) = match t with
+	internalT t1 t2 _ _ ->
+		if _ocProximity(t1)>_ocProximity(t2) then (
+			match t1 with
+				internalT _ _ _ _ -> _ocInternal(ocFusion(t1), t2),
+				color2T rgb1 w1 rgb2 w2 _ ->
+					let w1+w2 -> w in
+					let colorAverage(rgb1, w1, rgb2, w2) -> rgb in 
+					match t2 with
+						color1T rgb3 w3 -> _ocColor2(rgb, w, rgb3, w3),
+						nil -> color1T rgb w,
+						_ -> _ocInternal(color1T rgb w, t2)
+				
+		)
+		else 
+			match t2 with
+				internalT _ _ _ _ -> _ocInternal(t1, ocFusion(t2)),
+				color2T rgb1 w1 rgb2 w2 _ ->
+					let w1+w2 -> w in
+					let colorAverage(rgb1, w1, rgb2, w2) -> rgb in 
+					match t1 with
+						color1T rgb3 w3 -> _ocColor2(rgb, w, rgb3, w3),
+						nil -> color1T rgb w,
+						_ -> _ocInternal(t1, color1T rgb w)
+				
+		;;
+
+fun _ocPaletteAdd(fifo, rgb)=
+	let fifoCount(fifo) -> i in
+	(
+		fifoIn(fifo, rgb);
+		i
+	);;
+	
+fun ocPalette(t, fifo)= match t with
+	color1T rgb1 _ -> color1T rgb1 _ocPaletteAdd(fifo, rgb1),
+	color2T rgb1 _ rgb2 _ proximity -> 
+		color2T rgb1 _ocPaletteAdd(fifo, rgb1) rgb2 _ocPaletteAdd(fifo, rgb2) proximity,
+	internalT t1 t2 nb proximity -> internalT ocPalette(t1, fifo) ocPalette(t2, fifo) nb proximity;;
+
+fun _ocClosest(aPalette, t, rgb)=
+	match t with
+		color1T rgb1 i1 -> i1,
+		color2T rgb1 i1 rgb2 i2 _ -> if colorDist(rgb, rgb1)<colorDist(rgb, rgb2) then i1 else i2,
+		internalT t1 t2 _ _ ->
+			if t1==nil then _ocClosest(aPalette, t2, rgb)
+			else if t2==nil then _ocClosest(aPalette, t1, rgb)
+			else
+			let _ocClosest(aPalette, t1, rgb) ->i1 in
+			let _ocClosest(aPalette, t2, rgb) ->i2 in
+			if colorDist(rgb, aPalette[i1])<colorDist(rgb, aPalette[i2]) then i1 else i2;;
+
+fun ocGet(aPalette, t, x, dx, y, dy, z, dz, rgb, tAlt)=// echo strFormat "+ * * * " dx dy dz; 
+	match t with
+	color1T _ i1 -> i1,
+	color2T rgb1 i1 rgb2 i2 _ ->
+		(//echoLn strFormat "color2T * / * *" hexFromInt rgb hexFromInt rgb1 hexFromInt rgb2;
+		if colorDist(rgb, rgb1)<colorDist(rgb, rgb2) then i1
+		else i2),
+	internalT t1 t2 _ _ ->
+		if dy<>dz then let dz>>1 -> dz2 in
+			if (rgb&255)<z+dz2 then ocGet(aPalette, t1, x, dx, y, dy, z, dz2, rgb, t2)
+			else ocGet(aPalette, t2, x, dx, y, dy, z+dz2, dz2, rgb, t1)
+		else if dx<>dy then let dy>>1 -> dy2 in
+			if ((rgb>>8)&255)<y+dy2 then ocGet(aPalette, t1, x, dx, y, dy2, z, dz, rgb, t2)
+			else ocGet(aPalette, t2, x, dx, y+dy2, dy2, z, dz, rgb, t1)
+		else let dx>>1 -> dx2 in
+			if ((rgb>>16)&255)<x+dx2 then ocGet(aPalette, t1, x, dx2, y, dy, z, dz, rgb, t2)
+			else ocGet(aPalette, t2, x+dx2, dx2, y, dy, z, dz, rgb, t1),
+// due to previous tree reorganisation, the color leads to an empty leaf
+// we need to look for the closest color in the brother element
+	_ -> _ocClosest(aPalette, tAlt, rgb);;
+
+
+fun _ocDump(t, depth, x, dx, y, dy, z, dz)=
+	echo strFormat("* (*,*) (*,*) (*,*) ", depth, x, dx, y, dy, z, dz);
+	match t with
+	color1T rgb w -> echoLn strFormat("c1 *:", hexFromInt(rgb), w),
+	color2T rgb1 w1 rgb2 w2 _ -> echoLn strFormat("c2 *:* / *:*", hexFromInt(rgb1), w1, hexFromInt(rgb2), w2),
+	internalT t1 t2 _ _ -> let strConcat(depth, "+ ") -> depth in (
+		echoLn strFormat("* split", if dy<>dz then "z" else if dx<>dy then "y" else "x");
+		if dy<>dz then let dz>>1 -> dz2 in (
+			_ocDump(t1, depth, x, dx, y, dy, z,     dz2);
+			_ocDump(t2, depth, x, dx, y, dy, z+dz2, dz2)
+		)
+		else if dx<>dy then let dy>>1 -> dy2 in (
+			_ocDump(t1, depth, x, dx, y,     dy2, z, dz);
+			_ocDump(t2, depth, x, dx, y+dy2, dy2, z, dz)
+		)
+		else let dx>>1 -> dx2 in (
+			_ocDump(t1, depth, x,     dx2, y, dy, z, dz);
+			_ocDump(t2, depth, x+dx2, dx2, y, dy, z, dz)
+		)
+	),
+	_ -> echoLn strFormat("empty", depth);;
+
+fun octreeDump(t)= echoLn strFormat("dump nb=* proximity=*", _ocNb(t), _ocProximity(t)) ; _ocDump(t, nil, 0, 256, 0, 256, 0, 256); t;;
+
+fun quantifyFrame(quantifiedOctree, paletteMaxLength, frame)=
+	let bitmapW(frame) -> w in
+	let bitmapH(frame) -> h in
+	(
+		for y=0;y<h do
+		for x=0;x<w do
+			let bitmapGet(frame, x, y) -> color in
+			(
+				set quantifiedOctree=ocAddColor(quantifiedOctree, color);		
+//				if color<>0 then octreeDump quantifiedOctree;
+				if _ocNb(quantifiedOctree)>paletteMaxLength then
+					set quantifiedOctree=ocFusion(quantifiedOctree)
+			);
+		quantifiedOctree
+	);;
+fun paletteFromQuantization(quantifiedOctree)=
+	let fifoCreate() -> fifo in
+	(
+		set quantifiedOctree=ocPalette(quantifiedOctree, fifo);	// this will attach a palette index to each color
+		[quantifiedOctree, arrayFromList(fifoList(fifo))]
+	);;
+
+fun paletteProject(aPalette, paletteOctree, rgb)=ocGet(aPalette, paletteOctree, 0, 256, 0, 256, 0, 256, rgb&0xffffff, nil);;	// 256: because each component is 8 bits
+
+fun bitmapPalettize(frame, paletteOctree, aPalette)=
+	let bitmapW(frame) -> w in
+	let bitmapH(frame) -> h in
+	let bytesCreate(w*h, 0) -> output in
+	(
+		for y=0;y<h do
+		for x=0;x<w do
+			let bitmapGet(frame, x, y) -> color in
+			bytesSet(output, x+y*w, paletteProject(aPalette, paletteOctree, color));
+		strFromBytes(output)
+	);;
+
+fun quantization(bmp, paletteMaxLength)=
+	let quantifyFrame(nil, paletteMaxLength, bmp) -> quantifiedOctree in
+	let paletteFromQuantization(quantifiedOctree) -> [paletteOctree, aPalette] in
+	let bitmapPalettize(bmp, paletteOctree, aPalette) -> palettized in
+	[palettized, aPalette];;

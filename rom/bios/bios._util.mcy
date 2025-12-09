@@ -1,0 +1,266 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2022, Sylvain Huet, Ambermind
+// Minimacy (r) System
+
+//------------ LISTS
+fun listConcat(p, q)= if p==nil then q else head(p)::listConcat(tail(p), q);;
+fun _reverse(p, q)= if p==nil then q else _reverse(tail(p), head(p)::q);;
+fun listReverse(p) = _reverse(p, nil);;
+
+fun listContains(l, v)= if l<>nil then (v==head(l))||listContains(tail(l), v);;
+
+fun _listPosition(l, v, i)= if l<>nil then if v==head(l) then i else _listPosition(tail(l), v, i+1);;
+fun listPosition(l, v)= _listPosition(l, v, 0);;
+
+fun listMap(l, f)= if l<>nil then let call f(head(l)) -> p in if p==nil then listMap(tail(l), f) else p::listMap(tail(l), f);;
+fun listFilter(l, f)= listMap(l, lambda(p)= if call f(p) then p);;
+fun listReduce(l, v0, f)= if l==nil then v0 else listReduce(tail(l), call f(v0, head(l)), f);;
+fun listVisit(l, f)= if l==nil then true else if call f(head(l)) then listVisit(tail(l), f);;
+fun listFind(l, f)= if l<>nil then if call f(head(l)) then head(l) else listFind(tail(l), f);;
+fun listTest(l, f)= nil<>listFind(l, f);;
+
+fun listInsert(l, p, fBefore)= if l==nil then p::nil else if call fBefore(p, head(l)) then p::l else head(l)::listInsert(tail(l), p, fBefore);;
+
+fun listMatchHead(ll, val)= if ll<>nil then if val==head(head(ll)) then tail(head(ll)) else listMatchHead(tail(ll), val);;
+
+fun listRemove(l, a)= if l<>nil then if a==head(l) then tail(l) else head(l)::listRemove(tail(l), a);;
+fun _listlen(l, n)= if l==nil then n else _listlen(tail(l), n+1);;
+fun listLength(l)= _listlen(l, 0);;
+fun listGet(l, n)= if n<=0 then head(l) else listGet(tail(l), n-1);;
+fun listLast(l)= if nil==tail(l) then head(l) else listLast(tail(l));;
+fun listCut(l, n) = if l<>nil && n>0 then head(l)::listCut(tail(l), n-1);;
+fun listSkip(l, n)= if n<=0 then l else listSkip(tail(l), n-1);;
+
+/*
+quicksort l f : fun list a0 (fun a0 a0 -> Bool) -> list a0
+  function f a b=
+   true : a before b
+   false : a equals or after b
+*/
+fun _concat(p, q) = if p==nil then q else _concat(tail(p), head(p)::q);;
+
+fun _divide(x, p, r1, r2, fBefore)=
+	if p==nil then [r1, r2]
+	else let p-> a::n  in
+	if call fBefore(a, x) then _divide(x, n, a::r1, r2, fBefore)
+	else _divide(x, n, r1, a::r2, fBefore);;
+
+fun quicksort(l, fBefore)=
+	if l==nil then nil
+	else let l-> vl::nl in
+	if nl==nil then l
+	else let _divide(vl, nl, nil, nil, fBefore)->[va, na] in
+	_concat(_reverse(quicksort(va, fBefore), nil), vl::quicksort(na, fBefore));;
+
+fun doubleListCompress(ll)= let fifoCreate() -> fifo in fifoList(for l in ll do for p in l do fifoIn(fifo, p));;
+fun tripleListCompress(lll)= let fifoCreate() -> fifo in fifoList(for ll in lll do for l in ll do for p in l do fifoIn(fifo, p));;
+
+//------------ ARRAYS
+
+fun arrayFromList(l)=
+	let listLength(l) -> n in
+	let arrayCreate(n, nil) -> a in
+	(
+		let -1->i in for x in l do set a[set i=i+1]=x;
+		a
+	);;
+
+fun listFromArray(a)=
+	let arrayLength(a) -> n in
+	let nil -> l in
+	for i=n-1;i>=0;i-1 do set l=a[i]::l;;
+
+fun arrayInit(n, f)=
+	let arrayCreate(n, nil) -> a in
+	(
+		for i=0;i<n do set a[i]=call f(i);
+		a
+	);;
+
+fun arrayMap(a, f)=
+	let arrayLength(a) -> n in
+	let arrayCreate(n, nil) -> b in
+	(
+		for v,i of a do set b[i]=call f(v);
+		b
+	);;
+
+fun arrayMapIndex(a, f)=
+	let arrayLength(a) -> n in
+	let arrayCreate(n, nil) -> b in
+	(
+		for v,i of a do set b[i]=call f(i, v);
+		b
+	);;
+
+fun arrayReduce(a, v0, f)=
+	for v of a do set v0=call f(v0, v);
+	v0;;
+
+fun arrayIndexOf(a, val)=
+	for v,i of a do if val==v then return i;
+	nil;;
+
+//------------ HASHMAPS
+
+fun hashmapFind(d, f)=
+	let 1<<hashmapBitSize(d) -> nb in let nil->result in
+	(
+		for i=0;i<nb do
+		for p=hashmapGetSlot(d, i); p<>nil ; let p->[_, _, next] in next do
+			let p->[key, val, _] in if call f(key, val) then return key;
+		nil
+	);;
+fun hashmapMap(d, f)=
+	let 1<<hashmapBitSize(d) -> nb in let nil->result in
+	(
+		for i=0;i<nb do
+		for p=hashmapGetSlot(d, i); p<>nil ; let p->[_, _, next] in next do
+			let p->[key, val, _] in let call f(key, val) -> q in if q<>nil then set result=q::result;
+		result
+	);;
+
+fun listFromHashmap(d)= hashmapMap(d, lambda(key, val)=[key, val]);;
+fun hashmapTest(d, f)= nil<>hashmapFind(d, f);;
+
+fun hashmapInit(n, l)=
+	let hashmapCreate(n) -> h in
+	(
+		for [key, val] in l do hashmapSet(h, key, val);
+		h
+	);;
+
+//------------ HASHSETS
+
+fun hashsetFind(d, f)=
+	let 1<<hashsetBitSize(d) -> nb in let nil->result in
+	for i=0;i<nb do
+		for key in hashsetGetSlot(d, i) do if call f(key) then return key;
+	nil;;
+
+fun hashsetMap(d, f)=
+	let 1<<hashsetBitSize(d) -> nb in let nil->result in
+	(
+		for i=0;i<nb do
+			for key in hashsetGetSlot(d, i) do
+				let call f(key) -> q in if q<>nil then set result=q::result;
+		result
+	);;
+
+fun listFromHashset(d)= hashsetMap(d, lambda(key)=key);;
+
+fun hashsetTest(d, f)= nil<>hashsetFind(d, f);;
+
+fun hashsetInit(n, l)=
+	let hashsetCreate(n) -> h in
+	(
+		for val in l do hashsetAdd(h, val);
+		h
+	);;
+
+//------------ REFERENCES
+struct Ref{any}=[_valRef:any];;
+fun refCreate(x)=[_valRef=x];;
+fun refGet(ref) = ref._valRef;;
+fun refSet(ref, val)= set ref._valRef=val;;
+
+//------------ CONSOLE
+const T0=timeMs();;
+fun echoTime(v) =
+	let decFromInt(timeMs()-T0) -> str in
+	let if strLength(str)<4 then strRight(strConcat("000", str), 4) else str -> str in
+	echoLn [">", strLeft(str, -3), ".", strRight(str, 3),  ": ", v]; v;;
+
+fun echoHexLn(v)= echoLn hexFromStr(v);v;;
+
+fun hexFromIntN(n, i)= let hexFromInt(i) -> s in strConcat(strCreate(n-strLength(s), '0'), s);;
+
+fun hexDump(s)=
+	if s==nil then echoLn "nil"
+	elif s=="" then echoLn "\"\""
+	else
+	for i=0;i<strLength(s);i+16 do
+	(
+		echo hexFromIntN(8, i);
+		for j=0;j<16 do let strGet(s, i+j) -> a in (echo " "; echo if a==nil then "  " else hexFromIntN(2, a));
+		echo "  ";
+		for j=0;j<16 do let strGet(s, i+j) -> a in echo match a with
+			nil -> " ",
+			a -> if a<32 || a>=0xc0 then "." else strFromChar(a);
+		echoLn ""
+	);
+	s;;
+
+fun hexDumpBytes(s)=hexDump(_bytesAsStr(s)); s;;
+
+fun arrayDump(a)= echo "{"; echo strJoin(" ", a); echoLn "}"; a;;
+
+//------------ STRINGS
+
+fun strEmpty(str)= (str==nil) || (0==strLength(str));;
+fun strStartsWith(str, val)= strCheckPos(str, val, 0);;
+fun strEndsWith(str, val)= strCheckPos(str, val, strLength(str)-strLength(val));;
+fun strContains(str, val)= nil<>strPos(str, val, 0);;
+
+fun strFromBool(val)= if val then "true" else if val==false then "false";;
+
+fun strTrim(str)=
+	let strLength(str) -> len in
+	for i=0;i<len do if 32<strGet(str, i) then
+		for j=len-1;j>=i;j-1 do if 32<strGet(str, j) then return strSlice(str, i, j+1-i);
+	"";;
+
+var _Spaces="                      ";;
+fun strLeftSpacePadding(N, str)=
+	let strLength(str) -> len in
+	if len<N then strConcat(strLeft(_Spaces, N-len), str)
+	else if len>N then strConcat(strLeft(str, N-1), "*")
+	else str;;
+
+const _Zeros="00000000000000";;
+
+fun decNFromInt(N, i)=
+	if i>=0 then
+	let decFromInt(i) -> str in
+	let strLength(str) -> len in
+	if len<N then strConcat(strLeft(_Zeros, N-len), str)
+	else str;;
+
+fun _dec3FromInt(str, res)=
+	let strLength(str) -> len in
+	if len>3 then _dec3FromInt(strLeft(str, len-3), strSlice(str, len-3, 3)::res)
+	else str::res;;
+
+fun dec3FromInt(sep, val)=
+	if val<>nil then
+	let decFromInt(val) -> str in
+	strJoin(sep, _dec3FromInt(str, nil));;
+
+fun _intAbbrev(v, div, l)=
+	if v<div || nil==tail(l) then strConcat(decFromInt(v), head(l))
+	else _intAbbrev(v/div, div, tail(l));;
+fun intAbbrevExt(div, v, units)= if v<>nil then _intAbbrev(v, div, units);;
+fun intAbbrev(div, v)= intAbbrevExt(div, v, ""::"k"::"M"::"G"::"T"::"P"::nil);;
+
+//------------ MISC
+
+fun range(val, mn, mx)= (val>=mn) && (val<=mx);;
+
+fun fifoFromList(l)=
+	let fifoCreate() -> fifo in (
+		for p in l do fifoIn(fifo, p);
+		fifo
+	);;
+
+fun bytesInit(n, f)=
+	let bytesCreate(n, 0) -> a in
+	(
+		for i=0;i<n do bytesSet(a, i, call f(i));
+		a
+	);;
+
+fun bitmapErase(b, color)= bitmapFill(b, color, nil);;
+
+fun tfcPrevent(a) = a;;
+
+fun memoryTry(size) = _memoryTry(size)||(gcCompact(); _memoryTry(size));;

@@ -1,0 +1,506 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2022, Sylvain Huet, Ambermind
+// Minimacy (r) System
+
+var _Uicb;;
+const _UI_DEBUG=false;;
+var _UiThread;;
+
+var _BackBuffer :Bitmap;;
+
+#ifdef useSoftCursor
+struct SoftCursor=[bmpC, xC, yC, dxC, dyC, backC, displayedC];;
+const Pointer={
+0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,
+0x0, 0x1800000, 0x800000, 0x1c00000, 0xc00000, 0x1e00000, 0xe00000, 0x1f00000,
+0xf00000, 0x1f80000, 0xf80000, 0x1fc0000, 0xfc0000, 0x1fe0000, 0xfe0000, 0x1ff0000,
+0xff0000, 0x1ff8000, 0xff8000, 0x1ffc000, 0xffc000, 0x1ffe000, 0xffe000, 0x1fff000,
+0xfff000, 0x1fff800, 0xfff800, 0x1fffc00, 0xfffc00, 0x1fffe00, 0xfffe00, 0x1ffff00,
+0xff8000, 0x1ffff00, 0xff8000, 0x1ffc000, 0xfbc000, 0x1ffe000, 0xe1c000, 0x1fbe000,
+0x81e000, 0x1e3f000, 0xe000, 0x181f000, 0xf000, 0x1f800, 0x7000, 0xf800,
+0x6000, 0xf800, 0x0, 0x6000, 0x0, 0x0, 0x0, 0x0
+};;
+const _CursorPointer = let bitmapCreate(32, 32, 0) -> bmp in (
+	for y=0;y<32 do
+		let Pointer[y*2] -> mono in
+		let Pointer[y*2+1] -> alpha in
+		for x=0;x<32 do let 1<<(31-x) -> bit in bitmapSet(bmp, x, y, (if bitTest(alpha, bit) then 0xff000000)|(if bitTest(mono, bit) then 0xffffff));
+	bmp
+);;
+const _CursorDefault=[bmpC=_CursorPointer, xC=-32, yC=-32, dxC=8, dyC=5, backC=bitmapCreate(32, 32, 0)];;
+
+var _Cursor=_CursorDefault;;
+
+fun cursorCreate(bitmap, xhot, yhot)=
+	let bitmapCopy(bitmap, 0, 0, nil, nil) -> bmp in (
+		bitmapComponents(bmp, COMP_B, COMP_R, COMP_R, COMP_R);
+		[bmpC=bmp, dxC=xhot, dyC=yhot, backC=bitmapCreate(32, 32, 0)]
+	);;
+fun cursorShow(cursor)=
+	let if cursor==nil then _CursorDefault else cursor -> cursor in (
+		set cursor.xC=_Cursor.xC;
+		set cursor.yC=_Cursor.yC;
+		set _Cursor=cursor
+	);;
+fun _cursorAdd(x, y, w, h)=
+	let _Cursor->c in
+	set c.displayedC=
+	if (c.xC+32 >=x)&&(c.xC< x+w) then
+	if (c.yC+32 >=y)&&(c.yC< y+h) then (
+		bitmapBlit(c.backC, 0, 0, _BackBuffer, c.xC, c.yC, 32, 32, nil);
+		bitmapBlit(_BackBuffer, c.xC, c.yC, c.bmpC, 0, 0, 32, 32, BLEND_ALPHA);
+		true
+	);;
+fun _cursorRemove ()=
+	let _Cursor->c in
+	if c.displayedC then (
+		bitmapBlit(_BackBuffer, c.xC, c.yC, c.backC, 0, 0, 32, 32, nil);
+		0
+	);;
+fun _cursorUpdatePos(x, y)=
+	let _Cursor->c in
+	let x-c.dxC -> x in
+	let y-c.dyC -> y in
+	if x<>c.xC || y<>c.yC then (
+		_uiUpdateRegion(c.xC, c.yC, 32, 32);
+		set c.xC=x; set c.yC=y;
+		_cursorAdd(c.xC, c.yC, 32, 32);
+		_uiUpdateRegion(c.xC, c.yC, 32, 32);
+		_cursorRemove();
+	);;
+#else
+var _CurrentCursor;;	// we need this to prevent the current cursor to be released by GC
+fun cursorCreate(bitmap, xhot, yhot)= _cursorCreate(bitmap, xhot, yhot);;
+fun cursorShow(cursor) = _cursorShow(set _CurrentCursor=cursor);;
+fun _cursorAdd(x, y, w, h)=nil;;
+fun _cursorRemove()=nil;;
+fun _cursorUpdatePos(x, y)=nil;;
+#endif
+
+#ifdef glSwapBuffers
+var _UiFullGL;;
+
+const _UV = floatsFromArray(\float{0, 0,  1, 0,  0, 1,  1, 1});;
+var _ProgramTexture;;
+var _AVertexPosition;;
+var _ATextureCoord;;
+var _VRT;;
+var _BackBytes;;
+var _Texture;;
+var _DstW;;
+var _DstH;;
+var _Mxx;;
+var _Mxy;;
+var _Mx;;
+var _Myx;;
+var _Myy;;
+var _My;;
+
+fun _xConvert(x, y)= intFromFloat((_Mxx*.floatFromInt(x))+.(_Mxy*.floatFromInt(y))+._Mx);;
+fun _yConvert(x, y)= intFromFloat((_Myx*.floatFromInt(x))+.(_Myy*.floatFromInt(y))+._My);;
+
+const _FRAGMENT_TEXTURE="
+	uniform sampler2D uSampler;
+	varying vec2 vTextureCoord;
+	void main(void) 
+	{
+		vec4 textureColor = texture2D(uSampler, vec2(vTextureCoord.s, vTextureCoord.t));
+		gl_FragColor = textureColor;
+	}
+";;
+
+const _VERTEX_TEXTURE="
+	attribute vec3 aVertexPosition;
+	attribute vec2 aTextureCoord;
+	varying vec2 vTextureCoord;
+	void main(void) 
+	{
+		gl_Position = vec4(aVertexPosition, 1.0);
+		vTextureCoord=aTextureCoord;
+	}
+";;
+
+fun _loadShader(tp, src)=
+	let glCreateShader(tp) -> shader in
+	let strConcat(if glES() then "precision mediump float;\n", src) -> src in
+	(
+		glShaderSource(shader, src);
+		if glCompileShader(shader) then shader
+	);;
+
+fun _initShaders ()=
+	echo "> openGL: ";
+	echoLn strJoin(" | ", [glGetString(GL_VERSION), glGetString(GL_VENDOR), glGetString(GL_RENDERER), glGetString(GL_SHADING_LANGUAGE_VERSION)]);
+	let _loadShader(GL_VERTEX_SHADER, _VERTEX_TEXTURE) -> vertexShader in
+	if vertexShader!=nil then
+	let _loadShader(GL_FRAGMENT_SHADER, _FRAGMENT_TEXTURE) -> fragmentShader in
+	if fragmentShader!=nil then
+	(
+		set _ProgramTexture=glCreateProgram();
+		glAttachShader(_ProgramTexture, vertexShader);
+		glAttachShader(_ProgramTexture, fragmentShader);
+		glLinkProgram(_ProgramTexture);
+		set _AVertexPosition=glGetAttribLocation(_ProgramTexture, "aVertexPosition"); 
+		set _ATextureCoord=glGetAttribLocation(_ProgramTexture, "aTextureCoord");
+	);;
+
+fun _renderTexture()=
+	glUseProgram(_ProgramTexture);
+	glActiveTexture(GL_TEXTURE0);
+	glEnableVertexAttribArray(_ATextureCoord);
+	glVertexAttribPointer(_ATextureCoord, 2, 0, 0, _UV, 0);
+	glEnableVertexAttribArray(_AVertexPosition);
+	glVertexAttribPointer(_AVertexPosition, 3, 0, 0, _VRT, 0);
+	glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+	glDisableVertexAttribArray(_AVertexPosition);
+	glDisableVertexAttribArray(_ATextureCoord);;
+
+fun _textureCreate(filter)=
+	if _Texture==nil then set _Texture=glCreateTexture();
+	glBindTexture(GL_TEXTURE_2D, _Texture) ;
+	glTexParameteri(GL_TEXTURE_2D,  GL_TEXTURE_MAG_FILTER, if filter then GL_LINEAR else GL_NEAREST);
+	glTexParameteri(GL_TEXTURE_2D,  GL_TEXTURE_MIN_FILTER, if filter then GL_LINEAR else GL_NEAREST);
+	glTexParameteri(GL_TEXTURE_2D,  GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+	glTexParameteri(GL_TEXTURE_2D,  GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+	glTexImage2D(_Texture, GL_TEXTURE_2D, 0, GL_RGBA, 0, _BackBuffer);;
+
+fun _textureUpdate(texture)=
+	glTexImage2D(_Texture, GL_TEXTURE_2D, 0, GL_RGBA, 0, _BackBuffer);;
+
+fun _textureUpdateRegion(texture, x, y, w, h)=
+	if _BackBytes==nil then set _BackBytes =bytesCreate(uiW()*uiH()*4, 0);
+	glTexImage2DUpdate(_Texture, _BackBytes, GL_TEXTURE_2D, 0, x, y, w, h, _BackBuffer);;
+
+fun _uiVrtUpdate()=
+	let (_DstW<_DstH)&&(uiW()>uiH()) -> rotate in
+	let if rotate then floatFromInt(uiW()*_DstW)/.floatFromInt(uiH()*_DstH) 
+		else floatFromInt(uiW()*_DstH)/.floatFromInt(uiH()*_DstW) 
+	-> k in
+	let minf(1., k) -> kw in
+	let minf(1., 1./.k) -> kh in
+	(
+		set _VRT=floatsFromArray(\float
+			if rotate then {kh, kw, 0,  kh, -kw, 0,  -kh, kw, 0,  -kh, -kw, 0}
+			else {-kw, kh, 0,  kw, kh, 0,  -kw, -kh, 0,  kw, -kh, 0});
+		if rotate then
+			if k>=.1. then 
+				let floatFromInt(uiW())/.floatFromInt(_DstH) -> k in (
+					set _Mxy= k; set _Myx = -.k;
+					set _Mxx= set _Myy= set _Mx=0.;
+					set _My= floatFromInt(uiH()-1) -. 0.5*.(floatFromInt(uiH())-.floatFromInt(_DstW)*.k);
+				) 
+			else
+				let floatFromInt(uiH())/.floatFromInt(_DstW) -> k in (
+					set _Mxy= k; set _Myx = -.k;
+					set _Mxx= set _Myy= set _My=0.;
+					set _Mx= 0.5*.(floatFromInt(uiW())-.floatFromInt(_DstH)*.k);
+					set _My= floatFromInt(uiH()-1);
+				) 
+		else
+			if k>.1. then 
+				let floatFromInt(uiW())/.floatFromInt(_DstW) -> k in (
+					set _Mxx= set _Myy = k;
+					set _Mxy= set _Myx= set _Mx=0.;
+					set _My= 0.5*.(floatFromInt(uiH())-.floatFromInt(_DstH)*.k);
+				) 
+			else
+				let floatFromInt(uiH())/.floatFromInt(_DstH) -> k in (
+					set _Mxx= set _Myy = k;
+					set _Mx= 0.5*.(floatFromInt(uiW())-.floatFromInt(_DstW)*.k);
+					set _Mxy= set _Myx= set _My=0.;
+				);
+	);;
+
+fun _uiRender ()=
+	glViewport(0, 0, _DstW, _DstH);
+	glClearColor(0., 0., 0., 0.);
+	glClear(GL_COLOR_BUFFER_BIT);
+	_renderTexture();
+	glSwapBuffers();;
+
+//-----------------------------------
+fun _uiAlive()= _UiThread<>nil;;
+fun _uiStopThread(th)= if th==_UiThread then uiStop();;
+
+fun uiW()=if _UiFullGL then _uiW() else bitmapW(_BackBuffer);;
+fun uiH()=if _UiFullGL then _uiH() else bitmapH(_BackBuffer);;
+
+fun _uiStartDefault(x, y, w, h, flag, name)=
+	set _BackBuffer=nil;
+	set _ProgramTexture=nil;
+	set _Texture=nil;
+	set _DstW= set _DstH=nil;
+	set _Mxx= set _Myy = 1.;
+	set _Mx= set _My = 0.;
+	_workerEnter();
+	set _UiFullGL = bitTest(flag, UI_GL);
+	if _uiStart(x, y, w, h, flag|UI_GL, name) then
+	(
+		_glMakeContext();
+		if !_UiFullGL then (
+			set _DstW=_uiW(); set _DstH=_uiH();
+			_initShaders();
+			uiBufferSetSize(w, h, true)
+		);
+		true
+	);;
+
+fun uiBufferSetSize(w, h, filter)=
+	if _UiFullGL then return nil;
+	set _BackBuffer=bitmapCreate(w, h, 0);
+	set _BackBytes =nil;
+	_uiVrtUpdate();
+	_textureCreate(filter);;
+
+fun uiBuffer ()= _BackBuffer;;
+
+fun _uiUpdateRegion(x, y, w, h) =
+	if _UiFullGL then return nil;
+	_textureUpdateRegion(_Texture, x, y, w, h);
+	_uiRender();;
+
+fun uiUpdateRegion(x, y, w, h) =
+	if _UiFullGL then return nil;
+	_cursorAdd(x, y, w, h);
+	_textureUpdateRegion(_Texture, x, y, w, h);
+	_cursorRemove();
+	_uiRender();;
+
+fun uiUpdate ()=
+	if _UiFullGL then return nil;
+	_cursorAdd(0, 0, uiW(), uiH());
+	_textureUpdate(_Texture);
+	_cursorRemove();
+	_uiRender();;
+
+
+fun uiMultiTouch ()= _MultiTouch;;
+
+fun _uiOnPaintDefault ()=
+	_glRefreshContext(); 
+	if _Uicb[_EVENT_PAINT]==nil then (if !_UiFullGL then uiUpdate();nil);;
+fun _uiOnSizeDefault(x, y)= 
+	if _DstW<>x || _DstH<>y then (
+		set _DstW=x; set _DstH=y;
+		_uiVrtUpdate();
+		call _Uicb[_EVENT_SIZE](x, y, 0)
+	);;
+#elifdef graphicBlit
+fun _uiOnPaintDefault()= nil;;
+fun _uiOnSizeDefault(x, y)= nil;;
+
+fun _uiAlive()= true;;
+fun _uiStopThread(th)= nil;;
+var _OffX;;
+var _OffY;;
+fun uiW()=bitmapW(_BackBuffer);;
+fun uiH()=bitmapH(_BackBuffer);;
+fun _xConvert(x, y)= x;;
+fun _yConvert(x, y)= y;;
+
+fun graphicList ()=
+	for [i, w, h, f] in graphicModes() do
+		echoLn strFormat("*: * x * / *", strLeftSpacePadding(3, strBuild(i)), w, h, f);
+	true;;
+
+fun _bestMode(w, h) =
+	let listReduce(graphicModes(), nil, lambda(best, [i, ww, hh, _]) =
+		let best -> [iBest, uselessBest] in
+		if ww<w || hh<h then best
+		else
+		let ww*hh-w*h -> useless in
+		let best -> [iBest, uselessBest] in
+		if best<>nil && useless>=uselessBest then best
+		else [i, useless]
+	) -> [i, _] in
+	i;;
+
+fun _uiStartDefault(x, y, w, h, flag, name)= 
+	let _bestMode(w, h) -> mode in (
+		graphicSetMode(mode);
+		echoLn strFormat("> graphic mode * *x*", mode, graphicW(), graphicH());
+		set _BackBuffer=bitmapCreate(w, h, 0);
+		set _OffX= (graphicW()-w)/2;
+		set _OffY= (graphicH()-h)/2;
+		nil
+	);;
+fun uiBufferSetSize(w, h, filter)= uiStart(0, 0, w, h, nil, nil);;
+fun uiBuffer ()= _BackBuffer;;
+
+fun _uiUpdateRegion(x, y, w, h) = graphicBlit(_OffX+x, _OffY+y, _BackBuffer, x, y, w, h);;
+
+fun uiUpdateRegion(x, y, w, h) =
+	_cursorAdd(x, y, w, h);
+	graphicBlit(_OffX+x, _OffY+y, _BackBuffer, x, y, w, h);
+	_cursorRemove();;
+
+fun uiUpdate ()=
+	_cursorAdd(0, 0, uiW(), uiH());
+	 graphicBlit(_OffX, _OffY, _BackBuffer, 0, 0, nil, nil);
+	_cursorRemove();;
+
+fun uiMultiTouch ()= nil;;
+#else
+fun _uiOnPaintDefault()= nil;;
+fun _uiOnSizeDefault(x, y)= nil;;
+
+fun _uiAlive()= false;;
+fun _uiStopThread(th)= nil;;
+
+fun uiW()=nil;;
+fun uiH()=nil;;
+
+fun _xConvert(x, y)= x;;
+fun _yConvert(x, y)= y;;
+
+fun _uiStartDefault(x, y, w, h, flag, name)=
+	echoLn "> This Minimacy VM doesn't support UI";
+	if device=="Unix" then echoLn "> You may launch minimacyX11GL instead of minimacy";
+	if device=="MacOsCmdLine" then echoLn "> You may launch minimacyMacX11GL instead of minimacyMac";
+	nil;;
+fun uiBufferSetSize(w, h, filter)= nil;;
+fun uiBuffer ()= nil;;
+fun _uiUpdateRegion(x, y, w, h) =nil;;
+fun uiUpdateRegion(x, y, w, h) =nil;;
+fun uiUpdate ()=nil;;
+fun uiMultiTouch ()= nil;;
+#endif
+
+fun _uiOnPaint(x, y, v)=
+	if _UI_DEBUG then dump strFormat("paint *,* / *", x, y, v);
+	threadPost(_UiThread, (lambda()=
+		_uiOnPaintDefault();
+		call _Uicb[_EVENT_PAINT](x, y, v)
+	));;
+
+fun _uiOnSize(x, y, v)=
+	if _UI_DEBUG then dump strFormat("size *,* / *", x, y, v);
+	threadPost(_UiThread, lambda()= _uiOnSizeDefault(x, y) );;
+
+var _MultiTouchTmp;;
+var _MultiTouch;;
+fun _uiOnMultiTouch(x, y, v)= if _UI_DEBUG then dump strFormat("multi *,* / *", x, y, v);
+	if v==0 then (set _MultiTouchTmp=[_xConvert(x, y), _yConvert(x, y)]::_MultiTouchTmp; nil)
+	else
+	(
+		set _MultiTouch=_MultiTouchTmp;
+		set _MultiTouchTmp=nil;
+		nil
+	);;
+
+fun _uiOnClose(x, y, v)= if _UI_DEBUG then dump strFormat("close *,* / *", x, y, v); threadPost(_UiThread, lambda()= if _Uicb[_EVENT_CLOSE]==nil then (uiStop();niceStop();nil) else call _Uicb[_EVENT_CLOSE](x, y, v));;
+fun _uiOnWillResize(w, h, v)=
+    if _UI_DEBUG then dump strFormat("willresize *,* / *", w, h, v);
+    threadPost(_UiThread, lambda()= uiResize(-1, -1));;
+fun _uiOnSuspend(x, y, v)= if _UI_DEBUG then dump strFormat("suspend *,* / *", x, y, v); threadPost(_UiThread, lambda()= call _Uicb[_EVENT_SUSPEND](x, y, v));;
+fun _uiOnResume(x, y, v)= if _UI_DEBUG then dump strFormat("resume *,* / *", x, y, v); threadPost(_UiThread, lambda()= call _Uicb[_EVENT_RESUME](x, y, v));;
+
+fun _uiOnKeyDown(x, y, v)  = 
+	if _UI_DEBUG then dump strFormat("keyDown *,* / *", x, y, v); 
+	threadPost(_UiThread, lambda()= call _Uicb[_EVENT_KEYDOWN](x, y, v));;
+
+fun _uiOnKeyUp(x, y, v)    =
+	if _UI_DEBUG then dump strFormat("keyUp *,* / *", x, y, v); 
+	threadPost(_UiThread, lambda()= call _Uicb[_EVENT_KEYUP](x, y, v));;
+
+var _MouseMoveBusy;;
+var _MouseMoveNext;;
+
+fun _mouseMoveSend(x, y, v) =
+	threadPost(_UiThread, (lambda()= 
+		call _Uicb[_EVENT_MOUSEMOVE](x, y, v);
+		if _MouseMoveNext<>nil then
+			let _MouseMoveNext -> [x, y, v] in (
+				set _MouseMoveNext=nil;
+				_mouseMoveSend(x, y, v)
+			)
+		else set _MouseMoveBusy=false
+	));
+	nil;;
+
+fun _uiOnMouseMove(x0, y0, v)= 
+	let _xConvert(x0, y0) -> x in
+	let _yConvert(x0, y0) -> y in (
+		_cursorUpdatePos(x, y); 
+		if _UI_DEBUG then dump strFormat("mouseMove *,* / *", x, y, v);
+		if _MouseMoveBusy then void (set _MouseMoveNext = [x, y, v])
+		else (
+			set _MouseMoveBusy=true;
+			_mouseMoveSend(x, y, v);
+		)
+	);;
+
+fun _uiCommonEvent(x0, y0, v, name, index)=
+	let _xConvert(x0, y0) -> x in
+	let _yConvert(x0, y0) -> y in (
+		_cursorUpdatePos(x, y); 
+		if _UI_DEBUG then dump strFormat("* *,* / *", name, x, y, v); 
+		threadPost(_UiThread, lambda()= call _Uicb[index](x, y, v))
+	);;
+
+fun _uiOnClick(x, y, v)    = _uiCommonEvent(x, y, v, "click", _EVENT_CLICK);;
+fun _uiOnUnclick(x, y, v)  = _uiCommonEvent(x, y, v, "unclick", _EVENT_UNCLICK);;
+fun _uiOnVwheel(x, y, v)   = _uiCommonEvent(x, y, v, "vwheel", _EVENT_VWHEEL);;
+fun _uiOnHwheel(x, y, v)   = _uiCommonEvent(x, y, v, "hwheel", _EVENT_HWHEEL);;
+fun _uiOnDropFiles(x, y, v)= _uiCommonEvent(x, y, v, "dropFiles", _EVENT_DROPFILES);;
+
+fun _uiInit()=
+	_registerInternalHook(_EVENT_PAINT, #_uiOnPaint);
+	_registerInternalHook(_EVENT_CLICK, #_uiOnClick);
+	_registerInternalHook(_EVENT_UNCLICK, #_uiOnUnclick);
+	_registerInternalHook(_EVENT_MOUSEMOVE, #_uiOnMouseMove);
+	_registerInternalHook(_EVENT_KEYDOWN, #_uiOnKeyDown);
+	_registerInternalHook(_EVENT_KEYUP, #_uiOnKeyUp);
+	_registerInternalHook(_EVENT_CLOSE, #_uiOnClose);
+	_registerInternalHook(_EVENT_VWHEEL, #_uiOnVwheel);
+	_registerInternalHook(_EVENT_HWHEEL, #_uiOnHwheel);
+	_registerInternalHook(_EVENT_SIZE, #_uiOnSize);
+    _registerInternalHook(_EVENT_WILL_RESIZE, #_uiOnWillResize);
+	_registerInternalHook(_EVENT_SUSPEND, #_uiOnSuspend);
+	_registerInternalHook(_EVENT_RESUME, #_uiOnResume);
+	_registerInternalHook(_EVENT_MULTITOUCH, #_uiOnMultiTouch);
+	_registerInternalHook(_EVENT_DROPFILES, #_uiOnDropFiles);
+
+	set _Uicb=arrayCreate(_INTERNAL_MAX_CODE, nil);;
+
+fun uiPostKeyDown(x)  = _uiOnKeyDown(x, 0, 0);;
+fun uiPostKeyUp(x)  = _uiOnKeyUp(x, 0, 0);;
+fun uiPostMouseMove(x, y, v) = _uiOnMouseMove(x, y, v);;
+fun uiPostClick(x, y, v) = _uiOnClick(x, y, v);;
+fun uiPostUnclick(x, y, v) = _uiOnUnclick(x, y, v);;
+fun uiPostVwheel(x, y, v) = _uiOnVwheel(x, y, v);;
+fun uiPostHwheel(x, y, v) = _uiOnHwheel(x, y, v);;
+
+fun uiOnPaint(cb)= set _Uicb[_EVENT_PAINT]=(lambda(x, y, v) = call cb(); true);true;;
+fun uiOnMouseMove(cb)= set _Uicb[_EVENT_MOUSEMOVE]=(lambda(x, y, v) = call cb(x, y, v); true);true;;
+fun uiOnClick(cb)= set _Uicb[_EVENT_CLICK]=(lambda(x, y, v) = call cb(x, y, v); true);true;;
+fun uiOnUnclick(cb)= set _Uicb[_EVENT_UNCLICK]=(lambda(x, y, v) = call cb(x, y, v); true);true;;
+fun uiOnVwheel(cb)= set _Uicb[_EVENT_VWHEEL]=(lambda(x, y, v) = call cb(x, y, v); true);true;;
+fun uiOnHwheel(cb)= set _Uicb[_EVENT_HWHEEL]=(lambda(x, y, v) = call cb(x, y, v); true);true;;
+fun uiOnKeyDown(cb)= set _Uicb[_EVENT_KEYDOWN]=(lambda(x, y, v) = call cb(x); true);true;;
+fun uiOnKeyUp(cb)= set _Uicb[_EVENT_KEYUP]=(lambda(x, y, v) = call cb(x); true);true;;
+fun uiOnSize(cb)= set _Uicb[_EVENT_SIZE]=(lambda(x, y, v) = call cb(x, y); true);true;;
+fun uiOnClose(cb)= set _Uicb[_EVENT_CLOSE]=(lambda(x, y, v) = call cb(); true);true;;
+
+fun uiOnSuspend(cb)= set _Uicb[_EVENT_SUSPEND]=(lambda(x, y, v) = call cb(); true);true;;
+fun uiOnResume(cb)= set _Uicb[_EVENT_RESUME]=(lambda(x, y, v) = call cb(); true);true;;
+fun uiOnDropFiles(cb)= set _Uicb[_EVENT_DROPFILES]=(lambda(x, y, v) =
+	let listMap(_uiDrop(), lambda(str)=
+		if strStartsWith(str, "D")&&(!strEndsWith(str, "/")) then strConcat(strSlice(str, 1, nil), "/")
+		else strSlice(str, 1, nil)
+	) -> dropList in
+	call cb(x, y, dropList); true);true;;
+
+fun uiStart(x, y, w, h, flag, name)=
+	if _UiThread==nil then
+	(
+		_uiInit();
+		set _UiThread= _This;
+		_uiStartDefault(x, y, w, h, flag, name)
+	);;
+fun uiStop ()=
+	if _UiThread<>nil then
+	(
+		set _UiThread= nil;
+		_uiStop()
+	);;

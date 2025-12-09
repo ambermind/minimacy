@@ -1,0 +1,164 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2022, Sylvain Huet, Ambermind
+// Minimacy (r) System
+
+//-------------- IO check
+var _StreamList;;
+
+// alive if at least one stream different from _InteralPipe
+// (tail _StreamList<>nil || head _Stream<>_internalPipe)
+fun _streamAlive ()= tail(_StreamList)<>nil;;		// there is always the internal stream
+fun streamCheck(s)=
+	if s._thS._stateT <> _THREAD_DONE then true
+	else void streamClose(s);;
+
+fun streamSocket(s)=s._socketS;;
+
+fun _streamClean()=
+\atomic
+	let _StreamList -> streams in (
+		set _StreamList=nil;
+		let listFilter(streams, #streamCheck) -> streams in
+		set _StreamList=listConcat(_StreamList, streams)
+	);;
+
+fun _schedulerInitIO ()=
+	_internalInit();
+	_nativeNetworksInit();
+	true;;
+
+fun streamCommonClose(s)=
+	set s._socketS=nil;
+	set s._thS=nil;
+	set s._onSelectReadS=nil;
+	set s._onReadS=nil;
+	set s._onWriteS=nil;
+	set s._writeS=nil;
+	set s._closeS=nil;
+	set _StreamList= listRemove(_StreamList, Stream<s);
+	true;;
+
+fun streamClose(s)= call s._closeS();;
+
+fun streamWrite(s, data, start) =
+	let call s._writeS(data, start) -> next in
+	let strLength(data) -> len in (
+		_socketSetSelectWrite(s._socketS, next<>nil && next<>len);
+		socketSetWritable(s._socketS, next==len);
+		next
+	);;
+
+fun _streamAddToList(s)=
+	let Stream<s -> s in
+	\atomic
+		if !listContains(_StreamList, s) then 
+			set _StreamList=s::_StreamList
+		
+	;;
+fun _streamRemoveFromList(s)=
+	let Stream<s -> s in
+	\atomic 
+		set _StreamList=listRemove(_StreamList, s);;
+
+fun _streamOnRead(s, onRead) =
+	set s._thS= _This;
+	set s._onReadS= if onRead<>nil then (lambda(data)= void call onRead(data));
+	if onRead<>nil then _streamAddToList(s);
+	_socketSetSelectRead(s._socketS, onRead<>nil);
+	s;;
+
+fun _streamOnWrite(s, onWrite) =
+	set s._thS= _This;
+	set s._onWriteS= if onWrite<>nil then (lambda ()= call onWrite(); 0);
+	if onWrite<>nil then _streamAddToList(s);
+	s;;
+
+fun streamSetSelectWrite(s, value) =	_socketSetSelectWrite(s._socketS, value&&(s._onWriteS<>nil));;
+fun streamSetSelectRead(s, value) =	_socketSetSelectRead(s._socketS, value&&(s._onReadS<>nil));;
+fun streamSetReadable(s, value) = socketSetReadable(s._socketS, value);;
+fun streamSetWritable(s, value) = socketSetWritable(s._socketS, value);;
+fun streamReadEvent(s, data) = call s._onReadS(data);;
+
+fun streamOnEvent(s, onRead, onWrite)=
+	_streamOnRead(s, onRead);
+	_streamOnWrite(s, onWrite);
+	if onWrite<>nil then streamSetSelectWrite(s, true);
+	s;;
+
+fun streamInit(s, socket, onSelectRead, fWrite, fClose, fShow)=
+	set s._socketS=if socket<>nil then socket else socketEmpty();
+	set s._onSelectReadS=onSelectRead;
+	set s._writeS=fWrite;
+	set s._closeS=fClose;
+	set s._showS=fShow;
+	s;;
+
+//---------- select
+fun _bestTimeout(current, next)=
+	if next==nil then current
+	else if current==nil then next
+	else let next-current -> delta in
+	if delta<0 then next else current;;
+
+fun _streamPrepareSelect(fifoSelect) =
+	_streamClean();
+	let nil -> timeout in (
+		for s in _StreamList do (
+			if !_threadFull(s._thS) then (
+				if _socketSelectWrite(s._socketS) && _socketWritable(s._socketS) then set timeout=timeMs();
+				if _socketSelectRead(s._socketS) && _socketReadable(s._socketS) then set timeout=timeMs();
+				if _socketSelectWrite(s._socketS)||_socketSelectRead(s._socketS) then 
+					fifoIn(fifoSelect, s)
+				
+			)
+		);
+		timeout
+	);;
+
+fun _ioCheck()=
+	let timeMs()+_SELECT_TIMEOUT -> timeout in
+	let _bestTimeout(timeout, _timerTimeout()) -> timeout in
+	let fifoCreate() -> fifoSelect in
+	let _bestTimeout(timeout, _streamPrepareSelect(fifoSelect)) -> timeout in
+	let _bestTimeout(timeout, if 0<>fifoCount(_RunList) then timeMs()) -> timeout in
+	let max(0, timeout-timeMs()) -> wait in
+	let if _isAlive() then wait else 0 -> wait in 
+	let fifoList(fifoSelect) -> lSelect in
+	let listMap(lSelect, lambda(s)= s._socketS) -> lSockets in
+	(	
+		_select(lSockets, wait);
+		for s in lSelect do (
+			if _socketSelectWrite(s._socketS) && _socketWritable(s._socketS) then (
+				_socketSetSelectWrite(s._socketS, false);	// we remove it until the next uncomplete write
+				if streamCheck(s) then threadPost(s._thS, s._onWriteS)
+			);
+			if _socketSelectRead(s._socketS) && _socketReadable(s._socketS) then 
+				if s._thS==_ThreadBios then void call s._onSelectReadS
+				()else (
+					_socketSetSelectRead(s._socketS, false);	// we remove it until the socket is read
+					if streamCheck(s) then threadPost(s._thS, (lambda ()=
+						_socketSetSelectRead(s._socketS, true);
+						call s._onSelectReadS
+					()))
+				)
+			
+		);
+		_workerCheck();
+		_timerCheck()
+	);;
+
+
+fun watcherUpdate(watcher, addr, mask, value)=
+	_watcherUpdate(watcher._socketS, addr, mask, value);
+	watcher;;
+
+fun watcherOpen(name)=
+	let [Stream] -> stream in
+	streamInit(stream, _watcherOpen(),
+		lambda ()= streamReadEvent(stream, "x"),	// onSelectRead, we need a dummy data
+		nil,	// write
+		nil,	// close
+		lambda(fEcho)= call fEcho("watcher", name));;	//show
+
+fun watcherOnEvent(watcher, onRead) = streamOnEvent(watcher, lambda(data)=call onRead(), nil);;
+fun watcherClose(watcher) = streamClose(watcher);;

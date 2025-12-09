@@ -1,0 +1,168 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2022, Sylvain Huet, Ambermind
+// Minimacy (r) System
+
+struct Reader=[srcR, iR, hR];;
+struct Writer=[outW, hW];;
+sum MarshalLink= _stringML _;;
+
+enum NIL, INT, UINT, STR, LIST, ARRAY, TUPLE, TRUE, FALSE, SUM, HASHMAP, STRUCT, FLOAT, LINK;;
+const Headers=arrayInit(LINK+1, lambda(v)= strFromChar(v));;
+
+fun _marshallError(str)= setError(msgError str); abort;;
+
+fun parserCheck(v, w)= if v<>w then _marshallError("wrong value");;
+
+fun makeReader(src, i)=[srcR=src, iR=i, hR=hashmapCreate(4)];;
+fun makeWriter ()=[outW=bufferCreate(), hW=hashmapCreate(4)];;
+fun outWriter(w)= strFromBuffer(w.outW);;
+fun echoWriter(w, v)= bufferAppend(w.outW, v);;
+
+fun echoCheckNil(w, v, fEcho)=
+	if v==nil then echoWriter(w, Headers[NIL])
+	else let address(v) -> key in
+	let hashmapGet(w.hW, key) -> offset in
+	if offset<>nil then echoWriter(w, [Headers[LINK], strVarUInt(offset)])
+	else
+	(
+		if key<>nil then hashmapSet(w.hW, key, bufferLength(w.outW));
+		call fEcho
+	());;
+
+fun echoCheckNilSimple(w, v, fEcho)=
+	if v==nil then echoWriter(w, Headers[NIL])
+	else call fEcho();;
+
+fun readChar(r)=
+	let strGet(r.srcR, r.iR) -> c in
+	if c==nil then _marshallError("truncated")
+	else (
+		set r.iR=r.iR+1;
+		c
+	);;
+
+fun readInt(r)=
+	let strVarIntNext(r.srcR, r.iR) -> next in
+	if next==nil then _marshallError("truncated")
+	else let strReadVarInt(r.srcR, r.iR) -> i in
+	(
+		set r.iR=next;
+		i
+	);;
+
+fun readUInt(r)=
+	let strVarUIntNext(r.srcR, r.iR) -> next in
+	if next==nil then _marshallError("truncated")
+	else let strReadVarUInt(r.srcR, r.iR) -> i in
+	(
+		set r.iR=next;
+		i
+	);;
+fun readFloat(r)=
+	let r.iR+8 -> next in
+	if next>strLength(r.srcR) then _marshallError("truncated")
+	else let strReadFloat(r.srcR, r.iR) -> f in
+	(
+		set r.iR=next;
+		f
+	);;
+
+fun readStr(r)=
+	let readUInt(r) -> len in
+	let r.iR+len -> next in
+	if next>strLength(r.srcR) then _marshallError("truncated")
+	else let strSlice(r.srcR, r.iR, len) -> s in
+	(
+		set r.iR=next;
+		s
+	);;
+
+fun parseLink(r, fDecons)=
+	let readUInt(r) -> offset in
+	let call fDecons(hashmapGet(r.hR, offset)) -> val in
+	if val<>nil then val
+	else _marshallError("wrong link");;
+
+fun parseCommon(r, field, fParse, fCons, fDecons)= 
+	try
+	let r.iR -> offset in
+	match readChar(r) with
+	NIL -> nil,
+	LINK -> parseLink(r, fDecons),
+	field -> let call fParse ()-> result in (
+		hashmapSet(r.hR, offset, call fCons(result));
+		result
+	),
+	_ -> _marshallError("wrong format");;
+
+fun parseCommonSimple(r, field, fParse) = 
+	match readChar(r) with
+	NIL -> nil,
+	field -> call fParse(),
+	_ -> _marshallError("wrong format");;
+
+fun buildBOOL(w, v)= echoCheckNilSimple(w, v, lambda()=echoWriter(w, if v then Headers[TRUE] else Headers[FALSE]));;
+fun parseBOOL(r) =
+	match readChar(r) with
+	TRUE -> true,
+	FALSE -> false,
+	NIL -> nil,
+	_ -> _marshallError("wrong format");;
+
+fun buildINT(w, v)= echoCheckNilSimple(w, v, lambda()= echoWriter(w, [Headers[INT], strVarInt(v)]));;
+fun parseINT(r)= parseCommonSimple(r, INT, lambda()=readInt(r));;
+
+fun buildUINT(w, v)= echoCheckNilSimple(w, v, lambda()= echoWriter(w, [Headers[UINT], strVarUInt(v)]));;
+fun parseUINT(r)= parseCommonSimple(r, UINT, lambda()=readUInt(r));;
+
+fun buildFLOAT(w, v)= echoCheckNilSimple(w, v, lambda()= echoWriter(w, [Headers[FLOAT], strFloat(v)]));;
+fun parseFLOAT(r)= parseCommonSimple(r, FLOAT, lambda()=readFloat(r));;
+
+fun buildSTR(w, v)= echoCheckNil(w, v, lambda()= echoWriter(w, [Headers[STR], strVarUInt(strLength(v)), v]));;
+fun parseSTR(r)= parseCommon(r, STR, lambda()=readStr(r), lambda(a)=_stringML a, lambda(a)=match a with _stringML b -> b);;
+
+fun buildLIST(w, v, fElement)= echoCheckNilSimple(w, v, (lambda()=
+	echoWriter(w, [Headers[LIST], strVarUInt(listLength(v))]);
+	for val in v do (call fElement(val));
+	nil
+));;
+fun _parseLIST(r, len, fElement) =
+	if len>0 then (call fElement())::_parseLIST(r, len-1, fElement);;
+fun parseLIST(r, fElement)= parseCommonSimple(r, LIST, lambda()=
+	let readUInt(r) -> len in
+	_parseLIST(r, len, fElement)
+);;
+
+fun buildARRAY(w, v, fElement)= echoCheckNilSimple(w, v, (lambda()=
+	echoWriter(w, [Headers[ARRAY], strVarUInt(arrayLength(v))]);
+	for val of v do call fElement(val);
+	nil
+));;
+fun parseARRAY(r, fElement)= parseCommonSimple(r, ARRAY, lambda()=
+	let readUInt(r) -> len in
+	arrayInit(len, lambda(i)=call fElement())
+);;
+
+fun buildHASHMAP(w, v, fKey, fVal)= echoCheckNilSimple(w, v, (lambda()=
+	echoWriter(w, [Headers[HASHMAP], strVarUInt(hashmapCount(v)), strVarUInt(hashmapBitSize(v))]);
+	hashmapMap(v, (lambda(key, val)=[call fKey(key), call fVal(val)]));
+	nil
+));;
+fun parseHASHMAP(r, fKey, fVal)= parseCommonSimple(r, HASHMAP, lambda()=
+	let readUInt(r) -> len in
+	let readUInt(r) -> nbSlots in
+	let hashmapCreate(nbSlots) -> h in
+	(
+		for i=0;i<len do hashmapSet(h, call fKey(), (call fVal()));
+		h
+	)
+);;
+fun buildTUPLE(w, v, len) = echoCheckNilSimple(w, v, lambda()=
+	echoWriter(w, [Headers[TUPLE], strVarUInt(len)])
+);;
+fun parseTUPLE(r, len)=
+	parseCommonSimple(r, TUPLE, nil);
+	if len<>readUInt(r) then _marshallError("wrong tuple size");;
+
+fun buildAny(fBuild) = let makeWriter() -> w in (call fBuild(w); outWriter(w));;
+fun readAny(p, fRead) = try let makeReader(p, 0) -> r in call fRead(r);;

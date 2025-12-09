@@ -1,0 +1,86 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2022, Sylvain Huet, Ambermind
+// Minimacy (r) System
+
+//-------------- DATES
+const Days={"Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"};;
+const Months={"Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"};;
+const _MonthDays={31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};;
+const _DaysBeforeMonth=arrayCreate(12, 0);;
+const _Dates=
+	let _DaysBeforeMonth -> days in
+	for i=1;i<12 do set days[i] = _MonthDays[i-1]+days[i-1];
+
+	let arrayCreate(365, nil) -> d in
+	let -1 -> index in
+	let 1 -> m in
+	(
+		for n,m of _MonthDays do for i=1;i<=n do set d[set index=index+1]=[m+1, i];
+		d
+	);;	// we will precompute some dates
+
+fun date(t)=
+	let ((t>>1)&~signBit)/43200 -> d in	// prevent the 'year 2038 problem' on 32 bits targets
+	let t-d*86400 -> hms in
+	let hms/3600 -> h in
+	let hms%3600 -> ms in
+	let ms /60 -> m in
+	let ms%60 -> s in
+	let (d+4)%7 -> w in	// sunday -> 0 ... saturday -> 6
+	let d+365 -> d in
+	let d/1461 -> y4 in
+	let d%1461 -> d4 in
+	let 1969+y4*4+min(d4/365, 3) -> y in
+	if d4==1154 then [y, 2, 29, w, h, m, s]	// check Leap year
+	else let if d4>1154 then d4-1 else d4 -> d4 in
+	let _Dates[d4%365] -> [month, d] in [y, month, d, w, h, m, s];;
+
+fun fullDate(t)=
+	let date(t) -> [y, month, d, w, h, m, s] in
+	strFormat("*, * * * *:*:* UTC",
+		Days[w], decNFromInt(2, d), Months[month-1], decNFromInt(4, y), decNFromInt(2, h), decNFromInt(2, m), decNFromInt(2, s));;
+
+fun fileDate(t)=
+	let date(t) -> [y, month, d, w, h, m, s] in
+	strFormat("*/*/* *:*", decNFromInt(2, month), decNFromInt(2, d), decNFromInt(4, y), decNFromInt(2, h), decNFromInt(2, m));;
+
+fun fileDateSeconds(t)=
+	let date(t) -> [y, month, d, w, h, m, s] in
+	strFormat("*/*/* *:*:*", decNFromInt(2, month), decNFromInt(2, d), decNFromInt(4, y), decNFromInt(2, h), decNFromInt(2, m), decNFromInt(2, s));;
+
+fun smallDate(t)=
+	let date(t) -> [y, month, d, w, h, m, s] in
+	let date(time()) -> [y0, month0, d0, w0, h0, m0, s0] in
+	if y<>y0 then decNFromInt(4, y)
+	else if month<>month0 || d<>d0 then strFormat("*/*", decNFromInt(2, month), decNFromInt(2, d))
+	else strFormat("*:*:*", decNFromInt(2, h), decNFromInt(2, m), decNFromInt(2, s));;
+
+fun smallTime(t)=
+	let ((t>>1)&~signBit)/43200 -> d in	// prevent the 'year 2038 problem' on 32 bits targets
+	let t-d*86400 -> t in
+	let t/3600 -> h in
+	let t%3600 -> t in
+	let t/60 -> m in
+	let t%60 -> s in
+	strFormat("*:*:*", decNFromInt(2, h), decNFromInt(2, m), decNFromInt(2, s));;
+
+fun yyddmmhhmmsszFromTime(t)=
+	let date(t) -> [y, month, d, w, h, m, s] in
+	strFormat("******Z", decNFromInt(2, y%100), decNFromInt(2, month), decNFromInt(2, d), decNFromInt(2, h), decNFromInt(2, m), decNFromInt(2, s));;
+
+fun timeFromDate(year, month, day, h, m, s)=
+	if year>=1970 then
+	let year-1970-> y in
+	let y*365+ _DaysBeforeMonth[month-1] + day-1 -> days in
+	let (y*12+month +21)/48 -> nb29feb in
+	let days+nb29feb -> days in
+	days*86400 + h*3600 + m*60 + s;;
+
+fun _cutTime2(str, i)= if i<strLength(str) then intFromDec(strSlice(str, i, 2))::_cutTime2(str, i+2);;
+
+fun timeFromYyddmmhhmmssz(str)=	//"210729170410Z" -> timestamp
+	if 13==strLength(str) then
+	if 'Z'==strGet(str, -1) then
+	let _cutTime2(str, 0) -> y::mnt::d::h::m::s::_ in
+	let y+if y<70 then 2000 else 1900 -> y in
+	timeFromDate(y, mnt, d, h, m, s);;

@@ -1,0 +1,59 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2022, Sylvain Huet, Ambermind
+// Minimacy (r) System
+
+fun oblivionCreate(f) = _oblivionCreate((lambda ()= call f(); nil));;
+
+//-------------- SCHEDULER
+const _RunList=fifoCreate();;
+
+fun _scheduleThread(th)=
+	fifoIn(_RunList, th);
+	set th._stateT=_THREAD_RUN;;
+
+fun _isAlive()=
+	let _oblivionPop() -> f in if f<>nil then threadStart("_oblivion_", f);
+	if _HardStop then false
+	else if _NiceStop then (0<fifoCount(_RunList)) || _workerAlive()
+	else (0<fifoCount(_RunList)) || _timerAlive() || _streamAlive() || _workerAlive() || _internalExtAlive() || _uiAlive() || audioPlaying();;
+
+fun _schedulerLoop()=
+	while _isAlive() do
+	(
+		_ioCheck();
+		let fifoOut(_RunList) -> th in
+		if th._stateT==_THREAD_RUN then
+		(
+			set _This._cyclesT=_threadCount(_This._threadT);
+			set _This=th;
+			_echoEnable(_This._echoEnableT);
+			match _threadRun(th._threadT, _MAX_THREAD_EXEC) with
+				EXEC_IDLE -> set th._stateT=_THREAD_IDLE,
+				EXEC_PREEMPTION -> (_scheduleThread(th);nil),
+				EXEC_WAIT -> (set th._stateT= _THREAD_WAIT),
+				EXEC_EXIT -> (threadStop(th); nil),
+				EXEC_OM -> (echoLn "> Thread is out of memory"; threadStop(th); set th=nil; gcCompact(); nil);
+			_threadsCheckPendingTasks(th);
+
+			set th._cyclesT=_threadCount(th._threadT);
+			set _This=_ThreadBios;
+			_echoEnable(_This._echoEnableT);
+		);
+	);
+	uiStop();;
+
+fun _schedulerStart()=
+	_schedulerInitIO();
+	while _isAlive() do (
+		_schedulerLoop();
+		// we need to check any pending oblivion callback
+		// for this we remove every reference, and fire up to 3 gc
+		set _HardStop= set _NiceStop=false;
+		fifoList(_RunList);	// this clear the fifo
+		set _TimerList=nil;
+		set _UiThread=nil;
+		set _WorkerList=nil;
+		set _StreamList = _InternalPipe::nil;
+		pkgForgetAll();
+		gcCompact();	// may activate some oblivion callback
+	);;

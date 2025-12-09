@@ -1,0 +1,211 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2022, Sylvain Huet, Ambermind
+// Minimacy (r) System
+
+export Xml, tagXml _ _ _, contentXml _;;
+
+export xmlEncodePretty(xml);;
+export xmlEncode(xml);;
+export xmlParse(src, i0, noMixChild);;
+export htmlParse(src, i0, noMixChild);;
+export xmlGetTag(xml);;
+export xmlGetAttributes(xml);;
+export xmlGetChilds(xml);;
+export xmlGetContent(xml);;
+export xmlGetAttribute(xml, attribute);;
+export xmlFilterChilds(xml, tag);;
+
+// fun xmlParse(src, i0) -> [xml next]
+// i0 start index
+// next is nil when reaching end of string, else index of the remaining data
+// type: fun Str Int Bool -> [Xml Int]
+
+// fun xmlEncode: fun Xml -> Str
+// fun xmlEncodePretty: fun Xml -> Str
+
+use core.util.token;;
+
+sum Xml= tagXml _ _ _, contentXml _;;
+
+const TOKEN_ATTRIB= arrayInit(128, lambda(c)=(c>='a' && c<='z')||(c>='A' && c<='Z')||(c=='_')||(c=='-')||(c=='.')||(c==':')||(c>='0' && c<='9'));;
+
+const XML_SYMBOLS="< > = </ />";;
+const XML_FILTERS=
+	tokenFilterSkip(false)::
+	tokenFilterKeywords(strSplit(" ", XML_SYMBOLS))::
+	tokenFilterXmlWord()::
+	tokenFilterString(TOKEN_DOUBLEQUOTE)::
+	tokenFilterString(TOKEN_QUOTE)::
+	nil;;
+
+const XML_CONTENT=
+	tokenFilterKeywords("<"::"</"::nil)::
+	tokenFilterUntil("<")::
+	nil;;
+
+fun _tokenTake(p)= tokenTake(p, XML_FILTERS);;
+fun _tokenTakeContent(p)= tokenTake(p, XML_CONTENT);;
+
+const NOCHILD=hashsetInit(4, "meta"::"br"::"link"::"hr"::nil);;
+
+fun _xmlError(p, str)= setError(msgError strFormat(str, tokenContextError(p, 20))); abort;;
+
+
+fun tokenFilterXmlWord ()= lambda(fifo, str, i)=
+	if TOKEN_ALPHANUM_UNDER[strGet(str, i)] then
+	for j=i+1;true do if !TOKEN_ATTRIB[strGet(str, j)] then 
+	(
+		fifoIn(fifo, strSlice(str, i, j-i));
+		return j
+	)
+;;
+
+fun _xmlFilterAttr(s)=
+	let strGet(s, 0) -> c in
+	if c==TOKEN_QUOTE || c==TOKEN_DOUBLEQUOTE then
+		strSlice(s, 1, strLength(s)-2)
+	else s;;
+
+fun xmlFilterTag(lChilds, tagName)=
+	listMap(lChilds, lambda(xml)= if tagName==xmlGetTag(xml) then xml);;
+
+fun xmlFindAttr(lAttr, attr)=
+	if lAttr<>nil then
+	let head(lAttr) ->[key, val] in
+	if key==attr then val
+	else xmlFindAttr(tail(lAttr), attr);;
+
+fun _xmlParseTagFinal(p, tag, lattr, lchild)=
+	let _tokenTake(p) -> tagFinal in
+	if strLowercase(tag)<>strLowercase(tagFinal) then _xmlError(p, (strFormat("unbalanced tag * / *", tag, tagFinal)))
+	else let _tokenTake(p) -> val in
+	if val<>">" then _xmlError(p, "'>' expected, found '*'")
+	else tagXml tag lattr lchild;;
+
+fun _xmlParseAttrKey(p, isHtml, tag, key, lattr)=
+	if key==nil then _xmlError(p, "empty attribute key around *") ;
+	if key=="/>" then tagXml tag listReverse(lattr) nil
+	else if key==">" then 
+		if isHtml && hashsetContains(NOCHILD, tag) then tagXml tag listReverse(lattr) nil
+		else _xmlParseTagFinal(p, tag, listReverse(lattr), _xmlParseContent(p, isHtml))
+	else let _tokenTake(p) -> sep in
+	if sep<>"=" then _xmlParseAttrKey(p, isHtml, tag, sep, [key, key]::lattr)
+	else let _tokenTake(p) -> val in
+	_xmlParseAttr(p, isHtml, tag, [key, _xmlFilterAttr(val)]::lattr);;
+
+fun _xmlParseAttr(p, isHtml, tag, lattr)=
+	let _tokenTake(p) -> key in
+	_xmlParseAttrKey(p, isHtml, tag, key, lattr);;
+
+fun _xmlParseTag(p, isHtml)=
+	let _tokenTake(p) -> tag in
+	_xmlParseAttr(p, isHtml, tag, nil);;
+
+fun _xmlParseContent(p, isHtml)=
+	let _tokenTakeContent(p) -> val in
+	if val<>nil then
+	match val with
+		"</" -> nil,
+		"<" -> _xmlParseTag(p, isHtml)::_xmlParseContent(p, isHtml),
+		_ -> (contentXml val)::_xmlParseContent(p, isHtml);;
+
+fun _xmlNoMixChilds(j, strFilter)=
+	match j with
+		contentXml val -> contentXml call strFilter(val),
+		tagXml tag lattr lchild -> 
+			let listMap(lchild, lambda(p)=_xmlNoMixChilds(p, strFilter)) -> lchild in
+			if nil==tail(lchild) then tagXml tag lattr lchild
+			else let listMap(lchild, lambda(p)= match p with tagXml _ _ _ -> p) -> lchild in
+			tagXml tag lattr lchild;;
+fun _xmlMixChilds(j, strFilter)=
+	match j with
+		contentXml val -> let strTrim(val) ->val2 in if val2<>"" then contentXml call strFilter(val),
+		tagXml tag lattr lchild -> 
+			let listMap(lchild, lambda(p)=_xmlMixChilds(p, strFilter)) -> lchild in
+			tagXml tag lattr lchild;;
+
+fun _mixedContent(l)=
+	if l<>nil then match head(l) with
+		contentXml _ -> true,
+		tagXml _ _ _ -> _mixedContent(tail(l));;
+
+fun _xmlEncodePretty(j, pref, final)=
+	match j with
+		contentXml str -> xmlFromStr(str),
+		tagXml tag lattr lchild -> 
+			let nil<>tail(lattr) -> multiAttr in
+			let match head(lchild) with tagXml _ _ _ -> true -> multiChild in
+			let _mixedContent(lchild)&& nil<>tail(lchild) -> mixedContent in
+			strBuild([
+			pref, "<", tag,
+			listMap(lattr, lambda(p)=
+				let p->[key, val] in {
+				if multiAttr then "\n  " else " ",
+				if multiAttr then pref,
+				key, 
+				"=\"", xmlFromStr(val), "\""
+			}),
+			if multiAttr then ["\n", pref],
+			if lchild==nil then "/>"
+			else
+			strBuild([			
+				">",
+				if multiChild && !mixedContent then "\n",
+				listMap(lchild, lambda(p)= 
+					_xmlEncodePretty(p, 
+						if !mixedContent then strConcat(pref, "  "),
+						if !mixedContent then "\n")),
+				if multiChild && !mixedContent then pref,
+				"</", tag, ">" 
+			]),
+			final
+		]);;
+
+fun xmlEncodePretty(xml)= _xmlEncodePretty(xml, "", "\n");;
+
+fun xmlEncode(xml)=
+	match xml with
+		contentXml str -> xmlFromStr(str),
+		tagXml tag lattr lchild -> strBuild([
+			"<", tag,
+			listMap(lattr, lambda(p)=
+				let p->[key, val] in [" ", key, "=\"", xmlFromStr(val), "\""])
+			,
+			if lchild==nil then "/>"
+			else strBuild([
+				">",
+				listMap(lchild, #xmlEncode),
+				"</", tag, ">"
+			])
+		]);;
+
+fun _xmlStartDetect(src, i0)=
+	let strCharPos(src, '<', i0) -> i in
+	if i<>nil then
+	if nil==strCharPos("!?", strGet(src, i+1), 0) then i
+	else _xmlStartDetect(src, i+1);;
+		
+// try to guess if the source is Utf8, so that it can decode entities with code >= 256
+fun _xmlParse(src, i0, noMixChild, isHtml)=
+	let if isU8(src) then #u8FromXml else #latinFromXml -> strFilter in
+	let _xmlStartDetect(src, i0) -> i in
+	if i<>nil then
+	let tokenCreate(src, i)-> p in
+	let head(_xmlParseContent(p, isHtml)) -> xml in
+	let if noMixChild then _xmlNoMixChilds(xml, strFilter) else _xmlMixChilds(xml, strFilter) -> xml in
+	let tokenIndex(p) -> next in
+	[xml, next];;
+
+fun xmlParse(src, i0, noMixChild)= try _xmlParse(src, i0, noMixChild, false);;
+fun htmlParse(src, i0, noMixChild)= try _xmlParse(src, i0, noMixChild, true);;
+
+fun xmlGetTag(xml)= match xml with tagXml tag _ _ -> tag;;
+fun xmlGetAttributes(xml)= match xml with tagXml _ attributes _ -> attributes;;
+fun xmlGetChilds(xml)= match xml with tagXml _ _ childs -> childs;;
+fun xmlGetContent(xml)= match xml with
+	tagXml _ _ childs -> if nil==tail(childs) then xmlGetContent(head(childs)) ,
+	contentXml content -> content;;
+
+fun xmlGetAttribute(xml, attribute)= xmlFindAttr(xmlGetAttributes(xml), attribute);;
+fun xmlFilterChilds(xml, tag)= xmlFilterTag(xmlGetChilds(xml), tag);;
+

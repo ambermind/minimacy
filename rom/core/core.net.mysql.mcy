@@ -1,0 +1,364 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2022, Sylvain Huet, Ambermind
+// Minimacy (r) System
+
+
+export Mysql, MysqlReply, errorReply _ _ _, okReply, rowReply _;;
+export ERROR_PACKET;;
+export ERROR_CLOSED;;
+export ERROR_BUSY;;
+export ERROR_CONNECT;;
+
+export mysqlConnect(server, port, login, password, database, tls, cbConnect);;
+export mysqlSetCharset(h, charset);;
+export mysqlQuery(h, command, cb) ;;
+export mysqlUseDatabase(h, database, cb) ;;
+export mysqlQuit(h) ;;
+export mysqlProtocol(h);;
+export mysqlVersion(h);;
+export mysqlColumns(h);;
+export mysqlLastInsert(h);;
+export sql(val);;
+export mysqlConvertColumns(h, l);;
+
+
+use core.util.base64;;
+use core.crypto.hash;;
+use core.net.dns;;
+
+const COMMAND_QUIT="\1";;
+const COMMAND_USE_DATABASE="\2";;
+const COMMAND_QUERY="\3";;
+
+const UTF8 = 33;;	// alias of UTF8_GENERAL_CI
+const LATIN1 = 8;;	// alias of LATIN1_SWEDISH_CI
+
+sum MysqlReply= errorReply _ _ _, okReply, rowReply _;;
+
+sum MysqlStage= greetingS, loginS, readyS, ongoingS, terminatedS;;
+
+sum MysqlPart= startR, columnR, rowR;;
+
+struct MysqlColumn=[
+	catalogC, databaseC, tableC, originalTableC, nameC, originalNameC,
+	charsetC, lengthC, typeC, flagsC, decimalsC
+];;
+
+struct Mysql=[
+	thP, tlsP, serverP, ipP, portP,
+	loginP, passwordP, databaseP,
+	charsetP,
+	lockP,
+
+	stageC,
+	protocolC, versionC,
+	ttC, sendC, iC, closeAfterC,
+	srvStatusC, warningsC,
+	_bufferC,
+
+	partQ,
+	cbQueryQ,
+	columnsTmpQ,
+	columnsQ, columnsDetailQ, lastInsertQ
+];;
+
+
+fun _hashPassword(password, salt)=
+	let sha1(password) -> left in
+	let sha1(strConcat(salt, sha1(sha1(password)))) -> right in
+	let strSliceOfBytes(left, 0, nil) -> buffer in
+	(
+		bytesXor(buffer, 0, right, 0, nil);
+		strFromBytes(buffer)
+	);;
+
+fun _parseIntLength(data, i)=
+	let strRead8(data, i) -> val in
+	if val<=250 then [val, i+1]
+	else match val with
+		0xfb -> [0, i+1],
+		0xfc -> [strRead16Lsb(data, i+1), i+3],
+		0xfd -> [strRead24Lsb(data, i+1), i+4],
+		0xfe -> [strRead32Lsb(data, i+1)+(strRead32Lsb(data, i+5)<<32), i+9],
+		_ -> nil;;
+
+fun _parseStringZero(data, i)=
+	let strCharPos(data, 0, i) -> j in
+	if j<>nil then [strSlice(data, i, j-i), j+1];;
+
+fun _parseStringLength(data, i)=
+	if i<strLength(data) then
+	let _parseIntLength(data, i) -> [length, start] in
+	strSlice(data, start, length):: _parseStringLength(data, start+length);;
+
+fun _parseStringLengthArray(row, index, data, i)=
+	if i>=strLength(data) then row
+	else let _parseIntLength(data, i) -> [length, start] in
+	(
+		set row[index]= strSlice(data, start, length);
+		_parseStringLengthArray(row, index+1, data, start+length)
+	);;
+
+fun _buildPkg(number, data)=
+	if data<>nil then strConcat(strInt32Lsb((number<<24)+strLength(data)), data);;
+
+fun _mysqlSend(h, data)=
+//	echoTime "send"; hexDump data;
+	set h.sendC=strConcat(h.sendC, data);
+//	echo "send "; echoLn 
+	set h.iC=streamWrite(h.ttC, h.sendC, h.iC);
+	if h.iC>=strLength(h.sendC) then (
+		if h.closeAfterC then
+		(
+			streamClose(h.ttC);
+			set h.ttC=nil
+		);
+		set h.sendC=nil;
+		set h.iC=0;
+	);;
+
+//-------------------
+
+fun _mysqlCbLastCall(h, reply)=
+	let h.cbQueryQ -> cb in
+	(
+		set h.cbQueryQ=nil;
+		if h.stageC==ongoingS then set h.stageC=readyS
+		else
+		(
+			streamClose(h.ttC);
+			set h.stageC=terminatedS
+		);
+		call cb(reply);
+	);;
+
+fun _mysqlMalformedPacket(h)= _mysqlCbLastCall(h, errorReply ERROR_PACKET "PACKET" "Malformed packet"); false;;
+
+fun _mysqlParseError(h, packet)=
+	let strRead16Lsb(packet, 1) -> code in
+	let strSlice(packet, 4, 5) -> sqlState in
+	let strSlice(packet, 9, nil) -> msg in
+	(
+		_mysqlCbLastCall(h, errorReply code sqlState msg);
+		nil
+	);;
+
+fun _mysqlParseFE(h, packet)=
+	set h.warningsC=strRead16Lsb(packet, 1);
+	set h.srvStatusC=strRead16Lsb(packet, 3);
+	if h.partQ==rowR then
+	(
+		_mysqlCbLastCall(h, okReply);
+		true
+	)
+	else let fifoList(h.columnsTmpQ) -> lColumns in
+	(
+		set h.columnsDetailQ=arrayFromList(lColumns);
+		set h.columnsQ= arrayFromList(listMap(lColumns, (lambda(c)=c.nameC)));
+		set h.columnsTmpQ=nil;
+		set h.partQ=rowR;
+		false
+	);;
+
+fun _mysqlParseOk(h, packet)=
+	let _parseIntLength(packet, 1) -> [affectedRows, i] in
+	let _parseIntLength(packet, i) -> [lastInsert, i] in
+	(
+		set h.lastInsertQ=lastInsert;
+		set h.srvStatusC=strRead16Lsb(packet, i);
+		set h.warningsC=strRead16Lsb(packet, i+2);
+
+		if h.stageC==loginS && h.databaseP==nil then set h.stageC=ongoingS;
+		
+		match h.stageC with
+			loginS -> (
+				set h.stageC=ongoingS;
+				_mysqlSend(h, _buildPkg(0, strConcat(COMMAND_USE_DATABASE, h.databaseP)));
+				false
+			),
+			ongoingS -> (
+				_mysqlCbLastCall(h, okReply);
+				true
+			)
+	);;
+
+fun _mysqlParseGreeting(h, packet)=
+//	echoLn "greeting"; hexDump packet;
+	let strRead8(packet, 0) -> protocol in
+	let _parseStringZero(packet, 1) -> [version, i] in
+	if i<>nil then
+	let strRead32Lsb(packet, i) -> threadId in
+	let _parseStringZero(packet, i+4) -> [salt1, i] in
+	let strRead16Lsb(packet, i) -> srvCap in
+	let strRead8(packet, i+2) -> srvLang in
+	let strRead16Lsb(packet, i+3) -> srvStatus in
+	let strRead16Lsb(packet, i+5) -> srvExtCap in
+	let strRead8(packet, i+7) -> authLength in
+	let strSlice(packet, i+8, 10) -> unused in
+	let _parseStringZero(packet, i+18) -> [salt2, i] in
+	let _parseStringZero(packet, i) -> [authPlugin, i] in
+	if i==strLength(packet) then	
+	let _hashPassword(h.passwordP, strConcat(salt1, salt2)) -> hashPass in
+	let strBuild({
+		strInt16Lsb(0xa685),
+		strInt16Lsb(0x0003),
+		strInt32Lsb(0x40000000),
+		strInt8(h.charsetP),
+		"\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0",	// 16
+		"\0\0\0\0\0\0\0",	// 7
+		h.loginP, "\0",
+		strInt8(strLength(hashPass)),
+		hashPass
+	}) -> data in
+	(
+		set h.srvStatusC=srvStatus;
+		set h.protocolC=protocol;
+		set h.versionC=version;
+		set h.stageC=loginS;
+		_mysqlSend(h, _buildPkg(1, data));
+		true
+	);;
+
+
+fun _mysqlParseColumn(h, packet)=
+//	echoLn "column"; hexDump packet;
+	let _parseStringLength(packet, 0) -> (catalog::database::table::originalTable::name::originalName::extra::_) in
+	let strRead16Lsb(extra, 0) -> charset in
+	let strRead32Lsb(extra, 2) -> length in
+	let strRead8(extra, 6) -> type in
+	let strRead16Lsb(extra, 7) -> flags in
+	let strRead8(extra, 9) -> decimals in
+	let [catalogC=catalog, databaseC=database, tableC=table, originalTableC=originalTable, nameC=name, originalNameC=originalName,
+		charsetC=charset, lengthC=length, typeC=type, flagsC=flags, decimalsC=decimals] -> column in
+	fifoIn(h.columnsTmpQ, column);
+	false;;
+
+fun _mysqlParseRow(h, packet)=
+//	echoLn "row"; hexDump packet;
+	let arrayCreate(arrayLength(h.columnsQ), nil) -> row in
+	call h.cbQueryQ(rowReply _parseStringLengthArray(row, 0, packet, 0));
+	false;;
+
+fun _mysqlParseNumberOfFields(h, packet)=
+//	echoLn "NumberOfFields"; hexDump packet;
+	set h.partQ=columnR;
+	set h.columnsTmpQ=fifoCreate();
+	false;;
+
+fun _mysqlHandleData(h, data)=
+	set h._bufferC=strConcat(h._bufferC, data);
+	let h._bufferC -> buffer in
+	if 4<= strLength(buffer) then
+		let strRead24Lsb(buffer, 0) -> length in
+		if (4+length)<= strLength(buffer) then
+		let strSlice(buffer, 4, length) -> packet in
+		let strRead8(buffer, 3) -> number in
+		let strRead8(packet, 0) -> code in
+		(
+//		hexDump packet;
+			set h._bufferC=strSlice(buffer, 4+length, nil);
+			match code with
+				0 -> _mysqlParseOk(h, packet),
+				0xff -> _mysqlParseError(h, packet),
+				0xfe -> _mysqlParseFE(h, packet),
+				_ -> ( match h.stageC with
+					greetingS -> if !_mysqlParseGreeting(h, packet) then _mysqlMalformedPacket(h),
+					ongoingS -> ( match h.partQ with
+						startR -> _mysqlParseNumberOfFields(h, packet),
+						columnR -> _mysqlParseColumn(h, packet),
+						rowR -> _mysqlParseRow(h, packet),
+						_ -> (_mysqlMalformedPacket(h); false)
+					),
+					_ -> (_mysqlMalformedPacket(h); false)
+				);
+			_mysqlHandleData(h, nil)
+		);;
+
+fun _mysqlQuery(h, query, cbQuery)=
+	let thisThread() -> th in
+	let if th==h.thP then (lambda(ok)= call cbQuery(ok);nil)
+		else lambda(ok)= threadPost(th, lambda ()= call cbQuery(ok))
+	-> cb in
+	let lockSync(h.lockP, lambda ()=
+		match h.stageC with
+			readyS -> (set h.stageC=ongoingS; nil),
+			ongoingS -> errorReply ERROR_BUSY "BUSY" "Connection busy",
+			terminatedS -> errorReply ERROR_CLOSED "CLOSED" "Connection closed",
+			_ -> errorReply ERROR_CONNECT "NOCON" "No connection yet"
+	) -> err in
+	if err<>nil then
+	(
+		call h.cbQueryQ(err);
+		nil
+	)
+	else
+	(
+		set h.partQ=startR;
+		set h.cbQueryQ=cb;
+		set h.lastInsertQ=0;
+		if query==COMMAND_QUIT then set h.closeAfterC=true;
+		_mysqlSend(h, _buildPkg(0, query));
+		nil
+	);;
+
+fun __mysqlConnect(h, ip, cbConnect)=
+	set h.ipP=ip;
+	let thisThread() -> th in
+	set h.cbQueryQ=
+		if th==h.thP then (lambda(ok)= call cbConnect(h, ok);nil)
+		else (lambda(ok)= threadPost(th, lambda ()= call cbConnect(h, ok)));
+	set h.ttC= tcpOpen(ip, h.portP); //(if h.tlsP then h.serverP);
+	streamOnEvent(h.ttC,
+	(lambda(data)=
+//	echoLn "receive"; hexDump data; echoTime h.stageC;
+		if data==nil then let h.cbQueryQ -> cb in
+		(
+//			echoTime "client receives close";
+			set h.cbQueryQ=nil;
+			set h.ttC=nil;
+			set h.stageC=terminatedS;
+			if cb<>nil then call cb(errorReply ERROR_CLOSED "CLOSED" "Connection closed");
+			nil
+		)
+		else _mysqlHandleData(h, data);
+		nil
+	),
+	lambda ()= _mysqlSend(h, nil));;
+
+fun mysqlConnect(server, port, login, password, database, tls, cbConnect)=
+	if tls then (echoLn "> Mysql SSL not yet supported"; nil)
+	else if cbConnect<>nil then
+	let [
+		thP=thisThread(),
+		serverP=server, portP=port, tlsP=tls,
+		loginP=login, passwordP=password, databaseP=database,
+		charsetP=UTF8,
+		lockP=lockCreate(),
+
+		stageC=greetingS
+	] -> h in
+	dnsRequest(server, lambda(ip)=
+		if ip==nil then (call cbConnect(nil, nil); nil)
+		else __mysqlConnect(h, ip, cbConnect)
+	);;
+
+//--------------------- API
+const ERROR_PACKET=-1;;
+const ERROR_CLOSED=-2;;
+const ERROR_BUSY=-3;;
+const ERROR_CONNECT=-4;;
+
+fun mysqlSetCharset(h, charset)= set h.charsetP=charset;;
+
+fun mysqlQuery(h, command, cb) = _mysqlQuery(h, strConcat(COMMAND_QUERY, command), cb);;
+fun mysqlUseDatabase(h, database, cb) = _mysqlQuery(h, strConcat(COMMAND_USE_DATABASE, database), cb);;
+fun mysqlQuit(h) = _mysqlQuery(h, COMMAND_QUIT, nil);;
+
+fun mysqlProtocol(h)= h.protocolC;;
+fun mysqlVersion(h)= h.versionC;;
+
+fun mysqlColumns(h)= h.columnsQ;;
+fun mysqlLastInsert(h)= h.lastInsertQ;;
+fun sql(val)= sqlFromStr(strBuild(val));;
+
+fun mysqlConvertColumns(h, l)= listMap(l, lambda(column)= arrayIndexOf(h.columnsQ, column));;

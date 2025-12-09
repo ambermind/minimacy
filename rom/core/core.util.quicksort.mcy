@@ -1,0 +1,27 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2022, Sylvain Huet, Ambermind
+// Minimacy (r) System
+
+/*
+quicksortFusion l f : fun list a0 (fun a0 a0 -> Int) -> list a0
+  function f a b=
+   1 : a before b
+   -1: a after b
+   0 : a equals b and one is removed
+*/
+
+fun _divideFusion(x, p, r1, r2, f)=
+	if p==nil then [r1, r2]
+	else let p->(a::n) in
+	let call f(a, x) -> r in
+	if r==0 then _divideFusion(x, n, r1, r2, f)
+	else if r<0 then _divideFusion(x, n, a::r1, r2, f)
+	else _divideFusion(x, n, r1, a::r2, f);;
+
+fun quicksortFusion(l, f)=
+	if l==nil then nil
+	else let l->(vl::nl) in
+	if nl==nil then l
+	else let _divideFusion(vl, nl, nil, nil, f)->[va, na] in
+	listConcat(quicksortFusion(va, f), vl::quicksortFusion(na, f));;
+

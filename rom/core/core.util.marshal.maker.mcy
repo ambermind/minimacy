@@ -1,0 +1,229 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2022, Sylvain Huet, Ambermind
+// Minimacy (r) System
+
+export marshalMaker(src);;
+
+use core.util.token;;
+
+
+sum MarshalMaker= typeM _ _, listM _, arrayM _, IntM, UintM, StrM, BoolM, FloatM, hashmapM _ _, tupleM _, sumM _ _, structM _ _,customM _;;
+
+const MARSHAL_SYMBOLS="[ = ] -> : , ;;";;
+const MARSHAL_FILTERS=
+	tokenFilterSkip(false)::
+	tokenFilterKeywords(strSplit(" ", MARSHAL_SYMBOLS))::
+	tokenFilterWord()::
+	nil;;
+
+fun _tokenNext(p)= tokenNext(p, MARSHAL_FILTERS);;
+fun _tokenTake(p)= tokenTake(p, MARSHAL_FILTERS);;
+
+fun _marshallError(p, str)= setError(msgError strFormat(str, tokenContextError(p, 20))); abort;;
+
+fun mAssume(p, v)=
+	let _tokenTake(p) -> w in
+	if v<>w then _marshallError(p, (strFormat("'*' expected, found '*'", v, w)));
+	v;;
+
+fun mTuple(p) =
+	let mTerm(p, true) -> val in
+	if val<>nil then val::mTuple(p);;
+
+fun mTerm(p, tuple)=	// tuple is true -> accept "]" and returns nil
+	match _tokenTake(p) with
+		"[" -> tupleM arrayFromList(mTuple(p)),
+		"Int" -> IntM,
+		"UInt" -> UintM,
+		"Str" -> StrM,
+		"Float" -> FloatM,
+		"Bool" -> BoolM,
+		"list" -> listM mTerm(p, false),
+		"array" -> arrayM mTerm(p, false),
+		"hashmap" -> let mTerm(p, false) -> key in (
+			mAssume(p, "->");
+			hashmapM key mTerm(p, false)
+		),
+		_ -> if tuple && _=="]" then nil else
+			if tokenIsWord(_) then customM _
+			else _marshallError(p, "unexpected term, found '*'");;
+
+fun mDeclareType(p)=
+	let _tokenTake(p) -> label in
+	if !tokenIsWord(label) then _marshallError(p, "label expected, found '*'")
+	else
+	(
+		mAssume(p, "=");
+		let typeM label mTerm(p, false) -> result in
+		(
+			mAssume(p, ";;");
+			result
+		)
+	);;
+
+fun _mCons(p)=
+	let _tokenNext(p) -> first in
+	if first==";;" || first=="," then nil
+	else mTerm(p, false)::_mCons(p);;
+
+fun mCons(p)=
+	let _tokenTake(p) -> label in
+	if !tokenIsWord(label) then _marshallError(p, "constructor name expected, found '*'")
+	else let [label, arrayFromList(_mCons(p))] -> cons in
+	match _tokenTake(p) with
+	";;" -> cons::nil,
+	"," -> cons::mCons(p),
+	_ -> _marshallError(p, "',' or ';;' expected, found '*'");;
+
+fun mDeclareSum(p)=
+	let _tokenTake(p) -> label in
+	if !tokenIsWord(label) then _marshallError(p, "label expected, found '*'")
+	else
+	(
+		mAssume(p, "=");
+		sumM label arrayFromList(mCons(p))
+	);;
+
+fun mField(p)=
+	let _tokenTake(p) -> label in
+	if label=="]" then nil
+	else
+	if !tokenIsWord(label) then _marshallError(p, "constructor name expected, found '*'")
+	else
+	(
+		mAssume(p, ":");
+		[label, mTerm(p, false)]::mField(p)
+	);;
+
+fun mDeclareStruct(p)=
+	let _tokenTake(p) -> label in
+	if !tokenIsWord(label) then _marshallError(p, "label expected, found '*'")
+	else
+	(
+		mAssume(p, "=");
+		mAssume(p, "[");
+		let structM label arrayFromList(mField(p)) -> result in
+		(
+			mAssume(p, ";;");
+			result
+		)
+	);;
+
+fun mDeclare(p)=
+	match _tokenTake(p) with
+		"struct" -> mDeclareStruct(p),
+		"sum" -> mDeclareSum(p),
+		"type" -> mDeclareType(p),
+		nil -> nil,
+		_ -> _marshallError(p, "declaration expected, found '*'");;
+
+fun _mFull(p)=
+	let mDeclare(p) -> declaration in
+	if declaration<>nil then declaration::_mFull(p);;
+fun mFull(src)=_mFull(tokenCreate(src, 0));;
+
+
+fun mMakeBuild(p, arg)=
+	match p with
+		IntM -> strBuild(["buildINT w ",arg]),
+		UintM -> strBuild(["buildUINT w ",arg]),
+		StrM -> strBuild(["buildSTR w ",arg]),
+		BoolM -> strBuild(["buildBOOL w ",arg]),
+		FloatM -> strBuild(["buildFLOAT w ",arg]),
+		customM name -> strBuild(["build",name, " w ",arg]),
+		typeM name val-> strBuild([
+			"fun build",name, " p = buildAny lambda w = ", mMakeBuild(val, "p"), ";;\n"
+		]),
+		hashmapM key val -> strBuild([
+			"buildHASHMAP w ",arg," (lambda a=",mMakeBuild(key, "a"),") (lambda b=",mMakeBuild(val, "b"),")"
+		]),
+		listM val -> strBuild([
+			"buildLIST w ",arg," (lambda a=",mMakeBuild(val, "a"),")"
+		]),
+		arrayM val -> strBuild([
+			"buildARRAY w ",arg," (lambda a=",mMakeBuild(val, "a"),")"
+		]),
+		tupleM val -> let arrayLength(val) -> n in strBuild([
+			"let p->[",arrayInit(n, lambda(i)= [" a", i])," ] in (\n",
+			"\tbuildTUPLE w ",arg," ",n,";\n",
+			arrayInit(n, lambda(i)= ["\t", mMakeBuild(val[i], strBuild(["a", i])), ";\n"]), ")"
+		]),
+		sumM name val -> strBuild([
+			"extend MarshalLink with _t_",name,"_ML _;;\n",
+			"fun build",name," w p = echoCheckNil w p (lambda=\n\techoWriter w Headers.SUM ; match p with\n",
+			arrayInit(arrayLength(val), lambda(i)= let val[i] -> [cons, args] in strBuild([
+				"\t", cons, arrayInit(arrayLength(args), lambda(j)= strBuild([" a", j])), " -> (echoWriter w [(strVarUInt ",arrayLength(args),") strVarUInt ",i,"]",
+					arrayInit(arrayLength(args), lambda(j)= ["; ", mMakeBuild(args[j], strBuild(["a", j, " "]))]),
+				"),\n"
+			])),
+			"\t_ -> (setError msgError \"wrong sum value\";abort)\n);;\n"
+		]),
+		structM name val -> strBuild([
+			"extend MarshalLink with _t_",name,"_ML _;;\n",
+			"fun build",name," w p = echoCheckNil w p (lambda=\n\techoWriter w [ Headers.STRUCT strVarUInt ",arrayLength(val),"];\n",
+			arrayInit(arrayLength(val), lambda(i)= let val[i] -> [field, arg] in strBuild(["\t", mMakeBuild(arg, "p."),field,";\n"])),
+			");;\n"
+		]),
+		_ -> nil;;
+
+fun mMakeParse(p)=
+	match p with
+		IntM -> strBuild(["(parseINT r)"]),
+		UintM -> strBuild(["(parseUINT r)"]),
+		StrM -> strBuild(["(parseSTR r)"]),
+		BoolM -> strBuild(["(parseBOOL r)"]),
+		FloatM -> strBuild(["(parseFLOAT r)"]),
+		customM name -> strBuild(["(parse",name, " r)"]),
+		typeM name val-> strBuild([
+			"fun parse",name, " p = readAny p lambda r = ", mMakeParse(val),";;\n"
+		]),
+		hashmapM key val -> strBuild([
+			"(parseHASHMAP r (lambda = ",mMakeParse(key),") lambda = ",mMakeParse(val),")"
+		]),
+		listM val -> strBuild([
+			"(parseLIST r lambda = ",mMakeParse(val),")"
+		]),
+		arrayM val -> strBuild([
+			"(parseARRAY r lambda = ",mMakeParse(val),")"
+		]),
+		tupleM val -> let arrayLength(val) -> n in strBuild([
+			"(parseTUPLE r ",n,"; [",arrayInit(n, lambda(i)= [" ", mMakeParse(val[i])]), " ])"
+		]),
+		sumM name val -> strBuild([
+			"sum ",name,"=",
+			strJoin(", ", arrayInit(arrayLength(val), lambda(i)= let val[i] -> [field, arg] in strBuild([field,
+				arrayInit(arrayLength(arg), lambda(i)= " _")
+			]))),
+			";;\n",
+			"fun parse",name," r = parseCommon r SUM (lambda = let readUInt r -> n in match readUInt r with\n",
+			arrayInit(arrayLength(val), lambda(i)= let val[i] -> [cons, args] in strBuild([
+				"\t",i," -> (parserCheck n ",arrayLength(args),"; ",cons, arrayInit(arrayLength(args), lambda(j)= [" ", mMakeParse(args[j])]), "),\n"
+			])),
+		"\t_ -> (setError msgError \"wrong sum value\"; abort)\n) (lambda a=_t_",name,"_ML a) (lambda a=match a with _t_",name,"_ML b -> b);;\n"
+		]),
+		structM name val -> strBuild([
+			"struct ",name,"=[",
+			strJoin(" ", arrayInit(arrayLength(val), lambda(i)= let val[i] -> [field, arg] in field)),
+			"];;\n",
+			"fun parse",name," r = parseCommon r STRUCT (lambda = parserCheck (readUInt r) ",arrayLength(val),"; [\n",
+			arrayInit(arrayLength(val), lambda(i)= let val[i] -> [field, arg] in strBuild([
+				"\t",field,"=", mMakeParse(arg), "\n"
+			])),
+		"]) (lambda a=_t_",name,"_ML a) (lambda a=match a with _t_",name,"_ML b -> b);;\n"
+		]),
+		_ -> nil;;
+
+fun marshalMaker(src)=
+	let mFull(src) -> declarations in strBuild([
+"use core.util.marshal;;\n
+/*
+definition:
+
+",src,"
+*/\n",
+		listMap(declarations, lambda(d)=[
+		mMakeBuild(d, nil),
+		mMakeParse(d),
+		"\n"
+	])]);;
+

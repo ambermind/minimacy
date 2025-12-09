@@ -1,0 +1,58 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2022, Sylvain Huet, Ambermind
+// Minimacy (r) System
+use core.3d.gl;;
+
+const SQUARE_VRT = floatsFromArray(\float{0, 0, 0,  1, 0, 0,  0, 1, 0,  1, 1, 0});;
+const SQUARE_UV = floatsFromArray(\float{0, 0,  1, 0,  0, 1,  1, 1});;
+const WHITE=colorMakeARGB(0xffffffff);;
+
+struct Sprite=[_textureS, _uvS, _wS, _hS];;
+
+fun gl2dDrawBackground(bgColor)=
+	glClearColor(floatsGet(bgColor, 0), floatsGet(bgColor, 1), floatsGet(bgColor, 2), floatsGet(bgColor, 3));
+	glClear(GL_COLOR_BUFFER_BIT);;
+
+fun gl2dInitScreen(bgColor)=
+	if 0<>uiW()*uiH() then
+	(
+		glViewport(0, 0, uiW(), uiH()); 
+		glMatrixMode(GL_PROJECTION);
+		glLoadIdentity();
+		glOrtho(0., floatFromInt(uiW()), floatFromInt(uiH()), 0., 0., 1.);
+		glMatrixMode(GL_MODELVIEW);
+		glEnable(GL_BLEND);
+		glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+		if bgColor<>nil then gl2dDrawBackground(bgColor)
+	);;
+
+fun gl2dDrawFlatBox(x, y, w, h, color)=
+	glLoadIdentity();
+	glTranslate(floatFromInt(x), floatFromInt(y), 0.);
+	glScale(floatFromInt(w), floatFromInt(h), 1.);
+	renderFlat(GL_TRIANGLE_STRIP, SQUARE_VRT, color);;
+
+fun gl2dSpriteCreate(texture)=
+	let texture.wT -> wt in
+	let texture.hT -> ht in
+	[_textureS=texture, _uvS=SQUARE_UV, _wS=wt, _hS=ht];;
+
+fun gl2dSpriteUpdateUV(s, x, y, w, h)=
+	let textureComputeRectangleUV(s._textureS, x, y, w, h) -> uv in
+	(
+		set s._uvS=uv;
+		set s._wS=floatFromInt(w);
+		set s._hS=floatFromInt(h);
+		s
+	);;
+
+fun gl2dSpriteUpdateTexture(s) = textureUpdate(s._textureS);;
+
+fun gl2dDrawColoredSprite(s, x, y, color)=
+	glBindTexture(GL_TEXTURE_2D, s._textureS.glT) ;
+	glLoadIdentity();
+	glTranslate(floatFromInt(x), floatFromInt(y), 0.);
+	glScale(s._wS, s._hS, 1.);
+	renderTexture(GL_TRIANGLE_STRIP, SQUARE_VRT, s._uvS, color);;
+
+fun gl2dDrawSprite(s, x, y)= gl2dDrawColoredSprite(s, x, y, WHITE);;

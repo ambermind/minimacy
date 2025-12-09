@@ -1,0 +1,144 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2022, Sylvain Huet, Ambermind
+// Minimacy (r) System
+// TODO : clear the cache when (hashmapCount dns.cacheD)>XXX
+// TODO : possible race condition on dns.cacheD
+
+export dnsAddHost(domain, ip);;
+export dnsRequest(domain, cb);;
+export dnsSetServer(dns);;
+
+
+sum DnsCache= dnsIp _, dnsPending _;;
+
+struct Dns=[udpD, transactionD, cacheD];;
+var PUBLIC_DNS="1.1.1.2";;
+const DNS_TIMEOUT=10000;;
+const DNS_PORT=53;;
+const USE_HOST_SOLVER=true;;
+
+var _DnsSrv;;
+const _DnsLock=lockCreate();;
+const _DnsHosts=hashmapCreate(4);;
+
+fun __filterDomain(l)= if l<>nil then let head(l)->word in strConcat(strInt8(strLength(word)), word)::__filterDomain(tail(l));;
+fun _filterDomain(dns)= strListConcat(__filterDomain(strSplit(".", dns)));;
+
+fun dnsQuestion(transaction, domain)=
+	strBuild([
+		strInt16Msb(transaction),
+		"\$01\$00",
+		"\$00\$01",
+		"\$00\$00\$00\$00\$00\$00", // answer/authority/additional
+		_filterDomain(domain), "\$00",
+		"\$00\$01",
+		"\$00\$01"
+	]);;
+
+fun _parseQuestion(s, i)= let strCharPos(s, 0, i) -> j in j+5;;
+
+fun parseQuestions(s, i, n)= if n<=0 then i else parseQuestions(s, _parseQuestion(s, i), n-1);;
+
+fun _parseDomain(s, i)=
+	let strRead8(s, i) -> len in
+	if len<>nil && len<>0 then strSlice(s, i+1, len)::_parseDomain(s, i+1+len);;
+
+fun skipName(s, i)=
+	let strRead16Msb(s, i) -> x in
+	if (x&0xc000)==0xc000 then i+2
+	else strCharPos(s, 0, i)+1;;
+
+fun _parseReply(s, i, n)=
+	if n<=0 then nil
+	else let skipName(s, i) -> j in
+	let strRead16Msb(s, j) -> type in
+	if type==1 then strJoin(".", {strRead8(s, j+10), strRead8(s, j+11), strRead8(s, j+12), strRead8(s, j+13)})
+	else _parseReply(s, j+10+strRead16Msb(s, j+8), n-1);;
+
+fun _dnsParseFrame(s) =
+	let strRead16Msb(s, 0) -> transaction in
+	let strRead16Msb(s, 2) -> code in
+	let strRead16Msb(s, 4) -> nbQuestions in
+	let strRead16Msb(s, 6) -> nbReply in
+	let strJoin(".", _parseDomain(s, 12))-> domain in
+	[
+		domain,
+		if nbReply>0 then _parseReply(s, parseQuestions(s, 12, nbQuestions), nbReply)
+	];;
+
+fun _dnsFireCb(dns, domain, ip)=
+	let hashmapGet(dns.cacheD, domain) -> cache in
+	match cache with dnsPending l -> (
+		hashmapSet(dns.cacheD, domain, (if ip<>nil then dnsIp ip));
+		for [th, cb] in l do threadPost(th, lambda ()= call cb(ip))
+	);;
+
+fun _dnsHandleReply(data)=
+	let _DnsSrv -> dns in
+	let _dnsParseFrame(data) -> [domain, ip] in
+	_dnsFireCb(dns, domain, ip);
+	0;;
+
+fun _dnsCreate()=
+	let 1024+intRand()&0x7fff -> port in
+	let udpOnEvent(udpCreate(PUBLIC_DNS, DNS_PORT, nil, port), lambda(data)= _dnsHandleReply(data), nil) -> udp in
+	set _DnsSrv=[
+		udpD=udp,
+		transactionD=0,
+		cacheD=hashmapCreate(6)
+	];;
+
+fun _dnsRequest(th, domain, cb)=
+	let _DnsSrv ->dns in
+	let hashmapGet(dns.cacheD, domain) -> cache in
+	match cache with
+		dnsIp ip -> threadPost(th, (lambda ()= call cb(ip))),
+		dnsPending l -> (hashmapSet(dns.cacheD, domain, dnsPending [th, cb]::l); nil),
+		_ -> 
+	let set dns.transactionD=dns.transactionD+1 -> transaction in
+	let dnsQuestion(transaction, domain) -> req in
+	(
+		hashmapSet(dns.cacheD, domain, dnsPending [th, cb]::nil);
+		onTimeout(DNS_TIMEOUT, (lambda ()= _dnsFireCb(dns, domain, nil);0));
+		udpSend(dns.udpD, req);
+		nil
+	);;
+
+fun isIp(ip)=
+	let strLength(ip) -> n in for i=0;i<n do let strRead8(ip, i) -> c in
+		if (c<>'.')&&((c<'0')||(c>'9')) then return false;
+	true;;
+
+fun dnsSetServer(dns)= if dns<>nil then set PUBLIC_DNS=dns;;
+fun dnsAddHost(domain, ip)= hashmapSet(_DnsHosts, domain, ip);;
+
+fun dnsRequest(domain, cb)=
+//echoLn ["dnsRequest " domain];
+	if cb<>nil then
+	let (lambda(x)= call cb(x);0) -> cb in	// this allows to pass a callback with any returned type and to store it in DnsCache structure
+	let thisThread() -> th in
+	let if domain=="localhost" then "127.0.0.1" else domain -> domain in
+	if isIp(domain) then
+	(
+		threadPost(th, (lambda ()= call cb(domain)));
+		nil
+	)
+	else let hashmapGet(_DnsHosts, domain) -> ip in
+	if ip<>nil then
+	(
+		threadPost(th, (lambda ()= call cb(ip)));
+		nil
+	)
+	else let if USE_HOST_SOLVER then head(ipByName(domain)) -> ip in
+	if ip<>nil then
+	(
+		hashmapSet(_DnsHosts, domain, ip);
+		threadPost(th, (lambda ()= call cb(ip)));
+		nil
+	)
+	else
+	(
+		appStart(_DnsLock, lambda()=_DnsSrv<>nil, "DNS", (lambda()= _dnsCreate()));
+		_dnsRequest(th, domain, cb);
+		nil
+	);;

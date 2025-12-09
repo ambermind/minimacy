@@ -1,0 +1,28 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2022, Sylvain Huet, Ambermind
+// Minimacy (r) System
+
+//------------ Hashmap Iterator
+// usage :
+// let hashmapIterate(h) -> iterator in while hashmapNext iter do echoLn [hashmapKey(h), hashmapVal(h)]
+//
+
+struct HashmapIterator{a b}=[_hashmapM:(hashmap a->b), _slotM, _currentM:([a b r0])];;
+
+fun hashmapNext(m)=
+	if m._currentM<>nil then set m._currentM= let m._currentM ->[_, _, next] in next;
+	if m._currentM<>nil then m
+	else
+	(
+		set m._slotM=m._slotM-1;
+		if m._slotM>=0 then
+		(
+			set m._currentM=hashmapGetSlot(m._hashmapM, m._slotM);
+			if m._currentM<>nil then m
+			else hashmapNext(m)
+		)
+	);;
+
+fun hashmapIterate(h)= [_hashmapM=h, _slotM=1<<hashmapBitSize(h), _currentM=nil];;
+fun hashmapKey(iter)= let iter._currentM ->[key, _, _] in key;;
+fun hashmapVal(iter)= let iter._currentM ->[_, val, _] in val;;

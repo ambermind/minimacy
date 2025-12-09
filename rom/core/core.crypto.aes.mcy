@@ -1,0 +1,187 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2022, Sylvain Huet, Ambermind
+// Minimacy (r) System
+
+use core.crypto.block;;
+
+fun aesCheckLength(msg) = !bitTest(strLength(msg), AES_BLOCK-1);;
+
+fun aesEncryptCbc(key, iv, msg)=
+	if aesCheckLength(msg) then
+	let aesCreate(key) -> aes in
+	let bytesCreate(strLength(msg), 0) -> output in
+	let cbcCreate(iv, output, 0, lambda(data, i, j) = aesWriteBytes(aesEncrypt(aes, data, i), output, j)) -> cbc in
+	(
+		cbcEncryptIntoBytes(cbc, msg, 0, strLength(msg));
+		strFromBytes(output)
+	);;
+
+fun aesDecryptCbc(key, iv, msg)=
+	if aesCheckLength(msg) then
+	let aesCreate(key) -> aes in
+	let bytesCreate(strLength(msg), 0) -> output in
+	let cbcCreate(iv, output, 0, lambda(data, i, j) = aesWriteBytes(aesDecrypt(aes, data, i), output, j)) -> cbc in
+	(
+		cbcDecryptIntoBytes(cbc, msg);
+		strFromBytes(output)
+	);;
+
+fun aesEncryptEcb(key, msg)=
+	if aesCheckLength(msg) then
+	let aesCreate(key) -> aes in
+	let bytesCreate(strLength(msg), 0) -> output in
+	(
+		ecbEncryptIntoBytes(msg, AES_BLOCK, (lambda(data, i) = aesWriteBytes(aesEncrypt(aes, data, i), output, i)));
+		strFromBytes(output)
+	);;
+fun aesDecryptEcb(key, msg)=
+	if aesCheckLength(msg) then
+	let aesCreate(key) -> aes in
+	let bytesCreate(strLength(msg), 0) -> output in
+	(
+		ecbEncryptIntoBytes(msg, AES_BLOCK, (lambda(data, i) = aesWriteBytes(aesDecrypt(aes, data, i), output, i)));
+		strFromBytes(output)
+	);;
+
+//----- AES CTR
+fun aesEncryptCtr(key, count, msg)=
+	let aesCreate(key) -> aes in
+	let bigFromInt(1) -> one in
+	
+		strBuild(ctrEncrypt(msg, AES_BLOCK, count, 0,
+			lambda(data)= aesOutput(aesEncrypt(aes, data, 0)),
+			lambda(count)= bigAdd(one, count)))
+	;;
+fun aesEncryptCtrIncr(aes, count, msg)=
+	strBuild(ctrEncryptRef(msg, AES_BLOCK, count, 0,
+		lambda(data)= aesOutput(aesEncrypt(aes, data, 0)),
+		lambda(count)= refSet(count, \bigNum 1 + refGet(count))))
+	;;
+
+//----- AES CMAC
+fun _aesCmacK1(aes)=
+	let strSliceOfBytes(aesOutput(aesEncrypt(aes, "\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0", 0)), 0, nil) -> K1 in
+	(
+		if 1==bytesLSL1(K1, 0) then bytesSet(K1, 15, 0x87^bytesGet(K1, 15));
+		K1
+	);;
+fun _aesCmacK2(aes)=
+	let _aesCmacK1(aes) -> K2 in
+	(
+		if 1==bytesLSL1(K2, 0) then bytesSet(K2, 15, 0x87^bytesGet(K2, 15));
+		K2
+	);;
+fun _aesPadding(msg)=
+	strConcat(msg, strLeft("\$80\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0", 16-strLength(msg)));;
+
+fun aesCmac(key, msg)=
+	let strLength(msg) -> len in
+	let len&15 -> r in
+	let (len+15)>>4 -> n in
+	let aesCreate(key) -> aes in
+	let strSlice(msg, (n-1)<<4, nil) -> msg_end in
+	let if (n>0)&&(r==0) then bytesXor(_aesCmacK1(aes), 0, msg_end, 0, nil)
+		else bytesXor(_aesCmacK2(aes), 0, _aesPadding(msg_end), 0, nil)
+	-> M_last in
+	let "\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0" ->iv in
+	let bytesCreate(strLength(iv), 0) -> output in
+	let cbcCreate(iv, output, 0, lambda(data, i, j) = aesWriteBytes(aesEncrypt(aes, data, i), output, 0)) -> cbc in
+	(
+		cbcEncryptIntoBytes(cbc, msg, 0, (n-1)<<4);
+		bytesXorBytes(M_last, 0, output, 0, nil);
+		aesOutput(aesEncryptBytes(aes, M_last, 0))
+	);;
+
+
+//----- AES GCM
+
+// We need multiplications in F2[x]/x^128+x^7+x^2+x+1
+// sums and substractions are the same (?!): a simple XOR
+// in such a polynom the degree 0 is at the most left (bit 127 in the usual order)
+// therefore, following R constant is x^7+x^2+x+1
+const _R=bigFromHex("e1000000000000000000000000000000");;
+/*
+fun mulH V H=
+	let bigFromInt 0 -> Z in
+	(
+		for i=0; i<128 do
+		(
+			if 0<>bigBit H 127-i then set Z=bigXor Z V;
+			set V=
+				if 0<>bigBit V 0 then bigXor _R bigASR1 V
+				else bigASR1 V
+		);
+		Z
+	);;
+fun _makeMulH_slow H= (lambda V= mulH V H);;
+*/
+
+// multiply V by b4 which is only 4 bits long
+// be aware that bits are in the listReverse order (1->8, 2->4, 3->c)
+fun _mul4bits(V, b4)=
+	let bigFromInt(0) -> Z in
+	(
+		for i=8; i>0; i>>1 do
+		(
+			if 0<>(b4&i) then set Z=bigXor(Z, V);
+			set V= if 0<>bigBit(V, 0) then bigXor(_R, bigASR1(V)) else bigASR1(V)
+		);
+		Z
+	);;
+
+// multiply by x, n times
+fun _mulx(n, V)=
+	if n<=0 then V else 
+	_mulx(n-1, if 0<>bigBit(V, 0) then bigXor(_R, bigASR1(V)) else bigASR1(V));;
+
+fun _precomputeMulH(H)=	// we precompute *H as 32 tables of 16 values (one for each hex digit)
+	let 32*16 -> N in
+	let arrayCreate(N, nil) -> t in
+	let arrayCreate(N, nil) -> result in
+	(
+		for i=0;i<16 do set t[i]=_mul4bits(H, i);	// compute first row
+		for i=16;i<N do set t[i]=_mulx(4, t[(i-16)]) ;	// compute following rows
+		for i=0;i<N do set result[i]=strFromBig(t[i], 16);	// we need to output strings
+		result
+	);;
+
+fun _makeMulH(H)=
+	let _precomputeMulH(H) -> tAll in
+	lambda(V)= 
+		if V<>nil then
+		let bytesCreate(16, 0) -> prod in
+		(
+			for i=0;i<16 do let strGet(V, i) -> v in
+			(
+				bytesXor(prod, 0, tAll[(((i+i)<<4)+(15&(v>>4)))], 0, nil);
+				bytesXor(prod, 0, tAll[(((i+i+1)<<4)+(15&v))], 0, nil)
+			);
+			prod
+		);;
+
+// this returns a tuple [cipherText authBlock]
+fun aesGcmEncrypt(key, plainText, iv, A)=
+//	echo "key:  ";echoLn hexFromStr (key);
+//	echo "plain:";echoLn hexFromStr (plainText);
+//	echo "iv:   ";echoLn hexFromStr (iv);
+//	echo "A:    ";echoLn hexFromStr (A);
+	let aesCreate(key) -> aes in
+	let bigFromInt(1) -> one in
+	gcmEncrypt(plainText, AES_BLOCK, iv, A,
+		lambda(data)= aesOutput(aesEncrypt(aes, data, 0)),
+		lambda(count)= bigAdd(one, count),
+		#_makeMulH);;
+
+// this returns plainText or nil if authentication fails
+fun aesGcmDecrypt(key, cipherText, authBlock, iv, A)=
+	let aesCreate(key) -> aes in
+	let bigFromInt(1) -> one in
+	gcmDecrypt(cipherText, authBlock, AES_BLOCK, iv, A,
+		lambda(data)= aesOutput(aesEncrypt(aes, data, 0)),
+		lambda(count)= bigAdd(one, count),
+		#_makeMulH);;
+
+fun aesGcmDecryptGroup(key, data, iv, A)=
+	let strLength(data)-AES_BLOCK -> len in
+	aesGcmDecrypt(key, strLeft(data, len), strRight(data, AES_BLOCK), iv, A);;
+

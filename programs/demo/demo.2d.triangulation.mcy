@@ -1,0 +1,158 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2022, Sylvain Huet, Ambermind
+// Minimacy (r) Demonstration
+
+// Triangulation 2d of Delaunay
+use core.2d.font;;
+use core.2d.polygon;;
+use core.2d.png;;
+
+const WIDTH=800;;
+const HEIGHT=600;;
+const Font=fontFixedFromBitmap(bitmapFromPng(load("rsc/fonts/LIGHT8x16.png")), 8, 16, 0);;
+
+
+struct Point=[xp, yp];;
+enum X, Y;;
+
+var Triangles;;
+
+fun colorRand()= intRand()&0x00ffffff;;
+
+/*
+APB, BQC AB=2AP BC=2BQ
+OP.AB=0
+	2OA.AB + AB.AB = 0
+OQ.BC=0
+	2OA.BC + 2AB.BC + BC.BC = 0
+	
+OA=kAB+lBC
+
+	2kAB.AB+2lAB.BC=-AB.AB
+	2kAB.BC+2lBC.BC=-2AB.BC - BC.BC
+
+
+	a  k+b  l=c
+	aa k+bb l=cc
+	
+*/
+
+// compute orthocenter
+fun ortho(poly) =
+\float
+	let poly->[col, points, _, _, _] in
+	let points->(pa::pb::pc::_)  in
+	let floatFromInt(pa.xp) -> xa in
+	let floatFromInt(pa.yp) -> ya in
+	let floatFromInt(pb.xp) -> xb in
+	let floatFromInt(pb.yp) -> yb in
+	let floatFromInt(pc.xp) -> xc in
+	let floatFromInt(pc.yp) -> yc in
+	let xb-xa->xab in
+	let yb-ya->yab in
+	let xc-xb->xbc in
+	let yc-yb->ybc in
+	
+	let	2*(xab*xab+yab*yab) -> a in
+	let	2*(xab*xbc+yab*ybc) -> b in
+	let	-(xab*xab+yab*yab) -> c in
+
+	let	2*(xab*xbc+yab*ybc) -> aa in
+	let	2*(xbc*xbc+ybc*ybc) -> bb in
+	let	-(2*(xab*xbc+yab*ybc)+(xbc*xbc+ybc*ybc)) -> cc in
+
+// ABAB*BCBC - ABBC*ABBC
+	let a*bb-aa*b -> div in
+	if div!= 0 then
+	let (c*bb-cc*b)/div -> k in
+	let -(c*aa-cc*a)/div -> l in	
+	[
+		col, points,
+		intFromFloat(xa - k*xab - l*xbc),
+		intFromFloat(ya - k*yab - l*ybc),
+		intFromFloat(sqrt(sqr(k*xab + l*xbc)+sqr(k*yab + l*ybc)))
+	];;
+
+fun distance(x, y, a) =
+	intFromFloat(sqrt(sqr(floatFromInt(x-a.xp))+.sqr(floatFromInt(y-a.yp))));;
+
+fun isInOrtho(poly, p) =
+	let poly ->[_, _, x, y, r] in
+	if distance(x, y, p)<r then true;;
+
+fun replace(l, p) =
+	if l!=nil then
+	let head(l)->[a, b] in
+	let ortho([colorRand(), a::b::p::nil, nil, nil, nil]) -> newpoly in
+	if newpoly==nil then replace(tail(l), p)
+	else newpoly::replace(tail(l), p);;
+
+fun checkToReplace(a, b, l) =
+	if l==nil then [b, a]::nil
+	else let head(l) -> [x, y] in
+		if x==a && y==b then tail(l)
+		else head(l)::checkToReplace(a, b, tail(l));;
+
+// add polyons edges
+fun addToReplace(poly, listReplace)=
+	let poly->[_, (a::b::c::_), _, _, _] in
+		checkToReplace(b, a,
+		checkToReplace(c, b,
+		checkToReplace(a, c,
+			listReplace)));;
+
+// insert a new point in the triangulation (the first call should have toReplace=nil)
+fun addNewPoint(l, p, toReplace) =
+	if l==nil then replace(toReplace, p)
+	else let head(l)-> poly in
+	if isInOrtho(poly, p) then addNewPoint(tail(l), p, addToReplace(head(l), toReplace))
+	else head(l)::addNewPoint(tail(l), p, toReplace);;
+
+// initializating the list of triangles
+fun initTriangles()=
+	let [xp=0, yp=0] -> _hg in
+	let [xp=WIDTH-1, yp=0] -> _hd in
+	let [xp=WIDTH-1, yp=HEIGHT-1] -> _bd in
+	let [xp=0, yp=HEIGHT-1] -> _bg in
+	ortho([colorRand(), _hg::_bd::_hd::nil, nil, nil, nil])::ortho([colorRand(), _hg::_bg::_bd::nil, nil, nil, nil])::nil;;
+
+
+// Display
+fun tuplefromlistpoly(l)=
+	if l!=nil then
+	let head(l) -> p in {p.xp, p.yp}::tuplefromlistpoly(tail(l));;
+
+fun drawPoly(bmp, lp, col)=
+	bitmapPolygon(bmp, arrayFromList(lp), col, nil);
+	for l=lp;l!=nil;tail(l) do
+		let l->(a::b::_) in
+		let if b==nil then head(lp) else b -> b in
+		bitmapLine(bmp, a[X], a[Y], b[X], b[Y], 0xffffff, nil);;
+
+fun display()=
+	let uiBuffer() -> bmp in
+	(
+		bitmapErase(bmp, 0x8080);
+		for [col, lp, _, _, _] in Triangles do drawPoly(bmp, tuplefromlistpoly(lp), col);
+		bitmapText(bmp, 0, 0, 0, strConcat("nb of triangles = ", decFromInt(listLength(Triangles))), Font, 0xffffff, 0);
+		uiUpdate()
+	);;
+
+fun keyDown(k)=
+	let [xp=intRand()%WIDTH, yp=intRand()%HEIGHT] -> newpoint in
+		set Triangles=addNewPoint(Triangles, newpoint, nil);
+	display();
+	0;;
+
+fun demoTriangulation()=
+echoLn "demoTriangulation";
+	uiStart(30, 40, WIDTH, HEIGHT, UI_NORMAL, "Triangulation");
+	uiOnKeyDown(#keyDown);
+
+	set Triangles=initTriangles();
+	display();
+	for i=0;i<100 do keyDown(0);
+	display();
+	0;;
+
+fun main()= demoTriangulation();;

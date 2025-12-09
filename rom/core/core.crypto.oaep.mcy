@@ -1,0 +1,92 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2022, Sylvain Huet, Ambermind
+// Minimacy (r) System
+use core.crypto.hash;;
+use core.crypto.rsa;;
+
+//----------------OAEP
+const _HASHLEN=32;;
+
+fun _inputBlockSize (nbits, forEncryption)= ((nbits+7)>>3) - forEncryption;;
+fun _outputBlockSize(nbits, forEncryption)= ((nbits+7)>>3) + forEncryption -1 ;;
+fun _oaepInputBlockSize(nbits, forEncryption)= _inputBlockSize( nbits, forEncryption)-forEncryption*(1+_HASHLEN*2);;
+fun _oaepOutputBlockSize(nbits, forEncryption)= _outputBlockSize( nbits, forEncryption)-(1-forEncryption)*(1+_HASHLEN*2);;
+
+fun _oaepMaskGeneratorLoop(src, outLen, count, bufCount)=
+	if outLen>0 then
+	(
+		bytesSet(bufCount, 0, count>>24);
+		bytesSet(bufCount, 1, count>>16);
+		bytesSet(bufCount, 2, count>>8);
+		bytesSet(bufCount, 3, count);
+		let sha256Output(sha256ProcessBytes(sha256Process(sha256Create(), src, 0, nil), bufCount, 0, nil)) -> hash in
+		hash::_oaepMaskGeneratorLoop(src, outLen-_HASHLEN, count+1, bufCount)
+	);;
+
+fun _oaepMaskGenerator(src, outLen)=
+	let bytesCreate(4, 0) -> bufCount in
+	strLeft(strListConcat(_oaepMaskGeneratorLoop(src, outLen, 0, bufCount)), outLen);;
+
+fun _oaepEncrypt(N, data, fexp)=
+	let strLength(data) -> dataLen in
+	let bigNbits(N) -> nbits in
+	let _inputBlockSize(nbits, 1) -> blockLen in
+	let bytesCreate(blockLen, 0) -> block in
+	let blockLen-dataLen-1 -> headerLen in
+	(
+		bytesCopy(block, headerLen+1, data, 0, nil);
+		bytesSet(block, headerLen, 0x01);
+		bytesCopy(block, _HASHLEN, sha256(""), 0, nil);
+		let strRand(_HASHLEN) -> random in
+		(
+			bytesCopy(block, 0, random, 0, nil);
+			let _oaepMaskGenerator(random, blockLen-_HASHLEN) -> mask in
+				bytesXor(block, _HASHLEN, mask, 0, nil);
+			let _oaepMaskGenerator(bytesSliceOfStr(block, _HASHLEN, nil), _HASHLEN) -> mask in
+				bytesXor(block, 0, mask, 0, nil);
+			let bigFromBytes(block) -> bignum in
+			let call fexp(bignum) -> encoded in
+			strFromBig(encoded, _oaepOutputBlockSize(nbits, 1))
+		)
+	);;
+
+fun _oaepDecrypt(N, data, fexp)=
+	let bigNbits(N) -> nbits in
+	let bigFromStr(data) -> bignum in
+	let call fexp(bignum) -> decoded in
+	let _outputBlockSize(nbits, 0) -> blockLen in
+	let strSliceOfBytes(strFromBig(decoded, blockLen), 0, nil) -> block in
+	(
+		let _oaepMaskGenerator(bytesSliceOfStr(block, _HASHLEN, nil), _HASHLEN) -> mask in
+			bytesXor(block, 0, mask, 0, nil);
+		let _oaepMaskGenerator(strLeftBytes(block, _HASHLEN), blockLen-_HASHLEN) -> mask in
+			bytesXor(block, _HASHLEN, mask, 0, nil);
+		if sha256("")==bytesSliceOfStr(block, _HASHLEN, _HASHLEN) then
+		for i=_HASHLEN*2;i<blockLen do if 0x01==bytesGet(block, i) then return bytesSliceOfStr(block, i+1, nil);
+		nil
+	);;
+
+fun _oaepLoopEncrypt(N, data, i, blockLen, fexp)=
+	if i<strLength(data) then _oaepEncrypt(N, strSlice(data, i, blockLen), fexp)::_oaepLoopEncrypt(N, data, i+blockLen, blockLen, fexp);;
+
+fun _oaepLoopDecrypt(N, data, i, blockLen, fexp)=
+	if i<strLength(data) then _oaepDecrypt(N, strSlice(data, i, blockLen), fexp)::_oaepLoopDecrypt(N, data, i+blockLen, blockLen, fexp);;
+
+fun _oaepProcess(N, data, forEncryption, fexp)=
+	if N<>nil then
+	let bigNbits(N) -> nbits in
+	let _oaepInputBlockSize(nbits, forEncryption) -> inputBlockLen in
+	let strLength(data) -> dataLen in
+	if (forEncryption<>0)||(0==(dataLen%inputBlockLen)) then // no else, this returns nil when decrypting data with wrong size
+	strListConcat(if forEncryption<>0 then _oaepLoopEncrypt(N, data, 0, inputBlockLen, fexp)
+		else _oaepLoopDecrypt(N, data, 0, inputBlockLen, fexp));;
+
+fun oaepEncryptPub(N, exponent, data) = _oaepProcess(N, data, 1, lambda(msg)=bigExpMod(msg, exponent, N));;
+fun oaepDecryptPub(N, exponent, data) = _oaepProcess(N, data, 0, lambda(msg)=bigExpMod(msg, exponent, N));;
+fun oaepEncryptPriv(N, data, fexp)= _oaepProcess(N, data, 1, fexp);;
+fun oaepDecryptPriv(N, data, fexp)= _oaepProcess(N, data, 0, fexp);;
+
+fun oaepEncryptPubRsa(rsa, data)= oaepEncryptPub(rsaModulus(rsa), rsaPubExp(rsa), data);;
+fun oaepDecryptPubRsa(rsa, data)= oaepDecryptPub(rsaModulus(rsa), rsaPubExp(rsa), data);;
+fun oaepEncryptPrivRsa(rsa, data) = oaepEncryptPriv(rsaModulus(rsa), data, lambda(msg) = rsaComputePrivateExp(rsa, msg));;
+fun oaepDecryptPrivRsa(rsa, data) = oaepDecryptPriv(rsaModulus(rsa), data, lambda(msg) = rsaComputePrivateExp(rsa, msg));;

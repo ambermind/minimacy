@@ -1,0 +1,240 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2022, Sylvain Huet, Ambermind
+// Minimacy (r) System
+
+/*
+LOCALHEADERMAGIC
+0	4	Local file header signature = 0x04034b50
+4	2	Version needed to extract (minimum)
+6	2	General purpose bit flag
+8	2	Compression method; e.g. none = 0, DEFLATE = 8 (or "\0x08\0x00")
+10	2	File last modification time
+12	2	File last modification date
+14	4	CRC-32 of uncompressed data
+18	4	Compressed size (or 0xffffffff for ZIP64)
+22	4	Uncompressed size (or 0xffffffff for ZIP64)
+26	2	File name length (n)
+28	2	Extra field length (m)
+30	n	File name
+30+n	m	Extra field
+
+CENTRALHEADERMAGIC
+0	4	Central directory file header signature = 0x02014b50
+4	1	Version used
+5	1	Made by (0:msdos, 3: mac)
+6	2	Version needed to extract (minimum)
+8	2	General purpose bit flag
+10	2	Compression method
+12	2	File last modification time
+14	2	File last modification date
+16	4	CRC-32 of uncompressed data
+20	4	Compressed size (or 0xffffffff for ZIP64)
+24	4	Uncompressed size (or 0xffffffff for ZIP64)
+28	2	File name length (n)
+30	2	Extra field length (m)
+32	2	File comment length (k)
+34	2	Disk number where file starts
+36	2	Internal file attributes
+38	4	External file attributes
+42	4	Relative offset of local file header. This is the number of bytes between the start of the first disk on which the file occurs, and the start of the local file header. This allows software reading the central directory to locate the position of the file inside the ZIP file.
+46	n	File name
+46+n	m	Extra field
+46+n+m	k	File comment
+
+ENDHEADERMAGIC
+0	4	End of central directory signature = 0x06054b50
+4	2	Number of this disk (or 0xffff for ZIP64)
+6	2	Disk where central directory starts (or 0xffff for ZIP64)
+8	2	Number of central directory records on this disk (or 0xffff for ZIP64)
+10	2	Total number of central directory records (or 0xffff for ZIP64)
+12	4	Size of central directory (bytes) (or 0xffffffff for ZIP64)
+16	4	Offset of start of central directory, relative to start of archive (or 0xffffffff for ZIP64)
+20	2	Comment length (n)
+22	n	Comment
+*/
+
+export ZipFile;;
+/*
+The MS-DOS date. The date is a packed value with the following format.
+0-4	Day of the month (1-31)
+5-8	Month (1 = January, 2 = February, and so on)
+9-15	Year offset from 1980 (add 1980 to get actual year)
+
+The MS-DOS time. The time is a packed value with the following format.
+Bits	Description
+0-4	Second divided by 2
+5-10	Minute (0-59)
+11-15	Hour (0-23 on a 24-hour clock)
+*/
+export dosTimeStamp(v);;
+export dosTimeFromTime(t);;
+export zipFileName(z);;
+export zipFlag(z);;
+export zipCompressed(z);;
+export zipUncompressed(z);;
+export zipContent(z);;
+export zipUpdate(z);;
+export zipLoadContent(src, z);;
+export zipExtractFiles(src, withContent);;
+// encode from memory data:
+export zipFromFileList(lData);; // lData : list of [fileName updateTime content]
+
+// encode from disk files:
+export zipFromFileInfoList(lFileInfo);;	// lFileInfo: list of FileInfo structures (see bios functions fileListInfo, fileInfo)
+
+struct ZipFile=[fileNameZ, flagZ, methodZ, compressedZ, uncompressedZ, offsetZ, contentZ, crcZ, updateZ];;
+const LOCALHEADERMAGIC    =0x04034b50;;
+const CENTRALHEADERMAGIC  =0x02014b50;;
+const ENDHEADERMAGIC      ="PK\$05\$06";;
+
+const Z_DEFLATED=8;;
+
+const ZIP_CENTRALHEADER=1::1::2::2::2::4::4::4::4::2::2::2::2::2::4::4::nil;;
+const ZIP_LOCALHEADER=2::2::2::4::4::4::4::2::2::nil;;
+const ZIP_ENDHEADER=2::2::2::2::4::4::2::nil;;
+
+fun _zipHeader(src, i, l)=
+	if l<>nil then let head(l) -> len in
+	let match len with
+		1 -> strGet(src, i),
+		2 -> strRead16Lsb(src, i),
+		4 -> strRead32Lsb(src, i)
+	-> val in val::_zipHeader(src, i+len, tail(l));;
+fun _zipHeaderData(src, i, l) =
+    if l<>nil then strSlice(src, i, head(l))::_zipHeaderData(src, i+head(l), tail(l));;
+
+fun _zipParseCentrals(src, i)=
+	if CENTRALHEADERMAGIC==strRead32Lsb(src, i) then
+
+	let _zipHeader(src, i+4, ZIP_CENTRALHEADER) -> (version::madeBy::versionMin::flag::method::dosFullDate::crc::comprSize::uncomprSize::
+		fileNameSize::extraSize::commentSize::diskStart::intAttr::extAttr::localPos::_) in
+	let i+46 -> i in
+	let _zipHeaderData(src, i, fileNameSize::extraSize::commentSize::nil) -> (fileName::extra::comment::_) in
+	let i+fileNameSize+extraSize+commentSize -> iNext in
+	let dosTimeStamp(dosFullDate) -> t in
+	let _zipHeader(src, localPos+4, ZIP_LOCALHEADER) -> (_version::_flag::_method::_dosDate::_crc::_comprSize::_uncomprSize::_fileNameSize::_extraSize::_) in
+	let localPos+30+_fileNameSize+_extraSize -> offset in
+	[fileNameZ=fileName, flagZ=flag, methodZ=method, compressedZ=comprSize, uncompressedZ=uncomprSize, offsetZ=offset, crcZ=crc, updateZ=t]::_zipParseCentrals(src, iNext);;
+
+	fun _zipFinalize(offset, locals, centrals)=
+	let listLength(centrals) -> nb in
+	let strBuild(listReverse(centrals)) -> central in
+	let [
+		ENDHEADERMAGIC,
+		strInt16Lsb(0),
+		strInt16Lsb(0),
+		strInt16Lsb(nb),
+		strInt16Lsb(nb),
+		strInt32Lsb(strLength(central)),
+		strInt32Lsb(offset),
+		strInt16Lsb(0)
+	] -> end in
+	strBuild([
+		listReverse(locals),
+		central,
+		end
+	]);;
+
+fun _zipEncode(l, offset, locals, centrals)=
+	if l==nil then _zipFinalize(offset, locals, centrals)
+	else let head(l)->[fileName, update, content] in
+	let strLength(content) -> size in
+	let strCrc32(content, 0) -> crc in
+	let deflate(content) -> compressed in
+	let dosTimeFromTime(update) -> dosFullDate in
+	let strBuild([
+		strInt32Lsb(LOCALHEADERMAGIC),
+		strInt16Lsb(20),
+		strInt16Lsb(0),
+		strInt16Lsb(Z_DEFLATED),
+		strInt32Lsb(dosFullDate),
+		strInt32Lsb(crc),
+		strInt32Lsb(strLength(compressed)),
+		strInt32Lsb(strLength(content)),
+		strInt16Lsb(strLength(fileName)),
+		strInt16Lsb(0),
+		fileName,
+		compressed
+	]) -> local in
+	let [
+		strInt32Lsb(CENTRALHEADERMAGIC),
+		strInt8(63),
+		strInt8(0),
+		strInt16Lsb(20),
+		strInt16Lsb(0),
+		strInt16Lsb(Z_DEFLATED),
+		strInt32Lsb(dosFullDate),
+		strInt32Lsb(crc),
+		strInt32Lsb(strLength(compressed)),
+		strInt32Lsb(strLength(content)),
+		strInt16Lsb(strLength(fileName)),
+		strInt16Lsb(0),
+		strInt16Lsb(0),
+		strInt16Lsb(0),
+		strInt16Lsb(0),
+		strInt32Lsb(0x20),
+		strInt32Lsb(offset),
+		fileName
+	] -> central in
+	_zipEncode(tail(l), offset+strLength(local), local::locals, central::centrals);;
+
+//----------------API
+/*
+The MS-DOS date. The date is a packed value with the following format.
+0-4	Day of the month (1-31)
+5-8	Month (1 = January, 2 = February, and so on)
+9-15	Year offset from 1980 (add 1980 to get actual year)
+
+The MS-DOS time. The time is a packed value with the following format.
+Bits	Description
+0-4	Second divided by 2
+5-10	Minute (0-59)
+11-15	Hour (0-23 on a 24-hour clock)
+*/
+fun dosTimeStamp(v)=
+	let v>>16 -> date in
+	let v&65535 -> time in
+	timeFromDate(		1980+(date>>9)&127, (date>>5)&15, date&31,
+		(time>>11)&31, (time>>5)&63, 2*(time&31));;
+
+fun dosTimeFromTime(t)=
+	let date(t) -> [y, month, d, w, h, m, s] in
+	let ((y-1980)%100)<<9 + (month)<<5 + d -> date in
+	let h<<11 + m<<5 + s>>1 -> time in
+	time+ date<<16;;
+
+fun zipFileName(z)=z.fileNameZ;;
+fun zipFlag(z)=z.flagZ;;
+//fun zipMethod(z)=z.methodZ;;	// useless for now
+fun zipCompressed(z)=z.compressedZ;;
+fun zipUncompressed(z)=z.uncompressedZ;;
+fun zipContent(z)=z.contentZ;;
+fun zipUpdate(z)=z.updateZ;;
+
+fun _zipDecode(src)=
+	let strPosRev(src, ENDHEADERMAGIC, nil) -> i in
+	if i<>nil then
+	let _zipHeader(src, i+4, ZIP_ENDHEADER) -> (_::_::nbEntry::nb2::sizeDir::offset::commentSize::_) in
+	_zipParseCentrals(src, offset);;
+
+fun zipLoadContent(src, z)=
+	if Z_DEFLATED==z.methodZ then
+	let strSlice(src, z.offsetZ, z.compressedZ) -> comp in
+	let inflate(comp) -> src in
+	if (z.uncompressedZ==strLength(src)) && strCrc32(src, 0)==z.crcZ then set z.contentZ=src;;
+
+fun zipExtractFiles(src, withContent)=
+	listFilter(_zipDecode(src), (lambda(z)=
+		if withContent then zipLoadContent(src, z);
+		true
+	));;
+
+
+// encode from memory data:
+fun zipFromFileList(lData)= // lData : list of [fileName updateTime content]
+	_zipEncode(lData, 0, nil, nil);;
+
+// encode from disk files:
+fun zipFromFileInfoList(lFileInfo)=	// lFileInfo: list of FileInfo structures (see bios functions fileListInfo, fileInfo)
+	zipFromFileList(listMap(lFileInfo, lambda(f)= if !fileInfoIsDir(f) then [fileInfoName(f), fileInfoUpdate(f), load(fileInfoName(f))]));;
+	

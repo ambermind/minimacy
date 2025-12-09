@@ -1,0 +1,199 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2022, Sylvain Huet, Ambermind
+// Minimacy (r) System
+
+export pngDecodeOpen(src);;
+export pngW(png);;
+export pngH(png);;
+export pngIDAT(png);;
+export pngDepth(png);;
+export pngColorType(png);;
+export bitmapFromPng(src);;// fun Str -> Bitmap
+
+
+struct PngReader=[wP, hP, depthP, colorTypeP, compressP, filterP, interlacedP, valuesPerPixelP, paletteP, idatP, bmpP];;
+
+const PNG_MAGIC="\$89\$50\$4E\$47\$0D\$0A\$1A\$0A";;
+
+const PNG_HEADER=4::4::1::1::1::1::1::nil;;
+
+const _VALUES_PER_PIXEL_FROM_COLORTYPE={1, nil, 3, 1, 2, nil, 4};;
+const _READ_FROM_VPP={nil, #bytesRead8, #bytesRead16Lsb, #bytesRead24Lsb, #bytesRead32Lsb};;
+const _MASK_FROM_COLORTYPE={0xff000000, nil, 0xff000000, 0, 0, nil, 0};;
+
+const PASS={	//[ax bx ay by]: x -> ax*x+bx
+	[1, 0, 1, 0],	// pass 0 = not interlaced
+	[8, 0, 8, 0],	// 1
+	[8, 4, 8, 0],
+	[4, 0, 8, 4],
+	[4, 2, 4, 0],	// 4
+	[2, 0, 4, 2],
+	[2, 1, 2, 0],
+	[1, 0, 2, 1]	// 7
+};;
+
+//------------- decompression png -> Bitmap
+
+fun _pngHeader(src, i, l)=
+	if l<>nil then let head(l) -> len in
+	let match len with
+		1 -> strGet(src, i),
+		4 -> strRead32Msb(src, i)
+	-> val in val::_pngHeader(src, i+len, tail(l));;
+
+fun _pngParseIHDR(src, i, len)=
+	let _pngHeader(src, i, PNG_HEADER) ->w::h::depth::colorType::compress::filter::interlaced::_ in
+	let _VALUES_PER_PIXEL_FROM_COLORTYPE[colorType] -> vpp in
+	[
+		wP=w,
+		hP=h,
+		depthP=depth,
+		colorTypeP=colorType,
+		compressP=compress,
+		filterP=filter,
+		interlacedP=interlaced,
+		valuesPerPixelP=vpp	// should be multiplied by 2 when depth=16
+	];;
+
+fun _pngParsePLTE(src, i, len)=
+	let len/3 -> nbColors in
+	arrayInit(nbColors, lambda(j)= 
+		let strRead24Lsb(src, i+j*3) -> col in
+		0xff000000|(col&0xff00ff00)|((col>>16)&0xff)|((col<<16)&0xff0000)
+	);;
+
+fun paethFilter(a, b, c)= 
+	let abs(b-c) -> da in 
+	let abs(a-c) -> db in 
+	let abs(a+b-2*c) -> dc in
+	if da<=db && da<=dc then a
+	else if db<=dc then b
+	else c;;
+
+fun _pngIndexExtract(data, offset, depth, mask, invDepth, x)=
+	let x*depth -> iBit in
+	let bytesGet(data, offset+(iBit>>3)) -> byte in
+	let iBit&7 -> shift in
+// depth=4 ibit&7=0 ->  byte>>4 & 15
+// depth=4 ibit&7=4 ->  byte & 15
+// depth=1 ibit&7=0 ->  byte>>7 & 1
+	(byte>>(invDepth-shift)) & mask;;
+
+fun _pngFilterBuffer(mode, png, data, rowStart, next, buffer)=
+	let png.valuesPerPixelP -> vpp in
+	let rowStart-vpp -> dataStart in
+	let next+vpp -> imax in
+	match mode with
+//	0 -> (echoLn "0"; bytesCopy (buffer, vpp, data, dataStart+vpp, nil)),
+	0 -> for i=vpp;i<imax do bytesSet(buffer, i, bytesGet(data, dataStart+i)),
+	1 -> for i=vpp;i<imax do bytesSet(buffer, i, bytesGet(data, dataStart+i)+ bytesGet(buffer, i-vpp)),
+	2 -> for i=vpp;i<imax do bytesSet(buffer, i, bytesGet(data, dataStart+i)+ bytesGet(buffer, i)),
+	3 -> for i=vpp;i<imax do bytesSet(buffer, i, bytesGet(data, dataStart+i)+ ((bytesGet(buffer, i)+bytesGet(buffer, i-vpp))>>1)),
+	4 -> let 0->C in
+		for i=vpp;i<imax do
+			let bytesGet(buffer, i-vpp) -> A in
+			let bytesGet(buffer, i) -> B in
+			let paethFilter(A, B, C&255)+bytesGet(data, dataStart+i) -> val in
+			(
+				set C= (0xffffff & (C>>8)) | (B<<((vpp-1)*8));	// we use C as a fifo
+				bytesSet(buffer, i, val)
+			),
+	_ -> (if true then echoLn strFormat("unknown filter *", hexFromInt(mode)); nil);;
+
+fun _pngReadWithoutPalette(bmp, y, w, pass, data, fRead, mask, vpp)=
+	let PASS[pass] ->[ax, bx, ay, by] in
+	for x=0;x<w do
+		let call fRead(data, vpp+x*vpp) -> col in
+		let mask | (col&0xff00ff00)|((col>>16)&0xff)|((col<<16)&0xff0000) -> col in
+		bitmapSet(bmp, ax*x+bx, ay*y+by, col);
+	nil;;
+
+fun _pngReadWithPalette(png, bmp, y, w, pass, buffer, offset)=
+	let png.depthP -> depth in
+	let (1<<depth)-1 -> mask in
+	let 8-depth -> invDepth in
+	let PASS[pass] ->[ax, bx, ay, by] in
+	(
+		for x=0;x<w do
+			let _pngIndexExtract(buffer, offset, depth, mask, invDepth, x) -> color in
+			bitmapSet(bmp, ax*x+bx, ay*y+by, png.paletteP[color]);
+		nil
+	);;
+fun _pngDecodePass(png, bmp, data, rowStart, pass)=
+	let PASS[pass] ->[ax, bx, ay, by] in
+	let (png.wP+ax-1-bx)/ax -> w in
+	let (png.hP+ay-1-by)/ay -> h in
+	let png.colorTypeP -> colorType in
+	let png.valuesPerPixelP -> vpp in
+	let _READ_FROM_VPP[vpp] -> fRead in
+	let _MASK_FROM_COLORTYPE[colorType] -> mask in
+	let 1+ (w*png.depthP*vpp+7)/8 -> next in
+	let bytesCreate(next+vpp-1, 0) -> buffer in	// we need a buffer vpp*(w+1) bytes
+	for y= 0;y<h do
+	let bytesGet(data, rowStart) -> mode in 
+	(
+		_pngFilterBuffer(mode, png, data, rowStart+1, next, buffer);
+		match colorType with 
+			0 -> _pngReadWithoutPalette(bmp, y, w, pass, buffer, fRead, mask, vpp),	// GRAYSCALE
+			2 -> _pngReadWithoutPalette(bmp, y, w, pass, buffer, fRead, mask, vpp),	// RGB
+			3 -> _pngReadWithPalette(png, bmp, y, w, pass, buffer, vpp),	// PALETTE
+			4 -> _pngReadWithoutPalette(bmp, y, w, pass, buffer, fRead, mask, vpp),	// GRAYSCALE+ALPHA not tested
+			6 -> _pngReadWithoutPalette(bmp, y, w, pass, buffer, fRead, mask, vpp),	// RGBA
+			_ -> (if true then echoLn strFormat("unknown colorType *", hexFromInt(colorType));nil);
+		set rowStart=rowStart+next;
+	);
+	rowStart;;
+	
+
+fun _pngDecodeImageInterLaced(png, bmp, data, rowStart, pass)=
+	if pass<=7 then
+	let _pngDecodePass(png, bmp, data, rowStart, pass) -> rowStart in
+	_pngDecodeImageInterLaced(png, bmp, data, rowStart, pass+1);;
+
+fun _pngFinalize(png)=
+	if png<>nil then
+	let png.idatP -> input in
+	let strSlice(input, 2, strLength(input)-6) -> input in
+	let inflate(input) -> data in
+	let bytesFromStr(data) -> data in	// here we could check the trail (adler32)
+	let set png.bmpP=bitmapCreate(png.wP, png.hP, 0) -> bmp in
+	(
+		if png.interlacedP <> 0 then _pngDecodeImageInterLaced(png, bmp, data, 0, 1)
+		else _pngDecodePass(png, bmp, data, 0, 0);
+
+		if png.colorTypeP==0 then bitmapComponents(bmp, COMP_A, COMP_R, COMP_R, COMP_R);
+		if png.colorTypeP==4 then bitmapComponents(bmp, COMP_G, COMP_R, COMP_R, COMP_R);
+		png
+	);;
+
+fun _pngChunkReader(png, src, i, inputs)=
+	if i<strLength(src) then
+	let strRead32Msb(src, i) -> len in
+	let strSlice(src, i+4, 4) -> type in
+	let strRead32Msb(src, i+8+len) -> crc in
+	let strCrc32(strSlice(src, i+4, len+4), 0)-> crcCheck in
+	if crc==crcCheck then
+	let i+12+len -> iNext in
+	match type with
+	"IDAT" -> _pngChunkReader(png, src, iNext, strSlice(src, i+8, len)::inputs),
+	"IEND" -> (set png.idatP=strBuild(listReverse(inputs)); png),
+	_ -> (
+		if type== "IHDR" then set png=_pngParseIHDR(src, i+8, len);
+		if type== "PLTE" then set png.paletteP=_pngParsePLTE(src, i+8, len);
+		_pngChunkReader(png, src, iNext, inputs)
+	);;
+
+
+//-------------------- API
+fun pngDecodeOpen(src)=	// fun Str -> Png
+	if strStartsWith(src, PNG_MAGIC) then
+	_pngChunkReader(nil, src, strLength(PNG_MAGIC), nil);;
+
+fun pngW(png)=png.wP;;
+fun pngH(png)=png.hP;;
+fun pngIDAT(png)=png.idatP;;
+fun pngDepth(png)=png.depthP;;
+fun pngColorType(png)=png.colorTypeP;;
+
+fun bitmapFromPng(src)= (_pngFinalize(pngDecodeOpen(src))).bmpP;;// fun Str -> Bitmap
+

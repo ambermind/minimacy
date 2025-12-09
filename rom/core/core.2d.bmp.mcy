@@ -1,0 +1,167 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2022, Sylvain Huet, Ambermind
+// Minimacy (r) System
+//-------------- bmp format
+
+const BMP_24=24;;
+const BMP_32=32;;
+
+fun _bmpbpl(bpp, w)=(((w*bpp+7)>>3)+3)&(~3);;
+
+fun _bmpHeader40(bpp, w, h)=
+	let _bmpbpl(bpp, w) -> bpl in
+	strBuild([
+		strInt32Lsb(w),	// width
+		strInt32Lsb(h),	// height
+		strInt16Lsb(1),	// 1 plan
+		strInt16Lsb(bpp),	// nb bits per pixel
+		strInt32Lsb(0),	// compression
+		strInt32Lsb(bpl*h),	// data length
+		strInt32Lsb(0),	// Hresolution
+		strInt32Lsb(0),	// Vresolution
+		strInt32Lsb(0),	// colors
+		strInt32Lsb(0)	// IColors
+	]);;
+
+fun _bmpHeader12(bpp, w, h)=
+	strBuild([
+		strInt16Lsb(w),	// width
+		strInt16Lsb(h),	// height
+		strInt16Lsb(1),	// 1 plan
+		strInt16Lsb(bpp)	// nb bits per pixel
+	]);;
+
+fun _bmpHeader(bpp, w, h)=
+	let _bmpHeader40(bpp, w, h) -> headerDetail in
+	let 4+strLength(headerDetail) -> headerDetailLen in
+	let 14+headerDetailLen -> headerFullLen in
+	let _bmpbpl(bpp, w) -> bpl in
+	strBuild([
+		"BM",
+		strInt32Lsb(bpl*h+headerFullLen),	// file size
+		strInt16Lsb(0),	// reserved
+		strInt16Lsb(0),	// reserved
+		strInt32Lsb(headerFullLen),	// flag
+		strInt32Lsb(headerDetailLen),	// sub header size
+		headerDetail
+	]);;
+
+fun _extractInts(data, i, l)=
+	if l<>nil then let head(l) -> len in
+	let match len with
+		8 -> strRead8(data, i),
+		16 -> strRead16Lsb(data, i),
+		24 -> strRead24Lsb(data, i),
+		32 -> strRead32Lsb(data, i)
+	-> val in
+	if val<>nil then val::_extractInts(data, i+len/8, tail(l));;
+
+fun _bitmapFrom32(bmp, data, start, bpl, w, h, y, dy)=
+	(
+		for i=0;i<h do
+		(
+			for x=0;x<w do bitmapSet(bmp, x, y, strRead32Lsb(data, start+x*4));
+			set start=start+bpl;
+			set y=y+dy
+		);
+		bmp
+	);;
+
+fun _bitmapFrom24(bmp, data, start, bpl, w, h, y, dy)=
+	(
+		for i=0;i<h do
+		(
+			for x=0;x<w do bitmapSet(bmp, x, y, strRead24Lsb(data, start+x*3));
+			set start=start+bpl;
+			set y=y+dy
+		);
+		bitmapFill(bmp, 0xff000000, BLEND_OR);
+		bmp
+	);;
+
+fun _bitmapFrom8(bmp, data, headerNext, colors, start, bpl, w, h, y, dy)=
+	let if colors==0 then 256 else colors -> colors in
+	let arrayCreate(colors, 0) -> palette in
+	(
+		for i=0;i<colors do set palette[i] = strRead24Lsb(data, headerNext+i*4);
+		for i=0;i<h do
+		(
+			for x=0;x<w do bitmapSet(bmp, x, y, palette[strRead8(data, start+x)]);
+			set start=start+bpl;
+			set y=y+dy
+		);
+		bmp
+	);;
+
+fun _bitmapFrom2(bmp, data, headerNext, start, bpl, w, h, y, dy)=
+	(
+		let strRead24Lsb(data, headerNext) -> color0 in
+		let strRead24Lsb(data, headerNext+4) -> color1 in
+		for i=0;i<h do
+		(
+			for x=0;x<w do bitmapSet(bmp, x, y,
+				let 1<<(7-(x&7)) -> msk in
+				if bitTest(msk, strRead8(data, start+(x>>3))) then color1
+				else color0);
+			set start=start+bpl;
+			set y=y+dy
+		);
+		bmp
+	);;
+
+fun _bitmapFromData(data, headerNext, start, w, h, plans, bpp, compression, colors)=
+	if compression==0 then
+	if plans==1 then
+	let _bmpbpl(bpp, w) -> bpl in
+	if (start+h*bpl)<=strLength(data) then
+	let bitmapCreate(w, abs(h), 0) -> bmp in
+	let if h>0 then h-1 else 0 -> y0 in
+	let if h>0 then -1 else 1 -> dy in
+	match bpp with
+		32 -> _bitmapFrom32(bmp, data, start, bpl, w, h, y0, dy),
+		24 -> _bitmapFrom24(bmp, data, start, bpl, w, h, y0, dy),
+		8 -> _bitmapFrom8(bmp, data, headerNext, colors, start, bpl, w, h, y0, dy),
+		1 -> _bitmapFrom2(bmp, data, headerNext, start, bpl, w, h, y0, dy)
+	;;
+
+//------------------------API
+// bpp should be BMP_24 or BMP_32
+fun bmpFromBitmap(b, bpp)=
+	if b<>nil then
+	let match bpp with
+		BMP_24 -> #bytesWrite24Lsb,
+		BMP_32 -> #bytesWrite32Lsb
+	-> fWrite in
+	if fWrite<>nil then
+	let bitmapW(b) -> w in
+	let bitmapH(b) -> h in
+	let _bmpbpl(bpp, w) -> bpl in
+	let _bmpHeader(bpp, w, h) -> header in
+	let strLength(header) -> headerLen in
+	let bytesCreate(headerLen+bpl*h, 0) -> bytes in
+	let headerLen -> i0 in
+	let bpp>>3 -> xmul in
+	(
+		bytesCopy(bytes, 0, header, 0, nil);
+		for y=h-1;y>=0;y-1 do
+		(
+			for x=0;x<w do call fWrite(bytes, i0+x*xmul, bitmapGet(b, x, y));
+			set i0=i0+bpl
+		);
+		strFromBytes(bytes);
+	);;
+
+fun bitmapFromBmp(data)=
+	if strStartsWith(data, "BM") then
+	let _extractInts(data, 2, 32::16::16::32::32::nil) ->
+			(size::reserved1::reserved2::start::headerDetailLen::_) in
+	match headerDetailLen with
+		40 ->
+			let _extractInts(data, 18, 32::32::16::16::32::32::32::32::32::32::nil) ->
+			(w::h::plans::bpp::compression::size::hresolution::vresolution::colors::IColors::_) in
+			_bitmapFromData(data, 54, start, w, h, plans, bpp, compression, colors),
+		12 ->
+			let _extractInts(data, 18, 16::16::16::16::nil) ->
+			(w::h::plans::bpp::_) in
+			_bitmapFromData(data, 26, start, w, h, plans, bpp, 0, 0);;
+

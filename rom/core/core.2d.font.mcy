@@ -1,0 +1,207 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2022, Sylvain Huet, Ambermind
+// Minimacy (r) System
+
+const _ALIGN_HOR_MASK=3;;
+const ALIGN_LEFT=0;;
+const ALIGN_RIGHT=1;;
+const ALIGN_CENTER=2;;
+
+const _ALIGN_VER_MASK=28;;
+const ALIGN_TOP=0;;
+const ALIGN_BOTTOM=4;;
+const ALIGN_BASELINE=8;;
+const ALIGN_MIDDLE=16;;
+
+struct Font=[hF, baseLineF, bmpF, charsF];;
+// hF is the height in pixels so that every glyphs fit completly in this height
+// baselineF is the number of pixel under the baseline
+// bmpF is an all-white bitmap which contains all glyphs. Glyphs are defined only by the alpha channel
+// charsF is an array of char descriptors. Each char descriptor is a 6-integers array, whose indexes are:
+enum BBX, BBY, BBW, BBH, DX, W;;
+// BBX, BBY, BBW, BBH: glyph rectangle area from the bitmap
+// DX: horizontal offset for overlapping glyphs, glyph must be drawn from x-DX
+// W: character width, aka number of pixels to add horizontaly to reach the display position of the next character
+
+//-------------- variable-width fonts loading
+fun _colorStart(color)= 0xff0000 == (color&0xffffff);;	// red
+fun _colorBaseline(color)= 0xff00 == (color&0xffffff);;	// green
+
+fun _fontHeight(bmp, i, baseline)=
+	if (i>=bitmapH(bmp)) || _colorStart(bitmapGet(bmp, 0, i)) then [i, if baseline==nil then 0 else i-baseline-1]
+	else if _colorBaseline(bitmapGet(bmp, 0, i)) then _fontHeight(bmp, i+1, i)
+	else _fontHeight(bmp, i+1, baseline);;
+
+fun _fontNext(bmp, i, y)=
+	if (i>=bitmapW(bmp)) || _colorStart(bitmapGet(bmp, i, y)) then i
+	else _fontNext(bmp, i+1, y);;
+
+fun _fontDx(bmp, x, y, i)=
+	let bitmapGet(bmp, x+i, y) -> color in
+	if color==nil || !_colorBaseline(color) then i
+	else _fontDx(bmp, x, y, i+1);;
+
+fun _fontWreal(bmp, x, y, i)=
+	let bitmapGet(bmp, x+i, y) -> color in
+	if color==nil || _colorBaseline(color) || _colorStart(color) then i
+	else _fontWreal(bmp, x, y, i+1);;
+
+// we assume (x-1),y is a red point
+fun _charsParse(bmp, x, y, h)=
+	if y<bitmapH(bmp) then
+	if x>=bitmapW(bmp) then _charsParse(bmp, 1, y+h, h)
+	else let _fontNext(bmp, x, y) -> xx in
+	if x==xx then _charsParse(bmp, 1, y+h, h)
+	else 
+	let _fontDx(bmp, x, y, 0) -> dx in
+	let _fontWreal(bmp, x+dx, y, 0) -> wr in
+	{x, y+1, xx-x, h-1, dx, wr}::_charsParse(bmp, xx+1, y, h);;
+
+fun fontFromBitmap(bmp)= 
+	if _colorStart(bitmapGet(bmp, 0, 0)) then
+	let _fontHeight(bmp, 1, nil) ->[h, baseLine] in
+	let arrayFromList(_charsParse(bmp, 1, 0, h)) -> chars in
+	(
+		bitmapComponents(bmp, COMP_B, COMP_255, COMP_255, COMP_255);
+		[bmpF=bmp, charsF=chars, hF=h-1, baseLineF=baseLine]
+	);;
+
+//-------------- fixed-width fonts loading
+fun _charsFixed(bw, bh, x, y, w, h)=
+	if y+h<=bh then
+	if x+w>bw then _charsFixed(bw, bh, 0, y+h, w, h)
+	else {x, y, w, h, 0, w}::_charsFixed(bw, bh, x+w, y, w, h);;
+
+fun fontFixedFromBitmap(bmp, w, h, baseLine)= 
+	bitmapComponents(bmp, COMP_B, COMP_255, COMP_255, COMP_255);
+	let arrayFromList(_charsFixed(bitmapW(bmp), bitmapH(bmp), 0, 0, w, h)) -> chars in
+	[bmpF=bmp, charsF=chars, hF=h, baseLineF=baseLine];;
+	
+//-------------- font size calculations
+fun fontCharWidth(font, c)= let font.charsF[c] -> position in position[W];;
+
+fun fontH(font)= font.hF;;
+
+fun _multilineSplit(fifo, font, str, maxWidth, i0, lastSeparator, i, w, u8)=
+	if i>=strLength(str) then fifoIn(fifo, strSlice(str, i0, nil))
+	else
+	let if u8 then strReadU8(str, i) else strGet(str, i) -> c in
+	let if u8 then strU8Next(str, i) else i+1 -> iNext in
+	let if c<=32 then i else lastSeparator -> lastSeparator in
+	let font.charsF[c] -> position in
+	let w+position[W] -> w in
+	if w<=maxWidth then _multilineSplit(fifo, font, str, maxWidth, i0, lastSeparator, iNext, w, u8)
+	else
+	if lastSeparator<>nil then (
+		fifoIn(fifo, strSlice(str, i0, (lastSeparator-i0)));
+		_multilineSplit(fifo, font, str, maxWidth, lastSeparator+1, nil, lastSeparator+1, 0, u8)
+	)
+	else
+	let if i==i0 then iNext else i -> i in	// when the first char of a line is larger than maxWidth
+	(
+		fifoIn(fifo, strSlice(str, i0, (i-i0)));
+		_multilineSplit(fifo, font, str, maxWidth, i, nil, i, 0, u8)
+	);;
+
+
+fun _fontStringMultiline(font, str, w, u8)=
+	let fifoCreate() -> fifo in
+	(
+		for line in strLines(str) do _multilineSplit(fifo, font, line, w, 0, nil, 0, 0, u8);
+		fifoList(fifo)
+	);;
+fun fontStringMultiline(font, str, w)= _fontStringMultiline(font, str, w, false);;
+fun fontStringMultilineU8(font, str, w)= _fontStringMultiline(font, str, w, true);;
+
+fun fontStringMultilineHeight(font, str, w)= fontH(font) * listLength(fontStringMultiline(font, str, w));;
+fun fontStringMultilineHeightU8(font, str, w)= fontH(font) * listLength(fontStringMultilineU8(font, str, w));;
+
+fun fontStringWidth(font, str)= 
+	let 0->len in
+	let strLength(str) -> n in
+	for i=0;i<n do
+		let strGet(str, i) -> c in
+		let font.charsF[c] -> position in
+		set len=len+position[W];;
+
+fun fontStringWidthU8(font, str)= 
+	let 0->len in
+	let strLength(str) -> n in
+	for i=0;i<n;strU8Next(str, i) do
+		let strReadU8(str, i) -> c in
+		let font.charsF[c] -> position in
+		set len=len+position[W];;
+
+fun fontPosition(font, str, x)=
+	let 0->len in
+	let strLength(str) -> n in
+	for i=0;i<n do
+		let strGet(str, i) -> c in
+		let font.charsF[c] -> position in (
+			set len=len+position[W];
+			if len>x then return i
+		);
+	strLength(str);;
+
+fun fontPositionU8(font, str, x)=
+	let 0->len in
+	let strLength(str) -> n in
+	for i=0;i<n;strU8Next(str, i) do
+		let strReadU8(str, i) -> c in
+		let font.charsF[c] -> position in (
+			set len=len+position[W];
+			if len>x then return i
+		);
+	strLength(str);;
+
+//-------------- text drawing
+fun _bitmapText(bmp, x, y, flag, lText, lineSpacing, font, foreground, background, u8)=
+	let fontH(font) -> height in
+	let listLength(lText) -> nbLines in
+	let nbLines*height + (nbLines-1)*lineSpacing -> totalHeight in
+	let match _ALIGN_VER_MASK&flag with
+		ALIGN_BASELINE -> y+font.baseLineF + 1 - totalHeight,
+		ALIGN_BOTTOM -> y-totalHeight,
+		ALIGN_MIDDLE -> y-(totalHeight>>1),
+		_-> y
+	-> y in
+	for text in lText do
+	let if u8 then fontStringWidthU8(font, text) else fontStringWidth(font, text) -> w in
+	let match _ALIGN_HOR_MASK&flag with
+		ALIGN_CENTER -> x-(w>>1),
+		ALIGN_RIGHT -> x-w,
+		_-> x
+	-> x in
+	let if u8 then (lambda(i)= strReadU8(text, i)) else lambda(i)= strGet(text, i) -> fRead in
+	let if u8 then (lambda(i)= strU8Next(text, i)) else lambda(i)= i+1 -> fNext in
+	(
+		if background<>nil then bitmapFillRectangle(bmp, x, y, w, height, background, nil);
+		let strLength(text) -> n in
+		for i=0;i<n;call fNext(i) do let font.charsF[(call fRead(i))] -> position in
+		if position<>nil then
+		(
+			bitmapColoredBlit(bmp, x-position[DX], y, font.bmpF, position[BBX], position[BBY], position[BBW], position[BBH], BLEND_ALPHA, 0xff000000|foreground, BLEND_MUL);
+			set x=x+position[W]
+		);
+		set y=y+height+lineSpacing
+	);
+	bmp;;	
+
+fun _bitmapMultiLineText(bmp, x, y, w, flag, lText, lineSpacing, font, foreground, background, u8)=
+	let match _ALIGN_HOR_MASK&flag with
+		ALIGN_CENTER -> x+(w>>1),
+		ALIGN_RIGHT -> x+w,
+		_-> x
+	-> x in
+	_bitmapText(bmp, x, y, flag, lText, lineSpacing, font, foreground, background, u8);;
+
+fun bitmapText(bmp, x, y, flag, text, font, foreground, background)=_bitmapText(bmp, x, y, flag, text::nil, 0, font, foreground, background, false);;
+fun bitmapTextU8(bmp, x, y, flag, text, font, foreground, background)=_bitmapText(bmp, x, y, flag, text::nil, 0, font, foreground, background, true);;
+
+fun bitmapMultiLineText(bmp, x, y, w, lineSpacing, flag, text, font, foreground, background)=
+	let fontStringMultiline(font, text, w) -> lText in
+	_bitmapMultiLineText(bmp, x, y, w, flag, lText, lineSpacing, font, foreground, background, false);;
+
+fun bitmapMultiLineTextU8(bmp, x, y, w, lineSpacing, flag, text, font, foreground, background)=
+	let fontStringMultilineU8(font, text, w) -> lText in
+	_bitmapMultiLineText(bmp, x, y, w, flag, lText, lineSpacing, font, foreground, background, true);;

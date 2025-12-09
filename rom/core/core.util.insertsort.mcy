@@ -1,0 +1,18 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2022, Sylvain Huet, Ambermind
+// Minimacy (r) System
+
+/*
+insertsort l f : fun list a0 (fun a0 a0 -> Bool) -> list a0
+  function f a b=
+   true : a before b
+   false : a equals or after b
+
+It first reverses the input list, this makes it more efficient than quicksort when the list is almost already sorted
+*/
+
+fun _insertsort(l, result, fBefore)=
+	if l==nil then result
+	else _insertsort(tail(l), listInsert(result, head(l), fBefore), fBefore);;
+
+fun insertsort(l, fBefore)= _insertsort(listReverse(l), nil, fBefore);;

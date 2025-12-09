@@ -1,0 +1,64 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2022, Sylvain Huet, Ambermind
+// Minimacy (r) System
+
+use core.storage.fat32;;
+use core.storage.format;;
+
+//---------------- ramVolume
+extend VolumeType with ramVolume;;
+
+fun storageRamRead(ram, sector, nbSectors)= 
+//	echoLn strFormat( "======read * sectors from * (*)", nbSectors, start, hexFromInt(start*SECTOR_SIZE));
+	let nbSectors*SECTOR_SIZE -> len in
+	let sector*SECTOR_SIZE -> start in
+	if sector>=0 && (start+len)<=bytesLength(ram) then
+	bytesSlice(ram, start, len);;
+
+fun storageRamWrite(ram, sector, data)= 
+//	echoLn strFormat ("======read * sectors from * (*)", nbSectors, start, hexFromInt(start*SECTOR_SIZE));
+	let bytesLength(data) -> len in
+	if sector>=0 && (sector*SECTOR_SIZE+len)<=bytesLength(ram) then (
+		bytesCopyBytes(ram, sector*SECTOR_SIZE, data, 0, nil);
+		bytesLength(data)
+	);;
+
+fun ramReadFunction(ram) = lambda(sector, nbSectors) = storageRamRead(ram, sector, nbSectors);;
+fun ramWriteFunction(ram) = lambda(sector, data) = storageRamWrite(ram, sector, data);;
+
+fun volumeFromRam(ram)=
+	volumeCreate(ramVolume, nil, true, ramReadFunction(ram), ramWriteFunction(ram), bytesLength(ram)/SECTOR_SIZE, SECTOR_SIZE);;
+
+fun volumeRamLoad(path)=
+	let bytesFromStr(load(path)) -> ram in
+	[ram, volumeFromRam(ram)];;
+
+fun volumeRamNew(kilobytes, name, sectorsPerCluster)=
+	let bytesCreate(kilobytes*1024, 0xaa) -> ram in
+	let volumeFormatFat32(volumeFromRam(ram), nil, sectorsPerCluster, name, true) -> volume in
+	[ram, volume];;
+
+fun ramExport(ram, path)=
+	save(strFromBytes(ram), path);;
+
+fun _ramDump(ram, i, last, skipIfNull) =
+	if i<bytesLength(ram) then
+	let bytesSliceOfStr(ram, i, 16) -> s in
+	if s==last then (
+		if !skipIfNull then echoLn "...";
+		_ramDump(ram, i+16, s, true)
+	)
+	else (
+		echo hexFromIntN(8, i);
+		for j=0;j<16 do let strGet(s, j) -> a in echo [" ", if a==nil then "  " else hexFromIntN(2, a)];
+		echo "  ";
+		for j=0;j<16 do let strGet(s, j) -> a in echo match a with
+			nil -> " ",
+			a -> if a<32 then "." else strFromChar(a);
+		echoLn "";
+		_ramDump(ram, i+16, s, false)
+	);;
+fun ramDump(ram)= 
+	_ramDump(ram, 0, nil, false);
+	echoLn hexFromIntN(8, bytesLength(ram));
+	ram;;

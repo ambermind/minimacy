@@ -1,0 +1,816 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2022, Sylvain Huet, Ambermind
+// Minimacy (r) System
+use core.util.cache;;
+export volumeFindPartitions(volume, writable);;
+export volumeMount(volume, mount, root);;
+export volumeSetCacheSize(size);;
+export fatFromTime(t);;
+export SECTOR_SIZE;;
+export fat32Dump(p);;
+export Fat32Partitions;;
+
+const SECTOR_SIZE=512;;
+
+var CacheSize= 1024*1024;;
+
+struct Partition=[
+	fReadP, fWriteP,
+	fatTypeP, volumeLabelP, sectorsPerClusterP, bytesPerClusterP, numberOfFatsP, sectorsPerFatP,
+	reservedSectorsP, rootDirClusterP, dataStartP, maxClusterP,
+	cacheDataP,
+	openFilesP,
+	dataSectorsP,
+	lockP
+];;
+sum FatType=fat32;;
+
+struct FileFat= File+[partitionF, cluster0F, positionF, clusterF, entryClusterF, entryOffsetF, oblivionF];;
+
+struct DirFile=[name83DF, fullNameDF, lowerCaseDF, sizeDF, clusterDF, attrDF, creationDF, updateDF, accessDF,
+	vFatClusterDF, vFatOffsetDF, entryClusterDF, entryOffsetDF];;
+
+const FAT_ATTR_VOL =0x08;;
+const FAT_ATTR_DIR =0x10;;
+const FAT_ATTR_FILE=0x20;;
+
+const FAT_EOC= 0xFFFFFFF;;	// end of chain
+
+fun cacheDataGet(p, cluster) = cacheGet(p.cacheDataP, cluster);;
+fun cacheDataSet(p, cluster, data)= cachePush(p.cacheDataP, cluster, data);;
+
+fun _writeRequired(mode) = mode==FILE_APPEND || mode==FILE_READ_WRITE || mode==FILE_REWRITE;;
+
+fun _searchFile(lFiles, fullName)=
+	let strLowercase(fullName) -> fullName in listFind(lFiles, lambda(d)= d.lowerCaseDF==fullName);;
+
+fun _intParser(src, i, l)=
+	if l<>nil then let head(l) -> len in
+	let match len with
+		1 -> bytesGet(src, i),
+		2 -> bytesRead16Lsb(src, i),
+		3 -> bytesRead24Lsb(src, i),
+		4 -> bytesRead32Lsb(src, i),
+		8 -> bytesRead32Lsb(src, i)+(bytesRead32Lsb(src, i+4)<<32)
+	-> val in val::_intParser(src, i+len, tail(l));;
+	
+fun _bytesParser(src, i, l)=
+	if l<>nil then let head(l) -> len in
+	bytesSliceOfStr(src, i, len)::_bytesParser(src, i+len, tail(l));;
+
+fun _fatLongNameExtract(data, i)=
+	strFormat("***", bytesSlice(data, i+1, 10), bytesSlice(data, i+14, 12), bytesSlice(data, i+28, 4));;
+	
+fun _fullNameFilter(data)=
+	let strCharPos(data, 0, 0) -> i in
+	if i==nil then data else strLeft(data, i);;
+
+fun _shortNameFilter(name, ext, ntCase, attr) =
+	//read https://en.wikipedia.org/wiki/8.3_filename#Compatibility
+	let if bitTest(ntCase, 0x08) then strLowercase(name) else name -> name in
+	let if bitTest(ntCase, 0x10) then strLowercase(ext) else ext -> ext in
+	if ext=="   " then strTrim(name)
+	else strFormat(if bitTest(8, attr) then "**" else "*.*", strTrim(name), strTrim(ext));;
+
+fun _timeFromFat(data)=
+	let 2*(data&31) -> s in
+	let 63&(data>>5) -> m in
+	let 31&(data>>11) -> h in
+	let 31&(data>>16) -> day in
+	let 15&(data>>21) -> month in
+	let 1980+ 127&(data>>25) -> year in
+	timeFromDate(year, month, day, h, m, s);;
+
+fun fatFromTime(t)=
+	let max(t, 315532800) -> t in	// no date before 1980/01/01
+	let date(t) -> [year, month, day, _, h, m, s] in
+	(s/2) +
+	(m<<5) +
+	(h<<11) +
+	(day<<16) +
+	(month<<21) +
+	(year-1980)<<25;;
+
+const FILENAME_FILTER= arrayInit(256, lambda(i)= i>=32 && nil==strCharPos("\\/:*?\"<>|", i, 0));;
+
+fun __fileNameCheckLoop(name, i)=
+	if i>=strLength(name) then true
+	else (FILENAME_FILTER[strGet(name, i)])&& __fileNameCheckLoop(name, i+1);;
+
+fun _fileNameCheck(name)= strLength(name)>0 && strLength(name)<=256 && __fileNameCheckLoop(name, 0);;
+	
+fun _checksum83(name83)=
+	let 0->s in for i=0;i<11 do set s= 255 & ((s>>1)+((s&1)<<7)+strGet(name83, i));;
+
+//--- these functions aim to generate a unique 8+3 file name
+fun _filter83(i, name)=
+	if i<strLength(name) then
+	let strGet(name, i) -> c in
+	(if c<32 || c>126 then "-" else strFromChar(c))::_filter83(i+1, name);;
+
+fun __check83name(name, ext, lFiles) =
+	let strConcat(name, ext) -> name83 in
+	if nil==listFind(lFiles, lambda(d)= d.name83DF==name83) then name83;;
+
+fun __make83loop(name, ext, lFiles, i)=
+	let strFormat("~*", i) -> suffix in
+	let strLeft(name, 8-strLength(suffix)) -> prefix in
+	let __check83name(strConcat(prefix, suffix), ext, lFiles) -> name83 in	// returns nil if already use
+	if name83<>nil then name83 else __make83loop(name, ext, lFiles, i+1);;
+
+fun _make83Name(fullName, lFiles)=
+	if fullName=="." then ".          "
+	else if fullName==".." then "..          "
+	else let strCharPosRev(fullName, '.', nil) -> i in
+	let if i==nil then [fullName, ""] else [strLeft(fullName, i), strSlice(fullName, i+1, nil)] -> [name0, ext] in
+	let strBuild(_filter83(0, strUppercase(strLeft(strConcat(name0, "        "), 8)))) -> name in	// name has exactly 8 characters
+	let strBuild(_filter83(0, strUppercase(strLeft(strConcat(ext, "   "), 3)))) -> ext in	// ext has exactly 3 characters
+	if strLength(name0)>8 then __make83loop(name, ext, lFiles, 1)	// we always add "~*" when name has more than 8 chars
+	else
+	let __check83name(name, ext, lFiles) -> name83 in	// returns nil if already use
+	if name83<>nil then name83 else __make83loop(name, ext, lFiles, 1);;
+
+//--- make dir blocks
+fun __makeFullNameBlocks(name16, chksum, i)=
+	if i<strLength(name16) then
+	strBuild([
+		strFromChar((i/26)+1+if i+26 >= strLength(name16) then 0x40),
+		strSlice(name16, i, 10),
+		"\$0f\0",
+		chksum,
+		strSlice(name16, i+10, 12),
+		"\0\0",
+		strSlice(name16, i+22, 4)
+	])::__makeFullNameBlocks(name16, chksum, i+26);;
+
+fun __makeMainBlock(name83, attr, t)=
+	let fatFromTime(t) -> fatTime in
+	strBuild([
+		name83,
+		strFromChar(attr),
+		"\0",	// case
+		strFromChar(100*(t&1)),
+		strInt32Lsb(fatTime),
+		strInt16Lsb(fatTime>>16),
+		"\0\0",	// start cluster (bits 32-63)
+		strInt32Lsb(t),
+		"\0\0",	// start cluster (bits 0-31)
+		"\0\0\0\0"	// length
+	]);;
+
+fun _makeDirBlocks(fullName, attr, lFiles)=
+	// this should be called only after fileNameCheck, except for "." or ".." at the creation of a directory
+	if _fileNameCheck(fullName) then
+	let _make83Name(fullName, lFiles) -> name83 in
+	let strConcat(u16LeFromLatin(fullName), "\0\0") -> name16 in
+	let strLength(name16) -> name16Len in
+	let 26*((name16Len+25)/26) -> fullLen in
+	let strConcat(name16, strCreate(fullLen - name16Len, 255)) -> name16 in	// padding
+	let __makeFullNameBlocks(name16, strFromChar(_checksum83(name83)), 0) -> lBlocks in
+	let __makeMainBlock(name83, attr, time()) -> mainBlock in
+	strListConcat(listReverse(mainBlock::lBlocks));;
+
+fun fileNameCheck(fullName, lFiles) =
+	fullName<>"." && fullName<>".." && _fileNameCheck(fullName) && (nil==_searchFile(lFiles, fullName));;
+
+
+
+
+fun _validCluster(cluster) = cluster>1 && cluster<0x0ffffff8;;
+
+fun _readCluster(p, sector)=
+	let cacheDataGet(p, sector) -> data in 
+	if data<>nil then data
+	else cacheDataSet(p, sector, call p.fReadP(sector, p.sectorsPerClusterP));;
+
+// https://en.wikipedia.org/wiki/Design_of_the_FAT_file_system#Special_entries
+// first two clusters are not allocated, their corresponding value in the FAT table has special meaning
+// therefore we use (cluster-2) as the real cluster index
+
+fun _dataSector(p, cluster) = p.dataStartP+(cluster-2)*p.sectorsPerClusterP;;
+
+fun _readDataCluster(p, cluster)= _readCluster(p, _dataSector(p, cluster));;
+
+fun _saveDataCluster(p, cluster, data)=
+	let _dataSector(p, cluster) -> sector in
+	call p.fWriteP(sector, cacheDataSet(p, sector, data));;
+
+
+
+//--- FAT
+// in order to harmonize the cache structure between file data, directories and fat, we access the fat as if it was made of clusters
+// _fatCluster returns the first sector of a block of p.sectorsPerClusterP sectors in the fat that contains the fat data corresponding to the cluster argument
+fun _fatCluster(p, cluster)= p.reservedSectorsP+(cluster*4/p.bytesPerClusterP)*p.sectorsPerClusterP;;	// 4 because fat32 use 32 bits values in the fat
+fun _fatOffset(p, cluster) = (cluster*4)%p.bytesPerClusterP;;
+
+fun _readFatCluster(p, cluster)=
+	if _validCluster(cluster) then _readCluster(p, _fatCluster(p, cluster));;
+	
+fun _saveFatCluster(p, cluster, data)=
+	if _validCluster(cluster) then
+	let _fatCluster(p, cluster) -> sector in
+	for i=0;i<p.numberOfFatsP do
+		call p.fWriteP(sector+i*p.sectorsPerFatP, data);;
+		
+fun _fatGet(p, data, cluster)=
+	let _fatOffset(p, cluster) -> offset in
+	0x0fffffff & bytesRead32Lsb(data, offset);;
+
+fun _fatSet(p, data, cluster, value)=
+	let _fatOffset(p, cluster) -> offset in (
+		bytesWrite32Lsb(data, offset, (0x0fffffff&value)|(0xf0000000 & bytesRead32Lsb(data, offset)));
+		cluster
+	);;
+
+fun _nextCluster(p, cluster)= _fatGet(p, _readFatCluster(p, cluster), cluster);;
+
+// free a cluster and all its chain, assuming that cache length is at least 1.
+// Works also when cluster=0
+fun _fatFree(p, cluster) = 
+	if _validCluster(cluster) then	// terminate if end of chain is reached
+	let _readFatCluster(p, cluster) -> data in // most of the time, this data is in the cache
+	let _fatGet(p, data, cluster) -> next in (
+		_fatSet(p, data, cluster, 0);
+//		echoLn strFormat ">> free cluster *" cluster;
+		if _fatCluster(p, next)<>_fatCluster(p, cluster) then _saveFatCluster(p, cluster, data);
+		_fatFree(p, next)
+	);;
+
+// we search for n free clusters, and return the list of them, without writing anything
+fun _fatSearch(p, cluster, n) =
+	if n>0 && cluster<p.maxClusterP then	// as we started from cluster 2, we don't need to loop
+	let _readFatCluster(p, cluster) -> data in // most of the time, this data is in the cache
+	if 0 <> _fatGet(p, data, cluster) then _fatSearch(p, cluster+1, n)
+	else cluster::_fatSearch(p, cluster+1, n-1);;
+
+// we chain the clusters, assuming that cache length is at least 1
+fun _fatChain(p, lClusters)=
+	if lClusters<>nil then
+	let lClusters -> a::b::_ in	// we must chain a->b
+	let if b==nil then FAT_EOC else b -> b in
+	let _readFatCluster(p, a) -> data in ( // most of the time, this data is in the cache
+		_fatSet(p, data, a, b);
+		if _fatCluster(p, a)<>_fatCluster(p, b) then _saveFatCluster(p, a, data);	// works also when b=FAT_EOC
+		_fatChain(p, tail(lClusters))
+	);;
+
+// claim n clusters and chain them with cluster0 in the fat
+fun _fatClaim(p, cluster0, n)=
+//	echoLn strFormat("fatClaim * *", cluster0, n); dump
+	let _fatSearch(p, 2, n) -> lClusters in	// 2 because first two clusters do not exist
+	if listLength(lClusters)==n then (	// list will be shorter than expected when disk is full
+		_fatChain(p, (if cluster0==0 then lClusters else cluster0::lClusters));
+		lClusters
+	);;
+
+//---------------------------------------------------
+fun isDirectory(d)= bitTest(16, d.attrDF);;
+fun isVolumeName(d)= bitTest(8, d.attrDF);;
+
+fun _parseDirectory(p, cluster, data, vFat, i)=
+//echoLn strFormat("_parseDirectory * * * *", cluster, data<>nil, vFat, i);
+	if _validCluster(cluster) then
+	if data==nil then (
+		let _readDataCluster(p, cluster) -> data in
+		if data<>nil then _parseDirectory(p, cluster, data, vFat, 0)
+	)
+	else
+	if i>=bytesLength(data) then _parseDirectory(p, _nextCluster(p, cluster), nil, vFat, 0)
+	else
+	if 0<>bytesGet(data, i) then
+	let _bytesParser(data, i, 8::3::nil) -> name::ext::_ in
+	let _intParser(data, i+11, 1::1::1::4::2::2::4::2::4::nil) -> attr::ntCase::hundredths::creation::access::clusterHigh::update::clusterLow::size::_ in
+	if strGet(name, 0)==0xE5 then _parseDirectory(p, cluster, data, nil, i+32)
+	else if attr==0xF then (
+		if bitTest(0x40, strGet(name, 0)) then _parseDirectory(p, cluster, data, [cluster, i, _fatLongNameExtract(data, i)], i+32)
+		else if vFat==nil then _parseDirectory(p, cluster, data, nil, i+32)
+		else let vFat -> [vFatCluster, vFatOffset, vFatLongName] in
+		_parseDirectory(p, cluster, data, [vFatCluster, vFatOffset, strConcat(_fatLongNameExtract(data, i), vFatLongName)], i+32)
+	)
+	else 
+	let (clusterHigh<<16)+clusterLow -> cluster0 in
+	let vFat -> [vFatCluster, vFatOffset, vFatLongName] in
+	let if vFatLongName<>nil then _fullNameFilter(latinFromU16Le(vFatLongName))
+		else _shortNameFilter(name, ext, ntCase, attr)
+	-> fullName in
+	let bitTest(16, attr) -> directory in
+	if directory&& (fullName=="." || fullName=="..") then _parseDirectory(p, cluster, data, nil, i+32)
+	else
+	let (hundredths/100)+_timeFromFat(creation) -> creation in	// creation field has a resolution of 2 seconds, hundredths is from 0 to 200 
+	let _timeFromFat(update) -> update in
+	let _timeFromFat(access<<16) -> access in
+	let strConcat(name, ext) -> name83 in
+	[
+		name83DF= name83,
+		fullNameDF=fullName, lowerCaseDF=strLowercase(fullName),
+		sizeDF=size, clusterDF=cluster0, attrDF=attr, creationDF=creation, updateDF=update, accessDF=access,
+		entryClusterDF=cluster, entryOffsetDF=i,
+		vFatClusterDF=if vFatCluster==nil then cluster else vFatCluster,
+		vFatOffsetDF=if vFatOffset==nil then i else vFatOffset
+		
+	]::_parseDirectory(p, cluster, data, nil, i+32);;
+
+fun _dirFromPath(p, cluster, mkDir, path, i)=
+//	echoLn strFormat("_dirFromPath * * *", cluster, path, i);
+	if i==0 && '/'==strGet(path, 0) then _dirFromPath(p, cluster, mkDir, path, 1)	// we ignore the first slash
+	else
+	let _parseDirectory(p, cluster, nil, nil, 0) -> lFiles in
+	let strCharPos(path, '/', i) -> j in
+	if j==nil then [cluster, lFiles, strSlice(path, i, nil)]
+	else
+	let strSlice(path, i, j-i) -> dirName in
+	let _searchFile(lFiles, dirName) -> file in
+	if file<>nil then _dirFromPath(p, file.clusterDF, mkDir, path, j+1)
+	else
+	if mkDir then
+	let _dirAddFile(p, cluster, dirName, FAT_ATTR_DIR, lFiles) -> d in
+	let head(_fatClaim(p, 0, 1)) -> newDirCluster in
+	let _readDataCluster(p, d.entryClusterDF) -> dirData in
+	let time() -> t in
+	let bytesBuild([
+		__makeMainBlock(".          ", FAT_ATTR_DIR, t),
+		__makeMainBlock("..         ", FAT_ATTR_DIR, t)
+	]) -> defaultDirs in
+	let bytesBuild([defaultDirs, bytesCreate(p.bytesPerClusterP-bytesLength(defaultDirs), 0)]) -> newDirContent in
+	(
+//		echoLn "newDirContent"; hexDumpBytes(newDirContent);
+		_saveDataCluster(p, newDirCluster, newDirContent);
+		bytesWrite16Lsb(dirData, d.entryOffsetDF+0x14, newDirCluster>>16);
+		bytesWrite16Lsb(dirData, d.entryOffsetDF+0x1a, newDirCluster);
+		_saveDataCluster(p, d.entryClusterDF, dirData);
+		_dirFromPath(p, newDirCluster, mkDir, path, j+1)
+	);;
+
+fun _partitionLocate(p, path)=
+	let _dirFromPath(p, p.rootDirClusterP, false, path, 0) -> [cluster, lFiles, fileName] in
+	_searchFile(lFiles, fileName);;
+
+fun _partitionDir(p, path)=
+	let _dirFromPath(p, p.rootDirClusterP, false, path, 0) -> [cluster, lFiles, fileName] in
+	lFiles;;
+
+//---------------------------------------------------
+
+fun _checkFile(f)= f.partitionF<>nil;;
+
+fun _updateFileEntry(p, f, size, updateCluster0, updateModify, updateCreation) =
+	let time() -> t in
+	let fatFromTime(t) -> fatTime in	// low half: time, high half: date 
+	let _readDataCluster(p, f.entryClusterF) -> dirData in (
+		if size<>nil then bytesWrite32Lsb(dirData, f.entryOffsetF+0x1c, size);
+		if updateModify then (
+			bytesWrite32Lsb(dirData, f.entryOffsetF+0x16, fatTime);	// update time
+			bytesWrite16Lsb(dirData, f.entryOffsetF+0x12, fatTime>>16);	// access date
+		);
+		if updateCluster0 then (
+			bytesWrite16Lsb(dirData, f.entryOffsetF+0x14, f.cluster0F>>16);
+			bytesWrite16Lsb(dirData, f.entryOffsetF+0x1a, f.cluster0F)
+		);
+		if updateCreation then (
+			// TODO: check the current stored values and make sure the new ones are in the future
+			bytesSet(dirData, f.entryOffsetF+0x0d, 100*(t&1));	// creation time (x10ms)
+			bytesWrite32Lsb(dirData, f.entryOffsetF+0x0e, fatTime);	// creation time
+		);
+		_saveDataCluster(p, f.entryClusterF, dirData)
+	);;
+
+fun _clusterForward(file, cluster, n)=
+	if _validCluster(cluster) then
+	if n<=0 then set file.clusterF=cluster
+	else _clusterForward(file, _nextCluster(file.partitionF, cluster), n-1);;
+
+fun _fileSeek(f, seek)=
+	if seek==nil then true
+	else
+	if seek==0 then (
+		set f.positionF=-1;
+		set f.clusterF=0;
+		true
+	)
+	else
+	if seek>0 && seek<=_fileLength(f) then	// We assume we cannot write outside the current file
+	let seek-1 -> seek in	// position is expected to point to the last read/written byte
+	let if f.positionF<0 then -1 else f.positionF/f.partitionF.bytesPerClusterP -> clusterOrdCurrent in
+	let seek/f.partitionF.bytesPerClusterP -> clusterOrdNext in
+	let
+		if clusterOrdNext==clusterOrdCurrent then clusterOrdNext
+		else if clusterOrdNext<clusterOrdCurrent || clusterOrdCurrent<0 then _clusterForward(f, f.cluster0F, clusterOrdNext)
+		else _clusterForward(f, f.clusterF, clusterOrdNext-clusterOrdCurrent)
+	-> cluster in
+	if cluster<>nil then (
+		set f.positionF=seek;
+		true
+	);;
+
+
+fun __fileAppendLoop(f, src, start, len, lClusters) =
+	if lClusters<>nil then 
+	let f.partitionF -> p in (
+		set f.clusterF = head(lClusters);
+		if f.cluster0F==0 then set f.cluster0F=f.clusterF;
+		let bytesCreate(p.bytesPerClusterP, 0) -> data in (
+			bytesCopy(data, 0, src, start, len);
+			_saveDataCluster(p, f.clusterF, data);
+		);
+		__fileAppendLoop(f, src, start+p.bytesPerClusterP, len-p.bytesPerClusterP, tail(lClusters))
+	);;
+
+fun _fileAppendClusters(f, src, start, len)=
+	if len>0 then
+	let f.partitionF -> p in
+	let (len+ p.bytesPerClusterP -1)/p.bytesPerClusterP -> clustersToClaim in
+	let _fatClaim(p, f.clusterF, clustersToClaim) -> lClusters in
+	__fileAppendLoop(f, src, start, len, lClusters);;
+
+fun _fileOverWrite(f, position, src, start, len)=	// when writing, we start to overwrite from the position to the end of last file's cluster, then append data
+	if len>0 then
+	let f.partitionF -> p in
+	let (position + p.bytesPerClusterP) % p.bytesPerClusterP -> currentOffset in	// makes sure that position==-1 leads to currentOffset=bytesPerCluster-1
+	let p.bytesPerClusterP-1-currentOffset -> clusterRemaining in
+	let if position<0 then f.cluster0F else _nextCluster(p, f.clusterF) -> nextCluster in
+	if clusterRemaining<=0 && !_validCluster(nextCluster) then _fileAppendClusters(f, src, start, len)
+	else
+	(
+		if clusterRemaining<=0 then (
+			set f.clusterF=nextCluster;
+			set clusterRemaining=p.bytesPerClusterP;
+			set currentOffset=-1;
+		);
+		let _readDataCluster(f.partitionF, f.clusterF) -> data in
+		let min(len, clusterRemaining) -> dataToWrite in (
+			bytesCopy(data, currentOffset+1, src, start, dataToWrite);
+			_saveDataCluster(p, f.clusterF, data);
+			_fileOverWrite(f, position+dataToWrite, src, start+dataToWrite, len-dataToWrite)
+		)
+	);;
+
+fun _fileLength(f)=
+	let _readDataCluster(f.partitionF, f.entryClusterF) -> dirData in
+	bytesRead32Lsb(dirData, f.entryOffsetF+0x1c);;
+
+fun _fileWrite(f, src, start, len)=
+//	echoLn strFormat("write * @*: * bytes", src, start, len);
+	let f.partitionF -> p in (
+		_fileOverWrite(f, f.positionF, src, start, len);
+		set f.positionF=f.positionF+len;
+		_updateFileEntry(p, f, max(_fileLength(f), f.positionF+1), true, true, false);	// size cluster0 modify creation
+		len
+	);;
+
+fun _fileRead(f, len)=
+	if len>0 then
+	let f.partitionF -> p in
+	let (f.positionF + p.bytesPerClusterP) % p.bytesPerClusterP -> currentOffset in	// makes sure that position==-1 leads to currentOffset=bytesPerCluster-1
+	let p.bytesPerClusterP-1-currentOffset -> clusterRemaining in
+	(
+		if clusterRemaining<=0 then (
+			set f.clusterF=if f.positionF<0 then f.cluster0F else _nextCluster(p, f.clusterF);	// f.clusterF cannot be zero as len=0 for empty files
+			set clusterRemaining=p.bytesPerClusterP;
+			set currentOffset=-1;
+		);
+		let _readDataCluster(f.partitionF, f.clusterF) -> data in
+		let min(len, clusterRemaining) -> dataToRead in
+		let bytesSliceOfStr(data, currentOffset+1, dataToRead) -> fragment in
+		(
+			set f.positionF= f.positionF+dataToRead;
+			fragment::_fileRead(f, len-dataToRead)
+		)
+	);;
+
+
+fun _freeEntry(data, i)= let bytesGet(data, i) -> v in v==0 || v==0xe5;;
+
+fun _dirAddEntriesFinal(p, entries, cluster, data, prevCluster, prevData, i)=	// i is just after the final entryBlock
+	let strLength(entries) -> entriesLen in
+	let min(entriesLen, i) -> lenInThisCluster in
+	(
+//		echoLn strFormat("_dirAddEntriesFinal * * * *", entriesLen, cluster, prevCluster, i); 
+		bytesCopy(data, i-lenInThisCluster, entries, entriesLen-lenInThisCluster, lenInThisCluster);
+		_saveDataCluster(p, cluster, data);
+		if lenInThisCluster<entriesLen then
+		let entriesLen-lenInThisCluster -> remainingLen in (
+			bytesCopy(prevData, bytesLength(prevData)-remainingLen, entries, 0, remainingLen);
+			_saveDataCluster(p, prevCluster, prevData);
+		);
+		[cluster, i-32]
+	);;
+
+fun _dirNextOrNewCluster(p, cluster)=
+	let _nextCluster(p, cluster) -> next in
+	if _validCluster(next) then next
+	else
+	let head(_fatClaim(p, cluster, 1)) -> next in
+	let bytesCreate(p.bytesPerClusterP, 0) -> dirEmptyData in
+	(
+		_saveDataCluster(p, next, dirEmptyData);
+		next
+	);;
+
+fun _dirAddEntries(p, entries, remainingEntries, cluster, data, prevCluster, prevData, i)=
+	if _validCluster(cluster) then
+	if remainingEntries==0 then _dirAddEntriesFinal(p, entries, cluster, data, prevCluster, prevData, i)
+	else
+	if data==nil then (
+		let _readDataCluster(p, cluster) -> data in
+		if data<>nil then _dirAddEntries(p, entries, remainingEntries, cluster, data, prevCluster, prevData, 0)
+	)
+	else
+	if i>=bytesLength(data) then _dirAddEntries(p, entries, remainingEntries, _dirNextOrNewCluster(p, cluster), nil, cluster, data, 0)
+	else if !_freeEntry(data, i) then _dirAddEntries(p, entries, strLength(entries), cluster, data, nil, nil, i+32)
+	else _dirAddEntries(p, entries, remainingEntries-32, cluster, data, prevCluster, prevData, i+32);;
+
+fun _dirAddFile(p, cluster, fileName, attr, lFiles)=
+	if fileNameCheck(fileName, lFiles) then
+	let _makeDirBlocks(fileName, attr, lFiles) -> entries in
+	let strLength(entries) -> remainingEntries in
+	let _dirAddEntries(p, entries, remainingEntries, cluster, nil, nil, nil, 0) -> [cluster, offset] in
+	if cluster<>nil then [
+		clusterDF=0, entryClusterDF=cluster, entryOffsetDF=offset
+	];;
+
+fun _createFile(p, path, mode) =
+	let _dirFromPath(p, p.rootDirClusterP, true, path, 0) -> [cluster, lFiles, fileName] in
+	if cluster<>nil then
+	let _dirAddFile(p, cluster, fileName, FAT_ATTR_FILE, lFiles) -> d in
+	if d<>nil then
+	_openFile(p, d, if mode==FILE_REWRITE then FILE_READ_WRITE else mode, true);;
+
+fun _hashEntry(p, d) =
+	let p.sectorsPerClusterP*SECTOR_SIZE/32 -> nbEntryPerCluster in
+	d.entryClusterDF*nbEntryPerCluster+(d.entryOffsetDF/32);;
+
+fun _openFile(p, d, mode, creation)=
+	let _hashEntry(p, d) -> hashEntry in 
+	if !hashsetContains(p.openFilesP, hashEntry) then	// check wether the file is already open
+	let [
+		partitionF=p,
+		cluster0F=d.clusterDF,
+		positionF= -1,
+		clusterF=0,
+		entryClusterF=d.entryClusterDF,
+		entryOffsetF=d.entryOffsetDF
+	] -> f in (
+		hashsetAdd(p.openFilesP, hashEntry);
+//		dump p.openFilesP;
+		set f.closeF= (lambda ()=
+			hashsetRemove(f.partitionF.openFilesP, hashEntry);
+			set f.partitionF=nil;
+			nil
+		);
+		set f.oblivionF = oblivionCreate((lambda ()=  
+			if f.partitionF<>nil then (
+			hashsetRemove(f.partitionF.openFilesP, hashEntry);
+		)));
+		set f.oblivionF=nil;
+
+		set f.sizeF= (lambda ()= lockSync(p.lockP, lambda ()=
+			if _checkFile(f) then _fileLength(f)
+		));
+		set f.tellF= (lambda ()= if _checkFile(f) then f.positionF);
+		set f.readF= (lambda(seek, len) = lockSync(p.lockP, lambda ()=
+//			echoLn strFormat("read <*> <*>", seek, len);
+			if _checkFile(f) then 
+			if _fileSeek(f, seek) then
+			let _fileLength(f) -> fileLen in
+			strListConcat(_fileRead(f, min(len, fileLen-f.positionF)))
+		));
+		set f.writeF= if _writeRequired(mode) then (lambda(seek, src, start, len) = lockSync(p.lockP, lambda ()=
+			if _checkFile(f) then 
+			if _fileSeek(f, seek) then
+			if start>=0 then
+			let if len==nil then strLength(src) else len -> len in
+			let min(start+len, strLength(src)) -> end in
+			let end-start -> len in
+			_fileWrite(f, src, start, len)
+		));
+		if mode==FILE_REWRITE then (
+			_fatFree(p, f.cluster0F);
+			set f.cluster0F= set f.clusterF=0;
+			_updateFileEntry(p, f, 0, true, true, true); // size cluster0 modify creation
+		);		
+		if mode==FILE_APPEND then _fileSeek(f, _fileLength(f));
+
+		File<f
+	);;
+
+fun _deleteFile(p, d)=
+	if d.fullNameDF<>"." && d.fullNameDF<>".." then
+	let _hashEntry(p, d) -> hashEntry in 
+	if !hashsetContains(p.openFilesP, hashEntry) then	// check wether the file is already open
+	(
+//		echoLn strFormat("deleteFile vFatCluster=* entryCluster=*",d.vFatClusterDF,d.entryClusterDF);
+		if d.vFatClusterDF==d.entryClusterDF then
+			let _readDataCluster(p, d.entryClusterDF) -> dirData in
+			(
+				for i=d.vFatOffsetDF;i<=d.entryOffsetDF do bytesSet(dirData, i, 0xe5);
+				_saveDataCluster(p, d.entryClusterDF, dirData)
+			)
+		else
+			let _readDataCluster(p, d.vFatClusterDF) -> vFatData in
+			let _readDataCluster(p, d.entryClusterDF) -> dirData in
+			(
+				for i=d.vFatOffsetDF;i<bytesLength(vFatData) do bytesSet(vFatData, i, 0xe5);
+				_saveDataCluster(p, d.vFatClusterDF, vFatData);
+				for i=0;i<=d.entryOffsetDF do bytesSet(dirData, i, 0xe5);
+				_saveDataCluster(p, d.entryClusterDF, dirData);
+			);
+		_fatFree(p, d.clusterDF);
+		true;
+	);;
+	
+//---------------------------------------------------
+//----- fat32Dump for dev only: display and check the content of a partition
+var Fat32Partitions;;
+fun _fatDumpChain(p, h, cluster)=
+	echo strFormat(" -> *", hexFromInt(cluster));
+	if _validCluster(cluster) then (
+		if hashsetContains(h, cluster) then echoLn strFormat("\n-----Cluster * already used!!!", cluster);
+		hashsetAdd(h, cluster);
+		_fatDumpChain(p, h, _nextCluster(p, cluster))
+	)
+	else echoLn "";;
+
+fun _fat32Dumpdir(p, h, path, prefix)=
+	let _partitionDir(p, path) -> lEntries in
+	for d in lEntries do (
+		echo strFormat("*[*] * (*) * * * / * bytes", prefix, hexFromIntN(2, d.attrDF),  d.fullNameDF, d.name83DF,
+			fileDateSeconds(d.creationDF), fileDateSeconds(d.updateDF), fileDateSeconds(d.accessDF), d.sizeDF, prefix);
+		_fatDumpChain(p, h, d.clusterDF);
+		if isDirectory(d) then _fat32Dumpdir(p, h, strFormat("**/", path, d.fullNameDF), strConcat("----", prefix))
+	);;
+
+fun fat32Dump(p)=
+	_partitionCacheInit(p);
+	let hashsetCreate(10) -> h in (
+		echoLn strFormat("\ndump volume *", p.volumeLabelP);
+		echoLn strFormat("sectorsPerCluster=* maxCluster=* numberOfFats=*", p.sectorsPerClusterP, p.maxClusterP, p.numberOfFatsP);
+
+		echo "root directory clusters: "; _fatDumpChain(p, h, p.rootDirClusterP);
+		_fat32Dumpdir(p, h, "/", "- ");
+		echoLn strFormat("* clusters used", hashsetCount(h));
+		echoLn "checking fat content...";
+		for cluster=2;cluster<p.maxClusterP do
+			if (0<>_nextCluster(p, cluster))&&!hashsetContains(h, cluster) then echoLn strFormat("-----Cluster * not free yet never used!!!", cluster);
+		echoLn "checking fat copies are correct...";
+		let call p.fReadP(p.reservedSectorsP, p.sectorsPerFatP) -> fat0 in
+		for i=1;i<p.numberOfFatsP do
+			let call p.fReadP(p.reservedSectorsP+i*p.sectorsPerFatP, p.sectorsPerFatP) -> fatCopy in
+			if 0<>bytesCmp(fat0, fatCopy) then echoLn strFormat("fat * differs from fat0", i);
+		echoLn "done\n";
+		p
+	);;
+
+//---------------------------------------------------
+
+// see https://en.wikipedia.org/wiki/BIOS_parameter_block
+const BOOT_FIELDS_FAT32=
+	3::8::					//   0 - 0x0b : jump+origin
+	2::1::2::1::2::2::1::2::		//0x0b - 0x18 : DOS 2.0 BPB	(BPB=BIOS Parameter Block)
+	2::2::4::4:: 				//0x18 - 0x24 : DOS 3.31 BPB
+	4::2::2::4::2::2::12::1::1::1::4::	//0x24 - 0x47 : DOS 7.1 EBPB		
+	nil;;
+
+fun _partitionCacheInit(p) = set p.cacheDataP= cacheCreate(CacheSize/(SECTOR_SIZE*p.sectorsPerClusterP));;
+
+fun _partitionInitFat32(bootSector, partitionStart, volume)=
+	let _intParser(bootSector, 0, BOOT_FIELDS_FAT32) -> 
+		jmp::_::bytesPerSector::sectorsPerCluster::reservedSectors::	// 0x00 - 0x10
+		numberOfFats::rootDirEntries::_::mediaDescriptor::_::	// 0x10 - 0x18
+		sectorsPerTrack::numberOfHeads::hiddenSectors::largeTotalSector::	// 0x18-0x24
+		sectorsPerFat::mirroringFlag::version::rootDirCluster::		// 0x24-0x30
+		fsInfoSector::backupSector::bootFileName::physDriveNumber::flags::extendedBootSign::volumeSerialNumber::_ in		// 0x30-0x47
+	if bytesPerSector==SECTOR_SIZE then // we only handle 512 bytes sectors
+	let strTrim(bytesSliceOfStr(bootSector, 0x47, 11)) -> volumeLabel in
+	let sectorsPerFat*numberOfFats+reservedSectors -> dataStart in
+	let (largeTotalSector - dataStart)/sectorsPerCluster +2 -> maxCluster in
+	let bytesPerSector*sectorsPerCluster -> bytesPerCluster in
+	let [
+		fatTypeP=fat32, volumeLabelP=volumeLabel, sectorsPerClusterP=sectorsPerCluster, bytesPerClusterP=bytesPerCluster,
+		numberOfFatsP=numberOfFats, sectorsPerFatP=sectorsPerFat,
+		reservedSectorsP=reservedSectors, dataStartP=dataStart, maxClusterP=maxCluster,
+		rootDirClusterP=rootDirCluster,
+		openFilesP= hashsetCreate(4),
+		dataSectorsP = (maxCluster-2)*sectorsPerCluster,
+		lockP=lockCreate()
+	] -> p in (
+		_partitionCacheInit(p);
+		set p.fReadP= (lambda(sector, nbSectors) = 
+//			echoLn strFormat("\n>> read * bytes from *",nbSectors*SECTOR_SIZE,sector);
+//			hexDumpBytes 
+			call volume.fReadV(partitionStart+sector, nbSectors)
+		);
+		set p.fWriteP= (lambda(sector, data)= 
+//			echoLn strFormat("\n>> write * bytes at *",bytesLength (data), sector);
+//			hexDumpBytes data;
+			bytesLength(data)==call volume.fWriteV(partitionStart+sector, data)
+		);
+		let listFind(_partitionDir(p, ""), lambda(d)= isVolumeName(d)) -> d in
+		if d<>nil then set p.volumeLabelP=d.fullNameDF;
+		echoLn strFormat("> Storage: found fat32 partition (* Bytes, cluster size: *): *", \bigNum bigFromInt(largeTotalSector)*bigFromInt(bytesPerSector), p.bytesPerClusterP, p.volumeLabelP);
+		p::nil
+	);;
+
+const BOOT_FIELDS_EFI=
+	8::4::4::4::4::
+	8::8::8::8::16::
+	8::4::4::4::
+	nil;;
+
+fun _partitionEfiLoop(volume, partitionData, partitionCount, partitionSize, i)=
+	if i<partitionCount then
+	let bytesSlice(partitionData, i*partitionSize, partitionSize) -> data in
+	let _intParser(data, 32, 8::8::8::nil) -> 
+		firstLba::lastLba::attributes::_ in
+	let if firstLba<>0 then 
+//		hexDump data;
+//		dump firstLba::lastLba::attributes::nil;
+		_partitionInit(volume, firstLba, lastLba+1-firstLba)
+	  -> p in
+	listConcat(p, _partitionEfiLoop(volume, partitionData, partitionCount, partitionSize, i+1));;
+
+fun _partitionInitEFI(volume, bootSector)=
+	echoLn strFormat("> Storage: found EFI partitioning");
+	let _intParser(bootSector, 0, BOOT_FIELDS_EFI) -> 
+		_::revision::headerSize::headerCrc32::_::
+		currentLba::backupLba::firstUsableLba::lastUsableLba::_::
+		partitionListLba::partitionCount::partitionSize::partitionCrc::_ in
+	let call volume.fReadV(partitionListLba, (partitionCount*partitionSize+SECTOR_SIZE-1)/SECTOR_SIZE) -> partitionData in
+	_partitionEfiLoop(volume, partitionData, partitionCount, partitionSize, 0);;
+
+fun _partitionInit(volume, partitionStart, partitionLength)=
+	let call volume.fReadV(partitionStart, 1) -> bootSector in
+	if partitionStart==1 && bytesSliceOfStr(bootSector, 0, 8)=="EFI PART" then _partitionInitEFI(volume, bootSector)
+	else
+	let bytesRead16Lsb(bootSector, 510) -> magic in
+	if magic==0xaa55 then
+	if bytesSliceOfStr(bootSector, 0x52, 8)== "FAT32   " then _partitionInitFat32(bootSector, partitionStart, volume);;
+
+fun _volumeGetHardPartitions(volume)=
+	echoLn strFormat("> Storage: check volume *", volume.nameV);
+	let call volume.fReadV(0, 1) -> mbr in
+	let bytesRead16Lsb(mbr, 510) -> magic in
+	if magic==0xaa55 then
+	if bytesSliceOfStr(mbr, 0x36, 3)=="FAT" || bytesSliceOfStr(mbr, 0x52, 3)=="FAT" then (	// only one partition
+		echoLn "> Storage: no mbr";
+		let _partitionInit(volume, 0, nil) -> partition in
+		if partition<>nil then partition
+		else (
+			echoLn "> Storage: partition not supported";
+			nil
+		)
+	)
+	else listReduce(0::1::2::3::nil, nil, lambda(result, number) =
+		let 0x01BE+number*16 -> offset in
+		let bytesRead32Lsb(mbr, offset+8) -> partitionStart in
+		let bytesRead32Lsb(mbr, offset+12) -> partitionLength in
+		if partitionStart<>0 && partitionLength<>0 then (
+			echoLn strFormat("> Storage: check partition *:*", volume.nameV, number);
+			let _partitionInit(volume, partitionStart, partitionLength) -> partition in
+			if partition<>nil then listConcat(result, partition)
+			else (
+				echoLn "> Storage: partition not supported";
+				result
+			)
+		)
+		else result
+	);;
+
+fun _mkPartition(volume, p, writable) = 
+[
+	volumeP= volume,
+	nameP= p.volumeLabelP,
+	writableP= writable && volumeIsWritable(volume),
+	openP= lambda(path, mode) = lockSync(p.lockP, lambda ()=
+		if (!_writeRequired(mode)) || writable then 
+		let _partitionLocate(p, path) -> d in
+		if d==nil then (
+			if _writeRequired(mode) then _createFile(p, path, mode)
+		)
+		else
+		if !isDirectory(d) then _openFile(p, d, mode, false)
+	),
+	diskListP= lambda(output, path)= lockSync(p.lockP, (lambda ()=
+		let _partitionDir(p, path) -> lFiles in
+		for d in lFiles do if !isVolumeName(d) then bufferAppend(output, strFormat("*\0* * *\0",
+			d.fullNameDF, hexFromInt(d.sizeDF), hexFromInt(d.updateDF), (if isDirectory(d) then "d" else "-")));
+		0
+	)),
+	fileDeleteP=lambda(path)= lockSync(p.lockP, lambda ()=
+		if writable then 
+		let _partitionLocate(p, path) -> d in
+		if d<>nil then _deleteFile(p, d)
+	),
+	userSectorsP= p.dataSectorsP
+];;
+
+fun volumeFindPartitions(volume, writable)=
+	let set Fat32Partitions= _volumeGetHardPartitions(volume) -> _partitions in
+	listMap(_partitions, lambda(p)= volumeAddPartition(volume, _mkPartition(volume, p, writable)));;
+
+fun volumeMount(volume, mount, root)=
+	let fsAddVolume(volume) -> volume in
+	let volumeFindPartitions(volume, true) -> partitions in
+	partitionsMount(partitions, true, mount, root);;
+
+// this function must be called before volumeFindPartitions. Then it is too late.
+fun volumeSetCacheSize(size)= set CacheSize=size;;

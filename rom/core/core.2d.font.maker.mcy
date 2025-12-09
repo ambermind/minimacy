@@ -1,0 +1,122 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2022, Sylvain Huet, Ambermind
+// Minimacy (r) System
+
+export mkFont(family, size, style, N);;
+
+use core.2d.png.maker;;
+
+const ListStyles=
+	[FONT_BOLD, "_BOLD"]::
+	[FONT_ITALIC, "_ITALIC"]::
+	[FONT_UNDERLINE, "_UNDERLINE"]::
+	[FONT_STRIKED, "_STRIKED"]::
+	nil;;
+
+var BufferChar;;
+
+fun xSearch(bmp, x0, x1) =
+	let bitmapH(bmp) -> h in
+	let if x0<x1 then 1 else -1 -> dx in
+	for x=x0;x<>x1;x+dx do
+		for y=0;y<h do if bitTest(0xff, bitmapGet(bmp, x, y)) then return x;
+	x1;;
+	
+fun realWidth(font, c, w, dw, h) =
+	if bitmapW(BufferChar)<w+dw*2 then set BufferChar = bitmapCreate(w+dw*2, h, 0);
+	bitmapErase(BufferChar, 0);
+	nativeFontDraw(BufferChar, dw, 0, font, c);
+	let xSearch(BufferChar, 0, dw) -> x0 in
+	let xSearch(BufferChar, w+dw*2-1, w+dw-1) -> x1 in
+	if x0==0 || x1==w+dw*2-1 then realWidth(font, c, w, dw*2, h)
+	else
+	let x1+1-x0 -> bbw in
+	let dw-x0 -> dx in
+	let bitmapCreate(bbw, h, 0) -> bmp in (
+		bitmapBlit(bmp, 0, 0, BufferChar, x0, 0, nil, nil, nil);
+		[bmp, w, bbw, dx]
+	);;
+	
+fun getGlyph(font, c)=
+	let if c>=32 then c -> c in
+	let if c==nil then 0 else nativeFontW(font, c) -> w in
+	let if w==0 then 1 else w-> w in
+	realWidth(font, c, w, w, nativeFontH(font));;
+
+fun drawCharByChar(bmp, bmpHints, lGlyphs, hRow, width, x, y) =
+	if lGlyphs==nil then
+	(
+		bitmapLine(bmpHints, x, y, width, y, 0xff0000, nil);
+		if x==0 then y else y+hRow
+	)
+	else
+	let head(lGlyphs) -> [bmpGlyph, w, bbw, dx] in
+	if (x+bbw)<width then
+	(
+		bitmapBlit(bmp, x+1, y+1, bmpGlyph, 0, 0, nil, nil, nil);
+		bitmapSet(bmpHints, x, y, 0xff0000);
+		for i=0;i<bbw do if i<dx || i>=w+dx then bitmapSet(bmpHints, x+1+i, y, bitmapGet(bmpHints, x+i+1, y)|0xff00);
+		drawCharByChar(bmp, bmpHints, tail(lGlyphs), hRow, width, x+bbw+1, y)
+	)
+	else
+	(
+		bitmapLine(bmpHints, x, y, width, y, 0xff0000, nil);
+		drawCharByChar(bmp, bmpHints, lGlyphs, hRow, width, 0, y+hRow)
+	);;
+
+fun bestSize(lGlyphs, hRow, width)=
+	let drawCharByChar(nil, nil, lGlyphs, hRow, width, 0, 0) -> height in
+	if height<=width then [width, height]
+	else bestSize(lGlyphs, hRow, width*2);;
+
+fun mkStyle(style)=
+	let listMap(ListStyles, lambda([bit, name])= if bitTest(style, bit) then name) -> lStyles in
+	strListConcat(lStyles);;
+	
+fun mkFontEx(lCodes, family, size, style)=
+	let nativeFontCreate(family, size, style) -> font in
+	if font<>nil then
+	let strFormat("*_*_**.png", family, size, listLength(lCodes), mkStyle(style)) -> fullName in
+	let listMap(lCodes, lambda(c)= getGlyph(font, c)) -> lGlyphs in
+	let 1+nativeFontH(font) -> hRow in
+	let bestSize(lGlyphs, hRow, 256) -> [width, height] in
+	let bitmapCreate(width, height, 0) -> bmp in
+	let bitmapCreate(width, height, 0) -> bmpHints in
+	(
+		bitmapSet(bmpHints, 0, nativeFontH(font)-nativeFontBaseline(font), 0x00ff00);
+		drawCharByChar(bmp, bmpHints, lGlyphs, hRow, width, 0, 0);
+		bitmapComponents(bmp, COMP_255, COMP_B, COMP_B, COMP_B);
+		bitmapBlit(bmp, 0, 0, bmpHints, 0, 0, nil, nil, BLEND_ADD);
+		[bmp, fullName]
+	);;
+
+fun mkCodeList(i, N)=
+	if i<N then i::mkCodeList(i+1, N);;
+
+fun mkFont(family, size, style, N)=
+	let mkCodeList(0, N) -> lCodes in
+	mkFontEx(lCodes, family, size, style);;
+	
+//--------------------------
+const ListFonts= // [family, size, style, Number_of_glyphs]
+	// X11 fonts:
+//["10x20", nil, nil, 256]::
+//["lucidasans-24", nil, nil, 256]::
+	// Windows font:
+//["Arial", 32, nil, 256]::
+["Times New Roman", 40, FONT_ITALIC, 256]::
+//["Vivaldi", 32, nil, 256]::
+nil;;
+
+fun main()=
+	for [family, size, style, N] in ListFonts do
+		let mkFont(family, size, style, N) -> [bmp, fullName] in 
+		let strFormat("rsc/fonts/*", fullName) -> fontPath in (
+			echoLn strFormat("> save font bitmap as: *", fontPath);
+			save(pngFromBitmap(bmp, false), fontPath);
+			uiStop();
+			uiStart(10, 10, bitmapW(bmp), bitmapH(bmp), UI_NORMAL, fullName);
+			bitmapBlit(uiBuffer(), 0, 0, bmp, 0, 0, nil, nil, nil);
+			uiUpdate();
+		);;
+	

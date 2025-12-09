@@ -1,0 +1,73 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2022, Sylvain Huet, Ambermind
+// Minimacy (r) System
+
+//------------ KEYBOARD
+struct Keyboard=Stream+[];;
+var _KeyboardSock;;	// the keyboard socket is opened once in the VM lifetime
+var _Keyboards;;
+
+fun _keyboardClean()= set _Keyboards=listFilter(_Keyboards, lambda(kb)= kb._thS._stateT <> _THREAD_DONE);;
+	
+fun _keyboardSync()=
+	_keyboardClean();
+	for kb in tail(_Keyboards) do _streamRemoveFromList(kb);
+	let head(_Keyboards) -> kb in
+	if kb<>nil then (
+		_socketSetSelectWrite(kb._socketS, true);
+		_streamAddToList(kb)
+	);;
+
+fun onInput(cbRead, cbWrite)=
+	if cbRead<>nil then
+	\atomic	if _KeyboardSock==nil then set _KeyboardSock=_keyboardOpen();
+	_socketSetSelectRead(_KeyboardSock, true);
+	let [Keyboard] -> kb in
+	(
+		streamInit(kb, _KeyboardSock,
+			(lambda ()=	// onSelectRead
+				let _keyboardRead(kb._socketS) -> data in
+				if data==nil then void streamClose(kb)
+				else streamReadEvent(kb, data);
+			),
+			nil,	// write
+			(lambda ()= inputClose(kb); true),	// close
+			(lambda(fEcho)= call fEcho("keyboard", "-")));	// echo
+\atomic (
+		set _Keyboards= kb::_Keyboards;
+		_keyboardSync()
+);
+		streamOnEvent(kb, cbRead, cbWrite);
+		kb
+	);;
+
+fun inputClose(kb) =
+\atomic
+	let head(_Keyboards) -> kbCurrent in (
+		_streamRemoveFromList(kb);
+		set _Keyboards=listRemove(_Keyboards, kb);
+		if kb==kbCurrent then _keyboardSync();
+		true
+);;
+
+struct _Serial=Stream+[];;
+
+fun serialOpen(port, speed, format, parity, stop)=
+	let _serialOpen(port, speed, format, parity, stop) -> serial in
+	if serial<>nil then
+	let _serialSocket(serial) -> socket in
+	let [_Serial] -> stream in
+	streamInit(stream, socket,
+		lambda ()=	// onSelectRead
+			let _serialRead(serial) -> data in (
+				streamReadEvent(stream, data);
+				if data==nil then void streamClose(stream);
+			)
+		,
+		lambda(data, start) = _serialWrite(serial, data, start),	// write
+		(lambda ()= _serialClose(serial); streamCommonClose(stream)),	// close
+		lambda(fEcho)= call fEcho("serial", port));;
+
+fun serialOnEvent(serial, onRead, onWrite)= streamOnEvent(serial, onRead, onWrite);;
+fun serialWrite(serial, data, start)= streamWrite(serial, data, start);;
+fun serialClose(serial) = streamClose(serial);;

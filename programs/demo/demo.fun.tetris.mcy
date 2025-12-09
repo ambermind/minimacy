@@ -1,0 +1,289 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2022, Sylvain Huet, Ambermind
+// Minimacy (r) Demonstration
+
+use core.2d.font;;
+use core.2d.png;;
+
+const GRID_WIDTH=16;;
+const GRID_HEIGHT=32;;
+const GRID_SQUARE=12;;
+const FOOTER_HEIGHT=30;;
+const GRID_TOP_OUTSIDE=2;;
+const BORDER_COLOR=0x808080;;
+const TEXT_COLOR=0xffffffff;;
+const TIMER_PERIOD=100;;
+
+const Font=fontFixedFromBitmap(bitmapFromPng(load("rsc/fonts/LIGHT8x16.png")), 8, 16, 0);;
+
+sum Game= iniG, startG, downG, runningG, clignoG _ _, endG, pauseG;;
+var State;;
+
+var Bmp;;
+var Grid;;
+var Score=0;;
+
+var Xc;;
+var Yc;;
+var Nc;;
+var Kc;;
+
+
+const PIECES= {
+	[0xff, {
+		{[0, -1], [0, 0], [0, 1], [0, 2]},
+		{[-1, 0], [0, 0], [1, 0], [2, 0]},
+		{[0, -1], [0, 0], [0, 1], [0, 2]},
+		{[-1, 0], [0, 0], [1, 0], [2, 0]}
+	}],
+	[0xb0ff, {
+		{[0, 0], [1, 0], [0, 1], [1, 1]},
+		{[0, 0], [1, 0], [0, 1], [1, 1]},
+		{[0, 0], [1, 0], [0, 1], [1, 1]},
+		{[0, 0], [1, 0], [0, 1], [1, 1]}
+	}],
+	[0xffff, {
+		{[0, 0], [-1, 0], [0, 1], [1, 0]},
+		{[0, 0], [0, -1], [0, 1], [1, 0]},
+		{[0, 0], [-1, 0], [0, -1], [1, 0]},
+		{[0, 0], [0, -1], [0, 1], [-1, 0]}
+	}],
+	[0xff00, {
+		{[0, 0], [-1, 0], [0, 1], [1, 1]},
+		{[0, 0], [0, 1], [1, 0], [1, -1]},
+		{[0, 0], [-1, 0], [0, 1], [1, 1]},
+		{[0, 0], [0, 1], [1, 0], [1, -1]}
+	}],
+	[0xff00, {
+		{[0, 0], [1, 0], [0, 1], [-1, 1]},
+		{[0, 0], [1, 0], [1, 1], [0, -1]},
+		{[0, 0], [1, 0], [0, 1], [-1, 1]},
+		{[0, 0], [1, 0], [1, 1], [0, -1]}
+	}],
+	[0xffff00, {
+		{[0, 0], [0, -1], [0, 1], [1, 1]},
+		{[0, 0], [-1, 0], [1, 0], [1, -1]},
+		{[0, 0], [0, -1], [0, 1], [-1, -1]},
+		{[0, 0], [-1, 0], [1, 0], [-1, 1]}
+	}],
+	[0xff00ff, {
+		{[0, 0], [0, -1], [0, 1], [-1, 1]},
+		{[0, 0], [-1, 0], [1, 0], [1, 1]},
+		{[0, 0], [0, -1], [0, 1], [1, -1]},
+		{[0, 0], [-1, 0], [1, 0], [-1, -1]}
+	}]
+};;
+const Spaces="     ";;
+
+fun setScore(i)=
+	set Score=i;
+	let strConcat("Score: ", strRight(strConcat(Spaces, decFromInt(Score)), 8)) -> str in
+	bitmapText(Bmp, (GRID_SQUARE*GRID_WIDTH)/2, GRID_SQUARE*(GRID_HEIGHT+1-GRID_TOP_OUTSIDE), ALIGN_CENTER, str, Font, TEXT_COLOR, 0xff000000);;
+
+fun drawFinal()=
+	match State with
+	endG -> (
+		bitmapText(Bmp, (GRID_SQUARE*GRID_WIDTH)/2, 200, ALIGN_CENTER, "Game Over", Font, TEXT_COLOR, nil);
+		bitmapText(Bmp, (GRID_SQUARE*GRID_WIDTH)/2, 200+fontH(Font), ALIGN_CENTER, "press 'space'", Font, TEXT_COLOR, nil)
+	),
+	pauseG -> (
+		bitmapText(Bmp, (GRID_SQUARE*GRID_WIDTH)/2, 200, ALIGN_CENTER, "Pause", Font, TEXT_COLOR, nil);
+		bitmapText(Bmp, (GRID_SQUARE*GRID_WIDTH)/2, 200+fontH(Font), ALIGN_CENTER, "press 'P'", Font, TEXT_COLOR, nil)
+	);
+	uiUpdate();;
+
+fun drawSquare(x, y, col)=
+	bitmapFillRectangle(Bmp, x*GRID_SQUARE+1, y*GRID_SQUARE+1, GRID_SQUARE-2, GRID_SQUARE-2, col, nil);;
+
+fun drawAll()=
+	bitmapErase(Bmp, 0xff000000);
+	for y=0;y<GRID_HEIGHT-GRID_TOP_OUTSIDE do
+	for x=0;x<GRID_WIDTH do
+		drawSquare(x, y, Grid[((y+GRID_TOP_OUTSIDE)*GRID_WIDTH+x)]);
+	drawFinal();;
+
+fun drawLine(y, c)=
+	for i=GRID_WIDTH-1;i>=0;i-1 do
+		drawSquare(i, y-GRID_TOP_OUTSIDE, c);;
+
+fun drawMask(x, n, k)=
+	let PIECES[n] ->[c, positions] in
+	let GRID_HEIGHT-GRID_TOP_OUTSIDE -> y in
+	for [a, _] of positions[k] do drawSquare(x+a, y, c);;
+
+fun testPiece(x, y, n, k)=
+	let PIECES[n] ->[c, positions] in
+	for [a, b] of positions[k] do
+		let x+a+(y+b)*GRID_WIDTH-> i in
+		if 0<>Grid[i] then return false;
+	true;;
+
+fun colorPiece(x, y, n, k, color)=
+	let PIECES[n] ->[c, positions] in
+	let if color==nil then c else color -> c in
+	for [a, b] of positions[k] do
+		let x+a+(y+b)*GRID_WIDTH-> i in
+		(
+			set Grid[i]=c;
+			if y+b>=GRID_TOP_OUTSIDE then drawSquare(x+a, y+b-GRID_TOP_OUTSIDE, c)
+		);;
+
+fun drawPiece(x, y, n, k)= colorPiece(x, y, n, k, nil);;
+fun erasePiece(x, y, n, k)= colorPiece(x, y, n, k, 0);;
+
+fun initGrid()=
+	set Grid=arrayCreate(GRID_WIDTH*GRID_HEIGHT, 0);
+	for y=0;y<GRID_HEIGHT do
+		set Grid[(y*GRID_WIDTH)]=set Grid[(y*GRID_WIDTH+GRID_WIDTH-1)]=BORDER_COLOR;
+	for x=0; x<GRID_WIDTH do
+		set Grid[((GRID_HEIGHT-1)*GRID_WIDTH+x)]=BORDER_COLOR;;
+
+fun choosePiece()=
+	set Xc=GRID_WIDTH/2;
+	set Yc=1;
+	set Nc=((intRand()&255)*arrayLength(PIECES))/256;
+	set Kc=((intRand()&255)*4)/256;
+	testPiece(Xc, Yc, Nc, Kc);;
+
+fun testLine(y, i)=
+	if i<0 then true
+	else if 0<>Grid[(y+i)] then testLine(y, i-1);;
+
+fun scroll(y)=
+	for i=y*GRID_WIDTH-1; i>=0; i-1 do
+		set Grid[(i+GRID_WIDTH)]=Grid[i];;
+
+fun testFull(ymin, y)=
+	if y<ymin then nil
+	else if testLine(y*GRID_WIDTH, GRID_WIDTH-1) then y
+	else testFull(ymin, y-1);;
+
+fun downPiece()=
+	erasePiece(Xc, Yc, Nc, Kc);
+	let Yc+1->y in
+	if testPiece(Xc, y, Nc, Kc) then
+	(
+		set Yc=y;
+		drawPiece(Xc, Yc, Nc, Kc);
+		downPiece()
+	)
+	else drawPiece(Xc, Yc, Nc, Kc);;
+
+fun clock()=
+	set State=match State with
+	iniG -> (
+		initGrid();
+		drawAll();
+		setScore(0);
+		startG
+	),
+	startG -> (
+		if !choosePiece() then endG
+		else
+		(
+			drawPiece(Xc, Yc, Nc, Kc);
+			runningG
+		)
+	),
+	runningG-> (
+		erasePiece(Xc, Yc, Nc, Kc);
+		let Yc+1->y in
+		if testPiece(Xc, y, Nc, Kc) then
+		(
+			set Yc=y;
+			drawPiece(Xc, Yc, Nc, Kc);
+			State
+		)
+		else
+		(
+			drawPiece(Xc, Yc, Nc, Kc);
+			let testFull(Yc-1, GRID_HEIGHT-2) -> f in
+			if f==nil then startG
+			else clignoG f 10
+		)
+	),
+	downG-> (
+		downPiece();
+		runningG
+	),
+	clignoG y n -> (
+		if n<>0 then
+		(
+			drawLine(y, if bitTest(n, 1) then 0xffffff else 0);
+			clignoG y n-1
+		)
+		else
+		(
+			scroll(y);
+			drawAll();
+			setScore(Score+1);
+			let testFull(Yc-1, GRID_HEIGHT-2) -> f in
+			if f==nil then startG
+			else clignoG f 10
+		)
+	),
+	_ -> State;
+	if State<>endG && State<>pauseG then onTimeout(TIMER_PERIOD, #clock);
+	drawLine(GRID_HEIGHT, 0);
+	drawMask(Xc, Nc, Kc);
+	drawFinal();;
+
+fun pieceMove(x, k)=
+	erasePiece(Xc, Yc, Nc, Kc);
+	if testPiece(x, Yc, Nc, k) then (set Xc=x; set Kc=k);
+	drawPiece(Xc, Yc, Nc, Kc);
+	drawFinal();;
+
+fun onKeyDown(c)=
+	match State with
+	runningG ->
+		if c==Key_Down then
+			pieceMove(Xc, (Kc+1)&3)
+		else if c==Key_Up then
+			pieceMove(Xc, (Kc-1)&3)
+		else if c==Key_Left then
+			pieceMove(Xc-1, Kc)
+		else if c==Key_Right then
+			pieceMove(Xc+1, Kc)
+		else if c==32 then
+		(
+			set State=downG;
+			nil
+		)
+		else if c=='p' || c=='P' then
+		(
+			set State=pauseG;
+			drawFinal()
+		)
+		else if c==27 then
+		(
+			set State=endG;
+			drawFinal()
+		),
+	endG ->	if c==32 then
+	(
+		set State=iniG;
+		clock()
+	),
+	pauseG -> if c=='p' || c=='P' then
+	(
+		set State=runningG;
+		drawAll();
+		clock()
+	);;
+
+fun onClose ()=
+	set State=pauseG;
+	exit();
+	false;;
+
+fun play()=
+	uiStart(nil, nil, GRID_SQUARE*GRID_WIDTH, GRID_SQUARE*(GRID_HEIGHT-GRID_TOP_OUTSIDE)+FOOTER_HEIGHT, UI_RESIZE, "Tetris");
+	set Bmp=uiBuffer();
+	uiOnKeyDown(#onKeyDown);
+	uiOnSize(lambda(w, h)=nil);
+	set State=endG;
+	initGrid();
+	drawAll();;
+
+fun main()= play();;

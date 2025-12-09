@@ -1,0 +1,209 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2022, Sylvain Huet, Ambermind
+// Minimacy (r) Demonstration
+
+use core.3d.gl;;
+use core.2d.png;;
+
+const TEXTURE="rsc/logo3-1024.png";;
+
+var Logo;;
+
+
+const SQUARE_VRT=floatsFromArray(\float{
+	-1, -1, 0,  -1, 1, 0,  1, 1, 0, 
+	-1, -1, 0,  1, 1, 0,  1, -1, 0
+});;
+const SQUARE_UV=floatsFromArray(\float{
+	0, 1,  0, 0,  1, 0, 
+	0, 1,  1, 0,  1, 1
+});;
+
+const RED={1., 0., 0., 1.};;
+const WHITE={1., 1., 1., 1.};;
+
+const LIGHT_VECTOR=floatsFromArray({0., 0., 1., 0.});;
+const LIGHT_AMBIANT=floatsFromArray({0.2, 0.2, 0.2, 0.});;
+const LIGHT_DIFFUSE=floatsFromArray({0.8, 0.8, 0.8, 0.});;
+const LIGHT0=[LIGHT_VECTOR, LIGHT_AMBIANT, LIGHT_DIFFUSE];;
+
+const LIGHT1_VECTOR=floatsFromArray({1., 0., 0., 0.});;
+const LIGHT1_AMBIANT=floatsFromArray({0., 0., 0.2, 0.});;
+const LIGHT1_DIFFUSE=floatsFromArray({0., 0., 0.8, 0.});;
+const LIGHT1=[LIGHT1_VECTOR, LIGHT1_AMBIANT, LIGHT1_DIFFUSE];;
+
+var SPHERE_VERTICES;;
+var SPHERE_NORMALS;;
+var SPHERE_COLORS;;
+
+fun addColor(flag, next)=
+	let if bitTest(flag, 1) then RED else WHITE -> col in
+	col::col::col::next;;
+
+fun countArrays(l) = if l==nil then 0 else arrayLength(head(l))+countArrays(tail(l));;
+fun arraysConcat(l)=
+	let arrayCreate(countArrays(l), nil) -> res in
+	(
+		let 0-> index in
+		for a in l do let arrayLength(a) -> n in (
+			for i=0;i<n do set res[(i+index)]= a[i];
+			set index=index+n
+		);
+		res
+	);;
+
+fun mkSphere()=
+	let 16 -> n in
+	let nil -> vertices in
+	let nil -> colors in
+	let floatFromInt(n) -> nf in
+	(
+		for a=0;a<n do 
+			let a+1 -> b in
+			let cos(floatFromInt(a)*.pi/.nf) -> cosa in
+			let sin(floatFromInt(a)*.pi/.nf) -> sina in
+			let cos(floatFromInt(b)*.pi/.nf) -> cosb in
+			let sin(floatFromInt(b)*.pi/.nf) -> sinb in
+			for i=0;i<n do 
+				let if i+1==n then 0 else i+1 -> j in
+				let cos(floatFromInt(i)*.2.*.pi/.nf) -> cosi in
+				let sin(floatFromInt(i)*.2.*.pi/.nf) -> sini in
+				let cos(floatFromInt(j)*.2.*.pi/.nf) -> cosj in
+				let sin(floatFromInt(j)*.2.*.pi/.nf) -> sinj in
+				(
+					if a>0 then (
+						set vertices=({
+							sina*.cosj, cosa, sina*.sinj, 
+							sina*.cosi, cosa, sina*.sini, 
+							sinb*.cosi, cosb, sinb*.sini })::vertices;
+						set colors=addColor(a+i, colors)
+					);
+					if a<n-1 then (
+						set vertices=({
+							sina*.cosj, cosa, sina*.sinj, 
+							sinb*.cosi, cosb, sinb*.sini, 
+							sinb*.cosj, cosb, sinb*.sinj})::vertices;
+						set colors=addColor(a+i, colors)
+					)
+				);
+		set SPHERE_VERTICES= floatsFromArray(arraysConcat(vertices));
+		set SPHERE_NORMALS=SPHERE_VERTICES;
+		set SPHERE_COLORS= floatsFromArray(arraysConcat(colors))
+	);;
+	
+var RADIUS=5.;;
+var Y=15.-.RADIUS;;
+var Y0=-20.+.RADIUS;;
+var VY=0.;;
+var DVY=-0.02;;
+var X=0.;;
+var X0=-20.;;
+var X1=20.;;
+var VX=0.2;;
+var Z=-60.;;
+var BETA=0.;;
+var ROT_BETA=3.;;
+
+fun move(k)=
+\float (
+	set X=X+VX;
+	let X1*k-RADIUS -> x1 in
+	if X>x1 then (
+		set X=2*x1-X;
+		set VX=-VX;
+		set ROT_BETA=-ROT_BETA;
+	);
+	let X0*k+RADIUS -> x0 in
+	if X<x0 then (
+		set X=2*x0-X;
+		set VX=-VX;
+		set ROT_BETA=-ROT_BETA;
+	);
+	set VY=VY+DVY;
+	set Y=Y+VY;
+	if Y<Y0 then (
+		set Y=2*Y0-Y;
+		set VY=-VY
+	);
+	set BETA=BETA+ROT_BETA
+);;
+
+fun drawLogo(x, y, z, w) =
+    glEnable(GL_BLEND);
+	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+	glBindTexture(GL_TEXTURE_2D, Logo.glT) ;
+    glLoadIdentity();
+    glTranslate(x, y, z);
+    glScale(w, w, w);
+	renderTexture(GL_TRIANGLES, SQUARE_VRT, SQUARE_UV, colorMakeARGB(0xffffffff));
+    glDisable(GL_BLEND);
+    nil;;
+
+fun drawShadow(x, y, z, w, beta)=
+    glLoadIdentity();
+    glTranslate(x, y, z);
+    glRotate(30., 0., 0., 1.);
+    glScale(w, w, w);
+    glRotate(beta, 0., 1., 0.);
+    glEnable(GL_BLEND);
+	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+	renderFlat(GL_TRIANGLES, SPHERE_VERTICES, colorMakeARGB(0x80000000));
+    nil;;
+
+fun drawBall(x, y, z, w, beta)=
+    glLoadIdentity();
+    glTranslate(x, y, z);
+    glRotate(30., 0., 0., 1.);
+    glScale(w, w, w);
+    glRotate(beta, 0., 1., 0.);
+	renderColors2Lights(GL_TRIANGLES, SPHERE_VERTICES, SPHERE_NORMALS, SPHERE_COLORS, LIGHT0, LIGHT1);
+    nil;;
+
+fun render()=
+    glViewport(0, 0, uiW(), uiH()); 
+    glClearColor(85./.255., 89./.255., 119./.255., 1.);  
+    glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);  
+
+	glEnable(GL_CULL_FACE);
+	glCullFace(GL_FRONT);
+
+	glEnable(GL_DEPTH_TEST);
+	glDepthFunc(GL_LEQUAL);	
+
+	glMatrixMode(GL_PROJECTION);
+	glLoadIdentity();
+    let floatFromInt(uiW())/.floatFromInt(uiH()) -> k in
+	(
+		glFrustum(-.k,  k, -1., 1., 3., (1000.));
+		move(k);
+		glMatrixMode(GL_MODELVIEW);
+		drawLogo(0., 0., -200., 30.*.minf(k, 1.)); 
+		drawShadow(X, Y, -80., RADIUS, BETA);
+		drawBall(X, Y, Z, RADIUS, BETA);
+		glSwapBuffers()
+	);;
+    
+fun renderLoop()=  
+	if 0<> uiW()*uiH() then render();
+    onTimeout(10, #renderLoop);;  
+
+var FullScreen=false;;
+
+fun openScreen()=
+	if FullScreen then uiStart(200, 100, 600, 500,  UI_GL|UI_FULLSCREEN, "Boing Ball")
+	else uiStart(200, 100, 600, 500, UI_GL|UI_RESIZE, "Boing Ball");
+    uiOnClose((lambda ()= exit(); true));
+	uiOnKeyDown((lambda(code)= if code==27 then toggleScreen()));
+	uiOnClick((lambda(x, y, b)= if b<>0 then toggleScreen()));
+	set Logo=textureCreate(bitmapFromPng(load(TEXTURE)), true);
+   	glInitShaders();;
+
+fun toggleScreen ()=
+	set FullScreen=!FullScreen;
+	uiStop();
+	openScreen();;
+	
+fun main()= 
+	mkSphere();
+	openScreen();
+    renderLoop();;

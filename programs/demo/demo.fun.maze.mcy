@@ -1,0 +1,73 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2022, Sylvain Huet, Ambermind
+// Minimacy (r) Demonstration
+
+const WIDTH=49;;
+const HEIGHT=49;;
+
+const RealWidth=WIDTH+2;;
+const RealHeight=HEIGHT+2;;
+
+fun mazeIndex(i, j)= i+1+(j+1)*RealWidth;;
+
+fun mazeCreate()=
+	let arrayCreate((WIDTH+2)*(HEIGHT+2), false) -> maze in
+	(
+		for j=0; j<HEIGHT do
+		for i=0; i<WIDTH do
+			set maze[mazeIndex(i, j)]=true;
+		maze
+	);;
+
+fun mazeEcho(m)=
+	for j=0;j<HEIGHT do
+	(
+		for i=0;i<WIDTH do echo if m[mazeIndex(i, j)] then "\$db\$db" else "  ";
+		echoLn ""
+	);
+	m;;
+
+const Directions={1, -1, RealWidth, -RealWidth};;
+ 
+fun mazeAlive(m, k, i)=
+	if i<4 then
+	if m[(k+2*(Directions[i]))] then true
+	else mazeAlive(m, k, i+1);;
+
+fun mazeTry(m, k)=
+	let Directions[(intRand()&3)] -> delta in
+	let k+2*delta -> next in
+	if !m[next] then mazeTry(m, k)
+	else
+	(
+		set m[(k+delta)]=false;
+		set m[next]=false;
+		mazeGo(m, next);
+		mazeGo(m, k)
+	);;
+
+fun mazeGo(m, k)=
+	if mazeAlive(m, k, 0) then mazeTry(m, k);;
+
+fun mazeStart(m)=
+	let 1+2*(intRand() % (WIDTH>>1)) -> i in
+	let 1+2*(intRand() % (HEIGHT>>1)) -> j in
+	let mazeIndex(i, j) -> k in
+	(
+		set m[k]=false;
+		k
+	);;
+
+	
+fun maze ()=
+	echoLn "Maze generator";
+	let mazeCreate() -> m in
+	let mazeStart(m) -> start in
+	(
+		mazeGo(m, start);
+		mazeEcho(m);
+		0
+	);;
+
+
+fun main()=maze();;

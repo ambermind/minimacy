@@ -1,0 +1,404 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2022, Sylvain Huet, Ambermind
+// Minimacy (r) System
+
+export HttpArgs, stringArg _ _, fileArg _ _ _;;
+//export HttpArgs, stringArg(_, _), fileArg(_, _, _);;
+export httpSetHeader(h, key, val);;
+export httpGetHeader(h, headerName);;
+export httpGetHeaders(h);;
+export httpGetRemote(h);;
+export httpGetCertificateChain(h);;
+export httpFormUrlEncodedFromList(l);;
+export httpReuse(h, verb, url, version);;
+export httpCreate(verb, url, version);;
+export httpForceTls12(h);;
+export httpSetPostData(h, data);;
+export httpSetCipherSuites(h, cipherSuites);;
+export httpSetClientCertificate(h, clientCertificate, clientKey);;
+export httpSetUrlEncoded(h, l);;
+export httpSetMultipart(h, l);;
+export httpSetTimeout(h, timeout);;
+export httpSend(h, cb);;
+export httpClose(h);;
+export httpGet(url);;
+export httpGet12(url);;
+
+const DEBUG=false;;
+
+use core.crypto.hash;;
+use core.net.tls13 as tls13;;
+use core.net.tls12 as tls12;;
+
+use core.net.dns;;
+use core.net.http;;
+
+const HTTP_1_0="HTTP/1.0";;
+const HTTP_1_1="HTTP/1.1";;
+
+struct Http=[
+	tcpH, ttH, ttCopyH, sendH, iH, closeAfterH, busyH, forceTls12H, 
+	timeH, timeoutH,
+	tlsH, serverH, ipH, portH, cipherSuitesH, clientCertificateH, clientKeyH,
+	requestH, requestHeadersH, postDataH, thH,
+	statusH, versionH, codeH, replyHeadersH,
+	_bufferH, _contentH, _contentLengthH, _transferH,
+	cbReplyH
+	];;
+
+sum HttpArgs= stringArg _ _, fileArg _ _ _;;
+
+var Boundary;;
+
+fun _argEscape(arg)=
+	let strReplace(arg, "\\", "\\\\") -> arg in
+	let strReplace(arg, "\"", "\\\"") -> arg in
+	strBuild({"\"", arg, "\"" });;
+
+fun _getMultiPartBoundary ()= set Boundary= strLeft(hexFromStr(if Boundary==nil then sha256(strBuild([timeMs(), strRand(32)])) else sha256(Boundary)), 34);;
+
+fun _buildMultipart(l, boundary)=
+	if l==nil then boundary::""::nil
+	else let _buildMultipart(tail(l), boundary) -> next in
+	match head(l) with
+		stringArg key val -> boundary::strBuild({"Content-Disposition: form-data; name=", _argEscape(key)})::""::val::next,
+		fileArg key file data ->
+			boundary::
+			strBuild({"Content-Disposition: form-data; name=", _argEscape(key), "; filename=", _argEscape(file)})::
+			"Content-Type: text/plain"::""::data::next,
+		_-> next;;
+
+fun _urlParse(url)=
+	let strPos(url, "://", 0) -> i in
+	let if i==nil then [false, url] else ["https"==strLeft(url, i), strSlice(url, i+3, nil)] -> [tls, url] in
+	let strPos(url, "/", 0) -> i in
+	let if i==nil then [url, "/"] else [strLeft(url, i), strSlice(url, i, nil)] -> [server, uri] in
+	let strPos(server, ":", 0) -> i in
+	let if i==nil then [server, if tls then 443 else 80] else [strLeft(url, i), intFromDec(strSlice(url, i+1, nil))] -> [server, port] in
+	[tls, server, port, uri];;
+
+fun _httpHeaders(header)=
+	let hashmapCreate(4) -> headers in
+	(
+		for line in tail(header) do
+			let strPos(line, ": ", 0) -> i in
+			if i<>nil then
+			let strLowercase(strLeft(line, i)) -> key in
+			let strSlice(line, i+2, nil) -> val in
+			let hashmapGet(headers, key) -> current in
+			hashmapSet(headers, key, if current==nil then val else strBuild([current, "\n", val]));
+		headers
+	);;
+
+// return true if provided data contains the end of the header
+fun _checkHeader(h, data)=
+	set h._bufferH= strConcat(h._bufferH, data);
+	let h._bufferH -> begining in
+	let strPos(begining, "\r\n\r\n", 0) -> i in
+	if i<>nil then
+	let strLeft(begining, i) -> header in
+	let strSplit("\r\n", header) -> header in
+	let _httpHeaders(header) -> headers in
+	let intFromDec(hashmapGet(headers, "content-length")) -> contentLength in
+	let HTTP_CHUNKED==hashmapGet(headers, "transfer-encoding") -> chunked in
+	let head(header) -> status in
+	let strSplit(" ", status) -> version::code::_ in
+	let strSlice(begining, i+4, nil) -> ending in
+	let if code=="204" then 0 else contentLength -> contentLength in	//NO HEADER
+	(
+		set h._bufferH=nil;
+
+		set h._transferH=
+			if contentLength<>nil then transferLength contentLength
+			else if chunked then transferChunked
+			else transferNone;
+		match h._transferH with
+			transferChunked -> (set h._bufferH=ending; nil),
+			_ -> (set h._contentH=ending::nil; set h._contentLengthH=strLength(ending));
+
+		set h.statusH=status;
+		set h.versionH=version;
+		set h.codeH=intFromDec(code);
+		set h.replyHeadersH=headers;
+		true
+	);;
+
+// return true if provided data contains the end of the content
+fun _checkContentLength(h, data, len)=
+	if 0<strLength(data) then
+	(
+		set h._contentH=data::h._contentH;
+		set h._contentLengthH= h._contentLengthH+strLength(data)
+	);
+	h._contentLengthH>=len;;	// Warning, we assume that there are no immediately chained data
+
+fun _checkContentChunked(h, data)=
+	if 0<strLength(data) then set h._bufferH=strConcat(h._bufferH, data);
+	let strPos(h._bufferH, "\r\n", 0) -> i in
+	if i==nil then false	// not even the first line of the chunk
+	else let intFromHex(strLeft(h._bufferH, i)) -> len in
+	if i+len+4>strLength(h._bufferH) then false	// not the ending of the chunk (including final \r\n)
+	else
+	(
+		if len<>0 then set h._contentH=strSlice(h._bufferH, i+2, len)::h._contentH;
+		set h._bufferH=strSlice(h._bufferH, i+len+4, nil);
+		if len==0 then true	// last chunk reached
+		else _checkContentChunked(h, "")
+	);;	
+
+fun _checkContentNone(h, data)=
+	if data==nil then true	// end of connection or server side (request without postdata)
+	else (set h._contentH=data::h._contentH; false);;
+
+fun _checkContent(h, data)=
+	match h._transferH with
+		transferLength len -> _checkContentLength(h, data, len),
+		transferChunked -> _checkContentChunked(h, data),
+		transferNone -> _checkContentNone(h, data);;
+
+//---------------------COMMON
+
+fun _httpBuild(firstLine, headers, data)=
+	let if data==nil then "" else data -> content in
+	(
+		hashmapSet(headers, HTTP_CONTENT_LENGTH, decFromInt(if data<>nil then strLength(data) else 0));
+		let hashmapMap(headers, lambda(key, val)=strBuild({key, ": ", val})) -> headersLines in
+		let firstLine::listConcat(headersLines, ""::content::nil) -> lines in
+		strJoin("\r\n", lines)
+	);;
+
+fun _httpBuildRequest(h)=
+	let strJoin(" ", h.requestH) -> firstLine in
+	let h.requestHeadersH -> headers in
+	_httpBuild(firstLine, headers, h.postDataH);;
+
+fun _httpSend(h, data)=
+	set h.sendH=strConcat(h.sendH, data);
+//	echo "send "; echoLn 
+	set h.iH=streamWrite(h.ttH, h.sendH, h.iH);
+	if h.iH>=strLength(h.sendH) then (
+		if h.closeAfterH then
+		(
+			streamClose(h.ttH);
+			set h.ttH=nil
+		);
+		set h.sendH=nil;
+		set h.iH=0;
+	);;
+
+//--------------------FUNCTIONS FOR HTTP CLIENT
+
+fun _httpReceiveFinal(h, endFromContent)=
+	let h.cbReplyH -> cb in
+	if cb<>nil then
+	let strBuild(listReverse(h._contentH)) -> content in
+	let h.versionH==HTTP_1_1 -> serverKeepsAlive in
+	let h.statusH<>nil && (endFromContent || h._transferH==transferNone) -> ok in
+	(
+//	echoTime ["ok:", ok];
+		set h._contentH=nil;
+		if (!endFromContent)||	// true if we need to close explicitly the socket if we decide not to keep it alive
+		   (!serverKeepsAlive) then	// client and server are both http1.0, we close the connection
+		(
+			streamClose(h.ttH);
+			set h.ttH=nil
+		);
+		set h.cbReplyH=nil;
+		set h.busyH=false;
+		if ok then (call cb(h.codeH, content))
+		else call cb(nil, nil);
+		nil
+	);;
+
+fun _httpReceiveReply(h, data)=
+	if h.replyHeadersH==nil then
+	(
+		if _checkHeader(h, data) then 
+			if _checkContent(h, "") then	// maybe the single data contains both header and content
+				_httpReceiveFinal(h, true)
+	)
+	else if _checkContent(h, data) then
+	
+		_httpReceiveFinal(h, true)
+	;;
+
+fun _httpConnect(h)=
+if DEBUG then echoLn strFormat("_httpConnect *:*", h.ipH, h.portH);
+	set h.tcpH=tcpOpen(h.ipH, h.portH);
+	set h.ttH = set h.ttCopyH =
+		if h.tlsH then
+			if h.forceTls12H then
+				Stream<tls12.tlsStartClientExt(h.tcpH, h.serverH, h.cipherSuitesH, h.clientCertificateH, h.clientKeyH)
+			else
+				Stream<tls13.tlsStartClientExt(h.tcpH, h.serverH, h.cipherSuitesH, h.clientCertificateH, h.clientKeyH)
+		else
+			Stream<h.tcpH;
+	streamOnEvent(h.ttH,
+		(lambda(data)=
+			if DEBUG then (
+				echoLn ["receive ", strLength(data)];
+				echoLn "receive"; hexDump data
+			);
+			httpTouch(h);
+			if data==nil then (
+				if DEBUG then echoTime "client receives close";
+				set h.ttH=nil;
+				_httpReceiveFinal(h, false);
+			)
+			else _httpReceiveReply(h, data);
+			nil
+		),
+		(lambda ()= 
+			if DEBUG then echoLn "http writable";
+			httpTouch(h);
+			_httpSend(h, nil)
+		));
+	h;;
+
+fun _httpNewConnection(h)=
+if DEBUG then echoLn "=====================_httpNewConnection";
+	dnsRequest(h.serverH, (lambda(ip)=
+		set h.ipH=ip;
+		if ip==nil then (
+			set h.busyH=false;
+			call h.cbReplyH(nil, nil);
+			nil
+		)
+		else _httpConnect(h)
+	));
+	h;;
+
+fun _httpRestart(h)=
+	_httpSend(h, nil);
+	h;;
+
+//--------------------CLIENT END USER FUNCTIONS
+
+fun httpGetStatus(h) = h.statusH;;
+fun httpGetHeaders(h) = h.replyHeadersH;;
+fun httpGetHeader(h, headerName)= hashmapGet(h.replyHeadersH, strLowercase(headerName));;
+
+fun httpSetHeader(h, key, val)=
+	hashmapSet(h.requestHeadersH, key, val);
+	h;;
+fun httpGetRemote(h) = [tcpRemoteIp(h.tcpH), tcpRemotePort(h.tcpH)];;	// returns [ip port]
+
+fun httpGetCertificateChain(h)= 
+	match h.ttCopyH with 
+		TLS12 tls -> tls12.tlsGetCertificateChain(tls),
+		TLS13 tls -> tls13.tlsGetCertificateChain(tls);;
+
+fun httpFormUrlEncodedFromList(l)= strJoin("&", listMap(l, lambda(p)=let p->[key, val] in strBuild({urlFromStr(key), "=", urlFromStr(val)})));;
+
+fun httpReuse(h, verb, url, version)=
+	let _urlParse(url) -> [tls, server, port, uri] in
+	let if verb==nil then "GET" else verb -> verb in
+	let if version==nil then HTTP_1_0 else version -> version in
+	let hashmapCreate(4) -> headers in
+	(
+		if (h.tlsH<>tls)||(h.serverH<>server)||(h.portH<>port) then
+		(
+			set h.tlsH=tls;
+			set h.serverH=server;
+			set h.portH=port;
+			set h.ttH=nil
+		);
+		hashmapSet(headers, "Host", h.serverH);
+		hashmapSet(headers, "User-Agent", "Minimacy");
+		hashmapSet(headers, "Pragma", "no-cache");
+		set h.requestH=[verb, uri, version];
+		set h.requestHeadersH=headers;
+		set h.postDataH=nil;
+		set h.iH=0;
+		set h.closeAfterH=nil;
+		set h.statusH=nil;
+		set h.versionH=nil;
+		set h.codeH=nil;
+		set h.replyHeadersH=nil;
+		set h._bufferH=nil;
+		set h._transferH=nil;
+		set h._contentH=nil;
+		set h._contentLengthH=0;
+		h
+	);;
+
+fun httpTouch(h) = set h.timeH=timeMs();;
+
+fun httpSetTimeout(h, timeout)=
+	httpTouch(h);
+	set h.timeoutH=timeout;;
+
+fun httpCreate(verb, url, version)=
+	let _urlParse(url) -> [tls, server, port, uri] in
+	let [tlsH=tls, serverH=server, portH=port] -> h in
+	(
+		httpSetTimeout(h, HTTPCLIENT_TIMEOUT);
+		httpReuse(h, verb, url, version)
+	);;
+
+fun httpForceTls12(h) = set h.forceTls12H=true; h;;
+fun httpSetPostData(h, data)= set h.postDataH=data;;
+fun httpSetCipherSuites(h, cipherSuites)= set h.cipherSuitesH=cipherSuites;;
+fun httpSetClientCertificate(h, clientCertificate, clientKey)=
+	set h.clientCertificateH=clientCertificate;
+	set h.clientKeyH=clientKey;;
+
+fun httpSetUrlEncoded(h, l)=
+	httpSetHeader(h, HTTP_CONTENT_TYPE, HTTP_URLENCODED);
+	httpSetPostData(h, strJoin("&", listMap(l, lambda([key, val])=strFormat("*=*", key, urlFromStr(val)))));;
+
+fun httpSetMultipart(h, l)=
+	let _getMultiPartBoundary() -> boundary in
+	(
+		 httpSetHeader(h, HTTP_CONTENT_TYPE, strBuild({ HTTP_MULTIPART, "; boundary=----", boundary}));
+		 httpSetPostData(h, strJoin("\r\n", _buildMultipart(l, strConcat("------", boundary))))
+	);;
+
+fun _httpTimer(h)=
+	if h.busyH || h.ttH<>nil then
+	if (timeMs() - h.timeH)>=h.timeoutH then (
+		streamClose(h.ttH);
+		set h.ttH=nil;
+		set h.busyH=false;
+		call h.cbReplyH(nil, nil);
+		nil
+	)
+	else onTimeout(1000, lambda ()= _httpTimer(h));;
+
+fun httpClose(h)=
+	streamClose(h.ttH);
+	set h.ttH=nil;
+	set h.busyH=false;
+	nil;;
+
+fun httpSend(h, cb)=
+if DEBUG then echoLn "httpSend";
+	if h.busyH then (threadPost(h.thH, (lambda ()= call cb(nil, nil))); nil)
+	else
+	(
+		httpTouch(h);
+		set h.thH= thisThread();
+		set h.busyH=true;
+		set h.cbReplyH=(lambda(status, content)=
+			threadPost(h.thH, lambda ()= call cb(status, content))
+		);
+		set h.sendH=_httpBuildRequest(h);
+		if h.ttH==nil then (
+			_httpTimer(h);
+			_httpNewConnection(h)
+		)
+		else _httpRestart(h);
+		h
+	);;
+
+
+fun httpGet(url)=
+	await(lambda(join)=
+		httpSend(httpCreate(nil, url, HTTP_1_0), lambda(code, data)= joinSend(join, data))
+	);;
+
+fun httpGet12(url)=
+	await(lambda(join)=
+		httpSend(httpForceTls12(httpCreate(nil, url, HTTP_1_0)), lambda(code, data)= joinSend(join, data))
+	);;
+

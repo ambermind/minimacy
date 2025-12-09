@@ -1,0 +1,561 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2022, Sylvain Huet, Ambermind
+// Minimacy (r) System
+
+export HttpSrv, HttpConnection;;
+export COOKIE_SECURE;;
+export COOKIE_HTTP_ONLY;;
+export COOKIE_SAMESITE_LAX;;
+export COOKIE_SAMESITE_STRICT;;
+export COOKIE_SAMESITE_NONE;;
+
+// as of 01 apr 2023, client certificate on tls12 server is not working with firefox, yet working with chrome
+//export httpSrvStart12Ex(hostList, ip, port, onConnect);;
+export httpSrvStartEx(hostList, ip, port, onConnect);;
+export httpSrvStart(hostList, ip, port, onRequest);;
+export httpSrvSetDefaultTimeout(srv, timeout) ;;
+export httpSrvUpdateHostList(srv, hostList);;
+export httpSrvStop(srv);;
+export httpSrvOnRequest(h, cb) ;;
+export httpSrvOnWebSocket(h, cb) ;;
+export httpSrvOnMessage(h, cb) ;;
+export httpSrvSetTimeout(h, timeout) ;;
+export httpSrvGetRemote(h) ;;
+export httpSrvGetCookies(h) ;;
+export httpSrvGetCookie(h, cookie);;
+export httpSrvGetRequest(h) ;;
+export httpSrvGetRequestHeaders(h) ;;
+export httpSrvGetRequestHeader(h, headerName) ;;
+export httpSrvGetServerName(h) ;;
+export httpSrvGetPostData(h) ;;
+
+export httpSrvGetClientCertificate(h);;
+export httpSrvGetClientCertificateLogin(h);;
+export httpSrvParseArgs(h);;
+export httpSrvAddHeader(h, key, val);;
+export httpSrvSetHeader(h, key, val);;
+export httpSrvRedirect(h, url);;
+export httpSrvSetCookie(h, name, value, expires, path, domain, attr);;
+export httpSrvSetStatus(h, version, code, text);;
+export httpWsSend(h, opcode, data);;
+export httpWsClose(h);;
+
+
+use core.util.base64;;
+use core.crypto.hash;;
+use core.crypto.oid;;
+use core.crypto.pem;;
+use core.crypto.cer;;
+use core.net.tls13;;
+use core.net.http;;
+
+const HTTPSERVER_TIMEOUT=4000;;
+const HTTPSERVER_WS_TIMEOUT=5*60000;;
+
+struct HttpSrv=[tcpSrvS, timeoutS, onConnectS];;
+
+struct HttpConnection=[
+	remoteH, ttH, sendH, iH, closeAfterH, timeH, timeoutH,
+	tlsH,
+	requestH, requestHeadersH, cookiesH, postDataH,
+	statusH, replyHeadersH,
+	handleDataH,
+	_bufferH, _contentH, _contentLengthH, _transferH,
+	onRequestH, onWebSocketH, onMessageH
+	];;
+
+
+
+const ASCII_DOUBLE_QUOTE=34;;
+const ASCII_SIMPLE_QUOTE=39;;
+
+//-------------- content operations
+fun _argUnescape(arg)=
+	let strLength(arg) -> len in
+	match strGet(arg, 0) with
+		ASCII_SIMPLE_QUOTE -> strSlice(arg, 1, len-2),
+		ASCII_DOUBLE_QUOTE -> let strSlice(arg, 1, len-2) -> arg in
+			let strReplace(arg, "\\\"", "\"") -> arg in
+			let strReplace(arg, "\\\\", "\\") -> arg in
+			arg,
+		_-> arg;;
+
+fun _parseUrlEncoded(d, args)=
+	let strSplit("&", args) -> listArgs in
+	for arg in listArgs do
+		let strPos(arg, "=", 0) -> i in
+		if i<>nil then hashmapSet(d, strFromUrl(strLeft(arg, i)), strFromUrl(strSlice(arg, i+1, nil)));;
+
+fun _findBoundary(boundary, data, i)=
+	let strPos(data, "\r\n", i) -> j in
+	if j<>nil then
+	let strPos(data, "\r\n\r\n", i) -> k in
+	if k<>nil then
+	let strPos(data, boundary, k+4) -> next in
+	if next<>nil then 
+	let strPosRev(data, "\r\n", next) -> end in
+	if end<>nil then
+	let if j<>k then strSplit("\r\n", strSlice(data, j+2, k-j-2)) -> headers in
+	[headers, strSlice(data, k+4, end-k-4), next];;
+
+fun _parseNextPart(ds, df, data, boundary, i)=
+	if i<>nil then
+	let _findBoundary(boundary, data, i) -> result in
+	if result<>nil then let result ->[headers, content, next] in
+	(
+		let strSplit("; ", head(headers)) -> (disposition::name::filename::_) in
+		if disposition=="Content-Disposition: form-data" then
+		if strStartsWith(name, "name=") then
+		let _argUnescape(strSlice(name, 5, nil)) -> name in
+		if !strStartsWith(filename, "filename=") then (hashmapSet(ds, name, content); nil)
+		else let _argUnescape(strSlice(filename, 9, nil)) -> filename in
+		hashmapSet(df, name, [filename, content]);
+		_parseNextPart(ds, df, data, boundary, next)
+	);;
+
+fun _parseMultipart(contentType, ds, df, data)=
+	let strSplit("=", head(tail(contentType)))-> (key::val::nil) in
+	if key=="boundary" then let val -> boundary in 
+	let strPos(data, boundary, 0) -> i in
+	_parseNextPart(ds, df, data, boundary, 0);
+	nil;;
+
+//-------------- common operations
+
+fun _httpSend(h, data)=
+	set h.sendH=strConcat(h.sendH, data);
+//	echo "_httpSend "; echoLn 
+	set h.iH=streamWrite(h.ttH, h.sendH, h.iH);
+	if h.iH>=strLength(h.sendH) then (
+		if h.closeAfterH then
+		(
+			streamClose(h.ttH);
+			set h.ttH=nil
+		);
+		set h.sendH=nil;
+		set h.iH=0;
+	);;
+
+fun _serverReset(h) =
+	set h.handleDataH=(lambda(a, b)=_headerHandleData(a, b);true);
+
+	set h.replyHeadersH=hashmapCreate(4);
+	httpSrvSetHeader(h, "Server", "Minimacy HTTP server");
+	httpSrvSetHeader(h, "Content-Type", "text/html");
+
+	set h.requestH=nil;
+	set h.requestHeadersH=nil;
+	set h.cookiesH=nil;
+	set h.postDataH=nil;
+
+	set h._bufferH=nil;
+	set h._transferH=nil;
+	set h._contentH=nil;
+	set h._contentLengthH=0;;
+
+//-------------- http content operations
+
+// return true if provided data contains the end of the content
+fun _checkContentLength(h, data, len)=
+	if 0<strLength(data) then
+	(
+		set h._contentH=data::h._contentH;
+		set h._contentLengthH= h._contentLengthH+strLength(data)
+	);
+	h._contentLengthH>=len;;	// Warning, we assume that there are no immediately chained data
+
+fun _checkContentChunked(h, data)=
+	if 0<strLength(data) then set h._bufferH=strConcat(h._bufferH, data);
+	let strPos(h._bufferH, "\r\n", 0) -> i in
+	if i==nil then false	// not even the first line of the chunk
+	else let intFromHex(strLeft(h._bufferH, i)) -> len in
+	if i+len+4>strLength(h._bufferH) then false	// not the ending of the chunk (including final \r\n)
+	else
+	(
+		if len<>0 then set h._contentH=strSlice(h._bufferH, i+2, len)::h._contentH;
+		set h._bufferH=strSlice(h._bufferH, i+len+4, nil);
+		if len==0 then true	// last chunk reached
+		else _checkContentChunked(h, "")
+	);;	
+
+fun _checkContent(h, data)=
+	match h._transferH with
+		transferLength len -> _checkContentLength(h, data, len),
+		transferChunked -> _checkContentChunked(h, data),
+		transferNone -> true;;
+
+fun _httpBuildHeaderList(headers, content)=
+	let fifoCreate() -> fifo in
+	(
+		hashmapFind(headers, (lambda(key, vals)= for v in vals do fifoIn(fifo, strBuild({key, ": ", v})); false));
+		fifoIn(fifo, "");
+		fifoIn(fifo, content);
+		fifoList(fifo)
+	);;
+
+fun _httpBuild(h, firstLine, data)=
+	let if data==nil then "" else data -> content in
+	(
+		httpSrvSetHeader(h, HTTP_CONTENT_LENGTH, decFromInt(if data<>nil then strLength(data) else 0));
+		let firstLine::_httpBuildHeaderList(h.replyHeadersH, content) -> lines in
+		strJoin("\r\n", lines)
+	);;
+
+fun _httpBuildReply(h, content)=
+	let strJoin(" ", h.statusH) -> firstLine in
+	_httpBuild(h, firstLine, content);;
+
+fun _httpSendReply(h, reply, keepAlive)=
+	set h._contentH=nil;
+//	echoLn ["KeepAlive: ", keepAlive];
+	if !keepAlive then set h.closeAfterH=true;
+	let _httpBuildReply(h, reply) -> data in
+	_httpSend(h, data);
+	if keepAlive then _serverReset(h);
+	nil;;
+
+fun _httpGetReply(h)=
+	set h.postDataH=strBuild(listReverse(h._contentH));
+	let strLowercase(httpSrvGetRequestHeader(h, "Connection"))=="keep-alive" -> keepAlive in
+	(
+		set h._contentH=nil;
+		let h.requestH -> [verb, uri, version] in
+		let call h.onRequestH(verb, uri) -> content in
+		_httpSendReply(h, content, keepAlive)
+	);;
+
+fun _httpHandleData(h, data)=
+	if data<>nil && _checkContent(h, data) then _httpGetReply(h);;
+
+fun _httpHandleHeader(h)=
+	set h.handleDataH=#_httpHandleData;
+	set h.statusH=[HTTP_1_1, 200, "OK"];
+	_httpHandleData(h, "");;
+
+//-------------- websockets operations
+fun _wsHashSecret(key) = b64Encode(sha1(strConcat(key, WS_UUID)));;
+
+// return [maskStart maskLength dataLength]
+fun _wsParseFrame(b)=
+	let strLength(b) -> total in
+	let if 0<>0x80 & strRead8(b, 1) then 4 else 0 -> maskLength in 
+	let 0x7f & strRead8(b, 1) -> len in
+	if len<126 then [2, maskLength, len]
+	else if total>=4 then
+	if len==126 then [4, maskLength, strRead16Msb(b, 2)]
+	else if total>=12 then [10, maskLength, (strRead32Msb(b, 2)<<32)+strRead32Msb(b, 6)];;
+
+fun _wsCheckContent(h, data)=
+	if 0<strLength(data) then set h._bufferH=strConcat(h._bufferH, data);
+	let h._bufferH -> b in
+	let _wsParseFrame(b) -> [maskStart, maskLength, dataLength] in
+	if maskStart<>nil then
+	let strSliceOfBytes(b, maskStart+maskLength, dataLength) -> frame in
+	let strRead8(b, 0) -> firstByte in
+	let firstByte&15 -> opcode in
+	if opcode==WS_OPCODE_CLOSE then
+	(
+		streamClose(h.ttH);
+		set h.ttH=nil;
+		call h.onMessageH(WS_OPCODE_CLOSE, nil);
+		nil
+	)
+	else
+	(
+		set h._bufferH=strSlice(h._bufferH, maskStart+maskLength+dataLength, nil);
+		if maskLength<>0 then
+			let strSlice(b, maskStart, maskLength) -> mask in
+			for i=0;i<dataLength;i+maskLength do bytesXor(frame, i, mask, 0, nil);
+		
+		set h._contentH=strFromBytes(frame)::h._contentH;
+		if 0<> 0x80 & firstByte then
+			let strListConcat(listReverse(h._contentH)) -> fullData in
+			(
+				set h._contentH=nil;
+				call h.onMessageH(opcode, fullData);
+			);
+		if 0<strLength(h._bufferH) then _wsCheckContent(h, "")
+	);;
+
+fun _wsHeaders(header)=
+	let hashmapCreate(4) -> headers in
+	(
+		for line in tail(header) do
+			let strPos(line, ": ", 0) -> i in
+			if i<>nil then hashmapSet(headers, strLeft(line, i), strSlice(line, i+2, nil));
+		headers
+	);;
+
+fun _wsBuild(h, firstLine)=
+	let firstLine::_httpBuildHeaderList(h.replyHeadersH, "") -> lines in
+	strJoin("\r\n", lines);;
+
+fun _wsBuildReply(h)=
+	let strJoin(" ", h.statusH) -> firstLine in
+	_wsBuild(h, firstLine);;
+
+fun _wsLength(client, data)=
+	let if client then 0x80 else 0 -> mask in
+	let strLength(data) -> len in
+	if len<126 then strInt8(mask|len)
+	else if len<65536 then strBuild({strInt8(mask|126), strInt16Msb(len)})
+	else strBuild({strInt8(mask|127), strInt32Msb(len>>32), strInt32Msb(len)});;
+
+fun _wsData(client, data)=
+	if !client then data
+	else let strRand(4) -> mask in
+	let strLength(data) -> len in
+	let strSliceOfBytes(data, 0, nil) -> buffer in
+	(
+		for i=0;i<len;i+4 do bytesXor(buffer, i, mask, 0, nil);
+		strFormat("**", mask, buffer)
+	);;
+
+fun _wsHandleData(h, data)=
+	if data<>nil then _wsCheckContent(h, data);;
+
+fun _wsHandleHeader(h)=
+	httpSrvSetTimeout(h, HTTPSERVER_WS_TIMEOUT);
+	let h.requestH -> [verb, uri, version] in
+	let call h.onWebSocketH(verb, uri) -> accept in
+	if accept && h.onMessageH<>nil then
+	(
+		set h.handleDataH=#_wsHandleData;	// we switch to websocket data handler
+		set h.replyHeadersH=hashmapCreate(4);
+		httpSrvSetHeader(h, "Server", "Minimacy WS server");
+		httpSrvSetHeader(h, "Upgrade", "websocket");
+		httpSrvSetHeader(h, "Connection", "Upgrade");
+		httpSrvSetHeader(h, WS_ACCEPT, _wsHashSecret(httpSrvGetRequestHeader(h, WS_KEY)));
+		set h.statusH=[HTTP_1_1, 101, "Switching Protocols"];
+		_httpSend(h, _wsBuildReply(h));
+		// the client is not supposed to send data before receiving this reply header
+		// then we don't need to process the remaining data
+		nil
+	)
+	else
+	(
+		set h.statusH=[HTTP_1_0, 400, "Bad Request"];
+		_httpSendReply(h, nil, false)
+	);;
+
+//-------------- header operations
+fun _httpHeaders(header)=
+	let hashmapCreate(4) -> headers in
+	(
+		for line in tail(header) do
+			let strPos(line, ": ", 0) -> i in
+			if i<>nil then hashmapSet(headers, strLowercase(strLeft(line, i)), strSlice(line, i+2, nil));
+		headers
+	);;
+
+fun _headerCookies(h)=
+	let httpSrvGetRequestHeader(h, HTTP_COOKIE) -> cookies in
+	if cookies<>nil then
+	let hashmapCreate(4) -> listMap in
+	(
+		for p in strSplit("; ", cookies) do
+			let strPos(p, "=", 0) -> i in
+			if i<>nil then hashmapSet(listMap, strLeft(p, i), strSlice(p, i+1, nil));
+		listMap
+	);;
+
+// return true if provided data contains the end of the header
+fun _checkHeader(h, data)=
+	set h._bufferH= strConcat(h._bufferH, data);
+	let h._bufferH -> begining in
+	let strPos(begining, "\r\n\r\n", 0) -> i in
+	if i<>nil then
+	let strLeft(begining, i) -> header in
+	let strSplit("\r\n", header) -> header in
+	let _httpHeaders(header) -> headers in
+	let intFromDec(hashmapGet(headers, strLowercase(HTTP_CONTENT_LENGTH))) -> contentLength in
+	let HTTP_CHUNKED==hashmapGet(headers, strLowercase(HTTP_TRANSFER_ENCODING)) -> chunked in
+	let strSplit(" ", head(header)) -> firstLine in
+	let strSlice(begining, i+4, nil) -> ending in
+	let firstLine -> (verb::uri::version::_) in
+	(
+		set h._bufferH=nil;
+
+		set h._transferH=
+			if contentLength<>nil then transferLength contentLength
+			else if chunked then transferChunked
+			else transferNone;
+		match h._transferH with
+			transferChunked -> (set h._bufferH=ending; nil),
+			_ -> (set h._contentH=ending::nil; set h._contentLengthH=strLength(ending));
+
+		set h.requestH=[verb, uri, version];
+		set h.requestHeadersH=headers;
+		set h.cookiesH=_headerCookies(h);
+		true
+	);;
+
+fun _headerHandleData(h, data)=
+	if data<>nil && _checkHeader(h, data) then
+	let httpSrvGetRequestHeader(h, "Upgrade")=="websocket" -> ws in
+	if ws then _wsHandleHeader(h)
+	else _httpHandleHeader(h);;
+
+fun httpTouch(h) = set h.timeH=timeMs();;
+
+fun _httpTimer(h)=
+//echo strFormat "h */ " h.timeoutH;
+	if h.ttH<>nil then
+	if (timeMs() - h.timeH)>=h.timeoutH then (
+//		echoTime "]close on timeout";
+		streamClose(h.ttH);
+		set h.ttH=nil;
+		nil
+	)
+	else onTimeout(1000, lambda ()= _httpTimer(h));;
+
+
+fun _httpFromServer(tls, tcp, tt, timeout, onConnect)=
+//echoLn "_httpFromServer";
+	let [tcpRemoteIp(tcp), tcpRemotePort(tcp)] -> remote in
+	let [remoteH=remote, ttH=tt, tlsH=tls] -> h in
+	if !call onConnect(h) then (
+		streamClose(h.ttH);
+		set h.ttH=nil;
+		false
+	)
+	else
+	(
+//		dump httpGetRemote h;
+//		echoTime "new incoming connection";
+		_serverReset(h);
+		httpSrvSetTimeout(h, (if timeout<>nil then timeout else HTTPSERVER_TIMEOUT));
+		_httpTimer(h);
+		streamOnEvent(tt,
+			(lambda(data)=
+//echoLn "receive"; hexDump data;
+				httpTouch(h);
+				call h.handleDataH(h, data);
+				nil
+			),
+			(lambda ()=
+				httpTouch(h);
+				_httpSend(h, nil)
+			));
+		true
+	);;
+
+fun httpSrvUpdateHostList(srv, hostList)=
+	let hostList<>nil -> tls in
+	let tlsMakeHosts(hostList) -> hosts in
+	nil<>tcpSrvOnAccept(srv.tcpSrvS, lambda(tcp)= 
+		threadStart("httpd", lambda ()=
+			let if tls then Stream<tlsStartServer(tcp, hosts) else Stream<tcp -> tt in
+			_httpFromServer(tls, tcp, tt, srv.timeoutS, srv.onConnectS)
+		)
+	);;
+
+fun _addIfNotNil(a, l)= if a==nil then l else a::l;;
+
+//--------------------SERVER END USER FUNCTIONS
+const COOKIE_SECURE=1;;
+const COOKIE_HTTP_ONLY=2;;
+const COOKIE_SAMESITE_LAX=4;;
+const COOKIE_SAMESITE_STRICT=8;;
+const COOKIE_SAMESITE_NONE=16;;
+
+// as of 01 apr 2023, client certificate on tls12 server is not working with firefox, yet working with chrome
+//fun httpSrvStart12Ex(hostList, ip, port, onConnect)= _httpSrvStartEx(hostList, ip, port, onConnect);;
+
+fun httpSrvStartEx(hostList, ip, port, onConnect)=
+	let tcpSrvCreate(ip, port) -> tcpSrv in
+	let [tcpSrvS=tcpSrv, onConnectS=onConnect] -> srv in
+	if httpSrvUpdateHostList(srv, hostList) then srv;;
+
+fun httpSrvStart(hostList, ip, port, onRequest)=
+	httpSrvStartEx(hostList, ip, port, (lambda(h)=
+		httpSrvOnRequest(h, (lambda(verb, uri)= call onRequest(h, verb, uri)));
+		true
+	));;
+
+fun httpSrvSetDefaultTimeout(srv, timeout) = set srv.timeoutS=timeout;;
+
+fun httpSrvStop(srv)=
+	tcpSrvClose(srv.tcpSrvS);
+	true;;
+	
+fun httpSrvOnRequest(h, cb) = set h.onRequestH = cb;;
+fun httpSrvOnWebSocket(h, cb) = set h.onWebSocketH = cb;;
+fun httpSrvOnMessage(h, cb) = set h.onMessageH = (lambda(code, msg) = call cb(code, msg); true);;
+
+fun httpSrvSetTimeout(h, timeout) =
+	set h.timeH=timeMs();
+	set h.timeoutH=timeout;;
+
+fun httpSrvGetRemote(h) = h.remoteH;;	// returns [ip port]
+
+fun httpSrvGetCookies(h) = h.cookiesH;;
+fun httpSrvGetCookie(h, cookie)= hashmapGet(h.cookiesH, cookie);;
+
+fun httpSrvGetRequest(h) = h.requestH;;	// returns [verb uri version]
+fun httpSrvGetRequestHeaders(h) = h.requestHeadersH;;
+fun httpSrvGetRequestHeader(h, headerName)= hashmapGet(h.requestHeadersH, strLowercase(headerName));;
+fun httpSrvGetServerName(h) = tlsGetServerName(tlsFromStream(h.ttH));;
+fun httpSrvGetPostData(h) = h.postDataH;;
+
+fun httpSrvGetClientCertificate(h)= tlsGetClientCertificate(tlsFromStream(h.ttH));;
+fun httpSrvGetClientCertificateLogin(h)= 
+	let httpSrvGetClientCertificate(h) -> cer in
+	cerSubjectValue(cer, OID_CN);;
+	
+fun httpSrvParseArgs(h)=
+	let hashmapCreate(4) -> strings in
+	let hashmapCreate(1) -> files in
+	let h.requestH ->[_, uri, _] in
+	let strSplit("; ", httpSrvGetRequestHeader(h, HTTP_CONTENT_TYPE)) -> contentType in
+	let strPos(uri, "?", 0) -> i in
+	(
+		if i<>nil then _parseUrlEncoded(strings, strSlice(uri, i+1, nil));
+		match head(contentType) with
+			HTTP_URLENCODED -> _parseUrlEncoded(strings, h.postDataH),
+			HTTP_MULTIPART  -> _parseMultipart(contentType, strings, files, h.postDataH);
+		[strings, files]
+	);;
+
+fun httpSrvAddHeader(h, key, val)=
+	hashmapSet(h.replyHeadersH,  key, val::hashmapGet(h.replyHeadersH,  key));
+	h;;
+
+fun httpSrvSetHeader(h, key, val)=
+	hashmapSet(h.replyHeadersH,  key, val::nil);
+	h;;
+
+fun httpSrvRedirect(h, url)=
+	httpSrvSetStatus(h, HTTP_1_0, 302, "Found");
+	httpSrvAddHeader(h, HTTP_LOCATION, url);
+	"";;
+
+fun httpSrvSetCookie(h, name, value, expires, path, domain, attr)=
+	httpSrvAddHeader(h, HTTP_SET_COOKIE, strJoin("; ", 
+		(strFormat("*=*", name, value))::
+		_addIfNotNil(if expires<>nil then strConcat("Expires=", fullDate(expires)),
+		_addIfNotNil(if path<>nil then strConcat("Path=", path),
+		_addIfNotNil(if domain<>nil then strConcat("Domain=", domain),
+		_addIfNotNil(if bitTest(attr, COOKIE_SECURE) then "Secure",
+		_addIfNotNil(if bitTest(attr, COOKIE_HTTP_ONLY) then "HttpOnly",
+		_addIfNotNil(if bitTest(attr, COOKIE_SAMESITE_LAX) then "SameSite=Lax",
+		_addIfNotNil(if bitTest(attr, COOKIE_SAMESITE_STRICT) then "SameSite=Strict",
+		_addIfNotNil(if bitTest(attr, COOKIE_SAMESITE_NONE) then "SameSite=None",
+		nil))))))))));;
+fun httpSrvSetStatus(h, version, code, text)= set h.statusH=[version, code, text]; 0;;
+
+fun httpWsSend(h, opcode, data)=
+	let strBuild({
+		strInt8(0x80|opcode),
+		_wsLength(false, data),
+		_wsData(false, data)
+	}) -> frame in
+	_httpSend(h, frame);
+	0;;
+
+fun httpWsClose(h)=
+	set h.closeAfterH=true;
+	httpWsSend(h, WS_OPCODE_CLOSE, "");
+	0;;
+
+

@@ -1,0 +1,61 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2022, Sylvain Huet, Ambermind
+// Minimacy (r) System
+
+var _Args=_args();;
+fun args()=_Args;;
+
+fun _dirBestMatch(dir, candidate, i, result)=
+	let strCharPos(candidate, '/', i) -> i in
+	if i==nil then result
+	else
+	if !strEndsWith(dir, strLeft(candidate, i+1)) then result
+	else _dirBestMatch(dir, candidate, i+1, strLeft(dir, -i));;
+
+fun _systemDirFromFile(file)=
+	let strReplace(file, "\\", "/") -> boot in
+	let strLeft(boot, -strLength(SOURCE_EXTENSION)) -> boot in	// remove .mcy
+	let if _absoluteDir(boot) then boot else strConcat(_currentDir, boot) -> path in
+	let cleanPath(path) -> path in
+	let strCharPosRev(path, '/', nil) -> i in
+	let if i<>nil then i+1 else 0 -> i in
+	let strLeft(path, i) -> dir in
+	let strSlice(path, i, nil) -> pkg in
+	let _dirBestMatch(dir, strConcat("/", strReplace(pkg, ".", "/")), 1, dir)  -> dir in
+	[dir, pkg];;
+
+fun _getBootPkg(lArgs) =
+	if lArgs==nil then ["boot", nil]
+	else
+	if !strEndsWith(head(lArgs), SOURCE_EXTENSION) then _getBootPkg(tail(lArgs))
+	else
+	let _systemDirFromFile(head(lArgs)) -> [dir, pkg] in
+	(
+		set _Args=tail(lArgs);
+		[pkg, dir]
+	);;	
+
+fun _start(compile)=
+	echoEnable(true);
+	let _getBootPkg(args()) ->[pkg, programDir] in
+	(
+		if _systemLogIsEnabled() then echoLn ["> current time: ", fullDate(time())];
+		_fsInit(programDir);
+		_launchApp(pkg, compile, nil)
+	);
+	_schedulerStart();;
+
+fun _handleArgs(l, compile)=
+	if l==nil then _start(compile)
+	else let l -> a::b::_ in
+	match a with
+		"-c" -> _handleArgs(tail(l), true),
+		"--compile" ->_handleArgs(tail(l), true),
+		_ -> if strEndsWith(a, SOURCE_EXTENSION) then _start(compile)
+			else _handleArgs(tail(l), compile);;
+
+fun _init()=
+	gcCompact();
+	_threadSetUser(_threadCurrent(), _ThreadBios);
+	_handleArgs(args(), false);
+	nil;;

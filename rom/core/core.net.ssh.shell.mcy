@@ -1,0 +1,52 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2022, Sylvain Huet, Ambermind
+// Minimacy (r) System
+
+
+use core.net.ssh;;
+
+struct SSHshell= SSH + [channelS, fNotifyEventS];;
+
+fun shellOnEvent(h, fNotify)= set h.fNotifyEventS=(lambda(code, data) = call fNotify(h, code, data);0);;
+fun shellNotifyEvent(h, code, data)=
+	if SSH_DEBUG then echoLn strFormat("> shellNotifyEvent code *", code);
+	call h.fNotifyEventS(code, data);;
+
+fun shellStartShell(h)=
+	sshSendChannelRequest(h.channelS, "shell", true, nil);
+	sshOnChannelEvent(h.channelS, lambda(code, data)=
+		if code==SSH_OK then shellNotifyEvent(h, SSH_READY, nil)
+		else shellNotifyEvent(h, code, data)
+	);;
+
+fun shellOpenPtyReq(h) =
+	sshSendChannelRequest(h.channelS, "pty-req", true, {
+		sshMsgStr("vt100"), // TERM environment variable value (e.g., vt100)
+		sshMsgInt(80), // terminal width, characters (e.g., 80)
+		sshMsgInt(24), //terminal height, rows (e.g., 24)
+		sshMsgInt(0), //terminal width, pixels (e.g., 640)
+		sshMsgInt(0), //terminal height, pixels (e.g., 480)
+		sshMsgStr("\0")
+	});
+	sshOnChannelEvent(h.channelS, lambda(code, data)=
+		if code==SSH_OK then shellStartShell(h)
+		else shellNotifyEvent(h, code, data)
+	);;
+
+fun shellStartSession(h)=
+	set h.channelS=sshSendChannelOpen(h, "session", 0);
+	sshOnChannelEvent(h.channelS, lambda(code, data)=
+		if code==SSH_OK then shellOpenPtyReq(h)
+		else shellNotifyEvent(h, code, data)
+	);;
+
+fun shellConnect(ip, port, login, auth, fNotify)=
+	let [SSHshell] -> h in (
+		shellOnEvent(h, fNotify);
+		sshConnect(h, ip, port, login, auth, lambda(code, data)=
+			if code==SSH_OK then shellStartSession(h)
+			else shellNotifyEvent(h, code, data)
+		)
+	);;
+
+fun shellSendData(h, data) = sshSendChannelData(h.channelS, data);;

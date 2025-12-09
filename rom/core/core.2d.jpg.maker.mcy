@@ -1,0 +1,273 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2022, Sylvain Huet, Ambermind
+// Minimacy (r) System
+
+export jpgFromBitmap(bmp, quality);;
+
+use core.util.huffman;;
+
+struct JpgMaker=[
+	outJ, streamJ,
+	quantTablesJ,
+	huffmanCountsJ, huffmanDefinitionJ, huffmanEncoderJ,
+	wJ, hJ, componentsJ, precisionJ, bmpJ,
+	SsJ, SeJ, AhJ, AlJ
+];;
+
+struct JpgCompInfo=[hSampFactorC, vSampFactorC, quantTableC, dcEncoderC, acEncoderC, coefC];;
+
+const JPEG_NATURAL_ORDER= {
+  0,  1,  8, 16,  9,  2,  3, 10,
+ 17, 24, 32, 25, 18, 11,  4,  5,
+ 12, 19, 26, 33, 40, 48, 41, 34,
+ 27, 20, 13,  6,  7, 14, 21, 28,
+ 35, 42, 49, 56, 57, 50, 43, 36,
+ 29, 22, 15, 23, 30, 37, 44, 51,
+ 58, 59, 52, 45, 38, 31, 39, 46,
+ 53, 60, 61, 54, 47, 55, 62, 63
+};;
+
+const QUANT_ROWS={1, 2, 3, 4, 5, 6, 7, 8, 7, 6, 5, 4, 3, 2, 1};;
+fun quantCreate(start, increment)=
+	let arrayCreate(64, 0) -> q in
+	let 0 -> w in
+	for n of QUANT_ROWS do (
+		for i=0;i<n do (
+			set q[w] = start;
+			set w=w+1
+		);
+		set start=min(31, start+increment);
+		q
+	);;
+
+// jpeg spec refuses a code full of 1, so we add a nil leaf at the very bottom right of the tree
+fun _jpegHuffmanPatch(tree)= match tree with
+	leafH _ code -> nodeH 0 tree nil,
+	nodeH _ a b -> nodeH 0 a _jpegHuffmanPatch(b);;
+
+fun _jpegHuffmanFromTree(fifos, tree, depth)= match tree with
+	leafH _ code -> fifoIn(fifos[depth], code),
+	nodeH _ a b -> (_jpegHuffmanFromTree(fifos, a, depth+1); _jpegHuffmanFromTree(fifos, b, depth+1));;
+
+fun _huffmanComputeForJpg(lengths)=
+	let _jpegHuffmanPatch(huffmanBuildDecoder(lengths)) -> tree in
+	let arrayInit(17, lambda(i)=fifoCreate()) -> fifos in
+	let fifoCreate() -> elements in
+	(
+		_jpegHuffmanFromTree(fifos, tree, 0);
+		let arrayInit(16, lambda(i)= fifoCount(fifos[(i+1)])) -> bits in
+		(
+			for fifo of fifos do
+				for elem in fifoList(fifo) do
+					fifoIn(elements, elem);
+			[bits, arrayFromList(fifoList(elements))]
+		)
+	);;
+
+fun _arrayMax(src) = arrayReduce(src, src[0], #max);;
+
+fun _huffmanBuildEncoderJpg([bits, elements])=
+	let 1+_arrayMax(elements) -> maxElement in
+	let arrayCreate(maxElement, 0) -> codeLengths in
+	let 0->code in
+	(
+		for n,i of bits do (
+			for j=0;j<n do 
+				let elements[(code+j)] -> value in
+				set codeLengths[value]=i+1;
+			set code=code+n
+		);
+		huffmanBuildEncoder(codeLengths)
+	);;
+
+fun _encodeNumber(val, nbBits) =
+	let 1<<(nbBits-1) -> l in
+	if abs(val)>=(l<<1) then _encodeNumber(val, nbBits+1)
+	else [
+		nbBits,
+		if val>=0 then val else val+(2*l-1)
+	];;
+fun encodeNumber(val)= if val==0 then [0, 0] else _encodeNumber(val, 1);;
+
+fun addToStream(jpg, encoderId, nbBits, bits)=
+	let jpg.huffmanCountsJ[encoderId] -> counts in
+	set counts[nbBits] = 1+counts[nbBits];
+	fifoIn(jpg.streamJ, [encoderId, nbBits, bits]);;
+
+fun streamMatrix(jpg, encoderId, dct, i, skip)=
+	if i>=64 || skip>=16 then (
+		if skip<>0 then addToStream(jpg, encoderId, 0, 0);
+	)
+	else let dct[i] -> val in
+	if val==0 then streamMatrix(jpg, encoderId, dct, i+1, skip+1)
+	else let encodeNumber(val) -> [nbBits, bits] in
+	(
+		addToStream(jpg, encoderId, (skip<<4)+nbBits, bits);
+		streamMatrix(jpg, encoderId, dct, i+1, 0)
+	);;
+
+fun processBitmapBlock(jpg, component, x, y, shift)=
+	let arrayCreate(64, 0.) -> matrix in
+	let arrayCreate(64, nil) -> dct in
+	let jpg.quantTablesJ[(component.quantTableC)] -> quant in
+	let fifoCreate() -> fifo in
+	let component.acEncoderC+2 -> acTable in
+	let jpg.wJ-1 -> xMax in
+	let jpg.hJ-1 -> yMax in
+	(
+		for j=0;j<8 do
+		for i=0;i<8 do
+			let (bitmapGet(jpg.bmpJ, min(xMax, x+i), min(yMax, y+j))>>shift)&255 -> componentValue in
+			set matrix[(i+j*8)]= floatFromInt(componentValue)-.128.;
+		dct88(matrix);
+		
+		for i=0;i<64 do set dct[i]= intFromFloat(matrix[(JPEG_NATURAL_ORDER[i])])/(quant[i]);
+		let dct[0] -> nextCoef in
+		(
+			set dct[0] = dct[0] - component.coefC;
+			set component.coefC=nextCoef;
+		);
+		let encodeNumber(dct[0]) -> [nbBits, bits] in addToStream(jpg, component.dcEncoderC, nbBits, bits);
+		streamMatrix(jpg, acTable, dct, 1, 0);
+	);;
+
+fun mkBlockWithSize(code, content)=
+	let strBuild(content) -> data in [
+		strInt16Msb(code),
+		strInt16Msb(2+strLength(data)),
+		data
+	];;
+
+fun mkBlockApp0(jpg) =
+	mkBlockWithSize(0xFFE0, [
+		"JFIF\0",
+		strInt16Msb(0x102), // version
+		strInt8(0),	// density_unit
+		strInt16Msb(100),	//X_density
+		strInt16Msb(100),	//Y_density
+		strInt16Msb(0)
+	]);;
+
+fun mkBlockDQT(jpg)=
+	mkBlockWithSize(0xFFDB, [
+		arrayMap({0, 1}, lambda(i)= [
+			strInt8(i),
+			arrayMap(jpg.quantTablesJ[i], lambda(val)= strInt8(val))
+		])
+	]);;
+
+fun mkBlockSOF0(jpg)=
+	let arrayLength(jpg.componentsJ) -> n in
+	mkBlockWithSize(0xFFC0, [
+		strInt8(jpg.precisionJ),
+		strInt16Msb(jpg.hJ),
+		strInt16Msb(jpg.wJ),
+		strInt8(arrayLength(jpg.componentsJ)),
+		arrayInit(n, lambda(i)= let jpg.componentsJ[i] -> c in  [
+			strInt8(i+1),
+			strInt8((c.hSampFactorC<<4)+c.vSampFactorC),
+			strInt8(c.quantTableC)
+		])
+	]);;
+
+fun mkBlockDHT(jpg)=
+	let {[0x00, jpg.huffmanDefinitionJ[0]], [0x01, jpg.huffmanDefinitionJ[1]], [0x10, jpg.huffmanDefinitionJ[2]], [0x11, jpg.huffmanDefinitionJ[3]]} -> dhts in
+	mkBlockWithSize(0xFFC4, [
+		arrayMap(dhts, lambda([header, [bits, elements]])= [
+			strInt8(header),
+			arrayMap(bits, lambda(val)= strInt8(val)),
+			arrayMap(elements, lambda(val)= strInt8(val))
+		])
+	]);;
+
+fun	encodeStream(jpg) =
+	let bwCreate() -> bw in
+	(
+		for [encoderId, nbBits, bits] in fifoList(jpg.streamJ) do
+		(
+			huffmanEncodeCode7To0(bw, jpg.huffmanEncoderJ[encoderId], nbBits);
+			bwBitsMsb(bw, bits, nbBits&15);
+		);
+		bwFinal(bw)
+	);;
+
+fun mkBlockSOS(jpg)=
+	let encodeStream(jpg) -> bitStream in
+	let arrayLength(jpg.componentsJ) -> n in
+	let strBuild([
+		strInt16Msb(n*2+6),
+		strInt8(n),
+		arrayInit(n, lambda(i)= let jpg.componentsJ[i] -> c in  [
+			strInt8(i+1),
+			strInt8((c.dcEncoderC<<4)+c.acEncoderC)
+		]),
+		strInt8(jpg.SsJ),
+		strInt8(jpg.SeJ),
+		strInt8((jpg.AhJ<<4)+jpg.AlJ),
+		bitStream
+	]) -> data in
+	let strReplace(data, "\$ff", "\$ff\$00") -> data in
+	[
+		strInt16Msb(0xFFDA),
+		data
+	];;
+
+fun mkQuant0(quality) =
+	let 11-(quality/10) -> start in
+	let 10-(quality/10) -> increment in
+	quantCreate(start, increment);;
+
+fun mkQuant1(quality) =
+	let 21-(quality/5) -> start in
+	let 20-(quality/5) -> increment in
+	quantCreate(start, increment);;
+
+fun jpgFromBitmap(bmp, quality)=
+	let mkQuant0(quality) -> quant0 in
+	let mkQuant1(quality) -> quant1 in
+	let [
+		outJ=bufferCreate(),
+		streamJ=fifoCreate(),
+		bmpJ=bitmapCopy(bmp, 0, 0, nil, nil),
+		quantTablesJ={quant0, quant1},
+		wJ=bitmapW(bmp),
+		hJ=bitmapH(bmp),
+		precisionJ=8,
+		huffmanCountsJ={
+			arrayCreate(16, 0), arrayCreate(16, 0),	// DC
+			arrayCreate(255, 0), arrayCreate(255, 0)	// AC
+		},
+		SsJ=0, SeJ=63, AhJ=0, AlJ=0,	// we don't use this for now
+		componentsJ={
+			[hSampFactorC=1, vSampFactorC=1, quantTableC=0, dcEncoderC=0, acEncoderC=0, coefC=0],
+			[hSampFactorC=1, vSampFactorC=1, quantTableC=1, dcEncoderC=1, acEncoderC=1, coefC=0],
+			[hSampFactorC=1, vSampFactorC=1, quantTableC=1, dcEncoderC=1, acEncoderC=1, coefC=0]
+		}
+	] -> jpg in
+	let bitmapW(bmp) -> w in
+	let bitmapH(bmp) -> h in
+	(
+		bitmapToYCrCb(jpg.bmpJ);
+
+		for y=0;y<h;y+8 do
+		for x=0;x<w;x+8 do
+		(
+			processBitmapBlock(jpg, jpg.componentsJ[0], x, y, 16);
+			processBitmapBlock(jpg, jpg.componentsJ[1], x, y, 0);
+			processBitmapBlock(jpg, jpg.componentsJ[2], x, y, 8);
+		);
+
+		set jpg.huffmanDefinitionJ=arrayMap(jpg.huffmanCountsJ, (lambda(counts)= _huffmanComputeForJpg(huffmanComputeCodeLengths(counts))));
+		set jpg.huffmanEncoderJ=arrayMap(jpg.huffmanDefinitionJ, (lambda(def)= _huffmanBuildEncoderJpg(def)));
+
+		bufferAppend(jpg.outJ, [
+			strInt16Msb(0xFFD8),	// start
+			mkBlockApp0(jpg),
+			mkBlockDQT(jpg),
+			mkBlockSOF0(jpg),
+			mkBlockDHT(jpg),
+			mkBlockSOS(jpg),
+			strInt16Msb(0xFFD9)	// end
+		]);
+		strFromBuffer(jpg.outJ)
+	);;

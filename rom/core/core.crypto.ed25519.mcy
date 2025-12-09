@@ -1,0 +1,193 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2022, Sylvain Huet, Ambermind
+// Minimacy (r) System
+
+// https://www.rfc-editor.org/rfc/rfc8032.txt
+use core.crypto.hash;;
+
+var _EcP;;
+var _EcQ;;
+var _EcMuP;;
+var _EcMuQ;;
+var _EcD;;
+var _EcG;;
+var _Modp_sqrt_m1;;
+
+//_EcD= \modBarrett (_EcP, _EcMuP) -121665 * _modp_inv(121666);;
+//g_y = \modBarrett (_EcP, _EcMuP) 4 * _modp_inv(5);;
+//g_x = _recover_x (b_y, false);;
+
+fun _checkInit ()=
+	if _EcP==nil then
+	(
+		set _EcP=bigFromHex( "7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffed");
+		set _EcQ=bigFromHex( "1000000000000000000000000000000014DEF9DEA2F79CD65812631A5CF5D3ED");
+		set _EcMuP=bigBarrett(_EcP);
+		set _EcMuQ=bigBarrett(_EcQ);
+		set _EcD=bigFromHex("52036cee2b6ffe738cc740797779e89800700a4d4141d8ab75eb4dca135978a3");
+		set _EcG=
+			let bigFromHex("6666666666666666666666666666666666666666666666666666666666666658") -> g_y in
+			let bigFromHex("216936d3cd6e53fec0a4e231fdd6dc5c692cc7609525a7b2c9562d608f25d51a") -> g_x in
+			\modBarrett( _EcP, _EcMuP) [g_x, g_y, 1, g_x*g_y];
+		set _Modp_sqrt_m1= \modBarrett( _EcP, _EcMuP) 2**bigASR(_EcP-1, \integer 2);
+	);;
+
+fun _modp_inv(x)= \modBarrett( _EcP, _EcMuP) x**(_EcP - 2);;
+fun _sha512_modq(s) = bigModBarrett(bigFromStr(strSwap(sha512(s))), _EcQ, _EcMuQ);;
+
+fun _point_dump(str, p)=
+	let p->[x, y, z, t] in
+	(
+		echoLn str;
+		echoLn hexFromBig(x);
+		echoLn hexFromBig(y);
+		echoLn hexFromBig(z);
+		echoLn hexFromBig(t);
+		p
+	);;
+
+fun _point_equal(P, Q)=
+	\modBarrett( _EcP, _EcMuP)
+		let P->[X1, Y1, Z1, T1] in
+		let Q->[X2, Y2, Z2, T2] in
+		bigIsNull(X1*Z2 - X2*Z1)&&bigIsNull(Y1*Z2 - Y2*Z1);;
+
+fun _point_add(P, Q)=
+	\modBarrett( _EcP, _EcMuP)
+		let P->[X1, Y1, Z1, T1] in
+		let Q->[X2, Y2, Z2, T2] in
+		let (Y1-X1)*(Y2-X2) -> A in
+		let (Y1+X1)*(Y2+X2) -> B in
+		let T1*2*_EcD*T2 -> C in
+		let Z1*2*Z2 -> D in
+		let B-A -> E in
+		let D-C -> F in
+		let D+C -> G in
+		let B+A -> H in
+		[E*F, G*H, F*G, E*H];;
+
+fun _point_mul(s, P)=
+	\modBarrett( _EcP, _EcMuP)
+		let [0, 1, 1, 0] -> Q in
+		(
+			while s<>nil && !bigIsNull(s) do
+			(
+				if !bigIsEven(s) then set Q=_point_add(Q, P);
+				set P = _point_add(P, P);
+				set s=bigASR1(s)
+			);
+			Q
+		);;
+
+fun _recover_x(y, sign)=
+	\modBarrett( _EcP, _EcMuP)
+		if y<_EcP then
+		let (y*y-1) * _modp_inv(_EcD*y*y+1) -> x2 in
+		if bigIsNull(x2) then
+		(
+			if !sign then 0
+		)
+		else
+		let x2**bigASR(bigAdd(_EcP, 3), \integer 3) -> x in
+		(
+			if !bigIsNull(x*x - x2) then set x = x * _Modp_sqrt_m1;
+			if bigIsNull(x*x - x2) then
+			let !bigIsEven(x) -> signx in
+			if sign==signx then x
+			else _EcP-x
+		);;
+
+fun _point_compress(P)=
+	let 255 -> b255 in
+	\modBarrett( _EcP, _EcMuP)
+	let P->[x, y, z, t] in
+	let _modp_inv(z) -> zinv in
+	let x*zinv -> x in
+	let y*zinv -> y in
+	let if bigIsEven(x) then y else bigAdd(y, bigFromHex("8000000000000000000000000000000000000000000000000000000000000000")) -> y in
+	strSwap(strFromBig(y, \integer 32));;
+
+fun _point_decompress(s)=
+	if 32==strLength(s) then
+	let strSliceOfBytes(strSwap(s), 0, nil) -> y in
+	let bytesGet(y, 0) -> val in
+	let 0<>val&0x80 -> sign in
+	(
+		bytesSet(y, 0, val&0x7f);
+		let bigFromBytes(y) -> y in
+		let _recover_x(y, sign) -> x in
+		if x<>nil then \modBarrett( _EcP, _EcMuP) [x, y, 1, x*y]
+	);;
+
+fun _secret_expand(secret)=
+	if 32==strLength(secret) then
+	let sha512(secret) -> h in
+	let strSliceOfBytes(strSwap(strLeft(h, 32)), 0, nil) -> a in
+	(
+		bytesSet(a, 0, 0x40 | (0x3f & bytesGet(a, 0)));
+		bytesSet(a, 31, 0xf8 & bytesGet(a, 31));
+		[bigFromBytes(a), strTail(h, 32)]
+	);;
+
+fun _dom2(x, y)= if x<>nil then strBuild({
+	"SigEd25519 no Ed25519 collisions",
+	strFromChar(x),
+	strFromChar(strLength(y)),
+	y
+});;
+
+fun _ed25519Sign(secret, msg, phflag, context)=
+	_checkInit();
+	let _dom2(phflag, context) -> d2 in
+	let _secret_expand(secret) -> [a, prefix] in
+	let _point_compress(_point_mul(a, _EcG)) -> A in
+	let _sha512_modq(strBuild({d2, prefix, msg})) -> r in
+	let _point_mul(r, _EcG) -> R in
+	let _point_compress(R) -> Rs in
+	let _sha512_modq(strBuild({d2, Rs, A, msg})) -> h in
+	let \modBarrett( _EcQ, _EcMuQ) r+ h*a -> s in
+	strConcat(Rs, strSwap(strFromBig(s, 32)));;
+
+fun _ed25519Verify(public, msg, signature, phflag, context)=
+	_checkInit();
+	if 32==strLength(public) then
+	if 64==strLength(signature) then
+	let _point_decompress(public) -> A in
+	if A<>nil then
+	let strLeft(signature, 32) -> Rs in
+	let _point_decompress(Rs) -> R in
+	if R<>nil then
+	let _dom2(phflag, context) -> d2 in
+	let bigFromStr(strSwap(strRight(signature, 32))) -> s in
+	\modBarrett( _EcP, _EcMuP)
+		if s<_EcQ then
+		let _sha512_modq(strBuild({d2, Rs, public, msg})) -> h in
+		let _point_mul(s, _EcG) -> sB in
+		let _point_mul(h, A) -> hA in
+		let _point_add(R, hA) -> sB2 in
+		_point_equal(sB, sB2);;
+
+//------------------ API
+
+fun ed25519PublicFromSecret(secret)=
+	_checkInit();
+    let _secret_expand(secret) -> [a, _] in
+	_point_compress(_point_mul(a, _EcG));;
+
+fun ed25519FromSecret(secret)= [secret, ed25519PublicFromSecret(secret)];;
+fun ed25519FromPublic(public)= [nil, public];;
+
+fun ed25519Create ()=
+	if !randomHardware() then echoLn "> Warning: generate ed25519 secret with pure software pseudorandom generator";
+	ed25519FromSecret(strRand(32));;
+
+fun ed25519Public([secret, public]) = public;;
+fun ed25519Private([secret, public]) = secret;;
+
+fun ed25519KeyIsPrivate([secret, public])= secret<>nil;;
+
+fun ed25519Sign([secret, public], msg)= _ed25519Sign(secret, msg, nil, nil);;
+fun ed25519phSign([secret, public], msg, context)= _ed25519Sign(secret, sha512(msg), 1, context);;
+
+fun ed25519Verify([secret, public], msg, signature)= _ed25519Verify(public, msg, signature, nil, nil);;
+fun ed25519phVerify([secret, public], msg, context, signature)= _ed25519Verify(public, sha512(msg), signature, 1, context);;

@@ -1,0 +1,342 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2022, Sylvain Huet, Ambermind
+// Minimacy (r) System
+
+// https://datatracker.ietf.org/doc/html/rfc5280 : certificate
+// https://datatracker.ietf.org/doc/html/rfc2986 : csr
+
+use core.crypto.pem;;
+use core.crypto.sign;;
+use core.crypto.oid;;
+use core.crypto.asn1;;
+use core.crypto.key;;
+use core.crypto.rsa;;
+use core.crypto.ec;;
+use core.crypto.ed25519;;
+use core.crypto.hash;;
+
+const _DEBUG=false;;
+//const _DEBUG=true;;
+
+struct X509=[
+	certificateX,
+	versionX,
+	serialX,
+	issuerOidsX, subjectOidsX, issuerX, subjectX,
+	fromX, toX,
+	keyX,
+	attributesX,	// CSR only
+	extensionsX,
+	criticalExtensionsX,
+	signatureAlgorithmX,
+	signatureX,
+	infoDerX
+];;
+
+enum KEYUSAGE_encipherOnly, KEYUSAGE_cRLSign, KEYUSAGE_keyCertSign, KEYUSAGE_keyAgreement,
+	KEYUSAGE_dataEncipherment, KEYUSAGE_keyEncipherment, KEYUSAGE_nonRepudiation, KEYUSAGE_digitalSignature;;
+const KeyUsageNames={
+	"encipherOnly", "cRLSign", "keyCertSign", "keyAgreement",
+	"dataEncipherment", "keyEncipherment", "nonRepudiation", "digitalSignature"
+};;
+
+const _RootCertificates=hashmapCreate(6);;
+
+// ----- loading
+fun _parseExtensions(extensions, criticalExtensions, ext)=
+	for p in listFromAsn1(ext) do
+	let listFromAsn1(p) -> field::arg2::arg3::_ in
+	let strFromAsn1(field) -> field in
+	let asn1Unpack(strFromAsn1(if arg3==nil then arg2 else arg3)) -> asn1 in (
+		if arg3<>nil && boolFromAsn1(arg2) then hashsetAdd(criticalExtensions, field);
+		hashmapSet(extensions, field, asn1)
+	);;
+
+fun _nameListFromAsn1(asn1)=
+	listMap(listFromAsn1(asn1), lambda(asn1)=
+		let head(listFromAsn1(asn1)) -> aSeq in
+		let listFromAsn1(aSeq) -> (key::val::_) in
+		[strFromAsn1(key), strFromAsn1(val)]
+	);;
+
+fun nameFromNameList(nameList) =
+	strBuild(listMap(nameList, lambda([key, val]) = strFormat("/*=*", niceOID(key), val)));;
+
+fun csrFromAsn1(infoDer, asn1)=
+	let hashmapCreate(4) -> attributes in
+	let hashmapCreate(4) -> extensions in
+	let hashsetCreate(4) -> criticalExtensions in
+	let listFromAsn1(asn1) -> certificateInfo::signatureAlgorithm::signature::_ in
+	let listFromAsn1(certificateInfo) -> version::subject::pkInfo::attributeList::_ in
+	let strFromAsn1(head(listFromAsn1(signatureAlgorithm))) -> signatureAlgorithm in
+	let strFromAsn1(signature) -> signature in
+	let keyFromAsn1(pkInfo, nil) -> publicKey in
+	if signatureCheck(signAlgoByOID(signatureAlgorithm), publicKey, infoDer, signature) then
+	let _nameListFromAsn1(subject) -> subjectNameList in (
+		for a in listFromAsn1(attributeList) do 
+			let listFromAsn1(a) -> key::asn1::_ in
+			let strFromAsn1(key) -> oid in match oid with
+				OID_id_ExtensionReq -> void _parseExtensions(extensions, criticalExtensions, head(listFromAsn1(asn1))),
+				_ -> hashmapSet(attributes, oid, asn1);
+		[
+			certificateX=false,
+			versionX=1+intFromAsn1(head(listFromAsn1(version))),
+			subjectOidsX=subjectNameList,
+			subjectX=nameFromNameList(subjectNameList),
+			keyX=publicKey,
+			extensionsX=extensions,
+			attributesX=attributes,
+			criticalExtensionsX=criticalExtensions,
+			signatureAlgorithmX=signatureAlgorithm,
+			signatureX=signature
+		]
+	);;
+
+fun cerFromAsn1(infoDer, asn1)=
+	let hashmapCreate(4) -> extensions in
+	let hashsetCreate(4) -> criticalExtensions in
+	let listFromAsn1(asn1) -> certificateInfo::signatureAlgorithm::signature::_ in
+	let listFromAsn1(certificateInfo) -> version::serial::signatureAlgorithmCA::issuer::times::subject::pkInfo::ext::_ in
+	let strFromAsn1(head(listFromAsn1(signatureAlgorithmCA))) -> signatureAlgorithmCA in
+	let strFromAsn1(head(listFromAsn1(signatureAlgorithm))) -> signatureAlgorithm in
+	if signatureAlgorithmCA==signatureAlgorithm then	// rfc 5280, 4.1.2.3
+	let _nameListFromAsn1(issuer) -> issuerNameList in
+	let _nameListFromAsn1(subject) -> subjectNameList in
+	let listFromAsn1(times) ->(from::to::_) in (
+		if ext<>nil then _parseExtensions(extensions, criticalExtensions, head(listFromAsn1(ext)));
+		[
+			certificateX=true,
+			infoDerX=infoDer,
+			versionX=1+intFromAsn1(head(listFromAsn1(version))),
+			serialX=strFromAsn1(serial),
+			issuerOidsX=issuerNameList,
+			issuerX= nameFromNameList(issuerNameList),
+			subjectOidsX=subjectNameList,
+			subjectX=nameFromNameList(subjectNameList),
+			fromX=timeFromYyddmmhhmmssz(strFromAsn1(from)), toX=timeFromYyddmmhhmmssz(strFromAsn1(to)),
+			keyX=keyFromAsn1(pkInfo, nil),
+			extensionsX=extensions,
+			criticalExtensionsX=criticalExtensions,
+			signatureAlgorithmX=signatureAlgorithm,
+			signatureX=strFromAsn1(signature)
+		]
+	);;
+
+fun cerFromDER(der)= cerFromAsn1(asn1InfoBlock(der), asn1Unpack(der));;
+fun cerFromPEM(pem, pwd)=
+	let head(pemDecode(pem, pwd)) ->[name, der] in
+	if name=="CERTIFICATE" then cerFromDER(der);;
+
+fun csrFromDER(der)= csrFromAsn1(asn1InfoBlock(der), asn1Unpack(der));;
+fun csrFromPEM(pem, pwd)=
+	let head(pemDecode(pem, pwd)) ->[name, der] in
+	if name=="CERTIFICATE REQUEST" then csrFromDER(der);;
+
+// -------- access
+
+fun cerIssuer(cer) = cer.issuerX;;
+fun cerSubject(cer) = cer.subjectX;;
+fun cerKey(cer) = cer.keyX;;
+fun cerValidFrom(cer) = cer.fromX;;
+fun cerValidTo(cer) = cer.toX;;
+
+fun _cerNameListValue(nameList, oid) =
+	for [key, val] in nameList do if key==oid then return val;
+	nil;;
+fun cerIssuerValue(cer, oid) = _cerNameListValue(cer.issuerOidsX, oid);;
+fun cerSubjectValue(cer, oid)= _cerNameListValue(cer.subjectOidsX, oid);;
+
+fun cerIsCertificateAuthority(cer)=
+	let hashmapGet(cer.extensionsX, OID_basicConstraints) -> asn1 in
+	if asn1<>nil then boolFromAsn1(head(listFromAsn1(asn1)));;
+
+fun cerSubjectAltName(cer) =
+	let hashmapGet(cer.extensionsX, OID_subjectAltName) -> asn1 in
+	if asn1<>nil then asn1ListOfStr(listFromAsn1(asn1));;
+
+fun _extractKeyUsage(val, i)= if i<8 then if bitTest(1<<i, val) then i::_extractKeyUsage(val, i+1) else _extractKeyUsage(val, i+1);;
+
+fun cerKeyUsage(cer)=
+	let hashmapGet(cer.extensionsX, OID_keyUsage) -> asn1 in
+	if asn1<>nil then _extractKeyUsage(strGet(strFromAsn1(asn1), 0), 0);;
+
+fun cerHasKeyUsage(cer, usage)=
+	let hashmapGet(cer.extensionsX, OID_keyUsage) -> asn1 in
+	bitTest(1<<usage, strGet(strFromAsn1(asn1), 0));;
+
+fun cerAuthorityKeyIdentifier(cer) =
+	let hashmapGet(cer.extensionsX, OID_authorityKeyIdentifier) -> asn1 in
+	if asn1<>nil then asn1ListOfHex(listFromAsn1(asn1));;
+
+fun cerSubjectKeyIdentifier(cer) =
+	let hashmapGet(cer.extensionsX, OID_subjectKeyIdentifier) -> asn1 in
+	if asn1<>nil then strFromAsn1(asn1);;
+
+fun cerExtKeyUsage(cer) =
+	let hashmapGet(cer.extensionsX, OID_extKeyUsage) -> asn1 in
+	if asn1<>nil then asn1ListOfStr(listFromAsn1(asn1));;
+
+fun cerBasicConstraints(cer)=
+	let hashmapGet(cer.extensionsX, OID_basicConstraints) -> asn1 in
+	if asn1<>nil then let listFromAsn1(asn1) -> ca::pathLenConstraint::_ in [boolFromAsn1(ca), intFromAsn1(pathLenConstraint)];;
+
+fun cerCertificatePolicies(cer)=
+	let hashmapGet(cer.extensionsX, OID_certificatePolicies) -> asn1 in
+	listMap(listFromAsn1(asn1), lambda(asn1)= let listFromAsn1(asn1) -> key::content::_ in [strFromAsn1(key), asn1ListOfStr(listFromAsn1(head(listFromAsn1(content))))]);;
+
+fun cerCRLDistributionPoints(cer)=
+	let hashmapGet(cer.extensionsX, OID_cRLDistributionPoints) -> asn1 in
+	listMap(listFromAsn1(asn1), lambda(asn1)= strFromAsn1(head(listFromAsn1(head(listFromAsn1(head(listFromAsn1(asn1))))))));;
+
+fun cerAuthorityInfoAccess(cer)=
+	let hashmapGet(cer.extensionsX, OID_authorityInfoAccess) -> asn1 in
+	listMap(listFromAsn1(asn1), lambda(asn1)= let listFromAsn1(asn1) -> key::val::_ in [strFromAsn1(key), strFromAsn1(val)]);;
+
+// -------- cerEcho
+const _CER_SPACE="            ";;
+fun _cerEchoHex(hx) =
+	let strLength(hx) -> len in
+	for i=0;i<len;i+64 do (echo _CER_SPACE; echoLn strSlice(hx, i, 64));
+	hx;;
+
+fun cerEcho(cer)=
+	if cer==nil then return nil;
+	echoLn if cer.certificateX then "X509 certificate" else "X509 certificate request";
+	echoLn strFormat("version   : *", cer.versionX);
+	if cer.certificateX then echoLn strFormat("serial    : *", hexFromStr(cer.serialX));
+	if cer.certificateX then echoLn strFormat("issuer    : *", cer.issuerX);
+	echoLn strFormat("subject   : *", cer.subjectX); 
+	if cer.certificateX then echoLn strFormat("valid from: *", fullDate(cer.fromX)); 
+	if cer.certificateX then echoLn strFormat("      to  : *", fullDate(cer.toX)); 
+	echo "publicKey : ";
+	match cer.keyX with
+		rsaKey rsa -> (
+			echoLn strFormat("RSA * bits", bigNbits(rsaModulus(rsa)));
+			echoLn strFormat("  modulus :");
+			_cerEchoHex(hexFromBig(rsaModulus(rsa)));
+			echoLn strFormat("  exponent: *", hexFromBig(rsaPubExp(rsa)))
+		),
+		ecKey ec -> (
+			echoLn strFormat("EC *", ecKeyCurveName(ec));
+			_cerEchoHex(hexFromStr(ecKeyPubStr(ec)))
+		),
+		ed25519Key ed -> (
+			echoLn "ED25519";
+			_cerEchoHex(hexFromStr(ed25519Public(ed)))
+		),
+		_ -> echoLn "??";
+	let listFromHashmap(cer.attributesX) -> attributes in
+	if attributes<>nil then (
+		echoLn "attributes: ";
+		for [field, asn1] in attributes do (
+			echoLn strFormat("     *:", niceOID(field));
+			asn1Echo(_CER_SPACE, asn1);
+		)
+	);
+	let listFromHashmap(cer.extensionsX) -> extensions in
+	if extensions<>nil then (
+		echoLn "extensions: ";
+		for [field, asn1] in extensions do (
+			echoLn strFormat("     *:*", niceOID(field), (if hashsetContains(cer.criticalExtensionsX, field) then " (critical)"));
+			match field with
+				OID_keyUsage -> void for flag in cerKeyUsage(cer) do (echo _CER_SPACE; echoLn KeyUsageNames[flag]),
+				OID_subjectAltName -> void for name in cerSubjectAltName(cer) do (echo _CER_SPACE; echoLn name),
+				OID_authorityKeyIdentifier -> void for name in cerAuthorityKeyIdentifier(cer) do (echo _CER_SPACE; echoLn name),
+				OID_extKeyUsage -> void for name in cerExtKeyUsage(cer) do (echo _CER_SPACE; echoLn niceOID(name)),
+				OID_subjectKeyIdentifier -> void (echo _CER_SPACE; echoLn hexFromStr(cerSubjectKeyIdentifier(cer))),
+				OID_basicConstraints -> void let cerBasicConstraints(cer) -> [ca, pathLenConstraint] in (
+					echo _CER_SPACE;
+					echoLn strFormat("CA=* *", !!ca, pathLenConstraint)
+				),
+				OID_authorityInfoAccess -> void for [key, val] in cerAuthorityInfoAccess(cer) do (
+					echo _CER_SPACE;
+					echoLn strFormat("*: *", niceOID(key), val)
+				),
+				OID_certificatePolicies -> void for [key, a::b::_] in cerCertificatePolicies(cer) do (
+					echo _CER_SPACE;
+					echoLn niceOID(key);
+					if a<>nil then (echo _CER_SPACE; echoLn strFormat("    **", strJoin(": ", niceOID(a)::if b<>nil then b::nil)))
+				),
+				OID_cRLDistributionPoints -> void for name in cerCRLDistributionPoints(cer) do (echo _CER_SPACE; echoLn niceOID(name)),
+				_ -> asn1Echo(_CER_SPACE, asn1);
+		)
+	);
+	echoLn strFormat("signature : *", niceOID(cer.signatureAlgorithmX)); 
+	_cerEchoHex(hexFromStr(cer.signatureX)); 
+	cer;;
+//-------------- check or chain
+fun cerCheckTime(certificate, t)=
+	if t==nil then true
+	else (certificate.fromX<=t) && (t<=certificate.toX);;
+
+fun cerMatchServerName(certificate, serverName)=
+	let cerSubjectAltName(certificate) -> listNames in
+	listTest(listNames, lambda(v)= 
+		(v==serverName)
+		||( strStartsWith(v, "*.") && strEndsWith(serverName, strTail(v, 1)) )
+	);;
+
+fun cerByServerName(serverName, lCertificates)=
+	listFind(lCertificates, lambda(cer)=cerMatchServerName(cer, serverName));;
+
+fun signatureCheckFromCertificate(algo, certificate, data, signature)=
+	signatureCheck(algo, certificate.keyX, data, signature);;
+
+// check a certificate by another (supposed to be its authority), return true if it matches	
+fun cerCheckByAuth(certificate, certAuth)=
+	if _DEBUG then echoLn strFormat("--signature algo *", niceOID(certificate.signatureAlgorithmX));
+	if certAuth<>nil then
+	let signAlgoByOID(certificate.signatureAlgorithmX) -> algorithm in
+	if algorithm==nil then void (if _DEBUG then echoLn strFormat("--signature algo * not supported", niceOID(certificate.signatureAlgorithmX)))
+	else signatureCheck(algorithm, certAuth.keyX, certificate.infoDerX, certificate.signatureX);;
+
+fun rootCertificateRegister(cer)=
+	if !cerCheckTime(cer, time()) then (
+		if _DEBUG then echoLn strFormat("--certificate out of time: *", cer.subjectX);
+		nil
+	)
+	else hashmapSet(_RootCertificates, cer.issuerX, cer);;
+
+fun _cerChainAbort(msg)= setError(msgError msg); abort;;
+
+fun _cerCheckChain(hChain, t0, cer) =
+	if _DEBUG then echoLn ["--check ", cer.subjectX];
+	if !cerCheckTime(cer, t0) then _cerChainAbort(strFormat("> certificate out of time: *", cer.subjectX))
+	else
+	let cer.issuerX -> issuer in
+	let hashmapGet(_RootCertificates, issuer) -> root in
+	if cerCheckByAuth(cer, root) then (
+		if _DEBUG then echoLn ["--find root ", issuer];
+		root::nil
+	)
+	else 
+	let hashmapGet(hChain, issuer) -> parentCer in
+	if parentCer==nil then (
+		if _DEBUG then echoLn ["--not found for ", issuer];
+		_cerChainAbort(strFormat("> no root certificate for: *", issuer)))
+	else
+	if !cerCheckByAuth(cer, parentCer) then _cerChainAbort(strFormat("> wrong signature chain in: *", cer.subjectX))
+	else (
+		hashmapSet(hChain, issuer, nil);
+		parentCer::_cerCheckChain(hChain, t0, parentCer)
+	);;
+
+fun cerCheckChain(t0, siteCer, lCertificates)=
+	if _DEBUG then echoLn "cerCheckChain";
+	try
+	if !cerHasKeyUsage(siteCer, KEYUSAGE_digitalSignature) then (
+		if _DEBUG then echoLn "--missing digitalSignature usage";
+		_cerChainAbort(strFormat("> first certificate missing digitalSignature usage: *", siteCer.subjectX))
+	)
+	else if 0==hashmapCount(_RootCertificates) then (
+		if _DEBUG then echoLn "--no root registered. Skip test";
+		siteCer::nil
+	)
+	else
+	let hashmapCreate(3) -> hChain in
+	(
+		for cer in lCertificates do
+			if cerIsCertificateAuthority(cer)&&cerHasKeyUsage(cer, KEYUSAGE_keyCertSign) then hashmapSet(hChain, cer.subjectX, cer);
+		siteCer::_cerCheckChain(hChain, t0, siteCer)
+	);;
+

@@ -1,0 +1,415 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2022, Sylvain Huet, Ambermind
+// Minimacy (r) System
+
+export MODE_NUMERIC, MODE_ALPHANUMERIC, MODE_BYTE;;
+export ECL_LOW, ECL_MEDIUM, ECL_QUARTILE, ECL_HIGH;;
+
+export qrcodeEcho(b);;
+export qrcode(msg, ecl);;
+export qrcodeWithBorder(msg, ecl, border);;
+
+
+const VERSION_MIN=1;;
+const VERSION_MAX=40;;
+
+const ECL_CODEWORDS_PER_BLOCK = {
+	//0  1  2  3  4  5  6  7  8  9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40    Error correction level
+	{-1,  7, 10, 15, 20, 26, 18, 20, 24, 30, 18, 20, 24, 26, 30, 22, 24, 28, 30, 28, 28, 28, 28, 30, 30, 26, 28, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30},  // Low
+	{-1, 10, 16, 26, 18, 24, 16, 18, 22, 22, 26, 30, 22, 22, 24, 24, 28, 28, 26, 26, 26, 26, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28},  // Medium
+	{-1, 13, 22, 18, 26, 18, 24, 18, 22, 20, 24, 28, 26, 24, 20, 30, 24, 28, 28, 26, 30, 28, 30, 30, 30, 30, 28, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30},  // Quartile
+	{-1, 17, 28, 22, 16, 22, 28, 26, 26, 24, 28, 24, 28, 22, 24, 24, 30, 28, 28, 26, 28, 30, 24, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30}  // High
+};;
+
+const NUM_ERROR_CORRECTION_BLOCKS = {
+	//0 1 2 3 4 5 6 7 8 910 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40    Error correction level
+	{-1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 4,  4,  4,  4,  4,  6,  6,  6,  6,  7,  8,  8,  9,  9, 10, 12, 12, 12, 13, 14, 15, 16, 17, 18, 19, 19, 20, 21, 22, 24, 25},  // Low
+	{-1, 1, 1, 1, 2, 2, 4, 4, 4, 5, 5,  5,  8,  9,  9, 10, 10, 11, 13, 14, 16, 17, 17, 18, 20, 21, 23, 25, 26, 28, 29, 31, 33, 35, 37, 38, 40, 43, 45, 47, 49},  // Medium
+	{-1, 1, 1, 2, 2, 4, 4, 6, 6, 8, 8,  8, 10, 12, 16, 12, 17, 16, 18, 21, 20, 23, 23, 25, 27, 29, 34, 34, 35, 38, 40, 43, 45, 48, 51, 53, 56, 59, 62, 65, 68},  // Quartile
+	{-1, 1, 1, 2, 4, 4, 4, 5, 6, 8, 8, 11, 11, 16, 16, 18, 16, 19, 21, 25, 25, 25, 34, 30, 32, 35, 37, 40, 42, 45, 48, 51, 54, 57, 60, 63, 66, 70, 74, 77, 81}  // High
+};;
+
+const ECL_TO_MASK={1, 0, 3, 2};;
+
+//-------------------- Reed Solomon
+fun _reedSolomonMultiply(x, y, z, n)=
+	if n>=8 then z
+	else
+	let (z << 1) ^ (if bitTest(z, 128) then 0x1d) ^ (if bitTest(y, 128) then x) -> z in
+	_reedSolomonMultiply(x, y<<1, 255&z, n+1);;
+
+fun reedSolomonMultiply(x, y)= _reedSolomonMultiply(x, y, 0, 0);;
+
+fun _reedSolomonGenerator(i, degree, result, root)=
+	if i<degree then
+	(
+		for j=0;j<degree do set result[j]= reedSolomonMultiply(result[j], root)^result[(j+1)];
+		_reedSolomonGenerator(i+1, degree, result, reedSolomonMultiply(root, 2))
+	);;
+
+fun reedSolomonGenerator(degree)=
+	let arrayCreate(degree, 0) -> result in
+	(
+		set result[(degree-1)]=1;
+		_reedSolomonGenerator(0, degree, result, 1);
+		result
+	);;
+
+fun reedSolomonComputeRemainder(data, generator, degree)=
+	let bytesCreate(degree, 0) -> result in
+	(
+		for i=0;i<strLength(data) do
+			let 255&bytesGet(result, 0)^strGet(data, i) -> factor in
+			for j=0;j<degree do 
+				let reedSolomonMultiply(generator[j], factor) -> mul in
+				bytesSet(result, j, (bytesGet(result, j+1)^mul));
+		strFromBytes(result)
+	);;
+
+//----------------------
+const DARK=0;;
+const BACK=0xffffff;;
+
+fun modeFromMsg(msg) =
+	MODE_BYTE;;
+
+fun getNumRawDataModules(version)=
+	let (16 * version + 128) * version + 64 -> result in
+	if version<2 then result
+	else let version / 7 + 2 -> numAlign in
+	let result - ((25 * numAlign - 10) * numAlign - 55) -> result in
+	if version>=7 then result-36
+	else result;;
+
+fun getNumDataCodewords(version, ecl)=	// length of padded data, before adding ecc
+	(getNumRawDataModules(version)>>3) - ECL_CODEWORDS_PER_BLOCK[ecl][version] * NUM_ERROR_CORRECTION_BLOCKS[ecl][version];;
+
+fun getTotalBits(mode, version, msg)=
+	match mode with
+		MODE_BYTE -> 12+8*strLength(msg);;
+
+fun _versionFromMsg(msg, mode, ecl, v)=
+	if v<=VERSION_MAX then 
+	if getTotalBits(mode, v, msg)<= 8*getNumDataCodewords(v, ecl) then v
+	else _versionFromMsg(msg, mode, ecl, v+1);;
+
+fun versionFromMsg(msg, mode, ecl)= _versionFromMsg(msg, mode, ecl, VERSION_MIN);;
+
+fun eclImprove(version, dataUsedBits, ecl, result)=
+	if ecl>ECL_HIGH then result
+	else
+	let if dataUsedBits <= 8*getNumDataCodewords(version, ecl) then ecl else result -> result in
+	eclImprove(version, dataUsedBits, ecl+1, result);;
+
+fun sizeFromVersion(version) = version * 4 + 17;;
+
+fun padding(data, len)=
+	if len>0 then
+	if len==1 then "\$ec"::nil
+	else "\$ec\$11"::padding(data, len-2);;
+
+fun _alignPatterns(i, pos, step)=
+	if i>=1 then pos::_alignPatterns(i-1, pos-step, step);;
+
+fun alignmentPatternPositions(version)=
+	if version<>1 then
+	let version / 7 + 2 -> numAlign in
+	let if version == 32 then 26
+		else (version * 4 + numAlign * 2 + 1) / (numAlign * 2 - 2) * 2
+	-> step in arrayFromList(6::listReverse(_alignPatterns(numAlign - 1, version*4+10, step)));;
+
+fun _emptyBitmap(version, color)=
+	let sizeFromVersion(version) -> size in
+	bitmapCreate(size, size, color);;
+
+fun buildData(msg, mode, version, ecl)=
+	let strLength(msg) -> msgLen in
+	let if msgLen<10 then "0" else "" -> prefix in
+	let strBuild([hexFromInt(mode), prefix, hexFromInt(msgLen), hexFromStr(msg), "0"]) -> data in
+	let strFromHex(data) -> data in
+	let getNumDataCodewords(version, ecl) -> dataLen in
+		strBuild([data, padding(data, dataLen-strLength(data))])
+	;;
+
+fun addEccAndInterleave(version, ecl, data) =
+	let NUM_ERROR_CORRECTION_BLOCKS[ecl][version] -> numBlocks in
+	let ECL_CODEWORDS_PER_BLOCK[ecl][version] -> blockEccLen in
+	let getNumRawDataModules(version) / 8 -> rawCodewords in
+	let getNumDataCodewords(version, ecl) -> dataLen in
+	let numBlocks - rawCodewords % numBlocks -> numShortBlocks in
+	let rawCodewords / numBlocks - blockEccLen -> shortBlockDataLen in
+	let reedSolomonGenerator(blockEccLen) -> generator in
+	let bytesCreate(rawCodewords, 0) -> result in
+	(
+		if false then
+		(
+			echoLn ["numBlocks:", numBlocks];
+			echoLn ["blockEccLen:", blockEccLen];
+			echoLn ["rawCodewords:", rawCodewords];
+			echoLn ["dataLen:", dataLen];
+			echoLn ["numShortBlocks:", numShortBlocks];
+			echoLn ["shortBlockDataLen:", shortBlockDataLen];
+		);
+		let 0 -> dat in
+		for i=0;i<numBlocks do
+			let shortBlockDataLen + if i < numShortBlocks then 0 else 1 -> datLen in
+			let reedSolomonComputeRemainder(strSlice(data, dat, datLen), generator, blockEccLen) -> ecc in
+			(
+				let i -> k in
+				for j=0;j<datLen do
+				(
+					if j==shortBlockDataLen then set k=k-numShortBlocks;
+					bytesSet(result, k, strGet(data, dat+j));
+					set k=k+numBlocks
+				);
+				let dataLen + i -> k in
+				for j=0;j<blockEccLen do
+				(
+					bytesSet(result, k, strGet(ecc, j));
+					set k=k+numBlocks
+				);
+				set dat=dat+datLen
+			);
+		strFromBytes(result)
+	);;
+
+fun initModules(version)=
+	let sizeFromVersion(version) -> size in
+	let _emptyBitmap(version, BACK) -> b in
+	let alignmentPatternPositions(version) -> alignPat in
+	let arrayLength(alignPat) -> numAlign in
+	(
+		bitmapFillRectangle(b, 6, 0, 1, size, DARK, nil);
+		bitmapFillRectangle(b, 0, 6, size, 1, DARK, nil);
+		bitmapFillRectangle(b, 0, 0, 9, 9, DARK, nil);
+		bitmapFillRectangle(b, size-8, 0, 8, 9, DARK, nil);
+		bitmapFillRectangle(b, 0, size-8, 9, 8, DARK, nil);
+		for i=0;i<numAlign do
+		for j=0;j<numAlign do
+			if !((i == 0 && j == 0) || (i == 0 && j == numAlign - 1) || (i == numAlign - 1 && j == 0)) then
+				bitmapFillRectangle(b, alignPat[i] - 2, alignPat[j] - 2, 5, 5, DARK, nil);
+		if version >= 7 then
+		(
+			bitmapFillRectangle(b, size-11, 0, 3, 6, DARK, nil);
+			bitmapFillRectangle(b, 0, size-11, 6, 3, DARK, nil);
+		);
+		b
+	);;
+
+fun drawCodewords(b, data, version)=
+	let sizeFromVersion(version) -> size in
+	let 8*strLength(data) -> dataLen in
+	let 0-> i in
+	for right=size-1; right>=1; right-2 do
+	(
+		if right==6 then set right=5;
+		for vert=0; vert<size do
+			for j=0;j<2 do 
+				let right-j -> x in
+				let if ((right + 1) & 2) == 0 then size-1-vert else vert -> y in
+				if (BACK==bitmapGet(b, x, y)) && i<dataLen then
+					let bitTest(strGet(data, i>>3), 128>>(i&7)) -> dark in
+					(
+						bitmapSet(b, x, y, if dark then DARK else BACK);
+						set i=i+1
+					)
+	);;
+
+fun bitsVersionCompute(version, i, rem)=
+	if i>=12 then (version << 12 | rem)
+	else bitsVersionCompute(version, i+1, (rem << 1) ^ ((rem >> 11) * 0x1F25));;
+
+fun drawModules(b, version)=
+	let sizeFromVersion(version) -> size in
+	let alignmentPatternPositions(version) -> alignPat in
+	let arrayLength(alignPat) -> numAlign in
+	(
+		for i=7;i<size-7;i+2 do
+		(
+			bitmapSet(b, 6, i, BACK);
+			bitmapSet(b, i, 6, BACK);
+		);
+		for dy=-4;dy<=4 do
+		for dx=-4;dx<=4 do
+			let max(abs(dx), abs(dy)) -> dist in
+			if dist == 2 || dist == 4 then
+			(
+				bitmapSet(b, 3 + dx, 3 + dy, BACK);
+				bitmapSet(b, size-4 + dx, 3 + dy, BACK);
+				bitmapSet(b, 3+dx, size-4 + dy, BACK);
+			);
+
+		for i=0;i<numAlign do
+		for j=0;j<numAlign do
+			if !((i == 0 && j == 0) || (i == 0 && j == numAlign - 1) || (i == numAlign - 1 && j == 0)) then
+			for dy=-1;dy<=1 do
+			for dx=-1;dx<=1 do
+				if dx<>0 || dy<>0 then 
+				bitmapSet(b, alignPat[i] + dx, alignPat[j] +dy, BACK);
+
+		if version >= 7 then
+		let bitsVersionCompute(version, 0, version) -> bits in
+		for i = 0; i < 6 do
+		for j = 0; j < 3 do
+			let size - 11 + j -> k in
+			let if bitTest(bits, 1) then DARK else BACK -> color in
+			(
+				bitmapSet(b, k, i, color);
+				bitmapSet(b, i, k, color);
+				set bits=bits>>1
+			)
+	);;
+
+fun _maskInvert(mask)=
+	match mask with
+		0 -> lambda(x, y)= (x + y) % 2 == 0,
+		1 -> lambda(x, y)= y % 2 == 0,
+		2 -> lambda(x, y)= x % 3 == 0,
+		3 -> lambda(x, y)= (x + y) % 3 == 0,
+		4 -> lambda(x, y)= (x / 3 + y / 2) % 2 == 0,
+		5 -> lambda(x, y)= (x * y % 2) + (x * y % 3) == 0,
+		6 -> lambda(x, y)= (x * y % 2 + x * y % 3) % 2 == 0,
+		7 -> lambda(x, y)= ((x + y) % 2 + x * y % 3) % 2 == 0;;
+
+fun applyMask(b, bmask, version, mask)=
+	let sizeFromVersion(version) -> size in
+	let _maskInvert(mask) -> fInvert in
+	for y=0;y<size do 
+	for x=0;x<size do
+		if BACK==bitmapGet(bmask, x, y) then
+		if call fInvert(x, y) then bitmapSet(b, x, y, if DARK==bitmapGet(b, x, y) then BACK else DARK);;
+
+fun bitColor(val, i)= if bitTest(val, 1<<i) then DARK else BACK;;
+
+fun bitsEclMaskCompute(data, i, rem)=
+	if i>=10 then (data << 10 | rem) ^ 0x5412
+	else bitsEclMaskCompute(data, i+1, (rem << 1) ^ ((rem >> 9) * 0x537));;
+
+fun drawFormatBits(b, ecl, mask, version)=
+	let sizeFromVersion(version) -> size in
+	let (ECL_TO_MASK[ecl])<<3 | mask -> data in
+	let bitsEclMaskCompute(data, 0, data) -> bits in
+	(
+		for i=0;i<6 do bitmapSet(b, 8, i, bitColor(bits, i));
+		bitmapSet(b, 8, 7, bitColor(bits, 6));
+		bitmapSet(b, 8, 8, bitColor(bits, 7));
+		bitmapSet(b, 7, 8, bitColor(bits, 8));
+		for i=9;i<15 do bitmapSet(b, 14-i, 8, bitColor(bits, i));
+
+		for i=0;i<8 do bitmapSet(b, size-1-i, 8, bitColor(bits, i));
+		for i=8;i<15 do bitmapSet(b, 8, size-15+i, bitColor(bits, i));
+		bitmapSet(b, 8, size - 8, DARK)
+	);;
+
+fun _penaltyLine(i, hbits)=
+	let hbits&0x1f -> mask5 in
+	let hbits&0x3f -> mask6 in
+	let hbits&0x7ff -> mask11 in
+	(if i==4 && (mask5==0 || mask5==0x1f) then 3 else 0)+	// connect5 at the beginning
+	(if i>=5 && (mask6==0x20 || mask6==0x1f) then 3 else 0)+	// connect5 after the beginning
+	(if i>=5 && (mask6==0 || mask6==0x3f) then 1 else 0)+	// connect6
+	(if i>=10 && (mask11==0x5d || mask11==0x5d0) then 40 else 0)+	// special pattern
+//	(if i>=10 && (mask11==0x7a2 || mask11==0x22f) then 40 else 0)+	// inverse special pattern ; required ?
+	0;;
+
+fun _penaltyPatterns(b, size, i, j, hbits, vbits, score)=
+	if i>=size then score
+	else
+	let hbits+if DARK==bitmapGet(b, i, j) then 1 else 0 -> hbits in
+	let vbits+if DARK==bitmapGet(b, j, i) then 1 else 0 -> vbits in
+	let
+		_penaltyLine(i, hbits)+
+		_penaltyLine(i, vbits)+
+		score
+	-> score in
+	_penaltyPatterns(b, size, i+1, j, hbits<<1, vbits<<1, score);;
+
+fun penaltyPatterns(b, size, j, score)=
+	if j>=size then score
+	else
+	penaltyPatterns(b, size, j+1, score+_penaltyPatterns(b, size, 0, j, 0, 0, 0));;
+
+fun penaltySquare(b, size)=
+	let 0 -> score in
+	(
+		for i=0;i<size-1 do
+		for j=0;j<size-1 do
+			let bitmapGet(b, i, j) -> color in
+			if (color==bitmapGet(b, i+1, j))
+			&& (color==bitmapGet(b, i, j+1))
+			&& (color==bitmapGet(b, i+1, j+1))
+			then set score=score+1;
+		score*3
+	);;
+
+fun penaltyBalance(b, size)=
+	let 0 -> dark in
+	let size*size -> total in
+	(
+		for i=0;i<size-1 do
+		for j=0;j<size-1 do
+			if DARK==bitmapGet(b, i, j) then set dark=dark+1;
+		10*(abs(20*dark-10*total)/total)
+	);;
+
+fun computePenalty(b, version) =
+	let sizeFromVersion(version) -> size in
+	penaltyPatterns(b, size, 0, 0)+
+	penaltySquare(b, size)+
+	penaltyBalance(b, size);;
+
+fun bestMask(b, bmask, ecl, version, i, score, best)=
+	if i>=8 then best
+	else
+	(
+		applyMask(b, bmask, version, i);
+		drawFormatBits(b, ecl, i, version);
+		let computePenalty(b, version) -> penalty in
+		(
+			applyMask(b, bmask, version, i);
+			bestMask(b, bmask, ecl, version, i+1,
+				if score==nil then penalty else min(score, penalty),
+				if best==nil || penalty<score then i else best)
+		)
+	);;
+
+enum _, MODE_NUMERIC, MODE_ALPHANUMERIC, _, MODE_BYTE;;
+enum ECL_LOW, ECL_MEDIUM, ECL_QUARTILE, ECL_HIGH;;
+
+fun qrcodeEcho(b)=
+	echoLn "\n\n";
+	for y=0;y<bitmapH(b) do
+	(
+		for x=0;x<bitmapW(b) do echo if BACK==bitmapGet(b, x, y) then "##" else "  ";
+		echoLn "";
+	);
+	echoLn "\n\n";
+	b;;
+
+fun qrcode(msg, ecl)=
+	let modeFromMsg(msg) -> mode in
+	let versionFromMsg(msg, mode, ecl) -> version in
+	let getTotalBits(mode, version, msg) -> dataUsedBits in
+	let eclImprove(version, dataUsedBits, ECL_LOW, ecl) -> ecl in
+	let buildData(msg, mode, version, ecl) -> data in
+	let addEccAndInterleave(version, ecl, data) -> data in
+	let initModules(version) -> bmask in
+	let initModules(version) -> b in
+	(
+		drawCodewords(b, data, version);
+		drawModules(b, version);
+		
+		let bestMask(b, bmask, ecl, version, 0, nil, nil) -> mask in
+		(
+			applyMask(b, bmask, version, mask);
+			drawFormatBits(b, ecl, mask, version)
+		);
+		b
+	);;
+fun qrcodeWithBorder(msg, ecl, border)=
+	let qrcode(msg, ecl) -> qr in
+	let 2*border+bitmapW(qr) -> w in
+	let bitmapCreate(w, w, BACK) -> b in
+	
+		bitmapBlit(b, border, border, qr, 0, 0, nil, nil, nil)
+	;;

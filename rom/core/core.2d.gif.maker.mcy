@@ -1,0 +1,92 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2022, Sylvain Huet, Ambermind
+// Minimacy (r) System
+
+export gifFromBitmap(bmp);;
+export gifFromFrames(lFrames, transparency);;
+
+use core.2d.quantization;;
+
+const GRAPHICS_EXT_FUNC_CODE    =0xf9;;	// graphics control
+const APPLICATION_EXT_FUNC_CODE =0xff;;	// application block
+
+fun _mkBlocks(i, data)=
+	if i>=strLength(data) then [strInt8(0), ""]::nil
+	else let min(255, strLength(data)-i) -> blockLen in [
+		strInt8(blockLen),
+		strSlice(data, i, blockLen)
+	]::_mkBlocks(i+blockLen, data);;
+
+fun _gifMakeFrame(w, h, data)= [
+	",",
+	strInt16Lsb(0), //x
+	strInt16Lsb(0), //y
+	strInt16Lsb(w),
+	strInt16Lsb(h),
+	strInt8(7),	// bpp-1 (1:Lut|1:Interlaced|3:unused|3:bpp-1)
+	strInt8(8),	// bpp
+	_mkBlocks(0, lzwFromStr(data, 8))
+];;
+
+fun _gifMakeFinal(w, h, palette, data)=
+	strBuild([
+		"GIF89a",
+		strInt16Lsb(w),
+		strInt16Lsb(h),
+		strInt8(0xf7),	// 1:Lut|3:bpp-1|1:0|3:bpp-1
+		strInt8(0),	// background color index
+		strInt8(0),
+
+		arrayInit(256, lambda(i) = strInt24Msb(palette[i])),
+
+		data,
+		";"
+	]);;
+
+const NETSCAPE2_0="NETSCAPE2.0";;
+fun netscapeBlock()= [	// this block is mandatory for animated gifs, else the animation doesn't loop
+	"!",
+	strInt8(APPLICATION_EXT_FUNC_CODE),
+	strInt8(strLength(NETSCAPE2_0)),	// length
+	NETSCAPE2_0,
+	_mkBlocks(0, strBuild([
+		strInt8(1),	// always 1
+		strInt16Lsb(0)	// repeat number. 0 means never stop
+	]))
+];;
+fun durationBlock(duration, transparency)= [
+	"!",
+	strInt8(GRAPHICS_EXT_FUNC_CODE),
+	_mkBlocks(0, strBuild([
+		strInt8(if transparency==nil then 0 else 1),
+		strInt16Lsb(duration/10),
+		strInt8(if transparency==nil then 0xff else transparency)	//transparency index
+	]))
+];;
+
+fun _framesQuantify(lFrames, quantifiedOctree)=
+	if lFrames==nil then quantifiedOctree
+	else let head(lFrames) -> [frame, _] in
+	_framesQuantify(tail(lFrames), quantifyFrame(quantifiedOctree, 256, frame));;
+
+fun gifFromBitmap(bmp)=
+	let bitmapW(bmp) -> w in
+	let bitmapH(bmp) -> h in
+	let quantization(bmp, 256) -> [data, palette] in
+	let _gifMakeFrame(w, h, data) -> data in
+	_gifMakeFinal(w, h, palette, data);;
+
+fun gifFromFrames(lFrames, transparency)=
+	let head(lFrames) -> [bmp, _] in
+	let bitmapW(bmp) -> w in
+	let bitmapH(bmp) -> h in
+	let _framesQuantify(lFrames, nil) -> quantifiedOctree in
+	let paletteFromQuantization(quantifiedOctree) -> [paletteOctree, aPalette] in
+	let if transparency<>nil then paletteProject(aPalette, paletteOctree, transparency) -> transparencyIndex in
+	let listMap(lFrames, lambda([frame, duration])=
+		let bitmapPalettize(frame, paletteOctree, aPalette) -> data in [
+		durationBlock(duration, transparencyIndex),
+		_gifMakeFrame(w, h, data)
+	]) -> data in
+	_gifMakeFinal(w, h, aPalette, [netscapeBlock(), data]);;
+

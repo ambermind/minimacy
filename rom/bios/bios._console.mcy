@@ -1,0 +1,173 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2022, Sylvain Huet, Ambermind
+// Minimacy (r) System
+
+struct _Console=[_pkgC, _promptC];;
+
+var _PromptInput;;	// pending input buffer
+var _PromptBuffer="";;	// line in construction
+var _PromptIndex=0;;	// index in promptBuffer, always at the beginning of a utf8 char
+var _PromptTmp;;	// buffer for multi-bytes characters
+var _PromptHistoryPrev;;
+var _PromptHistoryNext;;
+var _PromptShow=false;;
+
+fun _promptEcho(str) = if _PromptShow then echo str;;
+
+fun _promptHome ()=
+	if _PromptIndex>0 then _promptEcho(strCreate(strLengthU8(strLeft(_PromptBuffer, _PromptIndex)), 8));
+	set _PromptIndex=0;;
+
+fun _promptForward(i, n)=
+	if n<=0 || i>=strLength(_PromptBuffer) then i
+	else _promptForward(strU8Next(_PromptBuffer, i), n-1);;
+
+fun _promptEnd(n) =
+	let if n==nil then strLength(_PromptBuffer) else n -> n in
+	let _promptForward(_PromptIndex, n) -> iNext in (
+		_promptEcho(strSlice(_PromptBuffer, _PromptIndex, iNext-_PromptIndex));
+		set _PromptIndex= iNext
+	);;
+
+fun _promptInsert(str)=
+	let strLeft(_PromptBuffer, _PromptIndex) -> prefix in
+	let strSlice(_PromptBuffer, _PromptIndex, nil) -> suffix in (
+		_promptEcho({str, suffix, strCreate(strLengthU8(suffix), 8)});
+		set _PromptBuffer=strListConcat(prefix::str::suffix::nil);
+		set _PromptIndex=_PromptIndex+strLength(str);
+	);;
+
+fun _promptRemove()=
+	if _PromptIndex>0 then
+	let strU8Previous(_PromptBuffer, _PromptIndex) -> iNext in
+	let strLeft(_PromptBuffer, iNext) -> prefix in
+	let strSlice(_PromptBuffer, _PromptIndex, nil) -> suffix in (
+		_promptEcho({"\8", suffix, " ", strCreate(strLengthU8(suffix)+1, 8)});
+		set _PromptBuffer=strConcat(prefix, suffix);
+		set _PromptIndex=iNext;
+	);;
+
+fun _promptClear(cmd)=
+	_promptHome();
+	set _PromptBuffer= strCreate(strLengthU8(_PromptBuffer), 32);
+	_promptEnd(nil);
+	_promptHome();
+	set _PromptBuffer="";
+	_promptInsert(cmd);;
+
+fun _promptUp ()=
+	let head(_PromptHistoryPrev) -> cmd in
+	if cmd<>nil then (
+		if !strEmpty(_PromptBuffer) then set _PromptHistoryNext=_PromptBuffer::_PromptHistoryNext;
+		set _PromptHistoryPrev=tail(_PromptHistoryPrev);
+		_promptClear(cmd);
+	);;
+
+fun _promptDown ()=
+	let head(_PromptHistoryNext) -> cmd in (
+		if !strEmpty(_PromptBuffer) then set _PromptHistoryPrev=_PromptBuffer::_PromptHistoryPrev;
+		set _PromptHistoryNext=tail(_PromptHistoryNext);
+		_promptClear(cmd)
+	);;
+
+fun _promptLeft ()=
+	if _PromptIndex>0 then (
+		_promptEcho("\8");
+		set _PromptIndex= strU8Previous(_PromptBuffer, _PromptIndex);
+	);;
+fun _promptRight ()= 
+	if _PromptIndex< strLength(_PromptBuffer) then _promptEnd(1);;
+
+fun _promptDelete()=
+	_promptRight();
+	_promptRemove();;
+
+fun _utf8Complete(c0, len)= len>= if c0<0xdf then 2 else if c0<0xef then 3 else 4;;
+
+fun _escComplete(str, c)=
+	if !strStartsWith(str, "^[[") then true
+	else if str=="^[[" then false
+	else if c=='~' then true
+	else if c==';' then false
+	else if str=="^[[O" then false
+	else if c>='0' && c<='9' then false
+	else true;;
+
+fun _tmpComplete(str, c)=
+	let strGet(str, 0) -> c0 in
+	match c0 with
+		'^'->_escComplete(str, c),
+		_ -> _utf8Complete(c0, strLength(str));;
+
+fun _promptSend(clear)=
+	echo "\n";
+	if clear then set _PromptBuffer=nil;
+	if (!strEmpty(_PromptBuffer)) && (_PromptBuffer<>head(_PromptHistoryPrev)) then set _PromptHistoryPrev= listCut(_PromptBuffer::_PromptHistoryPrev, 32);
+	true;;
+
+fun _promptInput(c)=	// return true when a line is complete, available as _PromptBuffer
+	if _PromptTmp<>nil then
+	(
+		set _PromptTmp=strConcat(_PromptTmp, strFromChar(c));
+		if _tmpComplete(_PromptTmp, c) then (
+			match _PromptTmp with
+				"^[[A" -> _promptUp(),
+				"^[[B" -> _promptDown(),
+				"^[[3~"-> _promptDelete(),
+				"^[[5~"-> _promptUp(),	// page up
+				"^[[6~"-> _promptDown(),	// page down
+				"^[[D" -> _promptLeft(),
+				"^[[C" -> _promptRight(),
+				"^[[H" -> _promptHome(),
+				"^[[F" -> _promptEnd(nil),
+				_ -> _promptInsert(_PromptTmp);
+			set _PromptTmp=nil;
+			nil
+		)
+	)
+	else if c==0x7f then void _promptRemove()
+	else if c==0x1b then void set _PromptTmp="^["
+	else if c>=0xc2 && c<=0xf4 then void set _PromptTmp=strFromChar(c)
+	else if c==10 || c==13 then _promptSend(false)
+	else if c==4 then _promptSend(true)	// ctrl-D
+	else if c>=32 then void _promptInsert(strFromChar(c));;
+
+fun _promptFeed(inputRef, input, fOnInput)=
+	set input=strConcat(_PromptInput, input);
+	set _PromptInput=nil;
+	for i=0;i<strLength(input) do if _promptInput(strGet(input, i)) then (	// end of line detected
+		set _PromptInput = strSlice(input, i+1, nil);
+		inputClose(refGet(inputRef));
+		let _PromptBuffer -> input in (
+			set _PromptBuffer=nil;
+			call fOnInput(input)
+		);
+		return nil
+	);;
+
+fun _onPrompt(prompt, fOnInput, show)=
+	set _PromptBuffer="";
+	set _PromptIndex=0;
+	let refCreate(nil) -> inputRef in
+	refSet(inputRef, onInput(
+		lambda(s)= _promptFeed(inputRef, s, fOnInput),
+		lambda()= (set _PromptShow=show; echo prompt; _promptFeed(inputRef, nil, fOnInput) )
+	));;
+
+fun onPrompt(prompt, fOnInput)= _onPrompt(prompt, fOnInput, true);;
+fun onPassword(prompt, fOnInput)= _onPrompt(prompt, fOnInput, false);;
+
+fun promptHistory ()= echoLn strJoin("\n", _PromptHistoryPrev); silentPrompt();;
+
+fun _consoleLoop(csl) =
+	onPrompt(csl._promptC, lambda(input)=
+		if input<>nil && input<>"quit" then (
+			_consoleLoop(csl);
+			if !strEmpty(input) then _promptTry(input, csl._pkgC)
+		)
+	);;
+
+fun consoleStart(p0)=
+	let if p0==_SystemPkg || p0==nil then pkgCreate(nil, nil) else p0 -> p in
+	_consoleLoop([_pkgC=p, _promptC= strFormat("\n*] ", pkgName(p0))]);
+	true;;

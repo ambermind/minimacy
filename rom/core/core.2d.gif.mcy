@@ -1,0 +1,149 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2022, Sylvain Huet, Ambermind
+// Minimacy (r) System
+
+export gifAnimate(frames, fRender);;
+export framesFromGif(src);;
+export bitmapFromGif(src);;
+
+
+const COMMENT_EXT_FUNC_CODE     =0xfe;;	// comment
+const GRAPHICS_EXT_FUNC_CODE    =0xf9;;	// graphics control
+const PLAINTEXT_EXT_FUNC_CODE   =0x01;;	// plaintext
+const APPLICATION_EXT_FUNC_CODE =0xff;;	// application block
+
+const GIF_INTERLACED = [0, 8]::[4, 8]::[2, 4]::[1, 2]::nil;;	// [Y0 deltaY]
+const GIF_NOT_INTERLACED = [0, 1]::nil;;	// [Y0 deltaY]
+
+
+struct Gif=[bitmapG, backG, lComponentsG];;
+
+const GIF_HEADER=2::2::1::1::1::nil;;
+const GIF_HEADER_FLAG=3::1::3::1::nil;;
+
+const GIF_LOCAL=2::2::2::2::1::nil;;
+const GIF_LOCAL_FLAG=3::3::1::1::nil;;
+
+
+fun _strFromLzwList(lData, bitLen)=
+	let lzwCreate(bitLen) -> lzw in
+	strListConcat(listMap(lData, lambda(data)=lzwInflate(lzw, data, 0, nil)));;
+
+fun _gifHeader(src, i, l)=
+	if l<>nil then let head(l) -> len in
+	let match len with
+		1 -> strGet(src, i),
+		2 -> strRead16Lsb(src, i),
+		4 -> strRead32Lsb(src, i)
+	-> val in val::_gifHeader(src, i+len, tail(l));;
+
+fun _bitExtract(v, l)=
+	if l<>nil then let head(l) -> n in
+	(v& ((1<<n)-1))::_bitExtract(v>>n, tail(l));;
+
+fun _lutExtract(src, i, n)=
+	arrayInit(n, lambda(j)=0xff000000|strRead24Msb(src, i+j*3));;
+
+fun _readBlocks(src, i)=
+	let strGet(src, i) -> n in
+	if n<>nil && n<>0 then strSlice(src, i+1, n)::_readBlocks(src, i+1+n);;
+
+fun _readNextI(src, i)=
+	let strGet(src, i) -> n in
+	if n==nil then i
+	else if n==0 then i+1 else _readNextI(src, i+1+n);;
+
+
+fun _localExtract(src, i, mainLut, delay, transp)=
+	if i<strLength(src) then
+	match strGet(src, i) with
+	',' ->
+		let i+1 -> i in
+		let _gifHeader(src, i, GIF_LOCAL) -> x::y::w::h::flag::_ in
+		let _bitExtract(flag, GIF_LOCAL_FLAG) -> bpp::_::I::M::_ in
+		let bpp+1 -> bpp in
+		let i+9 -> i in
+		let if M==0 then mainLut else _lutExtract(src, i, 1<<bpp) -> lut in
+		let M*3*(1<<bpp) -> lutSize in
+		let i+lutSize -> i in
+		let strGet(src, i) -> bpp in
+		let i+1 -> i in
+		let _readBlocks(src, i) -> data in
+		let _readNextI(src, i) -> iNext in
+		let _strFromLzwList(data, bpp) -> extract in
+		let bitmapCreate(w, h, 0) -> bmp in
+		let if I<>0 then GIF_INTERLACED else GIF_NOT_INTERLACED -> lRows in
+		(
+			let 0 -> rowStart in
+			for [y0, dy] in lRows do
+			for j=y0;j<h;j+dy do
+			(
+				for i=0;i<w do
+					let strGet(extract, rowStart+i) -> color in
+					if color<>transp then bitmapSet(bmp, i, j, lut[color]);
+				set rowStart=rowStart+w
+			);
+			[x, y, bmp, delay]::_localExtract(src, iNext, mainLut, nil, nil)
+		),
+	'!' ->
+		let strGet(src, i+1) -> code in
+		let i+2->i in
+		let strBuild(_readBlocks(src, i)) -> data in
+		let _readNextI(src, i) -> iNext in
+		(
+			if code==GRAPHICS_EXT_FUNC_CODE then
+			(
+				let if bitTest(strGet(data, 0), 1) then strGet(data, 3) -> transp in
+				let 10*strRead16Lsb(data, 1) -> delay in	// delay is expressed in 1/100s in a gif file, we convert to milliseconds
+				_localExtract(src, iNext, mainLut, delay, transp)
+			)
+			else _localExtract(src, iNext, mainLut, delay, transp)
+		),
+	';' -> nil,	// normal termination
+	_ -> /*strGet src i;*/nil;;
+	
+fun gifExtract(src)=
+	let strLeft(src, 6) -> magic in
+	if magic=="GIF89a" || magic=="GIF87a" then
+	let 6 -> i in
+	let _gifHeader(src, i, GIF_HEADER) -> ww::hh::flag::background::_::_ in
+	let _bitExtract(flag, GIF_HEADER_FLAG) -> bpp::_::CR::M::_ in
+	let bpp+1 -> bpp in
+	let i+7 -> i in
+	let if M<>0 then _lutExtract(src, i, 1<<bpp) -> lut in
+	let M*3*(1<<bpp) -> lutSize in
+	let i+lutSize -> i in
+	let bitmapCreate(ww, hh, lut[background]) -> bmp in
+	let _localExtract(src, i, lut, nil, nil) -> lComponents in
+	[bitmapG=bmp, backG=lut[background], lComponentsG=lComponents];;
+
+fun _gifAnimate(frames, i, cb)=
+	let arrayLength(frames) -> nbFrames in
+	if nbFrames>0 then
+	let i%nbFrames -> i in
+	let frames[i] ->[frame, delay] in
+	let call cb(frame) -> carryOn in
+	if carryOn && delay>0 && nbFrames>1 then onTimeout(delay, lambda()=_gifAnimate(frames, i+1, cb));;
+	
+//-------------API
+// cb is called with the next bitmap frame and returns true to continue, nil or false to stop the animation
+fun gifAnimate(frames, fRender)= _gifAnimate(frames, 0, fRender);;
+
+fun framesFromGif(src)=
+	let gifExtract(src) -> gif in
+	if gif<>nil then
+	let gif.bitmapG -> bmp in
+	arrayFromList(listMap(gif.lComponentsG, (lambda([x, y, image, delay])=
+		bitmapBlit(bmp, x, y, image, 0, 0, nil, nil, BLEND_ALPHA);
+		[bitmapCopy(bmp, 0, 0, nil, nil), delay]
+	)));;
+
+fun bitmapFromGif(src)=
+	let gifExtract(src) -> gif in
+	if gif<>nil then
+	let gif.bitmapG -> bmp in
+	(
+		for [x, y, image, delay] in gif.lComponentsG do
+			bitmapBlit(bmp, x, y, image, 0, 0, nil, nil, BLEND_ALPHA);
+		bmp
+	);;

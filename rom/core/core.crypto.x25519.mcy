@@ -1,0 +1,102 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2022, Sylvain Huet, Ambermind
+// Minimacy (r) System
+
+const _A24=bigFromInt(121665);;
+
+fun _cSwap(x_2, x_3, z_2, z_3, swap)=
+	if swap==0 then [x_2, x_3, z_2, z_3]
+	else [x_3, x_2, z_3, z_2];;
+
+fun _x25519(p, mu, k, t, x_1, x_2, x_3, z_2, z_3, swap)=
+//echoLn strBuild [t " " swap];
+	if t<0 then _cSwap(x_2, x_3, z_2, z_3, swap)
+	else
+	let bigBit(k, t) -> k_t in
+	let _cSwap(x_2, x_3, z_2, z_3, k_t ^ swap) -> [x_2, x_3, z_2,  z_3] in
+	let k_t -> swap in
+	let t-1 -> t in
+\modBarrett( p, mu)
+	let x_2+z_2 -> A in		// A  = x_2+z_2
+	let A*A -> AA in		// AA = A^2
+	let x_2-z_2 -> B in		// B  = x_2-z_2
+	let B*B -> BB in		// BB = B^2
+	let AA-BB -> E in		// E  = AA-BB
+
+	let x_3+z_3 -> C in		// C  = x_3+z_3
+	let x_3-z_3 -> D in		// D  = x_3-z_3
+	let D*A -> DA in		// DA = D*A
+	let C*B -> CB in		// CB = C*B
+
+	let (DA+CB)**2 -> x_3 in			// x_3=(DA+CB)^2
+	let x_1 * ((DA - CB)**2) -> z_3 in	// z_3 = x_1 * (DA - CB)^2
+	let AA*BB -> x_2 in					// x_2 = AA * BB
+	let E * (AA + _A24 * E) -> z_2 in	// z_2 = E * (AA + a24 * E)
+	_x25519(p, mu, k, t, x_1, x_2, x_3, z_2, z_3, swap);;
+	
+fun bigX25519(k, u)=
+	let 0->swap in
+	let bigNbits(k)-1 -> t in
+	\bigNum
+		let 0x7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffed -> p in
+		let bigBarrett(p) -> mu in
+		let u%p -> u in
+		let [u, 1, 0, u, 1] -> [x_1, x_2, z_2, x_3, z_3] in
+		let _x25519(p, mu, k, t, x_1, x_2, x_3, z_2, z_3, swap) -> [x_2, x_3, z_2, z_3] in
+		\modBarrett( p, mu) x_2 * (z_2 ** (p - 2));;
+
+fun _swapStr(str) =
+	let bytesCreate(32, 0) -> bytes in
+	(
+		let strLength(str) -> len in
+		for i=0;i<len do bytesSet(bytes, 31-i, strGet(str, i));
+		bytes
+	);;
+
+fun _decodeScalar(str) = 
+	let _swapStr(str) -> bytes in
+	(
+		let bytesGet(bytes, 0) -> b in bytesSet(bytes, 0, (b&0x7f)|0x40);
+		let bytesGet(bytes, 31) -> b in bytesSet(bytes, 31, b&0xf8);
+		bigFromBytes(bytes)		
+	);;
+
+fun _decodeU(str) = 
+	let _swapStr(str) -> bytes in
+	(
+		let bytesGet(bytes, 0) -> b in bytesSet(bytes, 0, b&127);
+		bigFromBytes(bytes)		
+	);;
+
+fun _encodeResult(v)=
+	strFromBytes(_swapStr(strFromBig(v, 32)));;
+
+fun x25519(k, u)=
+	let _decodeScalar(k) -> k in
+	let _decodeU(u) -> u in
+	_encodeResult(bigX25519(k, u));;
+
+fun x25519Random()=
+	let bigFromHex("7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffed") -> p in
+	strFromBig(bigMod(bigRand(bigNbits(p), false), p), 32);;
+
+// ECDH
+
+// generate a keypair for ecdh. Compute a random key if privAlice is nil
+fun x25519KeyPair(privAlice) =
+	let if privAlice==nil then x25519Random() else privAlice -> privAlice in
+	let "\9" -> uAlice in
+	let x25519(privAlice, uAlice) -> pubAlice in
+	[privAlice, pubAlice];;
+
+// get the public key to communicate to Bob
+fun x25519KeyPub(keyAlice) = let keyAlice -> [_, pubAlice] in pubAlice;;
+
+fun x25519KeyPrivate(keyAlice) = let keyAlice -> [private, _] in private;;
+
+fun x25519FromPublic(public) = [nil, public];;
+fun x25519KeyIsPrivate([private, public])= private<>nil;;
+
+// mix Alice Key with Bob public key to generate the shared secret
+fun x25519Ecdh(keyAlice, pubBob) = let keyAlice -> [privAlice, _] in x25519(privAlice, pubBob);;
+

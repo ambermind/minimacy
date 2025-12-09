@@ -1,0 +1,1235 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2022, Sylvain Huet, Ambermind
+// Minimacy (r) System
+
+
+// https://www.ietf.org/rfc/rfc4252.txt : user authentication
+// https://www.ietf.org/rfc/rfc4253.txt : setup + key exchange
+// https://www.ietf.org/rfc/rfc4254.txt : global request, channel, session
+
+use core.crypto.hash;;
+use core.crypto.aes;;
+use core.crypto.ed25519;;
+use core.crypto.x25519;;
+use core.crypto.pkcs1;;
+use core.crypto.rsa;;
+use core.crypto.key;;
+use core.util.base64;;
+
+const SSH_DEBUG=false;;
+//const SSH_DEBUG=true;;
+
+sum SshAuth= sshAuthPassword _, sshAuthPublicKey _ _;;
+
+sum SSH_NOTIFICATIONS=	// internal notifiction codes, not related to ssh rfcs
+	SSH_OK, SSH_CLOSED, SSH_UNKNOWN,
+	SSH_ERROR, SSH_HANDSHAKE_FAILURE, SSH_USERAUTH_FAILURE, 
+	SSH_CHANNEL_FAILURE, SSH_CHANNEL_EOF, SSH_CHANNEL_CLOSED,
+	SSH_DATA, SSH_READY;;
+
+const SSH_PROTOCOL_CLIENT="SSH-2.0-Minimacy_Client_1.0";;
+const SSH_PROTOCOL_SERVER="SSH-2.0-Minimacy_Server_1.0";;
+
+const SSH2_MSG_DISCONNECT     =1;;
+const SSH2_MSG_IGNORE         =2;;
+const SSH2_MSG_DEBUG          =4;;
+const SSH2_MSG_SERVICE_REQUEST=5;;
+const SSH2_MSG_SERVICE_ACCEPT =6;;
+
+const SSH2_MSG_KEXINIT=20;;
+const SSH2_MSG_NEWKEYS=21;;
+
+const SSH2_MSG_KEX_ECDH_INIT =30;;
+const SSH2_MSG_KEX_ECDH_REPLY=31;;
+
+const SSH2_MSG_KEX_DH_GEX_GROUP  =31;;
+const SSH2_MSG_KEX_DH_GEX_INIT   =32;;
+const SSH2_MSG_KEX_DH_GEX_REPLY  =33;;
+const SSH2_MSG_KEX_DH_GEX_REQUEST=34;;
+
+const SSH2_USERAUTH="ssh-userauth";;
+const SSH2_MSG_USERAUTH_REQUEST=50;;
+const SSH2_MSG_USERAUTH_FAILURE=51;;
+const SSH2_MSG_USERAUTH_SUCCESS=52;;
+const SSH2_MSG_USERAUTH_BANNER =53;;
+
+const SSH2_MSG_USERAUTH_PK_OK=60;;
+
+const SSH2_MSG_GLOBAL_REQUEST=80;;
+const SSH2_MSG_REQUEST_SUCCESS=81;;
+const SSH2_MSG_REQUEST_FAILURE=82;;
+
+const SSH2_MSG_CHANNEL_OPEN=90;;
+const SSH2_MSG_CHANNEL_OPEN_CONFIRMATION=91;;
+const SSH2_MSG_CHANNEL_OPEN_FAILURE=92;;
+const SSH2_MSG_CHANNEL_WINDOW_ADJUST=93;;
+const SSH2_MSG_CHANNEL_DATA=94;;
+const SSH2_MSG_CHANNEL_EOF=96;;
+const SSH2_MSG_CHANNEL_CLOSE=97;;
+const SSH2_MSG_CHANNEL_REQUEST=98;;
+const SSH2_MSG_CHANNEL_SUCCESS=99;;
+const SSH2_MSG_CHANNEL_FAILURE=100;;
+
+const SSH_MIN=1024;;
+const SSH_N=4096;;
+const SSH_MAX=8192;;
+
+const PACKET_MAX_SIZE=0x4000;;
+const WINDOW_INIT=0x10000;;
+
+const SSH_ZERO_PADDING=false;;
+
+const BLOCK_SIZE=16;;
+
+const HMAC_FAILED=[nil, nil];;
+
+const OID_SHA1=strFromHex("3021300906052b0e03021a05000414");;
+const OID_SHA256=strFromHex("3031300d060960864801650304020105000420");;
+const OID_SHA512=strFromHex("3051300d060960864801650304020305000440");;
+
+struct SshDh=[
+	pDH, gDH, xDH, eDH,	// diffie-hellman-group-exchange-sha256
+	ecDH	// curve25519-sha256
+];;
+struct SshKeys=[encIvK, decIvK, encKeyK, decKeyK, encMacK, decMacK, decMacLenK, gcmEncK, gcmDecK, encEnabledK, decEnabledK];;
+
+enum
+	kex_algorithms,
+	server_host_key_algorithms,
+	encryption_algorithms_client_to_server,
+	encryption_algorithms_server_to_client,
+	mac_algorithms_client_to_server,
+	mac_algorithms_server_to_client,
+	compression_algorithms_client_to_server,
+	compression_algorithms_server_to_client,
+	languages_client_to_server,
+	languages_server_to_client;;
+const Mandatory=true::true::true::true::true::true::true::true::false::false::nil;;
+
+struct SshInit=[
+	cookieI,
+	algosI,
+	sequenceNumberI
+];;
+
+// during handshake the same hash is computed on both sides from: clientProtocol+serverProtocol+clientKexInit+serverKexInit+serverPublicKey
+// ...and for diffie-hellman-group-exchange-sha256: +SSH_MIN+SSH_N+SSH_MAX+p+g+e+f+K
+// ...and for curve25519-sha256: +clientX25519PublicKey+serverPub+K
+
+struct SSH=[
+	clientS, 
+	serverKeyS, fCheckAuthS,
+	tcpS, sendS, iS, closeAfterS, _bufferS,
+	kexInitS,
+	peerKexInitS,
+	dhS,
+	hashFifoS, hashS,
+	serverPublicKeyS,
+	keysS,
+	publicKeyS,
+	fHandlePacketS,
+	fNotifyEventS,
+	fNotifyNewChannelS,
+	channelsS
+];;
+struct Channel=[
+	hC,
+	channelC,
+	peerPacketMaxSizeC,	// accepted by peer
+	peerWindowC,
+	localPacketMaxSizeC,	// accepted by local
+	localWindowC,
+	sendingC,	// data ready to send
+	fNotifyChannelEventC,
+	fNotifyChannelRequestC
+];;
+
+fun sshKexInit(client) =[
+	cookieI=strRand(16),
+	algosI={
+	// kex_algorithms
+	if client then "curve25519-sha256,diffie-hellman-group-exchange-sha256" else "curve25519-sha256",
+	// server_host_key_algorithms
+	if client then "ssh-ed25519,rsa-sha2-512,rsa-sha2-256,ssh-rsa" else "ssh-ed25519",
+	// encryption_algorithms_client_to_server
+	"aes256-gcm@openssh.com,aes256-ctr,aes192-ctr,aes128-ctr",
+	// encryption_algorithms_server_to_client
+	"aes256-gcm@openssh.com,aes256-ctr,aes192-ctr,aes128-ctr",
+	// mac_algorithms_client_to_server
+	"hmac-sha2-512,hmac-sha2-256",
+	// mac_algorithms_server_to_client
+	"hmac-sha2-512,hmac-sha2-256",
+	// compression_algorithms_client_to_server
+	"none",
+	// compression_algorithms_server_to_client
+	"none",
+	// languages_client_to_server
+	nil,
+	// languages_server_to_client
+	nil
+	},
+	sequenceNumberI=-1
+];;
+fun sshWho(h) = if h.clientS then "client" else "server";;
+
+fun _sshBuildVal(val)={strInt32Msb(strLength(val)), val};;
+
+fun _sshMpintFromBin(v)=
+	strBuild(_sshBuildVal(	if 0<>(0x80 & strGet(v, 0)) then strConcat("\0", v)
+	else v));;
+fun _sshMpintFromBig(v)=
+	strBuild(_sshBuildVal(	let strFromBig(v, 0) -> result in
+	if 0<>(0x80 & strGet(result, 0)) then strConcat("\0", result)
+	else result));;
+
+fun _sshHashRaw(h, str)= fifoIn(h.hashFifoS, str); str;;
+fun _sshHashStr(h, str)= fifoIn(h.hashFifoS, strBuild(_sshBuildVal(str))); str;;
+fun _sshHashInt(h, val)= fifoIn(h.hashFifoS, strInt32Msb(val)); val;;
+fun _sshHashMPint(h, val)= fifoIn(h.hashFifoS, _sshMpintFromBig(val)); val;;
+
+fun _sshKeyDerivation(H, K, str, len)=
+//	K1 = HASH(K || H || X || session_id)
+//	K2 = HASH(K || H || K1)
+	let sha256(strBuild({K, H, str, H})) -> K1 in
+	if len<=strLength(K1) then strLeft(K1, len)
+	else strLeft(strConcat(K1, sha256(strBuild({K, H, K1}))), len);;
+
+fun _sshIv(fKey, str, algo)=
+	match algo with
+		"aes256-gcm@openssh.com" -> refCreate(bigFromStr((call fKey(str, 12)))),
+		_ -> refCreate(bigFromStr(call fKey(str, BLOCK_SIZE)));;
+
+fun _sshCiphering(fKey, str, algo)=
+	match algo with
+		"aes128-ctr" -> let aesCreate(call fKey(str, 16)) -> aes in (lambda(iv, msg)= aesEncryptCtrIncr(aes, iv, msg)),
+		"aes256-ctr" -> let aesCreate(call fKey(str, 32)) -> aes in (lambda(iv, msg)= aesEncryptCtrIncr(aes, iv, msg)),
+		"aes192-ctr" -> let aesCreate(call fKey(str, 24)) -> aes in lambda(iv, msg)= aesEncryptCtrIncr(aes, iv, msg);;
+
+fun _sshHmac(fKey, str, algo)=
+	match algo with
+		"hmac-sha2-256" -> let call fKey(str, 32) -> key in (lambda(count, msg)= hmacSha256(key, strConcat(strInt32Msb(count), msg))),
+		"hmac-sha2-512" -> let call fKey(str, 64) -> key in lambda(count, msg)= hmacSha512(key, strConcat(strInt32Msb(count), msg));;
+
+fun _sshHmacLen(algoEncryption, algoMac)=
+	match algoEncryption with
+		"aes256-gcm@openssh.com" -> 16,
+		_ -> match algoMac with
+			"hmac-sha2-256" -> 32,
+			"hmac-sha2-512" -> 64;;
+
+fun _sshGcmKey(fKey, str, algo)=
+	match algo with
+		"aes256-gcm@openssh.com" -> call fKey(str, 32);;
+
+fun _sshComputeKeys(h, K, H, algos)=
+	if SSH_DEBUG then echoLn "> _sshComputeKeys";
+	let lambda(str, len)=_sshKeyDerivation(H, K, str, len) -> fKey in
+	if h.clientS then
+	[
+		encIvK= _sshIv(fKey, "A", algos[encryption_algorithms_client_to_server]),
+		decIvK= _sshIv(fKey, "B", algos[encryption_algorithms_server_to_client]),
+		encKeyK=_sshCiphering(fKey, "C", algos[encryption_algorithms_client_to_server]),
+		decKeyK=_sshCiphering(fKey, "D", algos[encryption_algorithms_server_to_client]),
+		encMacK=_sshHmac(fKey, "E", algos[mac_algorithms_client_to_server]),
+		decMacK=_sshHmac(fKey, "F", algos[mac_algorithms_server_to_client]),
+		decMacLenK=_sshHmacLen(algos[encryption_algorithms_server_to_client], algos[mac_algorithms_server_to_client]),
+		gcmEncK= _sshGcmKey(fKey, "C", algos[encryption_algorithms_client_to_server]),
+		gcmDecK= _sshGcmKey(fKey, "D", algos[encryption_algorithms_server_to_client])
+	] else [
+		decIvK= _sshIv(fKey, "A", algos[encryption_algorithms_client_to_server]),
+		encIvK= _sshIv(fKey, "B", algos[encryption_algorithms_server_to_client]),
+		decKeyK=_sshCiphering(fKey, "C", algos[encryption_algorithms_client_to_server]),
+		encKeyK=_sshCiphering(fKey, "D", algos[encryption_algorithms_server_to_client]),
+		decMacK=_sshHmac(fKey, "E", algos[mac_algorithms_client_to_server]),
+		encMacK=_sshHmac(fKey, "F", algos[mac_algorithms_server_to_client]),
+		decMacLenK=_sshHmacLen(algos[encryption_algorithms_client_to_server], algos[mac_algorithms_client_to_server]),
+		gcmDecK= _sshGcmKey(fKey, "C", algos[encryption_algorithms_client_to_server]),
+		gcmEncK= _sshGcmKey(fKey, "D", algos[encryption_algorithms_server_to_client])
+	];;
+
+fun sshBuildPacket(h, extrapad, data)=
+	set h.kexInitS.sequenceNumberI = h.kexInitS.sequenceNumberI + 1;
+	let strLength(data) -> len in
+	let if h.keysS.encEnabledK && nil<>h.keysS.gcmEncK then len+1 else len+5 -> lenForPadding in
+	let (BLOCK_SIZE-lenForPadding)&(BLOCK_SIZE-1) -> padding in
+	let extrapad+ (if padding<4 then BLOCK_SIZE+padding else padding) -> padding in
+	let if SSH_ZERO_PADDING then strCreate(padding, 0) else strRand(padding) -> paddingStr in
+	strBuild([strInt32Msb(1+len+padding), strInt8(padding), data, paddingStr]);;
+
+fun sshMsgStr(val)= strBuild(_sshBuildVal(val));;
+fun sshMsgBool(val)= if val then "\1" else "\0";;
+fun sshMsgInt(val)= strInt32Msb(val);;
+fun sshMsgInt64(val)= strConcat(strInt32Msb(val>>32), strInt32Msb(val&0xffffffff));;
+
+fun sshGetBool(data, i) = 0<>strGet(data, i);;
+
+fun sshParseInts(data, i, n)=
+	if n>0 && i<strLength(data) then
+	let strRead32Msb(data, i) -> val in
+	val::sshParseInts(data, i+4, n-1);;
+
+fun sshParseVals(data, i, n)=
+	if n>0 && i<strLength(data) then
+	let strRead32Msb(data, i) -> len in
+	strSlice(data, i+4, len)::sshParseVals(data, i+4+len, n-1);;
+
+fun sshParseValsNext(data, i, n)=	// returns the offset after the last parsed value
+	if n<=0 || i>strLength(data) then i
+	else 
+	let strRead32Msb(data, i) -> len in
+	sshParseValsNext(data, i+4+len, n-1);;
+
+
+fun sshOnEvent(h, fNotify)= set h.fNotifyEventS=(lambda(code, data) = call fNotify(code, data);0);;
+fun sshNotifyEvent(h, code, data)=
+	if SSH_DEBUG then echoLn strFormat("*> sshNotifyEvent code *", sshWho(h), code);
+	call h.fNotifyEventS(code, data);;
+
+fun sshOnNewChannel(h, fNewChannel)= 
+	if SSH_DEBUG then echoLn strFormat("*> sshOnNewChannel *", sshWho(h));
+	set h.fNotifyNewChannelS=(lambda(c) = call fNewChannel(c);0);;
+
+fun sshNotifyNewChannel(h, c) =
+	if SSH_DEBUG then echoLn strFormat("*> sshNotifyNewChannel channel *", sshWho(h), c.channelC);
+	if SSH_DEBUG then if h.fNotifyNewChannelS==nil then echoLn "No fNotifyNewChannelS callback";
+	call h.fNotifyNewChannelS(c);;
+
+fun sshOnChannelEvent(c, fNotify)= void set c.fNotifyChannelEventC=(lambda(code, data) = call fNotify(code, data);0);;
+fun sshNotifyChannelEvent(c, code, data) =
+	if SSH_DEBUG then echoLn strFormat("*> sshNotifyChannelEvent channel * code *", sshWho(c.hC), c.channelC, code);
+	call c.fNotifyChannelEventC(code, data);;
+
+fun sshOnChannelRequest(c, fRequest)= void set c.fNotifyChannelRequestC=(lambda(type, wantReply, data) = call fRequest(type, wantReply, data);0);;
+fun sshNotifyChannelRequest(c, type, wantReply, data) =
+	if SSH_DEBUG then echoLn strFormat("*> sshNotifyChannelRequest channel * type * wantReply *", sshWho(c.hC), c.channelC, type, wantReply);
+	void call c.fNotifyChannelRequestC(type, wantReply, data);;
+
+
+fun sshFail(h, code) =
+	sshNotifyEvent(h, code, nil);
+	sshTcpClose(h);;
+
+fun _sshTcpClosed(h, close)=
+	if close then tcpClose(h.tcpS);
+	sshNotifyEvent(h, SSH_CLOSED, nil);
+	set h.fNotifyEventS=nil;;
+
+fun sshTcpClose(h)=
+	if SSH_DEBUG then echoLn strFormat("*> sshTcpClose *", sshWho(h));
+	tcpClose(h.tcpS);
+	set h.fNotifyEventS=nil;
+	0;;
+
+fun sshTcpCloseAfter(h)=
+	set h.closeAfterS=true;
+	_sshSend(h, nil);;
+
+fun _sshSend(h, data)=
+//	if data<>nil then (
+//		if SSH_DEBUG then echoLn strFormat("*> TCP send *", sshWho(h), hexFromInt strLength(data));
+//		if SSH_DEBUG then hexDump data
+//	);
+	set h.sendS=strConcat(h.sendS, data);
+	set h.iS=tcpWrite(h.tcpS, h.sendS, h.iS);
+	if h.iS>=strLength(h.sendS) then (
+		if h.closeAfterS then sshTcpClose(h);
+		set h.sendS=nil;
+		set h.iS=0;
+	);
+	strLength(data);;
+
+// signature
+fun _sshCheckSignEd25519(h, publicKey, hash, sign)=
+	let sshParseVals(publicKey, 0, 2) -> (type::pub::_) in
+	let sshParseVals(sign, 0, 2) -> (signType::sign::_) in
+	if type=="ssh-ed25519" && type==signType then
+	ed25519Verify(ed25519FromPublic(pub), hash, sign);;
+
+fun _sshCheckSignRSA(h, publicKey, keyType, signType, signVal, sign)=
+	let sshParseVals(publicKey, 0, 3) -> (type::rsaE::rsaN::_) in
+	let sshParseVals(sign, 0, 2) -> (signType2::signCrypt::_) in
+	if keyType==type && signType==signType2 then
+	let rsaFromPublic(bigFromStr(rsaN), bigFromStr(rsaE)) -> rsa in
+	let pkcs1DecryptPubRsa(rsa, signCrypt) -> signVal2 in
+	signVal==signVal2;;
+
+fun sshSignVerify(h, algo, publicKey, plain, sign)=
+	match algo with
+		"ssh-ed25519"->_sshCheckSignEd25519(h, publicKey, plain, sign),
+		"ssh-rsa"-> _sshCheckSignRSA(h, publicKey, "ssh-rsa", algo, strConcat(OID_SHA1, sha1(plain)), sign),
+		"rsa-sha2-256"-> _sshCheckSignRSA(h, publicKey, "ssh-rsa", algo, strConcat(OID_SHA256, sha256(plain)), sign),
+		"rsa-sha2-512"-> _sshCheckSignRSA(h, publicKey, "ssh-rsa", algo, strConcat(OID_SHA512, sha512(plain)), sign),
+		_-> false;;
+
+fun sshCheckSign(h, sign)=
+	let h.peerKexInitS.algosI[server_host_key_algorithms] -> algo in
+	sshSignVerify(h, algo, h.serverPublicKeyS, h.hashS, sign);;
+
+fun sshSign(h, key, plain)=
+	match key with
+		ed25519Key ed -> let ed25519Sign(ed, plain) -> sign in strBuild([sshMsgStr("ssh-ed25519"), sshMsgStr(sign)]),
+		rsaKey rsa -> strBuild([sshMsgStr("rsa-sha2-512"), sshMsgStr(pkcs1EncryptPrivRsa(rsa, strConcat(OID_SHA512, sha512(plain))))]);;
+
+fun _sshKeyBlob(h)=
+	let h.publicKeyS ->[login, type, key] in
+	match key with
+		rsaKey rsa -> strBuild([
+			sshMsgStr("ssh-rsa"),
+			_sshMpintFromBig(rsaPubExp(rsa)),
+			_sshMpintFromBig(rsaModulus(rsa))
+		]),
+		ed25519Key ed -> strBuild([
+			sshMsgStr("ssh-ed25519"),
+			sshMsgStr(ed25519Public(ed))
+		]);;
+
+//--------------- Send / Receive
+
+fun sshSendMsg(h, code, data) =
+	let sshBuildPacket(h, 0, strBuild([strInt8(code), data])) -> msg in
+	let h.keysS -> keys in
+	let 
+		if SSH_DEBUG then echoLn strFormat("*> sshSend code=* seq=* *", sshWho(h), code, h.kexInitS.sequenceNumberI, (if keys.encEnabledK then "encrypted" else "clear"));
+		if SSH_DEBUG then hexDump msg
+		-> _ in
+	if !keys.encEnabledK then _sshSend(h, msg)	// not encrypted
+	else
+	if nil<>keys.gcmEncK then	// encrypted with GCM
+		let strLeft(msg, 4) -> A in
+		let strSlice(msg, 4, nil) -> plainText in
+		let strFromBig(refGet(keys.encIvK), 12) -> iv in
+		let aesGcmEncrypt(keys.gcmEncK, plainText, iv, A) -> [crypt, hmac] in
+		(
+			\bigNum refSet(keys.encIvK, 1+refGet(keys.encIvK));
+			_sshSend(h, strBuild({A, crypt, hmac}))
+		)
+	else	// encrypted with CTR
+		let call keys.encKeyK(keys.encIvK, msg) -> crypt in
+		let h.kexInitS.sequenceNumberI -> count in
+		let call keys.encMacK(count, msg) -> hmac in
+		_sshSend(h, strConcat(crypt, hmac));;
+
+fun sshDecodePacket(h, buf)=
+//	if SSH_DEBUG then echoLn strFormat("*> sshDecodePacket * bytes", sshWho(h), strLength(buf));
+	if BLOCK_SIZE<= strLength(buf) then
+	let h.keysS -> keys in
+	if !keys.decEnabledK then	// not encrypted
+		let 4+strRead32Msb(buf, 0) -> len in
+		(
+//			if SSH_DEBUG then echoLn strFormat("*> clear text", sshWho (h));
+			if len<= strLength(buf) then [strLeft(buf, len), len]
+		)
+	else if nil<>keys.gcmDecK then	// encrypted with GCM
+		let 4+keys.decMacLenK+strRead32Msb(buf, 0) -> len in
+		(
+//			if SSH_DEBUG then echoLn strFormat("*> gcm encrypted", sshWho(h));
+			if len<= strLength(buf) then
+			let strLeft(buf, 4) -> A in
+			let strSlice(buf, 4, len-4-keys.decMacLenK) -> cipherText in
+			let strSlice(buf, len-keys.decMacLenK, keys.decMacLenK) ->mac in
+			let strFromBig(refGet(keys.decIvK), 12) -> iv in
+			let aesGcmDecrypt(keys.gcmDecK, cipherText, mac, iv, A) -> plainText in
+			if plainText==nil then void (if SSH_DEBUG then echoLn "> aesGcmDecrypt failed")
+			else let strConcat(A, plainText) -> data in
+			(
+				\bigNum refSet(keys.decIvK, 1+refGet(keys.decIvK));
+				[data, len]
+			)
+		)
+	else	// encrypted with CTR
+	let refGet(keys.decIvK) -> iv in // we need a copy
+	let call keys.decKeyK(keys.decIvK, strLeft(buf, BLOCK_SIZE)) -> firstBlock in
+	let 4+strRead32Msb(firstBlock, 0) -> len in
+	if strLength(buf)< (len+h.keysS.decMacLenK) then
+	(
+		refSet(keys.decIvK, iv);
+		if SSH_DEBUG then echoLn strFormat("uncomplete * < *", strLength(buf), (len+h.keysS.decMacLenK));
+		nil
+	)
+	else
+	let strSlice(buf, BLOCK_SIZE, len-BLOCK_SIZE) -> data in
+	let call keys.decKeyK(keys.decIvK, data) -> nextBlocks in
+	let strConcat(firstBlock, nextBlocks) -> data in
+	let call keys.decMacK(h.peerKexInitS.sequenceNumberI, data) -> mac in
+	if len<>strPosRev(buf, mac, len) then
+	(
+		if SSH_DEBUG then echoLn "wrong hmac";
+		if SSH_DEBUG then hexDump data;
+		sshFail(h, SSH_HANDSHAKE_FAILURE);
+		HMAC_FAILED
+	)
+	else 
+//		if SSH_DEBUG then echoLn strFormat("*> decoding ok", sshWho(h));
+		[data, len+h.keysS.decMacLenK]
+	;;
+
+//--------------- HANDSHAKE
+
+// Protocol
+fun sshParseProtocol(h)=
+	if SSH_DEBUG then echoLn strFormat("*< sshParseProtocol", sshWho(h));
+	let strPos(h._bufferS, "\10", 0) -> i in
+	if i<>nil then
+	let if 13==strGet(h._bufferS, i-1) then i-1 else i -> len in
+	let strLeft(h._bufferS, len) -> peerProtocol in
+	(
+		_sshHashStr(h, peerProtocol);
+		set h._bufferS=strSlice(h._bufferS, i+1, nil);
+		if h.clientS then (
+			sshSendKexInit(h);
+			set h.fHandlePacketS=lambda(code, data)= sshHandleConnect(h, code, data)
+		)
+		else 
+		let strConcat(SSH_PROTOCOL_SERVER, "\13\10") -> protocol in (
+			if SSH_DEBUG then echoLn strFormat("*> sshSendMsg protocol:*", sshWho(h), protocol);
+			_sshSend(h, protocol);
+			_sshHashStr(h, SSH_PROTOCOL_SERVER);
+			set h.fHandlePacketS=lambda(code, data)= sshHandleAccept(h, code, data)
+		);
+		sshParse(h, nil)
+	);;
+
+// SSH2_MSG_KEXINIT: KEX Init
+fun _sshAlgoList(algos, i)=
+	if i<arrayLength(algos) then _sshBuildVal(algos[i])::_sshAlgoList(algos, i+1);;
+
+fun sshSendKexInit(h) =	// both sides
+	if SSH_DEBUG then echoLn strFormat("*> sshSendKexInit", sshWho(h));
+	let [	// rfc4253
+		h.kexInitS.cookieI,
+		_sshAlgoList(h.kexInitS.algosI, 0),
+		sshMsgBool(false),
+		strInt32Msb(0)
+	] -> data in (
+		_sshHashStr(h, strBuild([strInt8(SSH2_MSG_KEXINIT), data]));
+		sshSendMsg(h, SSH2_MSG_KEXINIT, data)
+	);;
+
+fun _sshSelectAlgo(h, client, server, mandatory)=
+	let strSplit(",", client) -> client in
+	let strSplit(",", server) -> server in
+	let listFind(client, lambda(p)= listContains(server, p))-> algo in
+	if mandatory && algo==nil then
+	(
+		sshFail(h, SSH_HANDSHAKE_FAILURE);
+		abort
+	)
+	else algo;;
+
+fun _sshFusionAlgos(h, lc, ls, lm)=
+	if ls<>nil then _sshSelectAlgo(h, head(lc), head(ls), head(lm))::_sshFusionAlgos(h, tail(lc), tail(ls), tail(lm));;
+
+fun sshParseKexInit(h, data)=	// both sides
+	if SSH_DEBUG then echoLn strFormat("*< sshParseKexInit", sshWho(h));
+	_sshHashStr(h, data);
+	let listFromArray(h.kexInitS.algosI) -> localAlgos in
+	let sshParseVals(data, 17, 10) -> peerAlgos in
+	try
+		let 
+			if h.clientS then _sshFusionAlgos(h, localAlgos, peerAlgos, Mandatory)
+			else _sshFusionAlgos(h, peerAlgos, localAlgos, Mandatory)
+		-> algos in
+		let arrayFromList(algos) -> algos in
+		(
+			set h.peerKexInitS=[
+				cookieI=strSlice(data, 1, 16),
+				algosI=algos,
+				sequenceNumberI=1
+			];
+			if h.clientS then
+			match algos[kex_algorithms] with
+				"curve25519-sha256" -> sshSendEcdhInit(h),
+				"diffie-hellman-group-exchange-sha256" -> sshSendDhgeRequest(h)
+			else sshSendKexInit(h);
+			0
+		);;
+
+// SSH2_MSG_KEX_DH_GEX_REQUEST: DHGE Request
+fun sshSendDhgeRequest(h) =	// client side
+	if SSH_DEBUG then echoLn strFormat("*> sshSendDhgeRequest", sshWho(h));
+	set h.fHandlePacketS=(lambda(code, data)= sshHandleConnectDhge(h, code, data));
+	sshSendMsg(h, SSH2_MSG_KEX_DH_GEX_REQUEST, [
+		strInt32Msb(SSH_MIN),
+		strInt32Msb(SSH_N),
+		strInt32Msb(SSH_MAX)
+	]);;
+
+// SSH2_MSG_KEX_DH_GEX_GROUP: DHGE Group
+fun sshParseDhgeGroup(h, data)=	// client side
+	if SSH_DEBUG then echoLn strFormat("*< sshParseDhgeGroup", sshWho(h));
+	let sshParseVals(data, 1, 2) -> (P::G::_) in
+	let bigFromStr(P) -> p in
+	let bigFromStr(G) -> g in
+	let bigNbits(p) -> n in
+	let 512 -> n in
+	let bigRand(n, false)-> x in
+	let bigExpMod(g, x, p) -> e in
+	(
+		set h.dhS=[
+			pDH=p,
+			gDH=g,
+			xDH=x,
+			eDH=e
+		];
+		sshSendDhgeInit(h);
+	);;
+
+// SSH2_MSG_KEX_DH_GEX_INIT: DHGE Init
+fun sshSendDhgeInit(h) =	// client side
+	if SSH_DEBUG then echoLn strFormat("*> sshSendDhgeInit", sshWho(h));
+	sshSendMsg(h, SSH2_MSG_KEX_DH_GEX_INIT,	_sshMpintFromBig(h.dhS.eDH));;
+
+
+// SSH2_MSG_KEX_DH_GEX_REPLY: DHGE Reply
+fun _finalizeDH(h, K, sign)=
+//	if SSH_DEBUG then echoLn strFormat("*> >>>compute hash from:", sshWho(h));
+	set h.hashS= sha256(strBuild(fifoList(h.hashFifoS)));
+	set h.keysS=_sshComputeKeys(h, K, h.hashS, h.peerKexInitS.algosI);
+	if h.clientS && !sshCheckSign(h, sign) then sshFail(h, SSH_HANDSHAKE_FAILURE);
+	0;;
+
+fun sshParseDhgeReply(h, data)=	// client side
+	if SSH_DEBUG then echoLn strFormat("*< sshParseDhgeReply", sshWho(h));
+	let sshParseVals(data, 1, 3) -> (serverPublicKey::F::sign::_) in	// hostkey, e^y mod p, hash
+	let h.dhS -> dh in
+	let bigFromStr(F) -> f in
+	let _sshMpintFromBig(bigExpMod(f, dh.xDH, dh.pDH)) -> K in
+	(
+		set h.serverPublicKeyS=serverPublicKey;
+		_sshHashStr(h, serverPublicKey);
+		_sshHashInt(h, SSH_MIN);
+		_sshHashInt(h, SSH_N);
+		_sshHashInt(h, SSH_MAX);
+		_sshHashMPint(h, dh.pDH);
+		_sshHashMPint(h, dh.gDH);
+		_sshHashMPint(h, dh.eDH);
+		_sshHashMPint(h, f);
+		_sshHashRaw(h, K);
+		_finalizeDH(h, K, sign)
+	);;
+
+
+// SSH2_MSG_KEX_ECDH_INIT: ECDH Request
+fun sshSendEcdhInit(h) =	// client side
+	if SSH_DEBUG then echoLn strFormat("*> sshSendEcdhInit", sshWho(h));
+	set h.fHandlePacketS=(lambda(code, data)= sshHandleConnectEcdh(h, code, data));
+	let x25519KeyPair(nil) -> key in
+	let x25519KeyPub(key) -> clientPub in
+	(
+		set h.dhS=[ecDH=key];
+		sshSendMsg(h, SSH2_MSG_KEX_ECDH_INIT, sshMsgStr(clientPub))
+	);;
+fun sshParseEcdhInit(h, data)=	// server side
+	if SSH_DEBUG then echoLn strFormat("*< sshParseEcdhInit", sshWho(h));
+	let sshParseVals(data, 1, 1) -> (clientPub::_) in
+	let x25519KeyPair(nil) -> key in
+	let x25519KeyPub(key) -> serverPub in
+	let strBuild([sshMsgStr("ssh-ed25519"), sshMsgStr(ed25519Public(ed25519FromKey(h.serverKeyS)))]) -> serverPublicKey in
+	let _sshMpintFromBin(x25519Ecdh(key, clientPub)) -> K in
+	(
+		//set h.dhS=[ecDH=key];
+		_sshHashStr(h, serverPublicKey);
+		_sshHashStr(h, clientPub);
+		_sshHashStr(h, serverPub);
+		_sshHashRaw(h, K);
+		_finalizeDH(h, K, nil);
+		sshSendEcdhReply(h, serverPublicKey, serverPub);
+		sshSendNewKeys(h);
+		0
+	);;
+
+
+// SSH2_MSG_KEX_ECDH_REPLY: ECDH Reply
+fun sshSendEcdhReply(h, serverPublicKey, serverPub) =	// server side
+	if SSH_DEBUG then echoLn strFormat("*> sshSendEcdhReply", sshWho(h));
+	let sshSign(h, h.serverKeyS, h.hashS) -> sign in
+	sshSendMsg(h, SSH2_MSG_KEX_ECDH_REPLY, [
+		sshMsgStr(serverPublicKey),
+		sshMsgStr(serverPub),
+		sshMsgStr(sign)
+	]);;
+
+fun sshParseEcdhReply(h, data)=	// client side
+	if SSH_DEBUG then echoLn strFormat("*< sshParseEcdhReply", sshWho(h));
+	let sshParseVals(data, 1, 3) -> (serverPublicKey::serverPub::sign::_) in
+	let h.dhS -> dh in
+	let x25519KeyPub(dh.ecDH) -> clientPub in
+	let _sshMpintFromBin(x25519Ecdh(dh.ecDH, serverPub)) -> K in
+	(
+		set h.serverPublicKeyS=serverPublicKey;
+		_sshHashStr(h, serverPublicKey);
+		_sshHashStr(h, clientPub);
+		_sshHashStr(h, serverPub);
+		_sshHashRaw(h, K);
+		_finalizeDH(h, K, sign)
+	);;
+
+// SSH2_MSG_NEWKEYS: New Keys
+fun sshSendNewKeys(h) =	// both sides
+	if SSH_DEBUG then echoLn strFormat("*> sshSendNewKeys", sshWho(h));
+	sshSendMsg(h, SSH2_MSG_NEWKEYS, "");;
+
+fun sshParseNewKeys(h, data)=	// both sides
+	if SSH_DEBUG then echoLn strFormat("*< sshParseNewKeys", sshWho(h));
+	if h.clientS then sshSendNewKeys(h);
+	set h.keysS.decEnabledK=true;
+	set h.keysS.encEnabledK=true;
+	set h.fHandlePacketS=(lambda(code, data)= sshHandleSrvAuth(h, code, data));
+	if h.clientS then sshNotifyEvent(h, SSH_OK, nil);
+	0;;
+
+//--------------- AFTER HANDSHAKE
+
+//--------- SERVICES: only ssh-userauth is supported
+// SSH2_MSG_SERVICE_REQUEST: Service Request
+fun sshSendServiceRequest(h, service, fNotify)=	// client side
+	if SSH_DEBUG then echoLn strFormat("*> sshSendServiceRequest", sshWho(h));
+	sshOnEvent(h, fNotify);
+	set h.fHandlePacketS=(lambda(code, data)= sshHandleAuth(h, code, data));
+	sshSendMsg(h, SSH2_MSG_SERVICE_REQUEST, sshMsgStr(service));;
+	
+fun sshParseServiceRequest(h, data) =	// server side
+	if SSH_DEBUG then echoLn strFormat("*< sshParseServiceRequest", sshWho(h));
+	let sshParseVals(data, 1, 1) -> (type::_) in
+	match type with
+		SSH2_USERAUTH -> sshSendServiceAccept(h, SSH2_USERAUTH),
+		_ -> sshNotifyEvent(h, SSH_UNKNOWN, strFormat("unsupported service '*'", type));;
+
+// SSH2_MSG_SERVICE_ACCEPT: Service Accept
+fun sshSendServiceAccept(h, service) =	// server side
+	sshSendMsg(h, SSH2_MSG_SERVICE_ACCEPT, sshMsgStr(service));;
+
+fun sshParseServiceAccept(h, data)=	// client side
+	if SSH_DEBUG then echoLn strFormat("*< sshParseServiceAccept", sshWho(h));
+	let sshParseVals(data, 1, 1) -> (service::_) in
+	match service with
+		SSH2_USERAUTH->
+			sshNotifyEvent(h, SSH_OK, nil),
+		_ -> sshNotifyEvent(h, SSH_UNKNOWN, (strFormat("unsupported service '*'", service)));
+	0;;
+
+//--------- USERAUTH: none, password, publickey
+// SSH2_MSG_USERAUTH_PK_OK: User Auth with challenge
+fun _sshPublicKeyChallenge(h, login, algo, publicKey) =
+	strBuild({
+		sshMsgStr(h.hashS),
+		strInt8(SSH2_MSG_USERAUTH_REQUEST),
+		sshMsgStr(login),
+		sshMsgStr("ssh-connection"),
+		sshMsgStr("publickey"),
+		sshMsgBool(true),
+		sshMsgStr(algo),
+		sshMsgStr(publicKey)
+	});;
+
+fun sshSendUserAuthPkOk(h, signType, keyBlob)=	// server side
+	if SSH_DEBUG then echoLn strFormat("*> sshSendUserAuthPkOk", sshWho(h));
+	sshSendMsg(h, SSH2_MSG_USERAUTH_PK_OK, {
+		sshMsgStr(signType),
+		sshMsgStr(keyBlob)
+	});;
+
+fun sshParseUserAuthPkOk(h, data)=
+	if SSH_DEBUG then echoLn strFormat("*< sshParseUserAuthPkOk", sshWho(h));
+	let h.publicKeyS ->[login, type, key] in
+	let _sshPublicKeyChallenge(h, login, type, _sshKeyBlob(h)) -> plain in
+	let sshSign(h, key, plain) -> sign in
+	sshSendMsg(h, SSH2_MSG_USERAUTH_REQUEST, {
+		sshMsgStr(login),
+		sshMsgStr("ssh-connection"),
+		sshMsgStr("publickey"),
+		sshMsgBool(true),
+		sshMsgStr(type),
+		sshMsgStr(_sshKeyBlob(h)),
+		sshMsgStr(sign)
+	});;
+
+// SSH2_MSG_USERAUTH_REQUEST
+// User Auth request: PublicKey
+fun sshSendUserAuthWithPublicKey(h, login, fNotify)=	// client side
+	if SSH_DEBUG then echoLn strFormat("*> sshSendUserAuthWithPublicKey", sshWho(h));
+	sshOnEvent(h, fNotify);
+	let h.publicKeyS ->[login, type, key] in
+	sshSendMsg(h, SSH2_MSG_USERAUTH_REQUEST, {
+		sshMsgStr(login),
+		sshMsgStr("ssh-connection"),
+		sshMsgStr("publickey"),
+		sshMsgBool(false),
+		sshMsgStr(type),
+		sshMsgStr(_sshKeyBlob(h))
+	});;
+
+// User Auth request: Password
+fun sshSendUserAuthWithPassword(h, login, pwd, fNotify)=	// client side
+	if SSH_DEBUG then echoLn strFormat("*> sshSendUserAuthWithPassword", sshWho(h));
+	sshOnEvent(h, fNotify);
+	sshSendMsg(h, SSH2_MSG_USERAUTH_REQUEST, {
+		sshMsgStr(login),
+		sshMsgStr("ssh-connection"),
+		sshMsgStr("password"),
+		sshMsgBool(false),
+		sshMsgStr(pwd)
+	});;
+
+
+// User Auth request: server side
+fun sshParseUserAuthRequest(h, data) =	// server side
+	if SSH_DEBUG then echoLn strFormat("*< sshParseUserAuthRequest", sshWho(h));
+	let sshParseVals(data, 1, 3) -> (login::authMode::type::_) in
+	let sshParseValsNext(data, 1, 3) -> i in
+	match authMode with
+		"ssh-connection" -> (
+			match type with
+				"password" ->
+					let sshParseVals(data, i+1, 1) -> password::_ in (
+						if call h.fCheckAuthS("password", login, password) then sshSendUserAuthSuccess(h)
+						else (
+							sshSendUserAuthFailure(h, "Unauthorized user");
+							sshTcpClose(h)
+						)
+					),
+				"publickey" ->
+					let sshGetBool(data, i) -> stage in
+					if !stage then // false: receive algo+publickey, send challenge
+						let sshParseVals(data, i+1, 3) -> algo::publicKey::_ in
+						sshSendUserAuthPkOk(h, algo, publicKey)
+					else // false: receive algo+publickey+sign, check challenge
+					let sshParseVals(data, i+1, 3) -> algo::publicKey::sign::_ in
+					let _sshPublicKeyChallenge(h, login, algo, publicKey) -> plain in
+					if sshSignVerify(h, algo, publicKey, plain, sign) then
+					(
+						if call h.fCheckAuthS("publicKey", login, b64Encode(publicKey)) then sshSendUserAuthSuccess(h)
+						else (
+							sshSendUserAuthFailure(h, "Unauthorized user");
+							sshTcpClose(h)
+						)
+					)
+					else sshSendUserAuthFailure(h, "Public Key verification failed"),
+				"none" -> if call h.fCheckAuthS("none", login, "") then sshSendUserAuthSuccess(h)
+					else sshSendUserAuthFailure(h, [sshMsgStr("publickey,password"), sshMsgBool(false)]),
+				_ -> sshSendUserAuthFailure(h, "Unauthorized user")
+		),
+		_ -> sshNotifyEvent(h, SSH_UNKNOWN, strFormat("unsupported service '*'", type));;
+
+
+// SSH2_MSG_USERAUTH_FAILURE: UserAuthFailure
+fun sshSendUserAuthFailure(h, reason) =	// server side
+	if SSH_DEBUG then echoLn strFormat("*> sshSendUserAuthFailure", sshWho(h));
+	sshSendMsg(h, SSH2_MSG_USERAUTH_FAILURE, reason);;
+
+fun sshParseUserAuthFailure(h, data)=	// client side
+	if SSH_DEBUG then echoLn strFormat("*< sshParseUserAuthFailure", sshWho(h));
+	let sshParseVals(data, 1, 1) -> (reason::_) in
+	sshNotifyEvent(h, SSH_USERAUTH_FAILURE, reason);;	//eg: publickey,password
+
+// SSH2_MSG_USERAUTH_SUCCESS: UserAuthSuccess
+fun sshSendUserAuthSuccess(h)=	// server side
+	if SSH_DEBUG then echoLn strFormat("*> sshSendUserAuthSuccess", sshWho(h));
+	sshNotifyEvent(h, SSH_OK, nil);
+	set h.fHandlePacketS=(lambda(code, data)= sshHandleDefault(h, code, data));
+	sshSendMsg(h, SSH2_MSG_USERAUTH_SUCCESS, "");;
+
+fun sshParseUserAuthSuccess(h, data)=	// client side
+	if SSH_DEBUG then echoLn strFormat("*< sshParseUserAuthSuccess", sshWho(h));
+	sshNotifyEvent(h, SSH_OK, nil);
+	set h.fHandlePacketS=(lambda(code, data)= sshHandleDefault(h, code, data));
+	0;;
+
+// SSH2_MSG_GLOBAL_REQUEST: GlobalRequest
+fun sshSendGlobalRequest(h, name, reply, data) =	// both side
+	if SSH_DEBUG then echoLn strFormat("*> sshSendGlobalRequest", sshWho(h));
+	sshSendMsg(h, SSH2_MSG_GLOBAL_REQUEST, [
+		sshMsgStr(name),
+		sshMsgBool(reply),
+		data
+	]);;
+
+fun sshParseGlobalRequest(h, data)= 	// both side
+	if SSH_DEBUG then echoLn strFormat("*< sshParseGlobalRequest", sshWho(h));
+	let sshParseVals(data, 1, 1) -> (name::_) in
+	let sshParseValsNext(data, 1, 1) -> i in
+	let sshGetBool(data, i) -> wantReply in
+	let if SSH_DEBUG then echoLn strFormat("name:* wantReply:*", name, wantReply) -> _ in
+	if wantReply then sshSendMsg(h, SSH2_MSG_REQUEST_FAILURE, nil);;	// rfc4254
+
+// SSH2_MSG_DEBUG
+fun sshParseDebug(h, data)=
+	if SSH_DEBUG then echoLn strFormat("*< sshParseDebug", sshWho(h));
+	0;;
+
+//------------ CHANNELS
+fun _getChannel(h, channel)=
+	let hashmapGet(h.channelsS, channel) -> c in
+	if c==nil then void sshNotifyEvent(h, SSH_UNKNOWN, (strFormat("unsupported channel '*'", channel)))
+	else c;;
+
+// SSH2_MSG_CHANNEL_OPEN: ChannelOpen 
+fun sshSendChannelOpen(h, type, channel)=	// client side
+	if SSH_DEBUG then echoLn strFormat("*> sshSendChannelOpen", sshWho(h));
+	if nil<>hashmapGet(h.channelsS, channel) then void (if SSH_DEBUG then echoLn "channel not free")
+	else
+	let [
+		hC=SSH<h,
+		channelC=channel,
+		localPacketMaxSizeC=PACKET_MAX_SIZE,	// accepted by local
+		localWindowC=WINDOW_INIT
+	] -> c in (
+		hashmapSet(h.channelsS, channel, c);
+		sshSendMsg(h, SSH2_MSG_CHANNEL_OPEN, {
+			sshMsgStr(type),
+			sshMsgInt(c.channelC),
+			sshMsgInt(c.localWindowC),
+			sshMsgInt(c.localPacketMaxSizeC)
+		});
+		c
+	);;
+
+fun sshSendChannelMsg(c, code, data)=
+	sshSendMsg(c.hC, code, [
+		sshMsgInt(c.channelC),
+		data
+	]);;
+
+fun sshParseChannelOpen(h, data)=	// server side
+	if SSH_DEBUG then echoLn strFormat("*< sshParseChannelOpen", sshWho(h));
+	let sshParseVals(data, 1, 1) -> (type::_) in
+	let sshParseValsNext(data, 1, 1) -> i in
+	match type with
+		"session" -> let sshParseInts(data, i, 3) -> (channel::peerWindow::peerPacketMaxSize::_) in
+			if nil<>hashmapGet(h.channelsS, channel) then void 
+				sshNotifyEvent(h, SSH_ERROR, "channel not free")
+			
+			else let [
+				hC=SSH<h,
+				channelC=channel,
+				peerPacketMaxSizeC=peerPacketMaxSize,	// accepted by peer
+				peerWindowC=peerWindow,
+				localPacketMaxSizeC=PACKET_MAX_SIZE,	// accepted by local
+				localWindowC=WINDOW_INIT
+			] -> c in (
+				if SSH_DEBUG then echoLn strFormat("channel * peerWindow= *", channel, hexFromInt(c.peerWindowC));
+				if SSH_DEBUG then echoLn strFormat("channel * peerPacketMaxSize= *", channel, hexFromInt(c.peerPacketMaxSizeC));
+				hashmapSet(h.channelsS, channel, c);
+				sshNotifyNewChannel(h, c);
+			),
+		_ -> sshNotifyEvent(h, SSH_UNKNOWN, strFormat("unsupported channel open type '*'", type));;
+
+// SSH2_MSG_CHANNEL_OPEN_CONFIRMATION: ChannelOpenConfirmation
+fun sshSendChannelOpenConfirmation(c)=	// server side
+	if SSH_DEBUG then echoLn strFormat("*> sshSendChannelOpenConfirmation", sshWho(c.hC));
+	sshSendChannelMsg(c, SSH2_MSG_CHANNEL_OPEN_CONFIRMATION, {
+		sshMsgInt(c.channelC),
+		sshMsgInt(c.localWindowC),
+		sshMsgInt(c.localPacketMaxSizeC)
+	});;
+
+fun sshParseChannelOpenConfirmation(h, data)=	// client side
+	if SSH_DEBUG then echoLn strFormat("*< sshParseChannelOpenConfirmation", sshWho(h));
+	let sshParseInts(data, 1, 4) -> (channel::senderChannel::peerWindow::peerPacketMaxSize::_) in
+	let _getChannel(h, channel) -> c in
+	if c<>nil then (
+		set c.peerWindowC=peerWindow;
+		set c.peerPacketMaxSizeC=peerPacketMaxSize;
+		if SSH_DEBUG then echoLn strFormat("channel * peerWindow= *", channel, hexFromInt(c.peerWindowC));
+		if SSH_DEBUG then echoLn strFormat("channel * peerPacketMaxSize= *", channel, hexFromInt(c.peerPacketMaxSizeC));	
+		sshNotifyChannelEvent(c, SSH_OK, nil);
+		0
+	);;
+
+// SSH2_MSG_CHANNEL_WINDOW_ADJUST: Channel Window Adjust
+fun sshSendChannelWindowAdjust(c, add)=
+	if SSH_DEBUG then echoLn strFormat("*> sshSendChannelWindowAdjust", sshWho(c.hC));
+	sshSendChannelMsg(c, SSH2_MSG_CHANNEL_WINDOW_ADJUST, sshMsgInt(add));;
+
+fun sshParseChannelWindowAdjust(h, data)=
+	let strRead32Msb(data, 1) -> channel in
+	let if SSH_DEBUG then echoLn strFormat("*< sshParseChannelWindowAdjust *", sshWho(h), channel) -> _ in
+	let strRead32Msb(data, 5) -> bytesToAdd in
+	let _getChannel(h, channel) -> c in
+	if c<>nil then (
+		set c.peerWindowC=c.peerWindowC+bytesToAdd;
+		if SSH_DEBUG then echoLn strFormat("channel * adjust peerWindow -> *", channel, hexFromInt(c.peerWindowC));
+		_sshCheckSending(c);
+		0
+	);;
+
+// SSH2_MSG_CHANNEL_SUCCESS
+fun sshSendChannelSuccess(c) =
+	if SSH_DEBUG then echoLn strFormat("*> sshSendChannelSuccess", sshWho(c.hC));
+	sshSendChannelMsg(c, SSH2_MSG_CHANNEL_SUCCESS, nil);;
+
+fun sshParseChannelSuccess(h, data)=
+	let strRead32Msb(data, 1) -> channel in
+	let if SSH_DEBUG then echoLn strFormat("*< sshParseChannelSuccess *", sshWho(h), channel) -> _ in
+	let _getChannel(h, channel) -> c in
+	if c<>nil then sshNotifyChannelEvent(c, SSH_OK, nil);;
+
+// SSH2_MSG_CHANNEL_FAILURE
+fun sshSendChannelFailure(c) =
+	if SSH_DEBUG then echoLn strFormat("*> sshSendChannelFailure", sshWho(c.hC));
+	sshSendChannelMsg(c, SSH2_MSG_CHANNEL_FAILURE, nil);;
+
+fun sshParseChannelFailure(h, data)=
+	let strRead32Msb(data, 1) -> channel in
+	let if SSH_DEBUG then echoLn strFormat("*< sshParseChannelFailure *", sshWho(h), channel) -> _ in
+	let _getChannel(h, channel) -> c in
+	if c<>nil then sshNotifyChannelEvent(c, SSH_CHANNEL_FAILURE, nil);;
+
+// SSH2_MSG_CHANNEL_EOF
+fun sshSendChannelEof(c) =
+	if SSH_DEBUG then echoLn strFormat("*> sshSendChannelEof", sshWho(c.hC));
+	sshSendChannelMsg(c, SSH2_MSG_CHANNEL_EOF, nil);;
+
+fun sshParseChannelEof(h, data)=
+	let strRead32Msb(data, 1) -> channel in
+	let if SSH_DEBUG then echoLn strFormat("*< sshParseChannelEof *", sshWho(h), channel) -> _ in
+	let _getChannel(h, channel) -> c in
+	if c<>nil then sshNotifyChannelEvent(c, SSH_CHANNEL_EOF, nil);;
+
+// SSH2_MSG_CHANNEL_CLOSE
+fun sshSendChannelClose(c) =
+	if SSH_DEBUG then echoLn strFormat("*> sshSendChannelClose", sshWho(c.hC));
+	hashmapSet(c.hC.channelsS, c.channelC, nil);
+	sshSendChannelMsg(c, SSH2_MSG_CHANNEL_CLOSE, nil);;
+
+fun sshParseChannelClose(h, data)=
+	let strRead32Msb(data, 1) -> channel in
+	let if SSH_DEBUG then echoLn strFormat("*< sshParseChannelClose *", sshWho(h), channel) -> _ in
+	let _getChannel(h, channel) -> c in
+	if c<>nil then (
+		_sshTcpClosed(h, true);
+		hashmapSet(h.channelsS, c.channelC, nil);
+		sshNotifyChannelEvent(c, SSH_CHANNEL_CLOSED, nil)
+	);;
+
+// SSH2_MSG_CHANNEL_REQUEST
+fun sshSendChannelRequest(c, type, wantRetry, data)=
+	if SSH_DEBUG then echoLn strFormat("*> sshSendChannelRequest", sshWho(c.hC));
+	sshSendChannelMsg(c, SSH2_MSG_CHANNEL_REQUEST, [
+		sshMsgStr( type),
+		sshMsgBool(wantRetry),
+		data
+	]);;
+
+fun sshParseChannelRequest(h, data)=
+	let strRead32Msb(data, 1) -> channel in
+	let sshParseVals(data, 5, 1) -> (type::_) in
+	let sshParseValsNext(data, 5, 1) -> i in
+	let strRead8(data, i) -> wantReply in
+	let if SSH_DEBUG then echoLn strFormat("*< sshParseChannelRequest channel * type * wantReply *", sshWho(h), channel, type, wantReply) -> _ in
+	let _getChannel(h, channel) -> c in
+	if c<>nil then
+	let strSlice(data, i+1, nil) -> args in
+	sshNotifyChannelRequest(c, type, wantReply, args);;
+
+// SSH2_MSG_CHANNEL_DATA
+fun _sshCheckSending(c)=
+	let c.peerPacketMaxSizeC -> peerPacketMaxSize in
+	let 0x4000 -> peerPacketMaxSize in
+	let min(c.peerWindowC, peerPacketMaxSize) -> toSend in
+	let min(toSend, strLength(c.sendingC)) -> toSend in
+	if toSend>0 then
+	let strLeft(c.sendingC, toSend) -> data in
+	(
+		if SSH_DEBUG then echoLn strFormat("*> sendData  ---------------->length=* of remaining *", sshWho(c.hC),  hexFromInt(toSend), hexFromInt(strLength(c.sendingC)));
+		set c.peerWindowC=c.peerWindowC-toSend;
+		if SSH_DEBUG then echoLn strFormat("channel * peerWindow becomes----->*", c.channelC, hexFromInt(c.peerWindowC));
+		set c.sendingC = strSlice(c.sendingC, toSend, nil);
+		sshSendChannelMsg(c, SSH2_MSG_CHANNEL_DATA, sshMsgStr(data));
+		_sshCheckSending(c)
+	);;
+
+fun sshSendChannelData(c, data)=
+	set c.sendingC=strConcat(c.sendingC, data);
+	_sshCheckSending(c);;
+
+fun sshParseChannelData(h, data)=
+	let strRead32Msb(data, 1) -> channel in
+	let sshParseVals(data, 5, 1) -> (content::_) in
+	let if SSH_DEBUG then echoLn strFormat("*< sshParseChannelData *", sshWho(h), channel) -> _ in
+	let _getChannel(h, channel) -> c in
+	if c<>nil then (
+		sshNotifyChannelEvent(c, SSH_DATA, content);
+		set c.localWindowC=c.localWindowC +9 - strLength(data);
+		if SSH_DEBUG then echoLn strFormat("channel * localWindow= *", channel, hexFromInt(c.localWindowC));
+
+		if c.localWindowC<(WINDOW_INIT>>1) then
+		let WINDOW_INIT -> add in
+		(
+			set c.localWindowC=c.localWindowC+add;
+			if SSH_DEBUG then echoLn strFormat("->*", hexFromInt(c.localWindowC));
+			sshSendChannelWindowAdjust(c, add)
+		)
+	);;
+
+// ssh handle message functions
+fun sshHandleUnknownCode(h, code)= sshNotifyEvent(h, SSH_UNKNOWN, strFormat("unsupported ssh code '*'", code));;
+
+fun sshHandleDefault(h, code, data)=
+	match code with
+		SSH2_MSG_CHANNEL_OPEN_CONFIRMATION -> sshParseChannelOpenConfirmation(h, data),
+		SSH2_MSG_CHANNEL_WINDOW_ADJUST -> sshParseChannelWindowAdjust(h, data),
+		SSH2_MSG_CHANNEL_EOF -> sshParseChannelEof(h, data),
+		SSH2_MSG_CHANNEL_CLOSE -> sshParseChannelClose(h, data),
+		SSH2_MSG_CHANNEL_REQUEST -> sshParseChannelRequest(h, data),
+		SSH2_MSG_CHANNEL_SUCCESS -> sshParseChannelSuccess(h, data),
+		SSH2_MSG_CHANNEL_FAILURE -> sshParseChannelFailure(h, data),
+		SSH2_MSG_CHANNEL_DATA -> sshParseChannelData(h, data),
+		SSH2_MSG_GLOBAL_REQUEST -> sshParseGlobalRequest(h, data),
+		SSH2_MSG_DEBUG -> sshParseDebug(h, data),
+		SSH2_MSG_CHANNEL_OPEN -> sshParseChannelOpen(h, data),
+		_-> sshHandleUnknownCode(h, code);;
+
+fun sshHandleAuth(h, code, data)=
+	match code with
+		SSH2_MSG_SERVICE_ACCEPT -> sshParseServiceAccept(h, data),
+		SSH2_MSG_USERAUTH_FAILURE -> sshParseUserAuthFailure(h, data),
+		SSH2_MSG_USERAUTH_SUCCESS -> sshParseUserAuthSuccess(h, data),
+		SSH2_MSG_USERAUTH_PK_OK -> sshParseUserAuthPkOk(h, data),
+		_-> sshHandleUnknownCode(h, code);;
+
+fun sshHandleSrvAuth(h, code, data)=
+	match code with
+		SSH2_MSG_SERVICE_REQUEST -> sshParseServiceRequest(h, data),
+		SSH2_MSG_USERAUTH_REQUEST -> sshParseUserAuthRequest(h, data),
+		_-> sshHandleUnknownCode(h, code);;
+
+fun sshHandleConnectEcdh(h, code, data)=
+	match code with
+		SSH2_MSG_KEX_ECDH_REPLY -> sshParseEcdhReply(h, data),
+		SSH2_MSG_NEWKEYS -> sshParseNewKeys(h, data),
+		_-> sshHandleUnknownCode(h, code);;
+
+fun sshHandleConnectDhge(h, code, data)=
+	match code with
+		SSH2_MSG_KEX_DH_GEX_GROUP -> sshParseDhgeGroup(h, data),
+		SSH2_MSG_KEX_DH_GEX_REPLY -> sshParseDhgeReply(h, data),
+		SSH2_MSG_NEWKEYS -> sshParseNewKeys(h, data),
+		_-> sshHandleUnknownCode(h, code);;
+
+fun sshHandleConnect(h, code, data)=
+	match code with
+		SSH2_MSG_KEXINIT -> sshParseKexInit(h, data),
+		_-> sshHandleUnknownCode(h, code);;
+
+fun sshHandleAccept(h, code, data)=
+	match code with
+		SSH2_MSG_KEXINIT -> sshParseKexInit(h, data),
+		SSH2_MSG_KEX_ECDH_INIT -> sshParseEcdhInit(h, data),
+		SSH2_MSG_NEWKEYS -> sshParseNewKeys(h, data),
+		_-> sshHandleUnknownCode(h, code);;
+
+
+fun sshParsePacket(h)=
+//if SSH_DEBUG then echoLn strFormat("*< sshParsePacket", sshWho(h));
+	let sshDecodePacket(h, h._bufferS) -> result in
+	if result<>nil then
+	if result<>HMAC_FAILED then
+	let result -> [data, len] in
+	let //if SSH_DEBUG then hexDump data; 
+		strGet(data, 4) -> padlen in
+	let strGet(data, 5) -> code in
+	let strSlice(data, 5, strLength(data)-5-padlen) -> data in
+	(
+		if SSH_DEBUG then echoLn strFormat("*< sshParsePacket code=* seq=* ", sshWho(h), code, h.peerKexInitS.sequenceNumberI);
+		if SSH_DEBUG then hexDump strSlice(data, 1, nil);
+		set h._bufferS=strSlice(h._bufferS, len, nil);
+		set h.peerKexInitS.sequenceNumberI = h.peerKexInitS.sequenceNumberI + 1;
+		call h.fHandlePacketS(code, data);
+		sshParse(h, nil)
+	);;
+
+fun sshParse(h, data)=
+	set h._bufferS=strConcat(h._bufferS, data);
+	if h.fHandlePacketS==nil then sshParseProtocol(h)
+	else if 0<strLength(h._bufferS) then sshParsePacket(h);;
+
+
+fun _sshCommonInit(h, fNotify)=
+	set h.iS=0;
+	set h.kexInitS=sshKexInit(h.clientS);
+	set h.fHandlePacketS=nil;
+	set h.channelsS=hashmapCreate(4);
+
+	sshOnEvent(h, fNotify);
+
+	tcpOnEvent(h.tcpS,
+		lambda(data)=
+//			if SSH_DEBUG then echoLn strFormat("*<< TCP receive *", sshWho(h), hexFromInt(strLength(data)));
+//			if SSH_DEBUG then hexDump data;
+			if data<>nil then sshParse(h, data)
+			else (
+				if SSH_DEBUG then echoLn strFormat("*< socket closed by peer", sshWho(h));
+				void _sshTcpClosed(h, false)
+			)
+		,
+		(lambda ()= _sshSend(h, nil)));
+	h;;
+
+fun _sshAccept(h, serverKey, tcp, fCheckAuth, fNotify)=
+	set h.clientS=false;
+	set h.tcpS=tcp;
+	set h.serverKeyS=serverKey;
+	set h.hashFifoS=fifoCreate();
+	set h.fCheckAuthS=fCheckAuth;
+	_sshCommonInit(h, fNotify);;
+
+fun _sshConnect(h, ip, port, fNotify)=
+	set h.clientS=true;
+	set h.tcpS=tcpOpen(ip, port);
+	set h.sendS=strConcat(SSH_PROTOCOL_CLIENT, "\13\10");
+	set h.hashFifoS=fifoCreate();
+	_sshHashStr(h, SSH_PROTOCOL_CLIENT);
+	_sshCommonInit(h, fNotify);;
+
+fun sshConnectAndAuth(h, ip, port, fNotify)=
+	_sshConnect(h, ip, port, (lambda(code, data)=	
+		if SSH_DEBUG then echoLn strFormat("_sshConnect: *", code);
+		if code==SSH_OK then sshSendServiceRequest(h, SSH2_USERAUTH, (lambda(code, data)=
+			if SSH_DEBUG then echoLn strFormat("sshAuth: *", code);
+			call fNotify(code, data)
+		))
+		else call fNotify(code, data)
+	));;
+
+fun sshConnectWithPublicKey(h, ip, port, login, pem, password, fNotify)=
+	let keyFromPEM(pem, password)-> key in
+	let match key with
+		rsaKey rsa -> "rsa-sha2-512",
+		ed25519Key ed -> "ssh-ed25519"
+	-> type in
+	if type<>nil then
+	sshConnectAndAuth(h, ip, port, (lambda(code, data)=
+		set h.publicKeyS=[login, type, key];
+		if code==SSH_OK then sshSendUserAuthWithPublicKey(h, login, (lambda(code, data)=
+			if SSH_DEBUG then echoLn strFormat("sshSendUserAuthWithPublicKey: *", code);
+			call fNotify(code, data);
+			0
+		))
+		else call fNotify(code, data);
+		0
+	));;
+fun sshConnectWithPassword(h, ip, port, login, password, fNotify)=
+	sshConnectAndAuth(h, ip, port, (lambda(code, data)=
+		if code==SSH_OK then sshSendUserAuthWithPassword(h, login, password, (lambda(code, data)=
+			if SSH_DEBUG then echoLn strFormat("sshSendUserAuthWithPassword: *", code);
+			call fNotify(code, data);
+			0
+		))
+		else call fNotify(code, data);
+		0
+	));;
+
+fun sshConnect(h, ip, port, login, auth, fNotify)=
+	match auth with
+		sshAuthPassword password -> sshConnectWithPassword(SSH<h, ip, port, login, password, fNotify),
+		sshAuthPublicKey pem password -> sshConnectWithPublicKey(SSH<h, ip, port, login, pem, password, fNotify);; 
+
+fun sshAccept(h, serverKey, tcp, fCheckAuth, fNotify)=
+	_sshAccept(SSH<h, serverKey, tcp, fCheckAuth, (lambda(code, data)=
+		if SSH_DEBUG then echoLn strFormat("_sshAccept: *", code);
+		call fNotify(code, data)
+	));;
+
+fun sshClose(h)=
+	sshTcpClose(h);;

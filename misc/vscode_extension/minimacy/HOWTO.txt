@@ -1,0 +1,30 @@
+
+How to update keywords list
+---------------------------------
+
+Update keywords in files:
+	syntaxes\tmLanguage.json
+	syntaxes\dok.tmLanguage.json
+
+Language keywords (if, then, let, ...) are in: repository/keywords/patterns/match
+Bios keywords are in: repository/api/patterns/match
+These are regular expressions: they are separated with pipes|
+
+How to build the extension
+----------------------------------
+In order to install vsce: npm install -g @vscode/vsce
+
+Start the following command from directory minimacy\misc\vscode_extension\minimacy: vsce package
+
+\minimacy\misc\vscode_extension\minimacy> vsce package
+ WARNING  A 'repository' field is missing from the 'package.json' manifest file.
+Do you want to continue? [y/N] y
+ DONE  Packaged: \minimacy\misc\vscode_extension\minimacy\minimacy-0.0.1.vsix (12 files, 17.09KB)
+ INFO 
+The latest version of vsce is 2.5.1 and you have 1.99.0.
+Update it now: npm install -g vsce
+\minimacy\misc\vscode_extension\minimacy> 
+
+Then the build package is: minimacy-0.0.1.vsix
+
+Remove the previous extension before installing the new one.

@@ -1,0 +1,198 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2022, Sylvain Huet, Ambermind
+// Minimacy (r) System
+
+// https://datatracker.ietf.org/doc/html/rfc5280 : certificate
+// https://datatracker.ietf.org/doc/html/rfc2986 : csr
+
+export subjectListFromString(subject);;
+export csrCreate(key, subjectList);;
+export csrSetSubjectAltName(names, csr);;
+export csrDER(csr);;
+export csrPEM(csr);;
+
+export csrSetExtension(critical, oid, asn1, csr);;
+export csrSetBasicConstraint(CA, csr);;
+export csrSetSubjectKeyIdentifier(csr);;
+export csrSetAuthorityKeyIdentifier(keyIdentifier, csr);;
+export csrSetExtKeyUsage(usages, csr);;
+export csrSetKeyUsage(usages, csr);;
+
+export csrAutoSign(csr);;
+export csrSignWithCer(cer, csr);;
+export cerFromCsr(key, durationDays, csr);;
+export cerDER(cer);;
+export cerPEM(cer);;
+
+use core.crypto.oid;;
+use core.crypto.asn1;;
+use core.crypto.pem;;
+use core.crypto.key;;
+use core.crypto.hash;;
+use core.crypto.sign;;
+use core.crypto.cer;;
+
+const _DEBUG=false;;
+//const _DEBUG=true;;
+
+const SubjectOID = hashmapInit(4,
+	["C", OID_C]::["CN", OID_CN]::["O", OID_O]::["OU", OID_OU]::["L", OID_L]::["ST", OID_ST]::nil);;
+fun subjectListFromString(subject)=
+	let strLeft(subject, 1) -> separator in
+	listMap(tail(strSplit(separator, subject)), lambda(keyVal) =
+		let strSplit("=", keyVal) -> key::val::_ in
+		let hashmapGet(SubjectOID, strTrim(key)) -> oid in
+		if oid<>nil then [oid, strTrim(val)]
+	);;
+
+//------ csr create
+fun computeSubjectKeyIdentifier(x) =
+	let asn1PublicEncryption(x.keyX) -> pkInfo in
+	sha1(strFromAsn1(head(tail(listFromAsn1(pkInfo)))));;
+
+fun computeSerial ()=
+	let strRand(16) -> serial in
+	if 0<>strGet(serial, 0) then serial	// openssl rejects serials starting with 0 (illegal padding)
+	else computeSerial();;
+
+fun _x509Pack(x)=
+	asn1Pack(asn1Seq
+		(asn1Raw x.infoDerX)::
+		(asn1Seq
+			(asn1ObjectIdentifier x.signatureAlgorithmX)::
+			(asn1Null)::
+			nil
+		)::
+		(asn1BitString 0 x.signatureX)::
+		nil);;
+
+fun csrCreate(key, subjectList) =	// key is a private key
+	let match key with
+		rsaKey _ -> OID_RSA_PKCS1_SHA512,
+		ecKey _ -> OID_ecdsa_with_SHA256,
+		ed25519Key _ -> OID_ed25519
+	-> signatureAlgorithm in
+	if signatureAlgorithm<>nil then [
+		certificateX=false,
+		versionX=1,
+		subjectOidsX=subjectList,
+		subjectX=nameFromNameList(subjectList),
+		keyX=key,
+		extensionsX=hashmapCreate(4),
+		attributesX=hashmapCreate(4),
+		criticalExtensionsX=hashsetCreate(4),
+		signatureAlgorithmX=signatureAlgorithm
+	];;
+
+fun listFilterNils(l) = listMap(l, lambda(a)=a);; 
+
+//version:subject:pkInfo:attributes
+fun _csrBuildInfo(csr)=
+	asn1Seq
+		(asn1Integer strInt8(csr.versionX-1))::
+		(asn1Seq listMap(csr.subjectOidsX, lambda([oid, val])= asn1Set (asn1Seq (asn1ObjectIdentifier oid)::(asn1PrintableString val)::nil)::nil))::
+		asn1PublicEncryption(csr.keyX)::
+		(asn1ClassConstructed ASN1_CONTEXT_SPECIFIC 0
+			(asn1Seq
+				(asn1ObjectIdentifier OID_id_ExtensionReq)::
+				(asn1Set
+					(asn1Seq listMap(listFromHashmap(csr.extensionsX), lambda([oid, asn1]) = 
+						asn1Seq
+							listFilterNils(							(asn1ObjectIdentifier oid)::
+							(if hashsetContains(csr.criticalExtensionsX, oid) then asn1Bool true)::
+							(asn1OctetString asn1Pack(asn1))::
+							nil)
+						
+					))::nil
+				)::nil
+			)::nil
+		)::nil;;
+
+fun csrDER(csr) = 
+	if csr.certificateX then return nil;
+	set csr.infoDerX=asn1Pack(_csrBuildInfo(csr));
+	set csr.signatureX=signatureGenerate(signAlgoByOID(csr.signatureAlgorithmX), csr.keyX, csr.infoDerX);
+	_x509Pack(csr);;
+fun csrPEM(csr) = pemMake("CERTIFICATE REQUEST", csrDER(csr));;
+		
+fun csrSetExtension(critical, oid, asn1, csr) =
+	hashmapSet(csr.extensionsX, oid, asn1); 
+	if critical then hashsetAdd(csr.criticalExtensionsX, oid)
+	else void hashsetRemove(csr.criticalExtensionsX, oid); 
+	csr;;
+fun csrSetBasicConstraint(CA, csr) = csrSetExtension(true, OID_basicConstraints, asn1Seq (asn1Bool CA)::nil, csr);;
+fun csrSetSubjectKeyIdentifier(csr) =
+	csrSetExtension(false, OID_subjectKeyIdentifier, asn1OctetString computeSubjectKeyIdentifier(csr), csr);;
+fun csrSetAuthorityKeyIdentifier(keyIdentifier, csr) =
+	csrSetExtension(false, OID_authorityKeyIdentifier, asn1Seq (asn1ClassPrimitive ASN1_CONTEXT_SPECIFIC 0 keyIdentifier)::nil, csr);;
+fun csrSetSubjectAltName(names, csr)=
+	csrSetExtension(false, OID_subjectAltName,
+		asn1Seq listMap(names, lambda(name) = asn1ClassPrimitive ASN1_CONTEXT_SPECIFIC 2 name), csr);;
+
+fun csrSetKeyUsage(usages, csr) =
+	csrSetExtension(true, OID_keyUsage, 
+		asn1Echo("> ", asn1BitString 0 strInt8(listReduce(usages, 0, lambda(val, usage)= val|(1<<usage)))), csr);;
+
+fun csrSetExtKeyUsage(usages, csr) =
+	csrSetExtension(false, OID_extKeyUsage,
+		asn1Seq listMap(usages, lambda(oid) = asn1ObjectIdentifier oid), csr);;
+
+fun csrAutoSign(csr) =
+	csrSetSubjectKeyIdentifier(csr);
+	csrSetAuthorityKeyIdentifier(cerSubjectKeyIdentifier(csr), csr);
+	csrSetBasicConstraint(true, csr);
+	set csr.issuerOidsX=csr.subjectOidsX;
+	set csr.issuerX=csr.subjectX;
+	csr;;
+
+fun csrSignWithCer(cer, csr) =
+	csrSetAuthorityKeyIdentifier(cerSubjectKeyIdentifier(cer),
+		csrSetSubjectKeyIdentifier(csr));
+	set csr.issuerOidsX=cer.subjectOidsX;
+	set csr.issuerX=cer.subjectX;
+	csr;;
+
+//version:serial:signatureAlgorithmCA:issuer:times:subject:pkInfo:ext
+fun _cerBuildInfo(cer)=
+	asn1Seq
+		(asn1ClassConstructed ASN1_CONTEXT_SPECIFIC 0 (asn1Integer strInt8(cer.versionX-1))::nil)::
+		(asn1Integer cer.serialX)::
+		(asn1Seq (asn1ObjectIdentifier cer.signatureAlgorithmX)::asn1Null::nil)::
+		(asn1Seq listMap(cer.issuerOidsX, lambda([oid, val])= asn1Set (asn1Seq (asn1ObjectIdentifier oid)::(asn1PrintableString val)::nil)::nil))::
+		(asn1Seq (asn1UtcTime yyddmmhhmmsszFromTime(cer.fromX))::(asn1UtcTime yyddmmhhmmsszFromTime(cer.toX))::nil)::
+		(asn1Seq listMap(cer.subjectOidsX, lambda([oid, val])= asn1Set (asn1Seq (asn1ObjectIdentifier oid)::(asn1PrintableString val)::nil)::nil))::
+		asn1PublicEncryption(cer.keyX)::
+		(asn1ClassConstructed ASN1_CONTEXT_SPECIFIC 3
+			(asn1Seq listMap(listFromHashmap(cer.extensionsX), lambda([oid, asn1]) = 
+				asn1Seq
+					listFilterNils(					(asn1ObjectIdentifier oid)::
+					(if hashsetContains(cer.criticalExtensionsX, oid) then asn1Bool true)::
+					(asn1OctetString asn1Pack(asn1))::
+					nil)
+				
+			))::nil
+		)::nil;;
+
+fun cerFromCsr(key, durationDays, csr) =
+	let time() -> t0 in
+	let [
+		certificateX=true,
+		versionX=3,
+		serialX=computeSerial(),
+		issuerOidsX=csr.issuerOidsX,
+		issuerX=csr.issuerX,
+		subjectOidsX=csr.subjectOidsX,
+		subjectX=csr.subjectX,
+		fromX=t0, toX=t0+durationDays*86400,
+		keyX=csr.keyX,
+		extensionsX=csr.extensionsX,
+		criticalExtensionsX=csr.criticalExtensionsX,
+		signatureAlgorithmX=csr.signatureAlgorithmX
+	] -> cer in (
+		set cer.infoDerX=asn1Pack(_cerBuildInfo(cer));
+		set cer.signatureX=signatureGenerate(signAlgoByOID(cer.signatureAlgorithmX), key, cer.infoDerX);
+		cer
+	);;
+
+fun cerDER(cer) = if cer.certificateX then _x509Pack(cer);;
+fun cerPEM(cer) = pemMake("CERTIFICATE", cerDER(cer));;

@@ -1,0 +1,45 @@
+Minimacy extension for Vi/Vim
+-----------------------------
+
+Setup
+-----
+- copy the directory .vim in your home directory
+- when you do not have any .vimrc file, copy the .vimrc file from this extension
+- else open your .vimrc file and insert the content of the .vimrc file from this extension
+
+Troubleshooting
+---------------
+Syntax highlighting requires the "Huge version" of Vi/Vim.
+On some distributions (including Ubuntu) the default version is the "Small version".
+
+With the "Small version", you get the following error:
+
+$ vi
+Error detected while processing /home/[username]/.vimrc:
+line    1:
+E319: Sorry, the command is not available in this version: syntax on
+
+You may check your current version and observe that you have the "Small version":
+$ vi --version
+VIM - Vi IMproved 8.2 (2019 Dec 12, compiled Oct 01 2021 01:51:08)
+Included patches: 1-2434
+Extra patches: 8.2.3402, 8.2.3403, 8.2.3409, 8.2.3428
+Modified by team+vim@tracker.debian.org
+Compiled by team+vim@tracker.debian.org
+Small version without GUI.  Features included (+) or not (-):
+^^^^^
+
+In this situation, you need to upgrade vim, by simply typing the following command:
+$ sudo apt-get install vim
+
+Now you may check that you have the "Huge version":
+$ vi --version
+VIM - Vi IMproved 8.2 (2019 Dec 12, compiled Oct 01 2021 01:51:08)
+Included patches: 1-2434
+Extra patches: 8.2.3402, 8.2.3403, 8.2.3409, 8.2.3428
+Modified by team+vim@tracker.debian.org
+Compiled by team+vim@tracker.debian.org
+Huge version without GUI.  Features included (+) or not (-):
+^^^^
+
+And vi won't fail anymore.

@@ -1,0 +1,85 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2022, Sylvain Huet, Ambermind
+// Minimacy (r) System
+
+export pngFromBitmap(bmp, alpha);;
+
+const PNG_MAGIC="\$89\$50\$4E\$47\$0D\$0A\$1A\$0A";;
+const _VALUES_PER_PIXEL_FROM_COLORTYPE={1, nil, 3, 1, 2, nil, 4};;
+
+//------------- compression Bitmap -> png
+
+fun _pngMakeChunk(name, data)=
+	let strCrc32(name, 0) -> crc in
+	let strCrc32(data, crc) -> crc in
+	[
+		strInt32Msb(strLength(data)),
+		name,
+		data,
+		strInt32Msb(crc)
+	];;
+
+fun _pngBitmapGet(bmp, x, y)=
+	let bitmapGet(bmp, x, y) -> col in
+	(col&0xff00ff00)|((col>>16)&0xff)|((col<<16)&0xff0000);;
+
+fun _pngMakeRow0(data, rowStart, bmp, y, w, fWrite, vpp)=
+	bytesSet(data, rowStart, 0);
+	for x=0;x<w do
+		let _pngBitmapGet(bmp, x, y) -> col in
+		call fWrite(data, rowStart+1+x*vpp, col);;
+
+fun _pngMakeRow12(mode, data, rowStart, bmp, y, w, fWrite, vpp)=
+	bytesSet(data, rowStart, mode);
+	let if mode==1 then 1 else 0 -> dx in
+	let 1-dx -> dy in
+	for x=0;x<w do
+		let _pngBitmapGet(bmp, x, y) -> col in
+		let _pngBitmapGet(bmp, x-dx, y-dy) -> A in 
+		call fWrite(data, rowStart+1+x*vpp,
+			((col - A&0xff000000)&0xff000000)|
+			((col - A&0xff0000)&0xff0000)|
+			((col - A&0xff00)&0xff00)|
+			((col - A&0xff)&0xff));;
+
+fun _pngMakeRow1(data, rowStart, bmp, y, w, fWrite, vpp)= _pngMakeRow12(1, data, rowStart, bmp, y, w, fWrite, vpp);;
+fun _pngMakeRow2(data, rowStart, bmp, y, w, fWrite, vpp)= _pngMakeRow12(2, data, rowStart, bmp, y, w, fWrite, vpp);;
+
+fun _pngMakeData(bmp, alpha)=
+	let _VALUES_PER_PIXEL_FROM_COLORTYPE[(if alpha then 6 else 2)] -> vpp in
+	let bitmapW(bmp) -> w in
+	let bitmapH(bmp) -> h in
+	let bytesCreate((w*vpp+1)*h, 0) -> data in
+	let if alpha then #bytesWrite32Lsb else #bytesWrite24Lsb -> fWrite in
+	(
+		for y=0;y<h do
+			let y*(vpp*w+1) -> rowStart in
+//			_pngMakeRow0(data, rowStart, bmp, y, w, fWrite, vpp);
+			_pngMakeRow1(data, rowStart, bmp, y, w, fWrite, vpp);
+//			_pngMakeRow2(data, rowStart, bmp, y, w, fWrite, vpp);
+		strBuild([
+			"\$78\$9C",
+			deflateBytes(data),
+			strInt32Msb(bytesAdler32(data, 1))
+		])
+	);;
+
+//-------------------- API
+fun pngFromBitmap(bmp, alpha)=	// fun Bitmap Bool -> Str
+	if bmp<>nil then
+	let bitmapW(bmp) -> w in
+	let bitmapH(bmp) -> h in
+	let if alpha then 6 else 2 -> mode in
+	let _pngMakeChunk("IHDR", strBuild([
+		strInt32Msb(w),
+		strInt32Msb(h),
+		strInt8(8),
+		strInt8(mode),
+		strInt8(0),
+		strInt8(0),
+		strInt8(0)
+	])) -> header in
+	let _pngMakeChunk("IDAT", _pngMakeData(bmp, alpha)) -> data in
+	let _pngMakeChunk("IEND", "") -> end in
+	strBuild([PNG_MAGIC, header, data, end]);;
+

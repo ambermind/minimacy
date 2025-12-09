@@ -1,0 +1,67 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2022, Sylvain Huet, Ambermind
+// Minimacy (r) System
+
+use core.net.ssh;;
+use core.crypto.key;;
+
+extend SSH_NOTIFICATIONS with SSH_SHELL_TERM, SSH_SHELL_EXEC;;
+
+struct SSHshellServer= SSH + [channelS, fNotifyEventS];;
+
+fun shellServerOnEvent(h, fNotify)= set h.fNotifyEventS=(lambda(code, data) = call fNotify(h, code, data);0);;
+fun shellServerNotifyEvent(h, code, data)=
+	if SSH_DEBUG then echoLn strFormat("> shellServerNotifyEvent code *", code);
+	call h.fNotifyEventS(code, data);;
+
+fun execParseChannelRequest(h, type, wantReply, data)=
+	if SSH_DEBUG then echoLn "< execParseChannelRequest";
+	if type=="exec" && wantReply<>0 then (
+		sshSendChannelSuccess(h.channelS);
+		sshNotifyEvent(h, SSH_READY, nil);
+		let sshParseVals(data, 0, 1) -> cmd::_ in sshNotifyEvent(h, SSH_SHELL_EXEC, cmd);
+		sshSendChannelClose(h.channelS)
+	)
+	else if type=="shell" && wantReply<>0 then (
+		sshSendChannelSuccess(h.channelS);
+		sshNotifyEvent(h, SSH_READY, nil);
+	)
+	else if type=="pty-req" && wantReply<>0 then (
+		let sshParseVals(data, 0, 1) -> subsystem::_ in sshNotifyEvent(h, SSH_SHELL_TERM, subsystem);
+		sshSendChannelSuccess(h.channelS);
+	);;
+
+fun execStart(h)=
+	sshOnNewChannel(h, (lambda(c)=
+		if SSH_DEBUG then echoLn "> receive new channel connection";
+		if h.channelS==nil then (
+			set h.channelS=c;
+			sshOnChannelRequest(c, (lambda(type, wantReply, args) = execParseChannelRequest(h, type, wantReply, args)));
+			sshOnChannelEvent(c, (lambda(code, data)= shellServerNotifyEvent(h, code, data)));
+			sshSendChannelOpenConfirmation(c)
+		)
+	));;
+
+fun shellServerStart(serverKey, serverKeyPassword, localIp, localPort, fCheckAuth, fNotify)= 
+	let keyFromPEM(serverKey, serverKeyPassword) -> serverKey in
+	let tcpSrvCreate(localIp, localPort) -> tcpSrv in
+	if tcpSrv==nil then void (if SSH_DEBUG then echoLn strFormat("> UNABLE TO START TCP SERVER ON *:*", localIp, localPort))
+	else (
+		if SSH_DEBUG then echoLn strFormat("> SERVER STARTED ON PORT *:*", localIp, localPort);
+		tcpSrvOnAccept(tcpSrv, (lambda(tcp)= 
+			let [SSHshellServer] -> h in (
+				shellServerOnEvent(h, fNotify);
+				sshAccept(h, serverKey, tcp, 
+					lambda(authMode, login, authData) = call fCheckAuth(h, authMode, login, authData),
+					(lambda(code, data)=
+						if SSH_DEBUG then echoLn strFormat("> shellServer notified with code *", code);
+						if code==SSH_OK then void execStart(h)
+						else shellServerNotifyEvent(h, code, data);
+					))
+			)
+		));
+		tcpSrv
+	);;
+
+fun shellServerSendData(h, data) = sshSendChannelData(h.channelS, data);;
+fun shellServerClose(h) = sshSendChannelClose(h.channelS);;

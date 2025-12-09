@@ -1,0 +1,49 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2022, Sylvain Huet, Ambermind
+// Minimacy (r) System
+
+// Primal generation : bigPrimal nbits nloops
+// using Miller–Rabin primality test
+
+const _BIG1= bigFromInt(1);;
+const _BIG2= bigFromInt(2);;
+
+fun __bigSecondLoop(nLoop, y, nMinusOne, n, mu)=
+	if y==nMinusOne then true
+	else
+	if nLoop>0 then
+	let bigMulModBarrett(y, y, n, mu) -> y in
+	if y<>_BIG1 then
+	__bigSecondLoop(nLoop-1, y, nMinusOne, n, mu);;
+
+fun __bigPrimaryLoop(n, mu, nMinusOne, r, s, nloops)=
+	if nloops<=0 then true
+	else
+	let bigRand(bigNbits(n), false) -> y in
+	if bigIsNull(y)||bigGreater(y, nMinusOne) then __bigPrimaryLoop(n, mu, nMinusOne, r, s, nloops)
+	else
+	let bigExpModBarrett(y, r, n, mu)-> y in
+	if y==_BIG1 || __bigSecondLoop(s-1, y, nMinusOne, n, mu) then
+	__bigPrimaryLoop(n, mu, nMinusOne, r, s, nloops-2);;
+
+fun _bigIsPrimal(n, nloops)=
+	let bigSub(n, _BIG1) -> nMinusOne in
+	let bigLowestBit(nMinusOne) -> s in
+	let bigASR(nMinusOne, s) -> r in
+	let bigBarrett(n) -> mu in
+	__bigPrimaryLoop(n, mu, nMinusOne, r, s, nloops);;
+
+fun _bigPrimalCandidate(nbits)=
+	let bigRand(max(2, nbits), true) -> b in
+	if bigIsEven(b) then bigAdd(b, _BIG1)
+	else b;;
+
+fun _bigPrimal(nbits, nloops, n)=
+	if bigNbits(n)<>nbits then _bigPrimal(nbits, nloops, _bigPrimalCandidate(nbits))
+	else
+	if _bigIsPrimal(n, nloops) then n
+	else
+	_bigPrimal(nbits, nloops, bigAdd(n, _BIG2));;
+
+fun bigPrimal(nbits, nloops)=
+	_bigPrimal(nbits, nloops, nil);;

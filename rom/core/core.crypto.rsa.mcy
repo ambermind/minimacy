@@ -1,0 +1,56 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2022, Sylvain Huet, Ambermind
+// Minimacy (r) System
+
+use core.crypto.primal;;
+
+struct RSA=[modulusR, pubExpR, privExpR, pR, qR, dPR, dQR, qInvR];;
+
+//---------------------------
+// RSA create keys
+
+fun rsaFromPublic(modulus, pubExp)=
+	[modulusR=modulus, pubExpR=pubExp];;
+
+fun rsaFromPQ(pubExp, p, q)=
+\bigNum
+	let p*q -> modulus in
+	let (p-1)*(q-1) -> phi in
+	let bigInv(pubExp, phi) -> privExp in
+	let privExp % (p-1) -> dP in
+	let privExp % (q-1) -> dQ in
+	let bigInv(q, p) -> qInv in
+	[modulusR=modulus, pubExpR=pubExp, privExpR=privExp, pR=p, qR=q, dPR=dP, dQR=dQ, qInvR=qInv];;
+
+fun rsaCreate(nbits, pubExp)=
+	if !randomHardware() then echoLn "> Warning: generate RSA key with pure software pseudorandom generator";
+	let if pubExp==nil then 0x010001 else pubExp -> pubExp in
+	let bigPrimal(nbits>>1, 16)-> p in
+	let bigPrimal(nbits-(nbits>>1), 16)-> q in
+	if p==q then rsaCreate(nbits, pubExp)	// try again
+	else rsaFromPQ(bigFromInt(pubExp), p, q);;
+
+fun rsaDump(rsa)=
+	(
+		echoLn  "RSA KEY:";
+		echoLn ["modulus: ", hexFromBig(rsa.modulusR)];
+		echoLn ["pubExp : ", hexFromBig(rsa.pubExpR)];
+		echoLn ["privExp: ", hexFromBig(rsa.privExpR)];
+		echoLn ["p      : ", hexFromBig(rsa.pR)];
+		echoLn ["q      : ", hexFromBig(rsa.qR)];
+		echoLn ["dP     : ", hexFromBig(rsa.dQR)];
+		echoLn ["dQ     : ", hexFromBig(rsa.dQR)];
+		echoLn ["qInv   : ", hexFromBig(rsa.qInvR)];
+		rsa
+	);;
+
+// compute a random number modulo n
+fun rsaRandomMsg(rsa)= bigMod(bigRand(bigNbits(rsa.modulusR), false), rsa.modulusR);;
+
+fun rsaModulus(rsa)= rsa.modulusR;;
+fun rsaPubExp(rsa)= rsa.pubExpR;;
+
+fun rsaComputePrivateExp(rsa, msg)=
+	bigExpChinese5(msg, rsa.pR, rsa.qR, rsa.dPR, rsa.dQR, rsa.qInvR);;
+
+fun rsaIsPrivate(rsa)= rsa.privExpR<>nil;;

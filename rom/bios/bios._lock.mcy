@@ -1,0 +1,98 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2022, Sylvain Huet, Ambermind
+// Minimacy (r) System
+
+//------------ LOCK
+struct Lock=[_fifoL];;
+
+fun _lockEnter(lck)=
+\atomic (
+	fifoIn(lck._fifoL, _This);
+	if 1<fifoCount(lck._fifoL) then
+	(
+		_threadHoldOn();
+		0
+	)
+);;
+
+fun _lockLeave(lck)=
+	fifoOut(lck._fifoL);
+	let fifoNext(lck._fifoL) -> next in
+	if next<>nil then
+	if next._stateT==_THREAD_WAIT then
+	(
+		set next._locksT=lck::next._locksT;
+		_threadUnfreeze(next, nil)
+	)
+	else _lockLeave(lck);;
+
+fun lockSync(lck, function)=
+	if  lck==nil || _This==fifoNext(lck._fifoL) then (call function())
+	else
+	(
+		_lockEnter(lck);
+		set  _This._locksT=lck:: _This._locksT;
+		try let call function ()-> val in
+		(
+			set  _This._locksT=tail( _This._locksT);
+			\atomic _lockLeave(lck);
+			val
+		)
+		else (
+			set  _This._locksT=tail( _This._locksT);
+			\atomic _lockLeave(lck);
+			abort
+		)
+	);;
+
+fun lockCreate ()= [_fifoL=fifoCreate()];;
+
+fun _lockFreeThread(th)= for lck in th._locksT do _lockLeave(lck); set th._locksT=nil;;
+
+
+//------------ Join
+struct Join{a0}=[_valJ:a0, _doneJ, _threadJ, _oblivionJ, _abortJ, _errorJ] ;;
+
+fun joinCreate()=[_doneJ=false];;
+
+fun joinWait(m)=
+\atomic
+	if m._threadJ == nil then
+	if m._doneJ then m._valJ
+	else
+	(
+		set m._threadJ= _This;
+		set m._oblivionJ = oblivionCreate((lambda ()= joinSend(m, nil)));
+		set m=nil;	// forget the join so that it can be oblivioned
+		_threadHoldOn()	
+	);;
+
+fun joinSend(m, val)=
+\atomic
+	if !m._doneJ then
+	(
+		set m._valJ=val;
+		set m._doneJ=true;
+		_threadUnfreeze(m._threadJ, val);
+		val
+	);;
+
+fun await(asyncFun)=
+	let joinCreate() -> join in
+	(
+		threadStart("async", (lambda ()= 
+			try call asyncFun(join)
+			else if !join._doneJ then (
+				set join._abortJ=true;
+				set join._errorJ=lastError();
+				joinSend(join, nil);
+				nil
+			)
+		));
+		let joinWait(join) -> val in
+		if join._abortJ then (
+			setError(join._errorJ);
+			abort
+		)
+		else val
+	);;

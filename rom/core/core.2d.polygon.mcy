@@ -1,0 +1,105 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2022, Sylvain Huet, Ambermind
+// Minimacy (r) System
+
+// use this function for a simple polygon
+// 'points' is an array of vertices: array array Int
+// each vertice is an array of 2 integers
+// there order is either clockwise or counterclockwise
+// for example: {{250 30} {180 30} {40 300} {60 300} {200 150} {300 180}}
+export bitmapPolygon(bmp, points, color, blend);;
+
+// use this function when there are holes in your polygon
+// 'polygons' should be a list of simple polygons 
+// for example: {{250 30} {180 30} {40 300} {60 300} {200 150} {300 180}}:{{220 40} {180 80} {230 50}}:nil
+export bitmapPolygons(bmp, polygons, color, blend);;
+
+
+use core.util.insertsort;;
+
+const X=0;;
+const Y=1;;
+struct Edge=[xE, yE, dxE, pointsE];;
+
+fun cmpX(a, b)= a.xE<=.b.xE;;
+fun cmpY(a, b)= a.yE<b.yE;;
+
+// get the index of point with the smallest y
+fun _polyTop(points, i, iTop)=
+	if i>=arrayLength(points) then iTop
+	else
+	_polyTop(points, i+1, if points[i][Y] <points[iTop][Y] then i else iTop);;
+fun polyTop(points)=_polyTop(points, 0, 0);;
+
+fun makeEdge(l)= [yE=(head(l))[Y], pointsE=l];;
+fun polyTourUp(points, i0, di, N, current, done)=
+	if di==N then makeEdge(current)::done
+	else
+	let points[((i0+di)%N)] -> last in
+	let points[((i0+di+1)%N)] -> next in
+	if next[Y] <=last[Y] then polyTourUp(points, i0, di+1, N, next::current, done)
+	else polyTourDown(points, i0, di+1, N, next::last::nil, makeEdge(current)::done);;
+
+fun polyTourDown(points, i0, di, N, current, done)=
+	let points[((i0+di)%N)] -> last in
+	let points[((i0+di+1)%N)] -> next in
+	if next[Y] >=last[Y] then polyTourDown(points, i0, di+1, N, next::current, done)
+	else polyTourUp(points, i0, di+1, N, next::last::nil, makeEdge(listReverse(current))::done);;
+
+fun _edgeStart(edge)=
+	let head(edge.pointsE) -> p in
+	(
+		set edge.pointsE= tail(edge.pointsE);
+		let head(edge.pointsE) -> q in
+		if q<>nil then
+		if p[Y]==q[Y] then _edgeStart(edge)	// skip horizontal borders
+		else
+		(
+			set edge.xE= floatFromInt(p[X]);
+			set edge.dxE= floatFromInt(q[X]-p[X])/.floatFromInt(q[Y]-p[Y]);
+			edge
+		)
+	);;
+
+fun _isOrdered(edges) =
+	(nil==tail(edges))||
+	let edges -> (a::b::_) in
+	if a.xE<=. b.xE then _isOrdered(tail(edges));;
+
+fun _polyScanline(bmp, color, blend, y, edges, pending)=
+	if edges<>nil || pending<>nil then
+	if y<=bitmapH(bmp) then
+	if y==(head(pending)).yE then
+		let _edgeStart(head(pending)) -> p in
+		_polyScanline(bmp, color, blend, y, p::edges, tail(pending))
+	else
+	let if _isOrdered(edges) then edges else insertsort(edges, #cmpX) -> edges in
+	(
+		for l=edges;l<>nil;tail(tail(l)) do
+		let l->(a::b::_) in bitmapScanline(bmp, intFromFloat(a.xE), intFromFloat(b.xE), y, color, blend);
+		let listMap(edges, lambda(p)=
+			let head(p.pointsE) -> q in if y==q[Y] then _edgeStart(p) else p
+		)-> edges in
+		(
+			for p in edges do set p.xE=p.xE+.p.dxE;
+			_polyScanline(bmp, color, blend, y+1, edges, pending)
+		)
+	);;
+
+fun _edgesFromPoly(points)=
+	let arrayLength(points) -> N in
+	let polyTop(points) -> iTop in
+	let polyTourDown(points, iTop, 0, N, points[iTop]::nil, nil) -> edges in
+	insertsort(edges, #cmpY);;
+
+//-------------API
+fun bitmapPolygon(bmp, points, color, blend)=
+	let _edgesFromPoly(points) -> edges in
+	let (head(edges)).yE -> yStart in
+	_polyScanline(bmp, color, blend, yStart, nil, edges);;
+
+fun bitmapPolygons(bmp, polygons, color, blend)=
+	let doubleListCompress(listMap(polygons, #_edgesFromPoly)) -> edges in
+	let insertsort(edges, #cmpY) -> edges in
+	let (head(edges)).yE -> yStart in
+	_polyScanline(bmp, color, blend, yStart, nil, edges);;

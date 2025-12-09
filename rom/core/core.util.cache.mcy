@@ -1,0 +1,89 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2022, Sylvain Huet, Ambermind
+// Minimacy (r) System
+
+// this library implements a cache of (key, value) data.
+// the cache is made of:
+// one hashmap
+// one double linked list of (key,values). Double linked lists can be manipulated in constant time.
+// when a (key/value) is added or accessed, it is moved at the first place of the list
+// when the number of elements would exceed 'count', the last element of the list is removed
+export cacheCreate(count);;	// create a cache with at most 'count' elements, and an internal hashmap with an average of 4 elements per slot
+export cachePush(c, key, val);;	// add a (key,value) into the cache in the first position and remove the last element when the cache is full
+export cacheGet(c, key);;	// access a (key,value) and move it a the first position
+
+export cache0Create(len) ;;
+export cache0Get(c, key) ;;
+export cache0Push(c, key, val);;
+
+//------ hidden definitions
+struct Node{a b}=[ keyN:a, valN:b, nextN:Node{a b}, prevN:Node{a b} ];;
+struct Cache{a b}=[countC, hC:(hashmap a->Node{a b}), firstC:Node{a b}];;
+
+fun _nbits(val, i) = if (1<<i)>=val then i else _nbits(val, i+1);;
+
+fun _cacheCreate(count, nbits)= [countC=count, hC=hashmapCreate(nbits)];;
+
+fun _cacheLimit(c) = 	// remove the last element when the count exceeds the limit
+	if hashmapCount(c.hC)>= c.countC then
+	let c.firstC.prevN -> n in (
+		set n.prevN.nextN=n.nextN; set n.nextN.prevN=n.prevN;
+		if n==c.firstC then set c.firstC= if n<>n.nextN then n.nextN;
+		hashmapSet(c.hC, n.keyN, nil);
+		true
+	);;
+
+fun _cacheMoveFirst(c, n)=	// move the node 'n' at the first position, and return its value
+	if n==c.firstC then n.valN
+	else (
+		set n.prevN.nextN=n.nextN; set n.nextN.prevN=n.prevN;	// remove node
+		let c.firstC -> first in
+		let first.prevN -> last in (
+			set first.prevN=n; set last.nextN=n;	// insert node in the first place
+			set n.nextN=first; set n.prevN=last
+		);
+		set c.firstC=n;
+		n.valN
+	);;
+
+//------ public functions
+fun cacheCreate(count) = _cacheCreate(max(1, count), max(1, min(10, _nbits(count, 0)>>2)));;	// an average of 4 elements per hashmap slot and a maximum of 1024 slots
+
+fun cachePush(c, key, val)=
+	let hashmapGet(c.hC, key) -> n in
+	let if n<>nil then n else (_cacheLimit(c); hashmapSet(c.hC, key, [keyN=key])) -> n in (
+		set n.valN=val;
+		if c.firstC==nil then set c.firstC=set n.prevN= set n.nextN= n;
+		_cacheMoveFirst(c, n)
+	);;
+
+fun cacheGet(c, key) =
+	let hashmapGet(c.hC, key) -> n in
+	if n<>nil then _cacheMoveFirst(c, n);;
+
+
+
+
+//-------------------- Simplified implementation with linear access time
+struct Cache0{a b}=[lenC, lC:(list [a b])];;
+
+fun _cacheFind(c, key)= if c<>nil then let head(c) ->[k, _] in if key==k then head(c) else _cacheFind(tail(c), key);;
+fun _listRemoveLast(l) = if tail(l)<>nil then head(l)::_listRemoveLast(tail(l));;
+
+fun cache0Create(len) = [lenC=len];; 
+fun cache0Get(c, key) = 
+	let _cacheFind(c.lC, key) -> n in
+	if n<>nil then
+	let n->[_, v] in (
+		set c.lC= n::listRemove(c.lC, n);
+		v
+	);;
+
+fun cache0Push(c, key, val)=
+	let _cacheFind(c.lC, key) -> n in (
+		if n<>nil then set c.lC=listRemove(c.lC, n)
+		else if c.lenC<=listLength(c.lC) then set c.lC=_listRemoveLast(c.lC);
+		set c.lC=[key, val]::c.lC;
+		val
+	);;
+

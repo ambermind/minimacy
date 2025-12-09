@@ -1,0 +1,27 @@
+
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2022, Sylvain Huet, Ambermind
+// Minimacy (r) Demonstration
+
+use core.2d.qrcode;;
+
+fun _mkQrCode(str)=
+	let timeMs() -> t0 in
+	let qrcodeWithBorder(str, ECL_MEDIUM, 1) -> qr in
+	let timeMs() - t0 -> dt in
+	(
+		qrcodeEcho(qr);
+		echoLn ["code: ", str];
+		echoLn strFormat("done in * ms", dt);
+	);;
+	
+fun loop()=
+	onPrompt("Enter string to QR-encode>", (lambda(input)=
+		if input==nil then exit();
+		_mkQrCode(input);
+		loop()
+	));;
+
+fun main()= 
+	_mkQrCode("https://minimacy.net");
+	loop();;

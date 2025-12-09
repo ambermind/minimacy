@@ -1,0 +1,52 @@
+apply plugin: 'com.android.application'
+
+android {
+    signingConfigs {
+        debug {
+            storeFile file('../../dummyKeyStore.jks')
+            storePassword 'Hello!'
+            keyAlias 'minimacy'
+            keyPassword 'Hello!'
+        }
+        release {
+            storeFile file('../../dummyKeyStore.jks')
+            storePassword 'Hello!'
+            keyAlias 'minimacy'
+            keyPassword 'Hello!'
+        }
+    }
+    compileSdkVersion 31
+    ndkVersion '22.1.7171670'
+
+    defaultConfig {
+        applicationId 'com.example.minimacy'
+        minSdkVersion 16
+        targetSdkVersion 33
+    }
+    buildTypes {
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android.txt'),
+                          'proguard-rules.pro'
+            signingConfig signingConfigs.release
+        }
+        debug {
+            signingConfig signingConfigs.debug
+        }
+    }
+    externalNativeBuild {
+        cmake {
+//            version '3.18.1'
+            path 'src/main/cpp/CMakeLists.txt'
+        }
+    }
+    sourceSets {
+        main {
+            java.srcDirs = ['src']
+            assets.srcDirs = ['../../../programs','../../../rom']
+            res.srcDirs = ['src/main/res']
+            manifest.srcFile 'src/main/AndroidManifest.xml'
+        }
+    }
+    namespace 'com.example'
+}

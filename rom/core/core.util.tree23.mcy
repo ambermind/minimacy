@@ -1,0 +1,212 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2022, Sylvain Huet, Ambermind
+// Minimacy (r) System
+
+//-----------2-3 tree
+
+// type definition : _node1T and _node4T are temporary nodes during deletion and insertion
+// only leaves have nil childs, and then all their childs are nil
+sum Tree23{a}=
+	_node1T _:Tree23{a},
+	_node2T _:Tree23{a} _:a _:Tree23{a},
+	_node3T _:Tree23{a} _:a _:Tree23{a} _:a _:Tree23{a},
+	_node4T _:Tree23{a} _:a _:Tree23{a} _:a _:Tree23{a} _:a _:Tree23{a};;
+
+//------------ INSERTION
+	
+fun _tree23Insert(t, v, fBefore)=
+	match t with
+		_node2T t1 a t2 ->
+			if t1==nil then
+				if call fBefore(v, a) then _node3T nil v nil a nil
+				else _node3T nil a nil v nil
+			else if call fBefore(v, a) then
+				let _tree23Insert(t1, v, fBefore)-> tt in
+				(match tt with
+					_node4T tt1 aa tt2 bb tt3 cc tt4 -> _node3T (_node2T tt1 aa tt2) bb (_node2T tt3 cc tt4) a t2,
+					_ -> _node2T tt a t2)
+			else
+				let _tree23Insert(t2, v, fBefore)-> tt in
+				(match tt with
+					_node4T tt1 aa tt2 bb tt3 cc tt4 -> _node3T t1 a (_node2T tt1 aa tt2) bb (_node2T tt3 cc tt4),
+					_ -> _node2T t1 a tt),
+		_node3T t1 a t2 b t3 ->
+			if t1==nil then
+				if call fBefore(v, a) then _node4T nil v nil a nil b nil
+				else if call fBefore(v, b) then _node4T nil a nil v nil b nil
+				else _node4T nil a nil b nil v nil
+			else if call fBefore(v, a) then
+				let _tree23Insert(t1, v, fBefore)-> tt in
+				(match tt with
+					_node4T tt1 aa tt2 bb tt3 cc tt4 -> _node4T (_node2T tt1 aa tt2) bb (_node2T tt3 cc tt4) a t2 b t3,
+					_ -> _node3T tt a t2 b t3)
+			else if call fBefore(v, b) then
+				let _tree23Insert(t2, v, fBefore)-> tt in
+				(match tt with
+					_node4T tt1 aa tt2 bb tt3 cc tt4 -> _node4T t1 a (_node2T tt1 aa tt2) bb (_node2T tt3 cc tt4) b t3,
+					_ -> _node3T t1 a tt b t3)
+			else
+				let _tree23Insert(t3, v, fBefore)-> tt in
+				match tt with
+					_node4T tt1 aa tt2 bb tt3 cc tt4 -> _node4T t1 a t2 b (_node2T tt1 aa tt2) bb (_node2T tt3 cc tt4),
+					_ -> _node3T t1 a t2 b tt;;
+
+fun tree23Insert(t, v, fBefore)=
+	if t==nil then _node2T nil v nil
+	else let _tree23Insert(t, v, fBefore)-> tt in
+	match tt with
+		_node4T tt1 aa tt2 bb tt3 cc tt4 -> _node2T (_node2T tt1 aa tt2) bb (_node2T tt3 cc tt4),
+		_ -> tt;;
+
+//------------ DELETION
+fun _tree23Right(t)=
+	match t with
+		_node2T _ a tt -> if tt==nil then a else _tree23Right(tt),
+		_node3T _ _ _ a tt -> if tt==nil then a else _tree23Right(tt);;
+
+fun _tree23Del2t1(v, t1, a, t2, fBefore)=
+	let _tree23Delete(t1, v, fBefore)-> tt in
+	match tt with
+		_node1T tte ->
+			(match t2 with
+				_node2T tt1 aa tt2 -> _node1T _node3T tte a tt1 aa tt2,
+				_node3T tt1 aa tt2 bb tt3 -> _node2T (_node2T tte a tt1) aa (_node2T tt2 bb tt3)
+			),
+		_ -> _node2T tt a t2;;
+
+fun _tree23Del2t2(v, t1, a, t2, fBefore)=
+	let _tree23Delete(t2, v, fBefore)-> tt in
+	match tt with
+		_node1T tte ->
+			(match t1 with
+				_node2T tt1 aa tt2 -> _node1T _node3T tt1 aa tt2 a tte,
+				_node3T tt1 aa tt2 bb tt3 -> _node2T (_node2T tt1 aa tt2) bb (_node2T tt3 a tte)
+			),
+		_ -> _node2T t1 a tt;;
+
+fun _tree23Del3t1(v, t1, a, t2, b, t3, fBefore)=
+	let _tree23Delete(t1, v, fBefore)-> tt in
+	match tt with
+		_node1T tte ->
+			(match t2 with
+				_node2T tt1 aa tt2 -> _node2T (_node3T tte a tt1 aa tt2) b t3,
+				_node3T tt1 aa tt2 bb tt3 -> _node3T (_node2T tte a tt1) aa (_node2T tt2 bb tt3) b t3
+			),
+		_ -> _node3T tt a t2 b t3;;
+
+fun _tree23Del3t2(v, t1, a, t2, b, t3, fBefore)=
+	let _tree23Delete(t2, v, fBefore)-> tt in
+	match tt with
+		_node1T tte ->
+			(match t1 with
+				_node2T tt1 aa tt2 -> _node2T (_node3T tt1 aa tt2 a tte) b t3,
+				_node3T tt1 aa tt2 bb tt3 -> _node3T (_node2T tt1 aa tt2) bb (_node2T tt3 a tte) b t3
+			),
+		_ -> _node3T t1 a tt b t3;;
+
+fun _tree23Del3t3(v, t1, a, t2, b, t3, fBefore)=
+	let _tree23Delete(t3, v, fBefore)-> tt in
+	match tt with
+		_node1T tte ->
+			(match t2 with
+				_node2T tt1 aa tt2 -> _node2T t1 a (_node3T tt1 aa tt2 b tte),
+				_node3T tt1 aa tt2 bb tt3 -> _node3T t1 a (_node2T tt1 aa tte) bb (_node2T tt3 b tte)
+			),
+		_ -> _node3T t1 a t2 b tt;;
+
+fun _tree23Delete(t, v, fBefore)=
+	match t with
+		_node2T t1 a t2 ->
+			if a==v then
+				if t1==nil then _node1T nil
+				else let _tree23Right(t1) -> r in
+				_tree23Del2t1(r, t1, r, t2, fBefore)
+			else if call fBefore(v, a) then _tree23Del2t1(v, t1, a, t2, fBefore)
+			else _tree23Del2t2(v, t1, a, t2, fBefore),
+		_node3T t1 a t2 b t3 ->
+			if a==v then
+				if t1==nil then _node2T nil b nil
+				else let _tree23Right(t1) -> r in
+				_tree23Del3t1(r, t1, r, t2, b, t3, fBefore)
+			else if b==v then
+				if t2==nil then _node2T nil a nil
+				else let _tree23Right(t2) -> r in
+				_tree23Del3t2(r, t1, a, t2, r, t3, fBefore)
+			else if call fBefore(v, a) then _tree23Del3t1(v, t1, a, t2, b, t3, fBefore)
+			else if call fBefore(v, b) then _tree23Del3t2(v, t1, a, t2, b, t3, fBefore)
+			else _tree23Del3t3(v, t1, a, t2, b, t3, fBefore);;
+
+fun tree23Delete(t, v, fBefore)=
+	if t<>nil then
+	let _tree23Delete(t, v, fBefore)-> tt in
+	match tt with
+		_node1T tt1->tt1,
+		_ -> tt;;
+
+//------------ SEARCH
+
+fun tree23Visit(t, f)=
+	match t with
+		_node2T t1 a t2 -> tree23Visit(t1, f)&&(call f(a))&&tree23Visit(t2, f),
+		_node3T t1 a t2 b t3 -> tree23Visit(t1, f)&&(call f(a))&&tree23Visit(t2, f)&&(call f(b))&&tree23Visit(t3, f),
+		_ -> true;;
+
+fun tree23VisitDesc(t, f)=
+	match t with
+		_node2T t1 a t2 -> tree23VisitDesc(t2, f)&&(call f(a))&&tree23VisitDesc(t1, f),
+		_node3T t1 a t2 b t3 -> tree23VisitDesc(t3, f)&&(call f(b))&&tree23VisitDesc(t2, f)&&(call f(a))&&tree23VisitDesc(t1, f),
+		_ -> true;;
+
+// fCmp : fun a -> Int 
+// compare to the searched element : 0 if equals, <0 if before, >0 if after
+// for example, looking for 75 : (lambda a= a-75)
+fun tree23Find(t, fCmp) =
+	match t with
+		_node2T t1 a t2 ->
+			let call fCmp(a) -> k in
+			if k>0 then tree23Find(t1, fCmp)
+			else if k==0 then a
+			else tree23Find(t2, fCmp),
+		_node3T t1 a t2 b t3 ->
+			let call fCmp(a) -> k in
+			if k>0 then tree23Find(t1, fCmp)
+			else if k==0 then a
+			else let call fCmp(b) -> k in
+			if k>0 then tree23Find(t2, fCmp)
+			else if k==0 then b
+			else tree23Find(t3, fCmp);;
+
+fun tree23AtLeast(t, fOk)=
+	match t with
+		_node2T t1 a t2 ->
+			if !(call fOk(a)) then tree23AtLeast(t2, fOk)
+			else let tree23AtLeast(t1, fOk) -> res in
+				if res==nil then a else res,
+		_node3T t1 a t2 b t3 ->
+			if !(call fOk(b)) then tree23AtLeast(t3, fOk)
+			else if !(call fOk(a)) then
+				let tree23AtLeast(t2, fOk) -> res in
+				if res==nil then b else res
+			else let tree23AtLeast(t1, fOk) -> res in
+				if res==nil then a else res,
+		_ -> nil;;
+
+//------------ DEBUG
+
+fun tree23Depth(t)=
+	match t with
+		nil -> 0,
+		_node2T t1 _ t2 -> 1+max(tree23Depth(t1), tree23Depth(t2)),
+		_node3T t1 _ t2 _ t3 -> 1+max(tree23Depth(t1), max(tree23Depth(t2), tree23Depth(t3)));;
+
+fun _tree23Dump(t, f)=
+	match t with
+		_node2T t1 a t2 -> (echo "("; _tree23Dump(t1, f); echo [" ", call f(a), " "]; _tree23Dump(t2, f); echo ")"),
+		_node3T t1 a t2 b t3 -> (echo "["; _tree23Dump(t1, f); echo [" ", call f(a), " "]; _tree23Dump(t2, f); echo [" ", call f(b), " "]; _tree23Dump(t3, f); echo "]"),
+		_node4T t1 q t2 b t3 c t4 -> echo "NODE4",
+		_node1T t1 -> echo "NODE1";;
+
+fun tree23Dump(f, t)=
+	_tree23Dump(t, f);
+	echoLn "";
+	t;;

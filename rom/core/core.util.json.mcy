@@ -1,0 +1,137 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2022, Sylvain Huet, Ambermind
+// Minimacy (r) System
+
+// fun jsonParse(src, i0) -> [json next]
+// i0 start index
+// next is nil when reaching end of string, else index of the remaining data
+// type: fun Str Int -> [Json Int]
+
+// fun jsonEncode: fun Json -> Str
+// fun jsonEncodePretty: fun Json -> Str
+
+use core.util.token;;
+
+sum Json= jsonNumber _, jsonString _, jsonNull, jsonTrue, jsonFalse, jsonArray _, jsonObject _;;
+
+fun jsonInt(v)= jsonNumber floatFromInt(v);;
+fun jsonBool(v)= if v then jsonTrue else jsonFalse;;
+fun jsonList(v)= jsonArray arrayFromList(v);;
+
+fun jsonNumberGet(p)=match p with jsonNumber v -> v;;
+fun jsonIntGet(p)= intFromFloat(match p with jsonNumber v -> v);;
+fun jsonBoolGet(p)=match p with jsonTrue -> true, jsonFalse -> false;;
+fun jsonStringGet(p)=match p with jsonString v -> v;;
+fun jsonObjectGet(p)=match p with jsonObject v -> v;;
+fun jsonArrayGet(p)=match p with jsonArray v -> v;;
+fun jsonListGet(p)=match p with jsonArray v -> listFromArray(v);;
+fun jsonFieldGet(p, field)=match p with jsonObject l -> for q in l do let q->[key, val] in if key==field then return val;;
+
+const _JSON_SYMBOLS="{ } [ ] : ,";;
+const _JSON_FILTERS=
+	tokenFilterSkip(false)::
+	tokenFilterKeywords(strSplit(" ", _JSON_SYMBOLS))::
+	tokenFilterNumber()::
+	tokenFilterWord()::
+	tokenFilterString(TOKEN_DOUBLEQUOTE)::
+	nil;;
+
+fun _tokenTake(p)= tokenTake(p, _JSON_FILTERS);;
+
+fun _jsonError(p, str)= setError(msgError strFormat(str, tokenContextError(p, 20))); abort;;
+
+fun _jsonParseArray(p, first)=
+	let _jsonParse(p, if first then "]") -> val in
+	if val<>nil then
+	let _tokenTake(p) -> sep in
+	match sep with
+		"," -> val::_jsonParseArray(p, false),
+		"]" -> val::nil,
+		_ -> _jsonError(p, "',' or ']' expected, instead of '*'");;
+
+fun _jsonParseObject(p, first)=
+	let _tokenTake(p) -> key in
+	if first&& key=="}" then nil
+	else
+	let strGet(key, 0) -> c in
+	if c<>TOKEN_DOUBLEQUOTE then _jsonError(p, "key string expected, instead of '*'")
+	else let u8FromJson(key) -> key in
+	let _tokenTake(p) -> sep in
+	if sep<>":" then _jsonError(p, "':' expected, instead of '*'")
+	else let _jsonParse(p, nil) -> val in
+	let _tokenTake(p) -> sep in
+	match sep with
+		"," -> [key, val]::_jsonParseObject(p, false),
+		"}" -> [key, val]::nil,
+		_ -> _jsonError(p, "',' or '}' expected, instead of '*'");;
+
+fun _jsonParse(p, terminate)=
+	let _tokenTake(p) -> val in
+	if val<>nil && val<>terminate then
+	if val=="null" then jsonNull
+	else if val=="false" then jsonFalse
+	else if val=="true" then jsonTrue
+	else if val=="[" then jsonArray arrayFromList(_jsonParseArray(p, true))
+	else if val=="{" then jsonObject _jsonParseObject(p, true)
+	else let strGet(val, 0) -> c in
+	if c==TOKEN_DOUBLEQUOTE then jsonString u8FromJson(val)
+	else if tokenIsNumber(val) then jsonNumber floatFromStr(val)
+	else (setError(msgError strFormat("unknown '*'", val)); abort);;
+
+fun jsonParse(src, i0)=
+	try
+	let tokenCreate(src, i0)-> p in
+	let _jsonParse(p, nil) -> json in
+	let tokenIndex(p) -> next in
+	[json, next];;
+
+fun _nilCheck(v) = if v==nil then "null" else v;;
+
+fun jsonEncode(j)=
+	match j with
+		jsonNull -> "null",
+		jsonTrue -> "true",
+		jsonFalse -> "false",
+		jsonNumber f -> _nilCheck(strFromFloat(f)),
+		jsonString s -> _nilCheck(jsonFromU8(s)),
+		jsonArray a -> strBuild({"[", strJoin(",", arrayMap(a, #jsonEncode)), "]"}),
+		jsonObject a -> strBuild({
+			"{",
+			strJoin(",", listMap(a, lambda(p)=
+				let p->[key, val] in
+				strBuild({jsonFromU8(key), ":", jsonEncode(val)})))
+			,
+			"}"
+		}),
+		_ -> "null";;
+
+fun _jsonEncodePretty(j, pref)=
+	match j with
+		jsonNull -> "null",
+		jsonTrue -> "true",
+		jsonFalse -> "false",
+		jsonNumber f -> if f==nil then "null" else strFromFloat(f),
+		jsonString s -> if s==nil then "null" else jsonFromU8(s),
+		jsonArray a -> if a==nil then "null" else let strConcat(pref, "  ") -> pref2 in strBuild({
+			"[\n",
+			strJoin(",\n", arrayMap(a, lambda(val)=
+				strConcat(pref2, _jsonEncodePretty(val, pref2))))
+			,
+			if 0<arrayLength(a) then "\n", 
+			pref,
+			"]"
+		}),
+		jsonObject a -> if a==nil then "null" else let strConcat(pref, "  ") -> pref2 in strBuild({
+			"{\n",
+			strJoin(",\n", listMap(a, lambda(p)=
+				let p->[key, val] in
+				strBuild({pref2, jsonFromU8(key), ":", _jsonEncodePretty(val, pref2)})))
+			,
+			if nil<>a then "\n", 
+			pref,
+			"}"
+		}),
+		_ -> "null";;
+
+fun jsonEncodePretty(j)= _jsonEncodePretty(j, "");;
+

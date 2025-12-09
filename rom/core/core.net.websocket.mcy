@@ -1,0 +1,252 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2022, Sylvain Huet, Ambermind
+// Minimacy (r) System
+
+export WebSocket;;
+
+export wsGetRemote(h) ;;
+export wsGetStatus(h) ;;
+export wsGetReplyHeaders(h) ;;
+export wsCreate(verb, url, version);;
+export wsCreate12(verb, url, version);;
+export wsConnect(h, cbReady, cbMessage);;
+export wsSend(h, opcode, data);;
+export wsClose(h);;
+export WS_OPCODE_TEXT;;
+
+
+use core.util.base64;;
+use core.crypto.hash;;
+use core.net.tls12 as tls12;;
+use core.net.tls13 as tls13;;
+use core.net.dns;;
+use core.net.http;;
+
+const WS_OPCODE_TEXT=1;;
+
+struct WebSocket=[
+	tcpH, ttH, sendH, iH, closeAfterH,
+	tlsH, serverH, ipH, portH, 
+	requestH, requestHeadersH, keyH,
+	statusH, replyHeadersH,
+	_bufferH, _contentH,
+	cbReadyH, cbMessageH
+	];;
+
+fun _urlParse(url)=
+	let strPos(url, "://", 0) -> i in
+	let if i==nil then [false, url] else ["wss"==strLeft(url, i), strSlice(url, i+3, nil)] -> [tls, url] in
+	let strPos(url, "/", 0) -> i in
+	let if i==nil then [url, "/"] else [strLeft(url, i), strSlice(url, i, nil)] -> [server, uri] in
+	let strPos(server, ":", 0) -> i in
+	let if i==nil then [server, if tls then 443 else 80] else [strLeft(url, i), intFromDec(strSlice(url, i+1, nil))] -> [server, port] in
+	[tls, server, port, uri];;
+
+
+fun _wsHashSecret(key) = b64Encode(sha1(strConcat(key, WS_UUID)));;
+
+fun _wsHeaders(header)=
+	let hashmapCreate(4) -> headers in
+	(
+		for line in tail(header) do
+			let strPos(line, ": ", 0) -> i in
+			if i<>nil then hashmapSet(headers, strLowercase(strLeft(line, i)), strSlice(line, i+2, nil));
+		headers
+	);;
+
+// return true if provided data contains the end of the header
+fun _checkHeader(h, data)=
+	set h._bufferH= strConcat(h._bufferH, data);
+	let h._bufferH -> begining in
+	let strPos(begining, "\r\n\r\n", 0) -> i in
+	if i<>nil then
+	let strLeft(begining, i) -> header in
+	let strSplit("\r\n", header) -> header in
+	let _wsHeaders(header) -> headers in
+	let strSplit(" ", head(header)) -> firstLine in
+	let strSlice(begining, i+4, nil) -> ending in
+	let firstLine -> (version::code::reply) in
+	(
+		set h._bufferH=nil;
+		set h.statusH=[version, intFromDec(code), strJoin(" ", reply)];
+		set h.replyHeadersH=headers;
+		true
+	);;
+
+
+// return [maskStart maskLength dataLength]
+fun _parseFrame(b)=
+	let strLength(b) -> total in
+	let if 0<>0x80 & strRead8(b, 1) then 4 else 0 -> maskLength in 
+	let 0x7f & strRead8(b, 1) -> len in
+	if len<126 then [2, maskLength, len]
+	else if total>=4 then
+	if len==126 then [4, maskLength, strRead16Msb(b, 2)]
+	else if total>=12 then [10, maskLength, (strRead32Msb(b, 2)<<32)+strRead32Msb(b, 6)];;
+
+fun _checkContent(h, data)=
+	if 0<strLength(data) then set h._bufferH=strConcat(h._bufferH, data);
+	let h._bufferH -> b in
+	let _parseFrame(b) -> [maskStart, maskLength, dataLength] in
+	if maskStart<>nil then
+	let strSliceOfBytes(b, maskStart+maskLength, dataLength) -> frame in
+	let strRead8(b, 0) -> firstByte in
+	let firstByte&15 -> opcode in
+	if opcode==WS_OPCODE_CLOSE then
+	(
+		streamClose(h.ttH);
+		set h.ttH=nil;
+		call h.cbMessageH(WS_OPCODE_CLOSE, nil);
+		nil
+	)
+	else
+	(
+		set h._bufferH=strSlice(h._bufferH, maskStart+maskLength+dataLength, nil);
+		if maskLength<>0 then
+			let strSlice(b, maskStart, maskLength) -> mask in
+			for i=0;i<dataLength;i+maskLength do bytesXor(frame, i, mask, 0, nil);
+		
+		set h._contentH= frame::h._contentH;
+		if 0<> 0x80 & firstByte then
+			let strBuild(listReverse(h._contentH)) -> fullData in
+			(
+				set h._contentH=nil;
+				call h.cbMessageH(opcode, fullData);
+			);
+		if 0<strLength(h._bufferH) then _checkContent(h, "")
+	);;
+
+//---------------------COMMON
+
+fun _wsBuild(firstLine, headers)=
+	let hashmapMap(headers, lambda(key, val)=strBuild({key, ": ", val})) -> headersLines in
+	let firstLine::listConcat(headersLines, ""::""::nil) -> lines in
+	strJoin("\r\n", lines);;
+
+fun _wsBuildRequest(h)=
+	let strJoin(" ", h.requestH) -> firstLine in
+	let h.requestHeadersH -> headers in
+	_wsBuild(firstLine, headers);;
+
+fun _wsSend(h, data)=
+	set h.sendH=strConcat(h.sendH, data);
+//	echo "send "; echoLn 
+	set h.iH=streamWrite(h.ttH, h.sendH, h.iH);
+	if h.iH>=strLength(h.sendH) then (
+		if h.closeAfterH then
+		(
+			streamClose(h.ttH);
+			set h.ttH=nil
+		);
+		set h.sendH=nil;
+		set h.iH=0;
+	);;
+
+fun _wsLength(client, data)=
+	let if client then 0x80 else 0 -> mask in
+	let strLength(data) -> len in
+	if len<126 then strInt8(mask|len)
+	else if len<65536 then strBuild({strInt8(mask|126), strInt16Msb(len)})
+	else strBuild({strInt8(mask|127), strInt32Msb(len>>32), strInt32Msb(len)});;
+
+fun _wsData(client, data)=
+	if !client then data
+	else let strRand(4) -> mask in
+	let strLength(data) -> len in
+	let strSliceOfBytes(data, 0, nil) -> buffer in
+	(
+		for i=0;i<len;i+4 do bytesXor(buffer, i, mask, 0, nil);
+		strFormat("**", mask, buffer)
+	);;
+
+fun _wsReceiveReply(h, data)=
+	if data<>nil then
+	
+		if h.replyHeadersH==nil then
+		(
+			if _checkHeader(h, data) then
+			let hashmapGet(h.replyHeadersH, WS_ACCEPT) -> keyAccept in
+			if keyAccept==_wsHashSecret(h.keyH) then
+			(
+				call h.cbReadyH();
+				_checkContent(h, "");
+			)
+			else
+			(
+				call h.cbMessageH(nil, nil);
+				nil
+			)
+		)
+		else _checkContent(h, data)
+	;;
+fun _wsConnect(h)=
+	set h.tcpH=tcpOpen(h.ipH, h.portH);
+	set h.ttH= match h.tlsH with
+		12 -> Stream<tls12.tlsStartClient(h.tcpH, h.serverH),
+		13 -> Stream<tls13.tlsStartClient(h.tcpH, h.serverH),
+		_ -> Stream<h.tcpH;
+
+	set h.keyH=_wsHashSecret(strRand(32));
+	hashmapSet(h.requestHeadersH, WS_KEY, h.keyH);
+	set h.sendH=_wsBuildRequest(h);
+	streamOnEvent(h.ttH,
+		(lambda(data)=
+//	echoLn "receive"; echoLn data;hexDump data;
+			if data==nil then
+			(
+//				echoTime "client receives close";
+				set h.ttH=nil;
+				call h.cbMessageH(WS_OPCODE_CLOSE, nil);
+				nil
+			)
+			else _wsReceiveReply(h, data);
+			nil
+		),
+		(lambda ()= _wsSend(h, nil)));
+	h;;
+
+//--------------------END USER FUNCTIONS
+fun wsGetRemote(h) = [tcpRemoteIp(h.tcpH), tcpRemotePort(h.tcpH)];;	// returns [ip port]
+
+fun wsGetStatus(h) = h.statusH;;	// returns [version code text]
+fun wsGetReplyHeaders(h) = h.replyHeadersH;;
+
+fun _wsCreate(protocol, verb, url, version)=
+	let _urlParse(url) -> [tls, server, port, uri] in
+	let if verb==nil then "GET" else verb -> verb in
+	let if version==nil then HTTP_1_1 else version -> version in
+	let hashmapCreate(4) -> headers in
+	(
+		hashmapSet(headers, "Host", server);
+		hashmapSet(headers, "Upgrade", "websocket");
+		hashmapSet(headers, "Connection", "Upgrade");
+		hashmapSet(headers, "Sec-WebSocket-Version", "13");
+		[tlsH=if tls then protocol, serverH=server, portH=port, requestH=[verb, uri, version], requestHeadersH=headers]
+	);;
+
+
+fun wsCreate(verb, url, version)= _wsCreate(13, verb, url, version);;
+fun wsCreate12(verb, url, version)= _wsCreate(12, verb, url, version);;
+
+fun wsConnect(h, cbReady, cbMessage)=
+	set h.cbReadyH=(lambda ()= call cbReady();0);
+	set h.cbMessageH=(lambda(opcode, data)= call cbMessage(opcode, data);0);
+	dnsRequest(h.serverH, (lambda(ip)=
+		set h.ipH=ip;
+		if ip==nil then (call cbMessage(nil, nil); nil)
+		else _wsConnect(h)
+	));
+	true;;
+
+fun wsSend(h, opcode, data)=
+	let strBuild({
+		strInt8(0x80|opcode),
+		_wsLength(true, data),
+		_wsData(true, data)
+	}) -> frame in
+	_wsSend(h, frame);;
+
+fun wsClose(h)=
+	set h.closeAfterH=true;
+	wsSend(h, WS_OPCODE_CLOSE, "");
+	0;;

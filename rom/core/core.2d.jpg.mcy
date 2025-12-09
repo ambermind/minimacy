@@ -1,0 +1,339 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2022, Sylvain Huet, Ambermind
+// Minimacy (r) System
+
+export jpgDecodeOpen(bin);;
+export jpgW(png);;
+export jpgH(png);;
+export jpgNbComponents(jpg);;
+export bitmapFromJpg(bin);;
+
+use core.util.huffman;;
+
+// interesting sources:
+// JPEG sampling factors: https://zpl.fi/chroma-subsampling-and-jpeg-sampling-factors/
+
+struct JpgReader=[
+	binJ, bmpJ, 
+	quantTablesJ,
+	wJ, hJ, nbComponentsJ, componentsJ, precisionJ,
+	dcHuffmanJ, acHuffmanJ, // DC stands for Direct Current, AC stands for Alternative Current
+	SsJ, SeJ, AhJ, AlJ,
+	SosStartJ
+];;
+
+struct JpgComponent=[samplingFactorC, quantTableC, dcDecoderC, acDecoderC, coefC];;
+
+const JPEG_NATURAL_ORDER= {
+  0,  1,  8, 16,  9,  2,  3, 10,
+ 17, 24, 32, 25, 18, 11,  4,  5,
+ 12, 19, 26, 33, 40, 48, 41, 34,
+ 27, 20, 13,  6,  7, 14, 21, 28,
+ 35, 42, 49, 56, 57, 50, 43, 36,
+ 29, 22, 15, 23, 30, 37, 44, 51,
+ 58, 59, 52, 45, 38, 31, 39, 46,
+ 53, 60, 61, 54, 47, 55, 62, 63
+};;
+
+fun _chunkApp0(jpg, data)= 
+	if strStartsWith(data, "JFIF\0") then
+	let strRead16Msb(data, 5) -> version in
+	let strGet(data, 7) -> density_unit in
+	let strRead16Msb(data, 8) -> X_density in
+	let strRead16Msb(data, 10) -> Y_density in
+	true;;
+
+fun _chunkDQT(jpg, data, i)=
+	if i<strLength(data) then
+	let strGet(data, i) -> header in
+	let header & 0xf -> num in
+	let i+1 -> i in
+	if bitTest(header, 0xf0) then (
+		set jpg.quantTablesJ[num]=arrayInit(64, (lambda(j) = strRead16Msb(data, i+j*2)));
+		_chunkDQT(jpg, data, i+128)
+	)
+	else (
+		set jpg.quantTablesJ[num]=arrayInit(64, (lambda(j) = strGet(data, i+j)));
+		_chunkDQT(jpg, data, i+64)
+	);;
+
+fun huffmanBuildDecoderJpg(nbCodesByLength, codes)=
+	let 1+arrayLength(nbCodesByLength) -> MAX_BITS in
+	let arrayInit(MAX_BITS, lambda(i)=fifoCreate()) -> fifos in
+	let 0->j in
+	(
+		for val,i of nbCodesByLength do
+		(
+			for k=0;k<val do fifoIn(fifos[(i+1)], codes[(j+k)]);
+			set j=j+val
+		);
+		huffmanTreeFromFifos(fifos, 0)
+	);;
+
+fun _chunkDHT(jpg, data, i)=
+	if i<strLength(data) then
+	let strGet(data, i) -> header in
+	let header & 0xf -> num in
+	let bitTest(header, 0x10) -> ac in
+	let i+1 -> i in
+	let arrayCreate(16, 0) -> bits in
+	let 0->count in
+	(
+		for j=0;j<16 do (
+			set bits[j]=strGet(data, i+j);
+			set count=count+bits[j]
+		);
+		let i+16 -> i in
+		let arrayInit(count, lambda(j)=strGet(data, i+j)) -> elements in
+		let huffmanBuildDecoderJpg(bits, elements) -> huffman in (
+			if ac then set jpg.acHuffmanJ[num]=huffman
+			else set jpg.dcHuffmanJ[num]=huffman;
+			_chunkDHT(jpg, data, i+count)
+		)
+	);;
+	
+fun _componentInfos(jpg, components, data, i)=
+	if i<strLength(data) then
+	let strRead8(data, i) -> id in
+	let strRead8(data, i+1) -> sampFactor in
+	let strRead8(data, i+2) -> quantTableNum in
+	(
+		set components[id]=[
+			samplingFactorC=sampFactor,
+			quantTableC=jpg.quantTablesJ[quantTableNum],
+			coefC=0
+		];
+		_componentInfos(jpg, components, data, i+3)
+	);;
+	
+fun _chunkSOF0(jpg, data)=
+	let strGet(data, 0) -> precision in
+	let strRead16Msb(data, 1) -> height in
+	let strRead16Msb(data, 3) -> width in
+	let strGet(data, 5) -> nbComponents in
+	let arrayCreate(nbComponents+1, nil) -> components in
+	(
+		_componentInfos(jpg, components, data, 6);
+		set jpg.wJ=width;
+		set jpg.hJ=height;
+		set jpg.precisionJ=precision;
+		set jpg.nbComponentsJ=nbComponents;
+		set jpg.componentsJ=components;
+		set jpg.bmpJ=bitmapCreate(width, height, (if nbComponents==3 then 0xff000000 else 0xff008080));
+//		echoLn strFormat("*x*x* precision *", width, height, components, precision);
+		nil
+	);;
+	
+// decode values
+// for example: nbBits=8
+// val=0 -> -255
+// val=127 -> -128
+// val=128 -> 128
+// val=255 -> 255
+fun decodeNumber(nbBits, val)=
+	if nbBits==0 then 0
+	else 
+	let 1<<(nbBits-1) -> l in
+    if val>=l then val
+	else val-(2*l-1);;
+
+fun _buildMatrix(br, decoder, quant, dct, i) =
+	if i<64 then
+	let huffmanDecodeCode7To0(br, decoder) -> code in
+	if code<>0 then
+	let brBitsMsb(br, code&15) -> bits in
+	let decodeNumber(code&15, bits) -> coeff in
+	let i+(code>>4) -> i in
+	(
+		set dct[i]=coeff;
+		_buildMatrix(br, decoder, quant, dct, i+1)
+	);;
+
+fun buildMatrix(br, component)=
+	let component.dcDecoderC -> decoder0 in
+	let component.quantTableC ->quant in	
+	let component.acDecoderC -> decoder1 in
+	let arrayCreate(64, 0.) -> dct in
+	let arrayCreate(64, 0) -> dctInt in
+	let huffmanDecodeCode7To0(br, decoder0) -> code in
+	let brBitsMsb(br, code&15) -> bits in
+	let decodeNumber(code&15, bits) -> v0 in
+	(
+		set dctInt[0]=v0;
+		_buildMatrix(br, decoder1, quant, dctInt, 1);
+		set dctInt[0]=(dctInt[0])+component.coefC;
+		set component.coefC =dctInt[0];
+		for i=0;i<64 do set dct[(JPEG_NATURAL_ORDER[i])]=floatFromInt((dctInt[i])*quant[i]);
+		idct88(dct);
+	);;
+
+fun makeComp(val, shift)= max(0, min(255, intFromFloat(128.+.val)))<<shift;;
+
+fun applyMatrix11(bmp, xx, yy, shift, dct)=
+	for y=0;y<8 do
+	for x=0;x<8 do
+		let makeComp(dct[(y*8+x)], shift) -> comp in
+		bitmapPlot(bmp, xx+x, yy+y, comp, BLEND_OR);;
+		
+fun applyMatrix12(bmp, xx, yy, shift, dct)=
+	for y=0;y<8 do
+	for x=0;x<8 do
+		let makeComp(dct[(y*8+x)], shift) -> comp in
+		for dy=0;dy<2 do
+			bitmapPlot(bmp, xx+x, yy+2*y+dy, comp, BLEND_OR);;
+
+fun applyMatrix21(bmp, xx, yy, shift, dct)=
+	for y=0;y<8 do
+	for x=0;x<8 do
+		let makeComp(dct[(y*8+x)], shift) -> comp in
+		for dx=0;dx<2 do
+			bitmapPlot(bmp, xx+2*x+dx, yy+y, comp, BLEND_OR);;
+
+fun applyMatrix22(bmp, xx, yy, shift, dct)=
+	for y=0;y<8 do
+	for x=0;x<8 do
+		let makeComp(dct[(y*8+x)], shift) -> comp in
+		for dx=0;dx<2 do
+		for dy=0;dy<2 do
+			bitmapPlot(bmp, xx+2*x+dx, yy+2*y+dy, comp, BLEND_OR);;
+
+fun applyMode11(jpg, br, current)=
+	let jpg.nbComponentsJ -> nbComponents in
+	for yy=0;yy<jpg.hJ;yy+8 do
+	for xx=0;xx<jpg.wJ;xx+8 do (
+	// 1 matrix Y, then 1 matrix Cb then 1 matrix Cr
+		applyMatrix11(jpg.bmpJ, xx, yy, 16,  buildMatrix(br, current[0]));	// Y
+		if nbComponents==3 then
+		(
+			applyMatrix11(jpg.bmpJ, xx, yy, 0,  buildMatrix(br, current[1]));	// Cb
+			applyMatrix11(jpg.bmpJ, xx, yy, 8, buildMatrix(br, current[2]));	// Cr
+		)
+	);;
+	
+fun applyMode12(jpg, br, current)=
+	for yy=0;yy<jpg.hJ;yy+16 do
+	for xx=0;xx<jpg.wJ;xx+8 do (
+	// 2 matrix Y, then 1 matrix Cb then 1 matrix Cr
+	// or 2 matrix Y, then 2 matrix Cb then 2 matrix Cr
+		for x=0;x<16;x+8 do applyMatrix11(jpg.bmpJ, xx, yy+x, 16, buildMatrix(br, current[0]));	// Y
+
+		for j=1;j<=2 do	// Cb, Cr
+			let (j-1)*8 -> shift in
+			if current[j].samplingFactorC == 0x11 then applyMatrix12(jpg.bmpJ, xx, yy, shift, buildMatrix(br, current[j]))
+			else for y=0;y<16;y+8 do applyMatrix11(jpg.bmpJ, xx, yy+y, shift, buildMatrix(br, current[j]))
+	);;
+
+fun applyMode21(jpg, br, current)=
+	for yy=0;yy<jpg.hJ;yy+8 do
+	for xx=0;xx<jpg.wJ;xx+16 do (
+	// 2 matrix Y, then 1 matrix Cb then 1 matrix Cr
+	// or 2 matrix Y, then 2 matrix Cb then 2 matrix Cr
+		for x=0;x<16;x+8 do applyMatrix11(jpg.bmpJ, xx+x, yy, 16,  buildMatrix(br, current[0]));	// Y
+
+		for j=1;j<=2 do	// Cb, Cr
+			let (j-1)*8 -> shift in
+			if current[j].samplingFactorC == 0x11 then applyMatrix21(jpg.bmpJ, xx, yy, shift, buildMatrix(br, current[j]))
+			else for x=0;x<16;x+8 do applyMatrix11(jpg.bmpJ, xx+x, yy, shift, buildMatrix(br, current[j]))
+	);;
+
+fun applyMode22(jpg, br, current)=
+	for yy=0;yy<jpg.hJ;yy+16 do
+	for xx=0;xx<jpg.wJ;xx+16 do (
+	// 4 matrix Y, then 1 matrix Cb then 1 matrix Cr
+		for y=0;y<16;y+8 do
+		for x=0;x<16;x+8 do
+			applyMatrix11(jpg.bmpJ, xx+x, yy+y, 16,  buildMatrix(br, current[0]));	// Y
+		applyMatrix22(jpg.bmpJ, xx, yy, 0,  buildMatrix(br, current[1]));	// Cb
+		applyMatrix22(jpg.bmpJ, xx, yy, 8, buildMatrix(br, current[2]));	// Cr
+	);;
+	
+fun _chunkSOS(jpg, i0, i)=
+	let strCharPos(jpg.binJ, 255, i) -> i in
+	if 0==strGet(jpg.binJ, i+1) then _chunkSOS(jpg, i0, i+2) 
+	else let strSlice(jpg.binJ, i0, i-i0) -> data in
+	let strReplace(data, "\$ff\$00", "\$ff") -> data in
+	let strRead16Msb(data, 0) -> length in
+	let strRead8(data, 2) -> n in	//nb of components
+	if length== n*2+6 then
+	let arrayInit(n, lambda(j)=
+		let strRead8(data, 3+j*2) -> index in
+		let strRead8(data, 3+j*2+1) -> c in
+		let jpg.componentsJ[index] -> component in
+		(
+			set component.dcDecoderC= jpg.dcHuffmanJ[((c>>4)&15)];
+			set component.acDecoderC= jpg.acHuffmanJ[(c&15)];
+			component
+		)
+	) -> current in
+	let 3+n*2 -> i in
+	let strGet(data, i) -> Ss in
+	let strGet(data, i+1) -> Se in
+	let strGet(data, i+2) -> c in
+	let i+3 -> i in
+	let brCreate(data, i*8) -> br in
+	(
+		set jpg.SsJ=Ss;
+		set jpg.SeJ=Se;
+		set jpg.AhJ=(c>>4)&15;
+		set jpg.AlJ=c&15;
+//		echoLn strFormat("Ss=* Se=* Ah=* Al=*", Ss, Se, jpg.AhJ, jpg.AlJ);	// how to use this?
+		let current[(0)].samplingFactorC -> sampFactor0 in
+		match sampFactor0 with	// we should check also mode1 and mode2
+			0x11 -> applyMode11(jpg, br, current),	// actually 1x1,1x1,1x1
+			0x12 -> applyMode12(jpg, br, current),	// actually 1x2,1x2,1x2 or 1x2,1x1,1x1
+			0x21 -> applyMode21(jpg, br, current),	// actually 2x1,2x1,2x1 or 2x1,1x1,1x1
+			0x22 -> applyMode22(jpg, br, current),	// actually 2x2,1x1,1x1
+			_ -> (echoLn strFormat("mode not supported * 0x*", sampFactor0, hexFromInt(sampFactor0)); dump jpg.nbComponentsJ; nil);
+		bitmapFromYCrCb(jpg.bmpJ);
+
+		strLength(data)
+	);;
+
+fun _chunkWithSize(jpg, code, i)=
+	let strRead16Msb(jpg.binJ, i) -> n in
+	let strSlice(jpg.binJ, i+2, n-2) -> data in
+	(
+		match code with
+			0xC4 -> _chunkDHT(jpg, data, 0),	// Huffman table
+			0xC0 -> _chunkSOF0(jpg, data),	// start of frame
+			0xDB -> _chunkDQT(jpg, data, 0),	// quantization
+			0xE0 -> if !_chunkApp0(jpg, data) then return (-1),	// APP0
+			0xE1 -> nil,	// APP1 - ignore
+			_ -> (if false then (echoLn strFormat("unknown chunk *", hexFromInt(code)); hexDump data); nil);
+		2+strLength(data)
+	);;
+
+fun _chunkReader(jpg, i, decodeAll)=
+	if i<strLength(jpg.binJ) then
+	if 0xff==strGet(jpg.binJ, i) then
+	let strGet(jpg.binJ, i+1) -> code in
+	let i+2 -> j in
+	let match code with
+		0xD8 -> 0,	// Start
+		0xD9 -> -1,	// end
+		0xDA ->
+			if decodeAll then _chunkSOS(jpg, j, j) // Start Of Scan
+			else return set jpg.SosStartJ=i,
+		0xDD -> 2, // DRI
+		_ -> _chunkWithSize(jpg, code, j)
+	-> len in 
+	if len>=0 then _chunkReader(jpg, j+len, decodeAll);;
+
+fun _jpgFinalize(jpg) = _chunkReader(jpg, jpg.SosStartJ, true); jpg;;
+
+fun jpgDecodeOpen(bin) =
+	let [
+		binJ=bin,
+		quantTablesJ=arrayCreate(16, nil),	// usually only two tables, but numbering is on 4 bits
+		acHuffmanJ=arrayCreate(16, nil),	// usually only two Huffman tables, but numbering is on 4 bits
+		dcHuffmanJ=arrayCreate(16, nil)	// usually only two Huffman tables, but numbering is on 4 bits
+	] -> jpg in (
+		_chunkReader(jpg, 0, false);
+		jpg;
+	);;
+
+fun jpgW(png)=png.wJ;;
+fun jpgH(png)=png.hJ;;
+fun jpgNbComponents(jpg)=jpg.nbComponentsJ;;
+
+fun bitmapFromJpg(bin) = (_jpgFinalize(jpgDecodeOpen(bin))).bmpJ;;

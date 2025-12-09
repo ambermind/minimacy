@@ -1,0 +1,203 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2022, Sylvain Huet, Ambermind
+// Minimacy (r) System
+
+const _INTERNAL_MAX_CODE=32;;
+struct _Internal=Stream+[];;
+
+var _InternalPipe;;
+var _InternalBuffer;;
+var _InternalHook = arrayCreate(_INTERNAL_MAX_CODE, nil);;
+var _InternalGrouping;;
+var _InternalExt = hashmapCreate(4);;
+
+fun _registerInternalHook(event, cb)=set _InternalHook[event]=cb;;
+
+fun registerInternalExt(event, f) = 
+	hashmapSet(_InternalExt, event, if f<>nil then
+		let _This -> th in lambda(data) = threadPost(th, lambda()= call f(data)));;
+
+fun _internalExtAlive ()= 0<>hashmapCount(_InternalExt);;
+
+fun _flushInternalGrouping(except)=
+	if _InternalGrouping<>nil then
+	let _InternalGrouping -> [event, x, y, v] in
+	if event<>except then (
+		call _InternalHook[event](x, y, v);
+		set _InternalGrouping=nil
+	);;
+
+fun _internalUIevent(i, event)=
+	let signExtend32(strRead32Lsb(_InternalBuffer, i+4)) -> x in
+	let signExtend32(strRead32Lsb(_InternalBuffer, i+8)) -> y in
+	let signExtend32(strRead32Lsb(_InternalBuffer, i+12)) -> v in
+	
+		if event==_EVENT_MOUSEMOVE || event==_EVENT_VWHEEL || event==_EVENT_HWHEEL || event==_EVENT_PAINT || event==_EVENT_SIZE then ( // grouping these events
+			_flushInternalGrouping(event);
+			let 
+				if event==_EVENT_VWHEEL || event==_EVENT_HWHEEL then
+				let _InternalGrouping -> [_, _, _, prevValue] in prevValue
+			-> dv in 
+				set _InternalGrouping=[event, x, y, v+dv];
+			nil
+		) else (
+			if event<>_EVENT_MULTITOUCH then _flushInternalGrouping(nil);	// no need for multitouch as they do not fire any user event
+			call _InternalHook[event](x, y, v);
+		)
+	;;
+fun _handleInternal(i)=
+	let strLength(_InternalBuffer) -> len in
+	if i==len then
+	(
+		set _InternalBuffer=nil;
+		_flushInternalGrouping(nil)
+	)
+	else if (i+4)>len then _flushInternalGrouping(nil)
+	else
+	let strRead16Lsb(_InternalBuffer, i) -> eventSize in
+	let strRead16Lsb(_InternalBuffer, i+2) -> event in
+	if (i+eventSize)>len then _flushInternalGrouping(nil)
+	else (
+		if !bitTest(event, 0x8000) then (_internalUIevent(i, event); nil)
+		else let hashmapGet(_InternalExt, event) -> f in
+		if f<>nil then call f(strSlice(_InternalBuffer, i+4, eventSize-4));
+		_handleInternal(i+eventSize)
+	);;
+
+fun _internalInit()=
+	set _InternalPipe= [
+		_socketS=_internalOpen(),
+		_thS=_This,
+		_onSelectReadS = (lambda ()=
+			_socketSetSelectRead(_InternalPipe._socketS, true);
+			set _InternalBuffer=strConcat(_InternalBuffer, _internalRead(_InternalPipe._socketS));
+			_handleInternal(0);
+			0
+		),
+		_showS=lambda(fEcho)= call fEcho("internal", "-")
+	];
+	_streamAddToList(_InternalPipe);
+	_socketSetSelectRead(_InternalPipe._socketS, true);;
+
+var _WorkerList;;
+
+fun _workerCheck ()=
+	set _WorkerList=listFilter(_WorkerList, lambda(th) =
+		if th._stateT<>_THREAD_WAIT then false
+		else match _workerDone(th._threadT) with 
+			nil -> (	
+				echoLn "> Thread is out of memory";
+				threadStop(th);
+				false
+			),
+			true -> (
+				_scheduleThread(th);
+				false
+			),
+			_ -> true
+	);;
+fun _workerEnter()=
+	set _WorkerList=_This::_WorkerList;;
+
+fun _workerAlive ()= nil<>_WorkerList;;
+
+//-----------------------------------
+fun ipByName(hostname)= let bufferCreateWithSize(32) -> output in (
+	_workerEnter();
+	if 0<_ipByName(output, hostname) then strSplit("\0", strFromBuffer(output))
+);;
+fun nameByIp(ip)= let bufferCreateWithSize(32) -> output in (
+	_workerEnter();
+	if 0<_nameByIp(output, ip) then strFromBuffer(output)
+);;
+
+//-----------------------------------
+//struct Inflate = [_lockI _bufferI _srcI _bitI];;
+
+//fun inflateCreate = 
+//	let bufferCreateWithSize 1024 -> output in
+//	[_lockI=lockCreate _bufferI=output _bitI=0];;
+
+//fun inflateProcess infl data =
+//	lockSync infl._lockI (lambda=
+//		set infl._srcI = strConcat infl._srcI data;
+//		_workerEnter;
+//		let _inflate infl._bufferI infl._srcI infl._bitI -> result in
+//		if result==-1 then strFromBuffer infl._bufferI
+//		else if result<0 then void set infl._bufferI=nil
+//		else if result>=1024 then (
+//			set infl._srcI= strSlice infl._srcI result>>7 nil;
+//			set infl._bitI= result&7;
+//			nil
+//		)
+//	);;
+
+//fun inflate data =
+//	let inflateCreate -> infl in
+//	for i=0;i<strLength data;i+1024 do
+//		if infl._bufferI<>nil then
+//		let inflateProcess infl strSlice data i 1024 -> result in (
+//			_threadResign;
+//			result
+//		);;
+
+
+fun inflate(data) = let bufferCreateWithSize(3*strLength(data)) -> output in (
+	_workerEnter();
+	if _inflate(output, data, 0)==-1 then strFromBuffer(output)
+);;
+
+//fun deflate data = let bufferCreateWithSize strLength data -> output in (
+//	let 16384 -> SLICE in
+//	let 0 -> state in
+//	for i=0;i<strLength data;i+SLICE do (
+//		_workerEnter;
+//		if 0>set state= _deflate output (strSlice data i SLICE) state (i+SLICE>=strLength data) then return nil;
+//		_threadResign;
+//	);
+//	strFromBuffer output
+//);;
+
+fun deflate(data) = let bufferCreateWithSize(strLength(data)) -> output in (
+	_workerEnter();
+	if _deflate(output, data, 0, true)==0 then strFromBuffer(output)
+);;
+fun deflateBytes(data) = let bufferCreateWithSize(bytesLength(data)) -> output in (
+	_workerEnter();
+	if _deflateBytes(output, data, 0, true)==0 then strFromBuffer(output)
+);;
+
+//-----------------------------------
+struct Lzw = [_lockL, _bufferL, _lzwL];;
+
+fun lzwCreate(nbits) = [_lockL=lockCreate(), _bufferL=bufferCreateWithSize(1024*16), _lzwL=_lzwCreate(nbits)];;
+fun _lzwProcess(lzw, src, start, length, fProcess)=
+	lockSync(lzw._lockL, (lambda()=
+		bufferReset(lzw._bufferL);
+		_workerEnter();
+		if false<>call fProcess(lzw._lzwL, lzw._bufferL, src, start, length) then
+			strFromBuffer(lzw._bufferL)
+	));;
+fun lzwDeflate(lzw, src, start, length)= _lzwProcess(lzw, src, start, length, #_lzwDeflate);;
+fun lzwInflate(lzw, src, start, length)= _lzwProcess(lzw, src, start, length, #_lzwInflate);;
+
+fun lzwDeflateFinalize(lzw) = lzwDeflate(lzw, nil, nil, nil);;
+
+fun lzwFromStr(data, bitLen)=
+	let lzwCreate(bitLen) -> lzw in
+	strConcat(		lzwDeflate(lzw, data, 0, nil),
+		lzwDeflateFinalize(lzw))
+	;;
+
+fun strFromLzw(data, bitLen)=
+	let lzwCreate(bitLen) -> lzw in
+	lzwInflate(lzw, data, 0, nil);;
+
+#ifdef _mp3Decode
+fun mp3Decode(mp3) =
+	let bufferCreateWithSize(1024+10*strLength(mp3)) -> buffer in 
+	(
+		_workerEnter();
+		if _mp3Decode(buffer, mp3) then strFromBuffer(buffer)
+	);;
+#endif

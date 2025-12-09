@@ -1,0 +1,19 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2022, Sylvain Huet, Ambermind
+// Minimacy (r) System
+
+fun gzipFromStr(src)=
+	let strCrc32(src, 0) -> crc in
+	let deflate(src) -> data in
+	strFormat("\$1F\$8B\$08\$00\$00\$00\$00\$00\$00\$03***", data, strInt32Lsb(crc), strInt32Lsb(strLength(src)));;
+
+fun strFromGzip(src)=
+	let strLength(src) -> len in
+	let strLeft(src, 10) -> header in
+	let strRead32Lsb(src, len-8) -> crc in
+	let strRead32Lsb(src, len-4) -> outputLen in
+	let strSlice(src, 10, len-18) ->data in
+	let inflate(data) -> output in
+	if (outputLen==strLength(output))
+	&& (crc==strCrc32(output, 0)) then output;;
+

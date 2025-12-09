@@ -1,0 +1,610 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2022, Sylvain Huet, Ambermind
+// Minimacy (r) System
+// database with tables for relationnal
+
+use core.util.tree23;;
+use core.util.table;;
+
+const DB_MAGIC="lambdaDb";;
+const DB_HEADER=strConcat(DB_MAGIC, "________\0_______________");;
+const DB_HEADER_LENGTH=strLength(DB_HEADER);;
+const DB_LASTID_OFFSET=16;;
+
+const DB_ALIGN=8;;
+const DB_PADDING= strCreate(DB_ALIGN, 0xAA);;
+const DB_FILE_BATCH=1024*32;;
+
+//file format
+//header
+//row:
+//- size : varUInt (size of the row exluding itself and excluding padding)
+//- tableNum : varUInt (0 means empty)
+//- id : varUInt
+//- fields :
+//	- num : varUInt
+//	- len : varUInt -> length of the data, required because it may be an unknown field
+//	- data:
+//		- Str : string excluding final \0
+//		- Int : varInt (different from varUInt : abs(x)*2+sgn) 
+//		- Float : strFloat (64 bits on 64 bits computers)
+//- padding to reach multiple of DB_ALIGN
+
+sum EmptyTree= trunkT _ _ _, leafT _ _;;
+struct EmptyBlock=[startE, sizeE];;
+struct Block=[
+	_startB,	// always a multiple of DB_ALIGN
+	_sizeB,	// always a multiple of DB_ALIGN
+	_idB
+];;
+struct Ghost=[
+	countG,
+	sizeG,
+	fieldsCountG,
+	fieldsSizeG
+];;
+struct DB=[
+	lockD,
+	exportLockD,
+	fifoPendingD,
+	nameD,
+	fileD,
+	bookD,
+	lengthD,
+	lastIdD,
+	ghostTablesD,
+	tablesD,
+	startD,
+	endD,
+	availableD,
+	diskThreadD,
+
+	offsetD
+];;
+struct Table=[
+	dbT,	// database
+	numT,
+	nameT,	// table name
+	createT,
+	parseT,
+	dataT,
+	countT,
+	makeDataT
+];;
+
+fun blockCmp(a, b)= a._idB < b._idB;;
+
+fun hashNbits(nb)= if nb>0 then 1+hashNbits(nb>>1);;
+
+fun hashSize(nb)= max(8, hashNbits(nb)-4);;
+
+fun _diskSize(size)= (size+DB_ALIGN-1)&~(DB_ALIGN-1);;
+
+fun _diskWrite(db, start, block, book)=
+	threadPost(db.diskThreadD, (lambda()=
+		if book<>nil then fileWrite(db.bookD, nil, book, 0, nil);
+		fileWrite(db.fileD, start, block, 0, nil);
+		if book<>nil then
+			let strFormat("*--------EOB-", strInt32Msb(time())) -> eob in
+			fileWrite(db.bookD, nil, eob, 0, nil)
+	));;
+
+fun _dbWrite(db, start, block, book)=
+	if nil==db.fifoPendingD then _diskWrite(db, start, block, book)
+	else
+	(
+		fifoIn(db.fifoPendingD, [start, block, book]);
+		nil
+	);
+	set db.lengthD=max(start+strLength(block), db.lengthD);;
+
+fun _dbRemoveAvailable(t, b)=
+	match t with
+		leafT pivot l ->
+			let listRemove(l, b) -> ll in
+			if ll<>nil then leafT pivot ll,
+		trunkT pivot p q ->
+			if b.sizeE<pivot then
+				let _dbRemoveAvailable(p, b) -> p in
+				if p==nil then q else trunkT pivot p q
+			else 
+				let _dbRemoveAvailable(q, b) -> q in
+				if q==nil then p else trunkT pivot p q;;
+
+fun _dbAddAvailable(t, b)=
+	match t with
+		nil -> leafT b.sizeE b::nil,
+		leafT pivot l ->
+			if pivot==b.sizeE then leafT pivot b::l
+			else if b.sizeE<pivot then trunkT pivot (leafT b.sizeE b::nil) t
+			else trunkT b.sizeE t (leafT b.sizeE b::nil),
+		trunkT pivot p q ->
+			if b.sizeE<pivot then trunkT pivot _dbAddAvailable(p, b) q
+			else trunkT pivot p _dbAddAvailable(q, b)
+	;;
+fun _dbSearchAvailable(t, size)=
+	match t with
+		leafT pivot l ->
+			if pivot>=size then head(l),
+		trunkT pivot p q ->
+			if size>=pivot then _dbSearchAvailable(q, size)
+			else
+				let _dbSearchAvailable(p, size) -> left in
+				if left<>nil then left
+				else _dbSearchAvailable(q, size);;
+
+fun _dbAddEmpty(db, start, size)=
+	let [startE=start, sizeE=size] -> empty in
+	(
+		hashmapSet(db.startD, start, empty);
+		hashmapSet(db.endD, start+size, empty);
+		set db.availableD=_dbAddAvailable(db.availableD, empty);
+		true
+	);;
+
+fun _dbGhost(db, diskSize, tableNum, fieldNum)=
+	let hashmapGet(db.ghostTablesD, tableNum) -> ghost in
+	(
+		if ghost==nil then hashmapSet(db.ghostTablesD, tableNum, (set ghost=[countG=0, sizeG=0,	fieldsCountG=hashmapCreate(4), fieldsSizeG=hashmapCreate(4)]));
+		if fieldNum==nil then
+		(
+			set ghost.countG=ghost.countG+1;
+			set ghost.sizeG=ghost.sizeG+diskSize;
+		)
+		else
+		(
+			hashmapSet(ghost.fieldsCountG, fieldNum, 1+hashmapGet(ghost.fieldsCountG, fieldNum));
+			hashmapSet(ghost.fieldsSizeG, fieldNum, diskSize+hashmapGet(ghost.fieldsSizeG, fieldNum));
+			nil
+		);
+		nil
+	);;
+
+fun _dbParse(table, row, src, i0, end)=
+	if i0<end then
+	let strReadVarUInt(src, i0) -> num in
+	let strVarUIntNext(src, i0) -> i in
+	let strReadVarUInt(src, i) -> len in
+	let strVarUIntNext(src, i) -> i in
+	let table.parseT[num] -> parser in
+	(
+		if parser==nil then _dbGhost(table.dbT, len+i-i0, table.numT, num)
+		else call parser(src, i, len, row);
+		_dbParse(table, row, src, i+len, end)
+	);;
+
+fun _dbFill(db, buffer, start)=
+	if start+8>strLength(buffer) then	// we need to be sure that the size if fully readable
+	(
+		set db.offsetD= db.offsetD+start;
+		set buffer=strConcat(strSlice(buffer, start, nil), fileRead(db.fileD, nil, DB_FILE_BATCH));
+		set start=0
+	);
+	if start<strLength(buffer) then
+	let strReadVarUInt(buffer, start) -> size in
+	let strVarUIntNext(buffer, start) -> i in
+	let _diskSize(size+i-start) -> diskSize in
+	let start+diskSize -> endDisk in
+	(
+		if endDisk>strLength(buffer) then
+		(
+			set db.offsetD= db.offsetD+start;
+			set i=i-start;
+			set endDisk=endDisk-start;
+			set buffer=strConcat(strSlice(buffer, start, nil), fileRead(db.fileD, nil, max(endDisk-strLength(buffer), DB_FILE_BATCH)));
+			set start=0
+		);
+		let i+size -> end in
+		if end <=strLength(buffer) then 
+		(
+			set db.lengthD=endDisk;
+			let strReadVarUInt(buffer, i) -> tableNum in
+			if tableNum==0 then _dbAddEmpty(db, start, diskSize)
+			else let strVarIntNext(buffer, i) -> inext in
+			let strReadVarUInt(buffer, inext) -> id in
+			let strVarIntNext(buffer, inext) -> inext in
+			let db.tablesD[tableNum] -> table in
+			(
+				if id>db.lastIdD then set db.lastIdD=id;
+				if table==nil then _dbGhost(db, diskSize, tableNum, nil)
+				else let call table.createT ()-> row in
+				(
+					set row._startB=start;
+					set row._sizeB=diskSize;
+					set row._idB=id;
+					set table.dataT=tree23Insert(table.dataT, row, #blockCmp);
+					set table.countT=table.countT+1;
+					_dbParse(table, row, buffer, inext, end)
+				)
+			);
+			_dbFill(db, buffer, endDisk)
+		)
+	);;
+
+fun bookName(db)=strConcat(db.nameD, ".book");;
+
+fun _dbOpenBook(db)=
+	set db.bookD=
+	let fileOpen(bookName(db), FILE_READ_WRITE) -> book in
+	let fileSize(book) -> len in
+	if len<=0 then book
+	else let fileRead(book, len-8, 8) -> magic in
+	if magic=="----EOB-" then book
+	else (
+		echoLn "DB: Wrong book file";
+		nil;
+	);;
+
+fun dbLoad(db)=
+	let _dbOpenBook(db) -> book in
+	if book==nil then (
+		echoLn "DB: No book file, no start";
+		exit();nil
+	)
+	else
+	let fileOpen(db.nameD, FILE_READ_WRITE) -> file in
+	if file<>nil then
+	let _dbCheckHeader(file) -> lastId in
+	if lastId<>nil then
+	(
+		set db.fileD=file;
+		set db.lastIdD=lastId;
+		set db.ghostTablesD=hashmapCreate(4);
+		set db.offsetD=0;
+		_dbFill(db, fileRead(db.fileD, 0, max(DB_HEADER_LENGTH, DB_FILE_BATCH)), DB_HEADER_LENGTH);
+		dbShowGhost(db)
+	);;
+
+fun _dbAdd(db, block, content)=
+	let strLength(content) -> diskSize in
+	let _dbSearchAvailable(db.availableD, diskSize) -> empty in
+	if empty==nil then let db.lengthD -> start in
+	(
+		_dbWrite(db, db.lengthD, content, content);
+		set block._startB=start;
+		set block._sizeB=diskSize;
+		block
+	)
+	else let empty.startE -> start in
+	(
+		_dbRemoveEmpty(db, empty);
+		if empty.sizeE>diskSize then
+		let start+diskSize -> emptyStart in
+		let empty.sizeE-diskSize -> emptySize in
+		(
+			_dbAddEmpty(db, emptyStart, emptySize);
+			_dbWrite(db, start, strFormat("***", content, strVarUInt(emptySize-8), "\0"), content)
+		)
+		else _dbWrite(db, start, content, content);
+		set block._startB=start;
+		set block._sizeB=diskSize;
+		block
+	);;
+
+fun _dbRemoveEmpty(db, empty)=
+	hashmapSet(db.endD, empty.startE+empty.sizeE, nil);
+	hashmapSet(db.startD, empty.startE, nil);
+	set db.availableD=_dbRemoveAvailable(db.availableD, empty);;
+
+fun _dbMergeLeft(db, start, size)=
+	let hashmapGet(db.endD, start) -> empty in
+	if empty==nil then [start, size]
+	else
+	(
+		_dbRemoveEmpty(db, empty);
+		[empty.startE, size+empty.sizeE]
+	);;
+
+fun _dbMergeRight(db, start, size)=
+	let hashmapGet(db.startD, start+size) -> empty in
+	if empty==nil then [start, size]
+	else
+	(
+		_dbRemoveEmpty(db, empty);
+		[start, size+empty.sizeE]
+	);;
+
+fun _dbDel(db, start, size, id) =
+	if start<>nil then
+	let _dbMergeLeft(db, start, size) -> [start, size] in
+	let _dbMergeRight(db, start, size) -> [start, size] in
+	let strFormat("**", strVarUInt(size-8), "\0") -> content in
+	let if id<>nil then _dbMakeContent(strConcat("\0", strVarUInt(id))) -> book in
+	(
+		_dbAddEmpty(db, start, size);
+		_dbWrite(db, start, content, book)
+	);;
+
+fun _dbCheckHeader(file)=
+	let fileRead(file, 0, DB_HEADER_LENGTH) -> header in
+	if header==nil || 0==strLength(header) then 
+	(
+		fileWrite(file, 0, DB_HEADER, 0, nil);
+		0
+	)
+	else if strStartsWith(header, DB_MAGIC) then strReadVarUInt(header, DB_LASTID_OFFSET);;
+
+fun _dbInit(maxTableNum, db)=
+	set db.fileD=nil;
+	set db.lengthD=DB_HEADER_LENGTH;
+	set db.tablesD=arrayCreate(1+maxTableNum, nil);
+	set db.startD=hashmapCreate(10);
+	set db.endD=hashmapCreate(10);
+	set db.availableD=nil;
+	set db.lastIdD=nil;
+	set db.ghostTablesD=nil;
+	set db.fifoPendingD=nil;
+	db;;
+
+fun dbOpen(path, maxTableNum)=
+	_dbInit(maxTableNum, [
+		nameD=path,
+		lockD=lockCreate(),
+		exportLockD=lockCreate(),
+		diskThreadD= threadStart("diskThread", nil)
+	]);;
+	
+fun dbCheck(lck, fIsStarted, pkg, fInit)=
+	let strConcat("DB:", pkgName(pkg)) -> name in
+	appStart(lck, fIsStarted, name, fInit);;
+
+fun _dbMakeHeader(db)=
+	let strVarUInt(db.lastIdD) -> lastId in strBuild({
+		strLeft(DB_HEADER, DB_LASTID_OFFSET),
+		lastId,
+		strSlice(DB_HEADER, DB_LASTID_OFFSET+strLength(lastId), nil)
+	});;
+
+fun _dbUpdateLastId(db)=
+	_dbWrite(db, 0, _dbMakeHeader(db), nil);;
+
+fun dbTable(db, tableNum, maxFieldNum, fCreate)=
+	let	[
+		dbT=db,
+		numT=tableNum,
+		nameT=strVarUInt(tableNum),
+		parseT= arrayCreate(1+maxFieldNum, nil),
+		createT= fCreate,
+		countT= 0
+	] -> table in
+	(
+		set db.tablesD[tableNum]=table; 
+		table
+	);;	
+fun dbField(table, num, fParse)= set table.parseT[num]=(lambda(a, b, c, d)=call fParse(a, b, c, d); true);;
+
+fun _dbMakeContent(data)=
+	let strLength(data) -> size in
+	let strVarUInt(size) -> header in
+	let size+strLength(header) -> size in
+	let _diskSize(size) -> diskSize in
+	let strLeft(DB_PADDING, diskSize - size) -> padding in
+	strBuild({ header, data, padding});;
+
+fun dbMakeContent(table, block, data)= _dbMakeContent(strFormat("***", table.nameT, strVarUInt(block._idB), data));;
+
+fun dbUpdate(table, block)=
+	let table.dbT -> db in
+	if block<>nil then lockSync(db.lockD, (lambda()=
+		if db.fileD<>nil then
+			let call table.makeDataT(block) -> content in
+			if block._sizeB==strLength(content) then
+			(	
+				 _dbWrite(db, block._startB, content, content);
+				 block
+			)
+			else
+			(
+				_dbDel(db, block._startB, block._sizeB, nil);
+				_dbAdd(db, block, content)
+			);
+		block
+	));;
+
+fun dbDelete(table, block)=
+	if block<>nil then lockSync(table.dbT.lockD, (lambda()=
+		if table.dbT.lastIdD==block._idB then _dbUpdateLastId(table.dbT);
+		set table.dataT = tree23Delete(table.dataT, block, #blockCmp);
+		set table.countT=table.countT-1;
+		_dbDel(table.dbT, block._startB, block._sizeB, block._idB);
+		set block._startB=nil;
+		set block._sizeB=nil;
+		set block._idB=nil;
+	));
+	block;;
+
+fun dbInsert(table, row, id)=
+	if table.dbT.fileD<>nil then
+	lockSync(table.dbT.lockD, lambda()=
+		if id==nil || nil==dbById(table, id) then
+		(
+			set row._idB= if id<>nil then id else set table.dbT.lastIdD= table.dbT.lastIdD+1;
+			set table.dataT = tree23Insert(table.dataT, row, #blockCmp);
+			set table.countT=table.countT+1;
+			row
+		)
+	);;
+
+fun dbUpdateStr(num, val) = if val<>nil then {num, strVarUInt(strLength(val)), val};;
+fun dbUpdateInt(num, val) = if val<>nil then let strVarInt(val) -> val in {num, strVarUInt(strLength(val)), val};;
+fun dbUpdateUInt(num, val) = if val<>nil then let strVarUInt(val) -> val in {num, strVarUInt(strLength(val)), val};;
+fun dbUpdateTime(num, val) = if val<>nil then let strVarUInt(val) -> val in {num, strVarUInt(strLength(val)), val};;
+fun dbUpdateBool(num, val) = if val<>nil then let if val then "\$01" else "\$00" -> val in {num, "\$01", val};;
+fun dbUpdateFloat(num, val) = if val<>nil then let strFloat(val) -> val in {num, strVarUInt(strLength(val)), val};;
+fun dbUpdateBigNum(num, val) = if val<>nil then let signedStrFromBig(val) -> val in {num, strVarUInt(strLength(val)), val};;
+
+fun dbCreateMap(size)= hashmapCreate(hashSize(size));;
+fun dbAddMap(db, h, row, val)= if row<>nil then lockSync(db.lockD, lambda()=hashmapSet(h, val, row::hashmapGet(h, val)));;
+fun dbUpdateMap(db, h, row, prev, new)=
+	if row<>nil && prev<>new then lockSync(db.lockD, (lambda()=
+		hashmapSet(h, prev, listRemove(hashmapGet(h, prev), row));
+		hashmapSet(h, new, row::hashmapGet(h, new))
+	));
+	new;;
+fun dbDeleteMap(db, h, val, row)=
+	if row<>nil then lockSync(db.lockD, (lambda()=hashmapSet(h, val, listRemove(hashmapGet(h, val), row))));
+	row;;
+
+fun dbId(row) = row._idB;;
+fun dbById(table, id)= tree23Find(table.dataT, lambda(a)= a._idB - id);;
+
+fun dbMap(table, desc, f, cast)=
+	let fifoCreate() -> fifo in
+	let (lambda(row)=
+		let call cast(row) -> row in
+		let call f(row) -> val in
+			if val<>nil then fifoIn(fifo, val);
+		true
+	) -> ff in
+	let if desc then #tree23VisitDesc else #tree23Visit -> fVisit in
+	(
+		call fVisit(table.dataT, ff);
+		fifoList(fifo)
+	);;
+
+fun dbFilter(table, desc, f, cast) =
+	let fifoCreate() -> fifo in
+	let (lambda(row)= let call cast(row) -> row in if call f(row) then fifoIn(fifo, row); true) -> ff in
+	let if desc then #tree23VisitDesc else #tree23Visit -> fVisit in
+	(
+		call fVisit(table.dataT, ff);
+		fifoList(fifo)
+	);;
+
+fun dbVisit(table, desc, f, cast) =
+	let lambda(v)= call f(call cast(v)) -> ff in
+	let if desc then #tree23VisitDesc else #tree23Visit -> fVisit in
+	call fVisit(table.dataT, ff);;
+
+fun dbVisitAll(db, f)=
+	for table of db.tablesD do
+	dbVisit(table, false, f, lambda(x)=x);;
+
+fun dbTablePrint(fVisit, columns, fToTable, f)=	
+	let fifoCreate() -> fifo in
+	(
+		call fVisit((lambda(row)= if (f==nil)||(call f(row)) then fifoIn(fifo, call fToTable(row)); true));
+		tablePrettyPrint(columns::fifoList(fifo))
+	);;
+
+
+fun dbShowGhost(db)=
+	hashmapFind(db.ghostTablesD, (lambda(table, ghost)=
+		if ghost.countG>0 then echoLn ["WARNING: database contains ",ghost.countG," row(s) (", intAbbrev(1000, ghost.sizeG),"b) for the unknown table ", table];
+		hashmapFind(ghost.fieldsCountG, (lambda(field, val)=
+			let hashmapGet(ghost.fieldsSizeG, field) -> size in
+			echoLn ["WARNING: database contains ",val," data (", intAbbrev(1000, size),"b) for the unknown field ",field," in table ", table];
+			false
+		));
+		false
+	));;
+
+fun dbStatus(db)=
+	echoLn ["\nDatabase status - ", db.nameD];
+	echoLn  ["------------------", strCreate(strLength(db.nameD), '-')];
+
+	let refCreate(0) -> count in
+	let refCreate(0) -> size in
+	(
+		hashmapFind(db.startD, (lambda(start, b)=
+			refSet(count, 1+refGet(count));
+			refSet(size, b.sizeE+refGet(size));
+			false
+		));
+		echoLn ["\nHoles : ",refGet(count)," hole(s) (", intAbbrev(1000, refGet(size)),"b)"];
+	);
+
+	let 0-> nb in
+	(
+		for val of db.tablesD do if val<>nil then set nb=nb+1;
+		echoLn ["\nTables: ",nb," table(s)"];
+	);
+	let refCreate(0) -> count in
+	let refCreate(0) -> size in
+	(
+		dbVisitAll(db, (lambda(block)=
+			refSet(count, 1+refGet(count));
+			refSet(size, block._sizeB+refGet(size));
+			true
+		));
+		echoLn ["\nRows  : ",refGet(count)," row(s) (", intAbbrev(1000, refGet(size)),"b)"];
+	);
+
+	if 0<hashmapCount(db.ghostTablesD) then
+	(
+		echoLn ["\nGhost :"];
+		dbShowGhost(db)
+	)
+	else (echoLn "\nno ghost data";nil);
+
+	echoLn "";
+	true;;
+
+fun _dbExport(db, file, buffer, start)=
+	if start+8>strLength(buffer) then	// we need to be sure that the size if fully readable
+	(
+		set buffer=strConcat(strSlice(buffer, start, nil), fileRead(db.fileD, nil, DB_FILE_BATCH));
+		set start=0
+	);
+	if start<strLength(buffer) then
+	let strReadVarUInt(buffer, start) -> size in
+	let strVarUIntNext(buffer, start) -> i in
+	let _diskSize(size+i-start) -> diskSize in
+	let start+diskSize -> endDisk in
+	(
+		if endDisk>strLength(buffer) then
+		(
+			set buffer=strConcat(strSlice(buffer, start, nil), fileRead(db.fileD, nil, max(endDisk-strLength(buffer), DB_FILE_BATCH)));
+			set start=0
+		);
+		let i+size -> end in
+		if end <=strLength(buffer) then 
+		(
+			let strReadVarUInt(buffer, i) -> tableNum in
+			let db.tablesD[tableNum] -> table in
+			if table<>nil then
+			let strVarIntNext(buffer, i) -> i in
+			let strReadVarUInt(buffer, i) -> id in
+			let dbById(table, id) -> block in
+			let call table.makeDataT(block) -> content in
+			fileWrite(file, nil, content, 0, nil);
+			_dbExport(db, file, buffer, endDisk)
+		)
+	);;
+
+
+fun dbExport(db, output)=
+	let fileOpen(output, FILE_REWRITE) -> file in
+	if file<>nil then
+		lockSync(db.exportLockD, (lambda()=
+			set db.fifoPendingD=fifoCreate();	// from now, any database update is buffered into this fifo
+
+			fileWrite(file, nil, _dbMakeHeader(db), 0, nil);	
+			await((lambda(join)= threadPost(db.diskThreadD, (lambda()= 	// using a threadPost makes sure that any pending writing is done before the export
+				fileRead(db.fileD, 0, DB_HEADER_LENGTH);
+				_dbExport(db, file, "", 0);
+				joinSend(join, true)
+			))));
+			fileClose(file);
+
+			// we backup the bookFile (kind of logFile) and then clear it
+			fileClose(db.bookD);
+			let bookName(db) -> bookFileName in
+			(
+				save(load(bookFileName), strConcat(output, ".book"));
+				save("", bookFileName);
+				_dbOpenBook(db)
+			);
+
+			lockSync(db.lockD, (lambda()=
+				// we flush all pending database update
+				for p in fifoList(db.fifoPendingD) do
+					let p->[start, block, book] in
+					_diskWrite(db, start, block, book);
+				// then we remove the fifoPending, allowing further direct database update
+				set db.fifoPendingD=nil;
+			));
+		));;
+
+//-----------TO BE REMOVED
+fun dbDump(db)= hexDump load(echoLn db.nameD); db.nameD;;

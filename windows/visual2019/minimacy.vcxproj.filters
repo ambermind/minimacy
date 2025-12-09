@@ -1,0 +1,683 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="Source Files">
+      <UniqueIdentifier>{4FC737F1-C7A5-4376-A066-2A32D752A2FF}</UniqueIdentifier>
+      <Extensions>cpp;c;cc;cxx;c++;cppm;ixx;def;odl;idl;hpj;bat;asm;asmx</Extensions>
+    </Filter>
+    <Filter Include="Resource Files">
+      <UniqueIdentifier>{67DA6AB6-F800-4c08-8B7A-83BB121AAD01}</UniqueIdentifier>
+      <Extensions>rc;ico;cur;bmp;dlg;rc2;rct;bin;rgs;gif;jpg;jpeg;jpe;resx;tiff;tif;png;wav;mfcribbon-ms</Extensions>
+    </Filter>
+    <Filter Include="Source Files\src">
+      <UniqueIdentifier>{29c96c22-be5f-4178-ad27-5bf6c0e36b76}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Mcy">
+      <UniqueIdentifier>{72d76498-8785-4c14-ac85-c5e9b626ad57}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Mcy\rom">
+      <UniqueIdentifier>{aa83f853-8e6f-4cad-a161-e6fef13e8ea8}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Mcy\rom\bios">
+      <UniqueIdentifier>{8dd121ac-c552-49a4-8575-dbd17aceb65f}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Mcy\rom\core">
+      <UniqueIdentifier>{69685000-12a6-4665-8f46-ca81b3f8024b}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Mcy\programs">
+      <UniqueIdentifier>{ef941584-3f9b-41ac-96bb-ebeadbbdd654}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Mcy\programs\demo">
+      <UniqueIdentifier>{4476a834-2d72-451e-adb2-5a8cc5d1b6e7}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="..\..\src\compiler.c">
+      <Filter>Source Files\src</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\compiler_call.c">
+      <Filter>Source Files\src</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\compiler_globals.c">
+      <Filter>Source Files\src</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\compiler_instances.c">
+      <Filter>Source Files\src</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\compiler_letgetset.c">
+      <Filter>Source Files\src</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\compiler_locals.c">
+      <Filter>Source Files\src</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\compiler_loops.c">
+      <Filter>Source Files\src</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\compiler_match.c">
+      <Filter>Source Files\src</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\compiler_parser.c">
+      <Filter>Source Files\src</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\compiler_prog.c">
+      <Filter>Source Files\src</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\compiler_step1.c">
+      <Filter>Source Files\src</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\compiler_step2.c">
+      <Filter>Source Files\src</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\compiler_step3.c">
+      <Filter>Source Files\src</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\compiler_step4.c">
+      <Filter>Source Files\src</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\compiler_struct.c">
+      <Filter>Source Files\src</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\compiler_sum.c">
+      <Filter>Source Files\src</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\compiler_term.c">
+      <Filter>Source Files\src</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\compiler_try.c">
+      <Filter>Source Files\src</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\crypto_aes.c">
+      <Filter>Source Files\src</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\crypto_checksum.c">
+      <Filter>Source Files\src</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\crypto_des.c">
+      <Filter>Source Files\src</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\crypto_rc4.c">
+      <Filter>Source Files\src</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\hw.c">
+      <Filter>Source Files\src</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\hw_console.c">
+      <Filter>Source Files\src</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\hw_fs.c">
+      <Filter>Source Files\src</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\hw_fs_ansi.c">
+      <Filter>Source Files\src</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\hw_fs_romdisk.c">
+      <Filter>Source Files\src</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\hw_random.c">
+      <Filter>Source Files\src</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\hw_thread.c">
+      <Filter>Source Files\src</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\hw_time.c">
+      <Filter>Source Files\src</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\system.c">
+      <Filter>Source Files\src</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\system_2d.c">
+      <Filter>Source Files\src</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\system_audio.c">
+      <Filter>Source Files\src</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\system_bignum.c">
+      <Filter>Source Files\src</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\system_binary.c">
+      <Filter>Source Files\src</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\system_buffer.c">
+      <Filter>Source Files\src</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\system_bytes.c">
+      <Filter>Source Files\src</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\system_convert.c">
+      <Filter>Source Files\src</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\system_core.c">
+      <Filter>Source Files\src</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\system_crypto.c">
+      <Filter>Source Files\src</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\system_deflate.c">
+      <Filter>Source Files\src</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\system_event.c">
+      <Filter>Source Files\src</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\system_file.c">
+      <Filter>Source Files\src</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\system_inflate.c">
+      <Filter>Source Files\src</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\system_lzw.c">
+      <Filter>Source Files\src</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\system_socket.c">
+      <Filter>Source Files\src</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\system_str.c">
+      <Filter>Source Files\src</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\system_tmp.c">
+      <Filter>Source Files\src</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\system_ui.c">
+      <Filter>Source Files\src</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\system_ui_gl.c">
+      <Filter>Source Files\src</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\system_ui_win.c">
+      <Filter>Source Files\src</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\system_ui_x11.c">
+      <Filter>Source Files\src</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\system_worker.c">
+      <Filter>Source Files\src</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\util.c">
+      <Filter>Source Files\src</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\util_2d.c">
+      <Filter>Source Files\src</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\util_ansi_math.c">
+      <Filter>Source Files\src</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\util_ansi_str.c">
+      <Filter>Source Files\src</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\util_buffer.c">
+      <Filter>Source Files\src</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\util_convert.c">
+      <Filter>Source Files\src</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\util_hashmap.c">
+      <Filter>Source Files\src</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\util_xml.c">
+      <Filter>Source Files\src</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\vm_interpreter.c">
+      <Filter>Source Files\src</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\vm_malloc.c">
+      <Filter>Source Files\src</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\vm_memory.c">
+      <Filter>Source Files\src</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\vm_opcodes.c">
+      <Filter>Source Files\src</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\vm_term.c">
+      <Filter>Source Files\src</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\vm_thread.c">
+      <Filter>Source Files\src</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\vm_types.c">
+      <Filter>Source Files\src</Filter>
+    </ClCompile>
+    <ClCompile Include="wincmd.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\system_serial.c">
+      <Filter>Source Files\src</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\minimacy.c">
+      <Filter>Source Files\src</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\crypto_hash.c">
+      <Filter>Source Files\src</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="resource.h">
+      <Filter>Resource Files</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\src\compiler.h">
+      <Filter>Source Files\src</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\src\compiler_globals.h">
+      <Filter>Source Files\src</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\src\compiler_locals.h">
+      <Filter>Source Files\src</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\src\compiler_parser.h">
+      <Filter>Source Files\src</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\src\crypto_aes.h">
+      <Filter>Source Files\src</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\src\crypto_checksum.h">
+      <Filter>Source Files\src</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\src\crypto_des.h">
+      <Filter>Source Files\src</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\src\crypto_rc4.h">
+      <Filter>Source Files\src</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\src\hw.h">
+      <Filter>Source Files\src</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\src\hw_fs.h">
+      <Filter>Source Files\src</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\src\hw_thread.h">
+      <Filter>Source Files\src</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\src\minimacy.h">
+      <Filter>Source Files\src</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\src\system.h">
+      <Filter>Source Files\src</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\src\system_2d.h">
+      <Filter>Source Files\src</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\src\system_audio.h">
+      <Filter>Source Files\src</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\src\system_bignum.h">
+      <Filter>Source Files\src</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\src\system_core.h">
+      <Filter>Source Files\src</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\src\system_event.h">
+      <Filter>Source Files\src</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\src\system_file.h">
+      <Filter>Source Files\src</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\src\system_inflate.h">
+      <Filter>Source Files\src</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\src\system_socket.h">
+      <Filter>Source Files\src</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\src\system_tmp.h">
+      <Filter>Source Files\src</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\src\system_ui.h">
+      <Filter>Source Files\src</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\src\system_ui_gl.h">
+      <Filter>Source Files\src</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\src\system_ui_keydef.h">
+      <Filter>Source Files\src</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\src\system_worker.h">
+      <Filter>Source Files\src</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\src\util.h">
+      <Filter>Source Files\src</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\src\util_2d.h">
+      <Filter>Source Files\src</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\src\util_ansi.h">
+      <Filter>Source Files\src</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\src\util_buffer.h">
+      <Filter>Source Files\src</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\src\util_convert.h">
+      <Filter>Source Files\src</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\src\util_hashmap.h">
+      <Filter>Source Files\src</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\src\vm_interpreter.h">
+      <Filter>Source Files\src</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\src\vm_memory.h">
+      <Filter>Source Files\src</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\src\vm_opcodes.h">
+      <Filter>Source Files\src</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\src\vm_term.h">
+      <Filter>Source Files\src</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\src\vm_thread.h">
+      <Filter>Source Files\src</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\src\vm_types.h">
+      <Filter>Source Files\src</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\src\util_2d_const.h">
+      <Filter>Source Files\src</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\src\crypto_hash.h">
+      <Filter>Source Files\src</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="..\..\rom\core\core.2d.bmp.mcy">
+      <Filter>Mcy\rom\core</Filter>
+    </None>
+    <None Include="..\..\rom\core\core.2d.font.mcy">
+      <Filter>Mcy\rom\core</Filter>
+    </None>
+    <None Include="..\..\rom\core\core.2d.gif.maker.mcy">
+      <Filter>Mcy\rom\core</Filter>
+    </None>
+    <None Include="..\..\rom\core\core.2d.gif.mcy">
+      <Filter>Mcy\rom\core</Filter>
+    </None>
+    <None Include="..\..\rom\core\core.2d.gl.mcy">
+      <Filter>Mcy\rom\core</Filter>
+    </None>
+    <None Include="..\..\rom\core\core.2d.jpg.maker.mcy">
+      <Filter>Mcy\rom\core</Filter>
+    </None>
+    <None Include="..\..\rom\core\core.2d.jpg.mcy">
+      <Filter>Mcy\rom\core</Filter>
+    </None>
+    <None Include="..\..\rom\core\core.2d.png.maker.mcy">
+      <Filter>Mcy\rom\core</Filter>
+    </None>
+    <None Include="..\..\rom\core\core.2d.png.mcy">
+      <Filter>Mcy\rom\core</Filter>
+    </None>
+    <None Include="..\..\rom\core\core.2d.polygon.mcy">
+      <Filter>Mcy\rom\core</Filter>
+    </None>
+    <None Include="..\..\rom\core\core.2d.qrcode.mcy">
+      <Filter>Mcy\rom\core</Filter>
+    </None>
+    <None Include="..\..\rom\core\core.2d.quantization.mcy">
+      <Filter>Mcy\rom\core</Filter>
+    </None>
+    <None Include="..\..\rom\core\core.3d.gl.mcy">
+      <Filter>Mcy\rom\core</Filter>
+    </None>
+    <None Include="..\..\rom\core\core.crypto.aes.mcy">
+      <Filter>Mcy\rom\core</Filter>
+    </None>
+    <None Include="..\..\rom\core\core.crypto.asn1.mcy">
+      <Filter>Mcy\rom\core</Filter>
+    </None>
+    <None Include="..\..\rom\core\core.crypto.block.mcy">
+      <Filter>Mcy\rom\core</Filter>
+    </None>
+    <None Include="..\..\rom\core\core.crypto.cer.mcy">
+      <Filter>Mcy\rom\core</Filter>
+    </None>
+    <None Include="..\..\rom\core\core.crypto.curve25519.mcy">
+      <Filter>Mcy\rom\core</Filter>
+    </None>
+    <None Include="..\..\rom\core\core.crypto.des.mcy">
+      <Filter>Mcy\rom\core</Filter>
+    </None>
+    <None Include="..\..\rom\core\core.crypto.ec.mcy">
+      <Filter>Mcy\rom\core</Filter>
+    </None>
+    <None Include="..\..\rom\core\core.crypto.ed25519.mcy">
+      <Filter>Mcy\rom\core</Filter>
+    </None>
+    <None Include="..\..\rom\core\core.crypto.hash.mcy">
+      <Filter>Mcy\rom\core</Filter>
+    </None>
+    <None Include="..\..\rom\core\core.crypto.key.mcy">
+      <Filter>Mcy\rom\core</Filter>
+    </None>
+    <None Include="..\..\rom\core\core.crypto.oaep.mcy">
+      <Filter>Mcy\rom\core</Filter>
+    </None>
+    <None Include="..\..\rom\core\core.crypto.oid.mcy">
+      <Filter>Mcy\rom\core</Filter>
+    </None>
+    <None Include="..\..\rom\core\core.crypto.pem.mcy">
+      <Filter>Mcy\rom\core</Filter>
+    </None>
+    <None Include="..\..\rom\core\core.crypto.pkcs1.mcy">
+      <Filter>Mcy\rom\core</Filter>
+    </None>
+    <None Include="..\..\rom\core\core.crypto.primal.mcy">
+      <Filter>Mcy\rom\core</Filter>
+    </None>
+    <None Include="..\..\rom\core\core.crypto.rsa.mcy">
+      <Filter>Mcy\rom\core</Filter>
+    </None>
+    <None Include="..\..\rom\core\core.crypto.rsapss.mcy">
+      <Filter>Mcy\rom\core</Filter>
+    </None>
+    <None Include="..\..\rom\core\core.crypto.shamir.mcy">
+      <Filter>Mcy\rom\core</Filter>
+    </None>
+    <None Include="..\..\rom\core\core.crypto.sign.mcy">
+      <Filter>Mcy\rom\core</Filter>
+    </None>
+    <None Include="..\..\rom\core\core.db.inMemory.maker.mcy">
+      <Filter>Mcy\rom\core</Filter>
+    </None>
+    <None Include="..\..\rom\core\core.db.inMemory.mcy">
+      <Filter>Mcy\rom\core</Filter>
+    </None>
+    <None Include="..\..\rom\core\core.db.kv.mcy">
+      <Filter>Mcy\rom\core</Filter>
+    </None>
+    <None Include="..\..\rom\core\core.net.dns.mcy">
+      <Filter>Mcy\rom\core</Filter>
+    </None>
+    <None Include="..\..\rom\core\core.net.http.cli.mcy">
+      <Filter>Mcy\rom\core</Filter>
+    </None>
+    <None Include="..\..\rom\core\core.net.http.mcy">
+      <Filter>Mcy\rom\core</Filter>
+    </None>
+    <None Include="..\..\rom\core\core.net.http.srv.mcy">
+      <Filter>Mcy\rom\core</Filter>
+    </None>
+    <None Include="..\..\rom\core\core.net.mime.mcy">
+      <Filter>Mcy\rom\core</Filter>
+    </None>
+    <None Include="..\..\rom\core\core.net.mysql.mcy">
+      <Filter>Mcy\rom\core</Filter>
+    </None>
+    <None Include="..\..\rom\core\core.net.ssh.mcy">
+      <Filter>Mcy\rom\core</Filter>
+    </None>
+    <None Include="..\..\rom\core\core.net.ssh.sftp.mcy">
+      <Filter>Mcy\rom\core</Filter>
+    </None>
+    <None Include="..\..\rom\core\core.net.ssh.shell.mcy">
+      <Filter>Mcy\rom\core</Filter>
+    </None>
+    <None Include="..\..\rom\core\core.net.tls.mcy">
+      <Filter>Mcy\rom\core</Filter>
+    </None>
+    <None Include="..\..\rom\core\core.net.tls12.mcy">
+      <Filter>Mcy\rom\core</Filter>
+    </None>
+    <None Include="..\..\rom\core\core.net.tls13.mcy">
+      <Filter>Mcy\rom\core</Filter>
+    </None>
+    <None Include="..\..\rom\core\core.net.websocket.mcy">
+      <Filter>Mcy\rom\core</Filter>
+    </None>
+    <None Include="..\..\rom\core\core.util.base64.mcy">
+      <Filter>Mcy\rom\core</Filter>
+    </None>
+    <None Include="..\..\rom\core\core.util.gzip.mcy">
+      <Filter>Mcy\rom\core</Filter>
+    </None>
+    <None Include="..\..\rom\core\core.util.hashmap.mcy">
+      <Filter>Mcy\rom\core</Filter>
+    </None>
+    <None Include="..\..\rom\core\core.util.huffman.mcy">
+      <Filter>Mcy\rom\core</Filter>
+    </None>
+    <None Include="..\..\rom\core\core.util.insertsort.mcy">
+      <Filter>Mcy\rom\core</Filter>
+    </None>
+    <None Include="..\..\rom\core\core.util.json.mcy">
+      <Filter>Mcy\rom\core</Filter>
+    </None>
+    <None Include="..\..\rom\core\core.util.marshal.maker.mcy">
+      <Filter>Mcy\rom\core</Filter>
+    </None>
+    <None Include="..\..\rom\core\core.util.marshal.mcy">
+      <Filter>Mcy\rom\core</Filter>
+    </None>
+    <None Include="..\..\rom\core\core.util.quicksort.mcy">
+      <Filter>Mcy\rom\core</Filter>
+    </None>
+    <None Include="..\..\rom\core\core.util.regexp.mcy">
+      <Filter>Mcy\rom\core</Filter>
+    </None>
+    <None Include="..\..\rom\core\core.util.table.mcy">
+      <Filter>Mcy\rom\core</Filter>
+    </None>
+    <None Include="..\..\rom\core\core.util.tar.mcy">
+      <Filter>Mcy\rom\core</Filter>
+    </None>
+    <None Include="..\..\rom\core\core.util.token.mcy">
+      <Filter>Mcy\rom\core</Filter>
+    </None>
+    <None Include="..\..\rom\core\core.util.tree1D.mcy">
+      <Filter>Mcy\rom\core</Filter>
+    </None>
+    <None Include="..\..\rom\core\core.util.tree23.mcy">
+      <Filter>Mcy\rom\core</Filter>
+    </None>
+    <None Include="..\..\rom\core\core.util.xml.mcy">
+      <Filter>Mcy\rom\core</Filter>
+    </None>
+    <None Include="..\..\rom\core\core.util.zip.mcy">
+      <Filter>Mcy\rom\core</Filter>
+    </None>
+    <None Include="..\..\rom\bios\bios._admin.mcy">
+      <Filter>Mcy\rom\bios</Filter>
+    </None>
+    <None Include="..\..\rom\bios\bios._console.mcy">
+      <Filter>Mcy\rom\bios</Filter>
+    </None>
+    <None Include="..\..\rom\bios\bios._date.mcy">
+      <Filter>Mcy\rom\bios</Filter>
+    </None>
+    <None Include="..\..\rom\bios\bios._file.mcy">
+      <Filter>Mcy\rom\bios</Filter>
+    </None>
+    <None Include="..\..\rom\bios\bios._io.mcy">
+      <Filter>Mcy\rom\bios</Filter>
+    </None>
+    <None Include="..\..\rom\bios\bios._keyboard.mcy">
+      <Filter>Mcy\rom\bios</Filter>
+    </None>
+    <None Include="..\..\rom\bios\bios._lock.mcy">
+      <Filter>Mcy\rom\bios</Filter>
+    </None>
+    <None Include="..\..\rom\bios\bios._net.mcy">
+      <Filter>Mcy\rom\bios</Filter>
+    </None>
+    <None Include="..\..\rom\bios\bios._pkg.mcy">
+      <Filter>Mcy\rom\bios</Filter>
+    </None>
+    <None Include="..\..\rom\bios\bios._scheduler.mcy">
+      <Filter>Mcy\rom\bios</Filter>
+    </None>
+    <None Include="..\..\rom\bios\bios._start.mcy">
+      <Filter>Mcy\rom\bios</Filter>
+    </None>
+    <None Include="..\..\rom\bios\bios._thread.mcy">
+      <Filter>Mcy\rom\bios</Filter>
+    </None>
+    <None Include="..\..\rom\bios\bios._timer.mcy">
+      <Filter>Mcy\rom\bios</Filter>
+    </None>
+    <None Include="..\..\rom\bios\bios._ui.mcy">
+      <Filter>Mcy\rom\bios</Filter>
+    </None>
+    <None Include="..\..\rom\bios\bios._util.mcy">
+      <Filter>Mcy\rom\bios</Filter>
+    </None>
+    <None Include="..\..\rom\bios\bios._worker.mcy">
+      <Filter>Mcy\rom\bios</Filter>
+    </None>
+    <None Include="..\..\rom\bios\bios.mcy">
+      <Filter>Mcy\rom\bios</Filter>
+    </None>
+    <None Include="..\..\programs\boot.mcy">
+      <Filter>Mcy\programs</Filter>
+    </None>
+    <None Include="..\..\programs\demo\demo.fun.mandelbrot.mcy">
+      <Filter>Mcy\programs\demo</Filter>
+    </None>
+    <None Include="..\..\programs\demo\demo.fun.maze.mcy">
+      <Filter>Mcy\programs\demo</Filter>
+    </None>
+    <None Include="..\..\programs\demo\demo.fun.queens.mcy">
+      <Filter>Mcy\programs\demo</Filter>
+    </None>
+    <None Include="..\..\programs\demo\demo.fun.tetris.mcy">
+      <Filter>Mcy\programs\demo</Filter>
+    </None>
+    <None Include="..\..\programs\demo\demo.2d.qrcode.mcy">
+      <Filter>Mcy\programs\demo</Filter>
+    </None>
+    <None Include="..\..\rom\core\core.net.ipOverEth.mcy">
+      <Filter>Mcy\rom\core</Filter>
+    </None>
+    <None Include="..\..\rom\core\core.storage.romdisk.mcy">
+      <Filter>Mcy\rom\core</Filter>
+    </None>
+    <None Include="..\..\rom\core\core.storage.fat32.mcy">
+      <Filter>Mcy\rom\core</Filter>
+    </None>
+    <None Include="..\..\rom\core\core.storage.format.mcy">
+      <Filter>Mcy\rom\core</Filter>
+    </None>
+    <None Include="..\..\rom\core\core.util.cache.mcy">
+      <Filter>Mcy\rom\core</Filter>
+    </None>
+    <None Include="..\..\programs\demo\demo.fun.boing.mcy">
+      <Filter>Mcy\programs\demo</Filter>
+    </None>
+    <None Include="..\..\rom\core\core.2d.font.ttf.mcy">
+      <Filter>Mcy\rom\core</Filter>
+    </None>
+    <None Include="..\..\rom\core\core.2d.font.ttf.parser.mcy">
+      <Filter>Mcy\rom\core</Filter>
+    </None>
+    <None Include="..\..\rom\core\core.2d.font.maker.mcy">
+      <Filter>Mcy\rom\core</Filter>
+    </None>
+    <None Include="..\..\rom\core\core.net.ssh.shell.srv.mcy">
+      <Filter>Mcy\rom\core</Filter>
+    </None>
+  </ItemGroup>
+  <ItemGroup>
+    <ResourceCompile Include="minimacy.rc">
+      <Filter>Resource Files</Filter>
+    </ResourceCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <Image Include="minimacy.ico">
+      <Filter>Resource Files</Filter>
+    </Image>
+  </ItemGroup>
+</Project>

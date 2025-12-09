@@ -1,0 +1,248 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2022, Sylvain Huet, Ambermind
+// Minimacy (r) System
+use core.util.quicksort;;
+
+//-------------------------	
+struct BitWriter=[_bufferW, _iW, _valW];;
+
+fun bwCreate ()=[_bufferW=bufferCreate(), _iW=0, _valW=0 ];;
+
+fun bwAlign(bw)=
+	if bw._iW<>0 then bufferAppendChar(bw._bufferW, bw._valW);
+	set bw._iW=set bw._valW=0;;
+	
+fun bwFinal(bw)=
+	bwAlign(bw);
+	bufferLength(bw._bufferW);
+	strFromBuffer(bw._bufferW);;
+
+fun bwBytes(bw, str)=
+	bwAlign(bw);
+	bufferAppend(bw._bufferW, str);;
+
+fun bwBitsLsb(bw, data, nbits)=
+	for i=0;i<nbits do (
+		set bw._valW= bw._valW|(((data>>i)&1)<<bw._iW);
+		set bw._iW=
+		if bw._iW>6 then (bufferAppendChar(bw._bufferW, bw._valW); set bw._valW=0)
+		else bw._iW+1
+	);;
+
+fun bwBitsMsb(bw, data, nbits)=
+	for i=0;i<nbits do (
+		set bw._valW= bw._valW|(((data>>(nbits-1-i))&1)<<(7-bw._iW));
+		set bw._iW=
+		if bw._iW>6 then (bufferAppendChar(bw._bufferW, bw._valW); set bw._valW=0)
+		else bw._iW+1
+	);;
+	
+fun bwBitsLsbInv(bw, data, nbits)=
+	for i=0;i<nbits do (
+		set bw._valW= bw._valW|(((data>>(nbits-i-1))&1)<<bw._iW);
+		set bw._iW=
+		if bw._iW>6 then (bufferAppendChar(bw._bufferW, bw._valW); set bw._valW=0)
+		else bw._iW+1
+	);;
+
+//-------------------------	
+struct BitReader=[_srcR, _iR];;
+
+fun brCreate(src, i)=[_srcR=src, _iR=i];;
+
+fun brBitsLsb(br, n)=
+	if br._iR<8*strLength(br._srcR) then
+	let 0->val in (
+		for j=br._iR+n-1; j>=br._iR; j-1 do 
+			let strGet(br._srcR, j>>3) -> c in
+			set val=(val<<1) + 1&(c>>(j&7));
+		set br._iR=br._iR+n;
+		val
+	);;
+
+fun brBitsMsb(br, n)=
+	if br._iR<8*strLength(br._srcR) then
+	let 0->val in (
+		for j=br._iR; j<br._iR+n do 
+			let strGet(br._srcR, j>>3) -> c in
+			set val=(val<<1) + 1&(c>>(7- j&7));
+		set br._iR=br._iR+n;
+		val
+	);;
+
+fun brBit0To7(br)=
+	if br._iR<8*strLength(br._srcR) then
+	let strGet(br._srcR, br._iR>>3) -> c in
+	let 1&(c>>(br._iR&7)) -> bit in (
+		set br._iR=br._iR+1;
+		bit
+	);;
+	
+fun brBit7To0(br)=
+	if br._iR<8*strLength(br._srcR) then
+	let strGet(br._srcR, br._iR>>3) -> c in
+	let 1&(c>>(7-(br._iR&7))) -> bit in (
+		set br._iR=br._iR+1;
+		bit
+	);;
+	
+fun brBytes(br, n)=
+	set br._iR= (br._iR+7)&~7;
+	let strSlice(br._srcR, br._iR>>3, n) -> val in
+	(
+		set br._iR=br._iR+n*8;
+		val
+	);;
+
+//-------------------------	
+sum HuffmanTree= leafH _ _, nodeH _ _ _;;
+
+fun _arrayMax(src) = arrayReduce(src, src[0], #max);;
+
+fun _huffmanDumpEx(t)=
+	match t with
+		leafH count val -> strFormat("#*:*", count, val),
+		nodeH count a b -> if b==nil then strFormat("[#*:*]", count, _huffmanDumpEx(a))
+			else strFormat("[#*:*, *]", count, _huffmanDumpEx(a), _huffmanDumpEx(b));;
+fun huffmanDumpEx(t)=
+	echoLn _huffmanDumpEx(t);
+	t;;
+
+fun _huffmanDump(t)=
+	match t with
+		leafH count val -> decFromInt(val),
+		nodeH count a b -> if b==nil then strFormat("[*_]",_huffmanDump(a))
+			else if a==nil then strFormat("[_*]",_huffmanDump(b))
+			else strFormat("[*, *]", _huffmanDump(a), _huffmanDump(b));;		
+fun huffmanDump(t)=
+	echoLn _huffmanDump(t);
+	t;;
+
+fun huffmanDumpList(l)=
+	for t in l do (
+		echo _huffmanDump(t);
+		echo ":"
+	);
+	echoLn "nil";
+	l;;
+	
+fun huffmanCountStr(data, extra)=
+	let arrayLength(extra) -> extraLength in
+	let arrayCreate(256+extraLength, 0) -> counts in
+	let strLength(data) -> len in (
+		for i=0;i<len do
+			let strGet(data, i) -> c in
+			set counts[c] = 1+counts[c];
+		for i=0;i<extraLength do
+			set counts[(256+i)] = extra[i];
+		counts
+	);;
+fun huffmanCountAdd(counts, val)= set counts[val]= 1+counts[val];;
+
+fun _huffmanFirstList(counts, i)=
+	if i<arrayLength(counts) then
+	let counts[i] -> count in
+	if count>0 then (leafH count i)::_huffmanFirstList(counts, i+1)
+	else _huffmanFirstList(counts, i+1);;
+	
+fun _count(h)= match h with
+	leafH f _ -> f,
+	nodeH f _ _ -> f;;
+	
+fun _insert(list, node, count)=
+	if list==nil then node::nil
+	else if count<=_count(head(list)) then node::list
+	else head(list)::_insert(tail(list), node, count);;
+	
+fun _huffmanBuild(list)=
+	if nil==tail(list) then head(list)
+	else let list -> a::b::next in
+	let _count(a)+_count(b) -> count in
+	let nodeH count a b -> node in
+	_huffmanBuild(_insert(next, node, count));;
+	
+fun _huffmanComputeLens(codeLengths, tree, depth)=	match tree with
+	leafH _ code -> set codeLengths[code]=depth ,
+	nodeH _ a b -> (_huffmanComputeLens(codeLengths, a, depth+1); _huffmanComputeLens(codeLengths, b, depth+1));;
+	
+fun huffmanComputeCodeLengths(counts) =
+	let _huffmanFirstList(counts, 0) -> list in
+	let quicksort(list, lambda(a, b)=_count(a)<_count(b)) -> list in
+	let _huffmanBuild(list) -> tree in	// we won't use this tree for encoding. Only to get the code lengths, so that we can reorganize later the order of the codes
+	let arrayCreate(arrayLength(counts), 0) -> codeLengths in
+	(
+		_huffmanComputeLens(codeLengths, tree, 0);
+		codeLengths
+	);;
+
+fun huffmanTreeFromFifos(fifos, depth) =
+	if fifos[depth]<>nil then
+	let fifoOut(fifos[depth]) -> val in
+	if val<>nil then leafH nil val
+	else let huffmanTreeFromFifos(fifos, depth+1) -> a in
+	if a<>nil then nodeH nil a huffmanTreeFromFifos(fifos, depth+1);;
+
+fun huffmanBuildDecoder(codeLengths)=
+	if 1==arrayLength(codeLengths) then leafH nil 0
+	else
+	let 1+_arrayMax(codeLengths) -> MAX_BITS in
+	let arrayInit(MAX_BITS, lambda(i)=fifoCreate()) -> fifos in
+	(
+		for val,i of codeLengths do if val>0 then fifoIn(fifos[val], i);
+		huffmanTreeFromFifos(fifos, 0)
+	);;
+
+fun huffmanBuildEncoder(codeLengths)=
+	let arrayLength(codeLengths) -> n in
+	let 1+_arrayMax(codeLengths) -> MAX_BITS in
+	let arrayCreate(MAX_BITS, 0) -> bl_count in
+	let arrayCreate(MAX_BITS, 0) -> next_code in
+	let arrayCreate(n, 0) -> codes in
+	(	
+		for i=0;i<n do set bl_count[(codeLengths[i])]=1+bl_count[(codeLengths[i])];
+		set bl_count[0]=0;
+		let 0->code in
+		for bits=1;bits<MAX_BITS do (
+			set code=(code+bl_count[(bits-1)])<<1;
+			set next_code[bits]=code
+		);
+		for i=0;i<n do let codeLengths[i] -> len in
+		if len<>0 then (
+			set codes[i] = next_code[len];
+			set next_code[len]=next_code[len]+1
+		);
+		[codeLengths, codes]
+	);;	
+
+//-------------------------
+fun huffmanEncodeCode0To7(bw, encoder, code) =
+	let encoder -> [codeLengths, codes] in
+	bwBitsLsbInv(bw, codes[code], codeLengths[code]);;
+
+fun huffmanEncodeStr0To7(bw, encoder, str) =
+	let strLength(str) -> len in
+	for i=0;i<len do
+		let strGet(str, i) -> code in huffmanEncodeCode0To7(bw, encoder, code);;
+
+fun huffmanEncodeCode7To0(bw, encoder, code) =
+	let encoder -> [codeLengths, codes] in
+	bwBitsMsb(bw, codes[code], codeLengths[code]);;
+
+//-------------------------
+fun _getCode0To7(br, tree)=
+	match tree with
+		leafH _ val -> val,
+		nodeH _ a b -> match brBit0To7(br) with
+			0->_getCode0To7(br, a),
+			1->_getCode0To7(br, b);;
+
+fun huffmanDecodeCode0To7(br, decoder)= _getCode0To7(br, decoder);;
+
+fun _getCode7To0(br, tree)=
+	match tree with
+		leafH _ val -> val,
+		nodeH _ a b -> match brBit7To0(br) with
+			0->_getCode7To0(br, a),
+			1->_getCode7To0(br, b);;
+
+fun huffmanDecodeCode7To0(br, decoder)= _getCode7To0(br, decoder);;

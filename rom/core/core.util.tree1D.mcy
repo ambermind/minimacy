@@ -1,0 +1,143 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2022, Sylvain Huet, Ambermind
+// Minimacy (r) System
+
+sum Tree1D{a}=
+	_nodeT _:Tree1D{a} _:Tree1D{a},
+	_uniqueT _:a,
+	_leafT _:(list a);;
+
+fun tree1DDepth(t)=
+	match t with
+		_nodeT left right -> 1+max(tree1DDepth(left), tree1DDepth(right)),
+		_ -> 1;;
+
+fun _tree1DInsert(t, mn, mx, val, row, unique)=
+	match t with
+		_nodeT left right ->	let (mn+mx)>>1 -> pivot in
+			if val<pivot then _nodeT _tree1DInsert(left, mn, pivot, val, row, unique) right
+			else _nodeT left _tree1DInsert(right, pivot, mx, val, row, unique),
+		_uniqueT v -> t,	// we do not overwrite if an element already exists
+		_leafT l ->
+			_leafT row::l,
+		nil -> 
+			if mx <= mn+1 then if unique then _uniqueT row else _leafT row::nil
+			else _tree1DInsert(_nodeT nil nil, mn, mx, val, row, unique);;
+
+fun tree1DInsert(t, val, row, unique)=
+	if t==nil then [val, val+1, if unique then _uniqueT row else _leafT row::nil]
+	else let t->[mn, mx, root] in
+	if val<mn then tree1DInsert([mn-(mx-mn), mx, _nodeT nil root], val, row, unique)
+	else if val>=mx then tree1DInsert([mn, mx+(mx-mn), _nodeT root nil], val, row, unique)
+	else [mn, mx, _tree1DInsert(root, mn, mx, val, row, unique)];;
+
+fun _tree1DRemove(t, mn, mx, val, row)=
+	match t with
+		_nodeT left right ->
+			let (mn+mx)>>1 -> pivot in
+			let if val<pivot then _tree1DRemove(left, mn, pivot, val, row) else left -> left in
+			let if val>=pivot then _tree1DRemove(right, pivot, mx, val, row) else right -> right in
+			if left<>nil || right<>nil then _nodeT left right,
+		_uniqueT v -> if row==v then t,
+		_leafT l ->
+			let listRemove(l, row) -> l in
+			if l<>nil then _leafT l;;
+
+fun _tree1DPurge(t)=
+	let t->[mn, mx, root] in
+	match root with
+		_nodeT left right->
+			if left<>nil || right<>nil then
+			let (mn+mx)>>1 -> pivot in
+			if left==nil then _tree1DPurge([pivot, mx, right])
+			else if right==nil then _tree1DPurge([mn, pivot, left])
+			else t,
+		_uniqueT v-> t,
+		_leafT l -> if l<>nil then t;;
+
+fun tree1DRemove(t, val, row)=
+	if t<>nil then let t->[mn, mx, root] in
+	if val<mn || val>=mx then t
+	else _tree1DPurge([mn, mx, _tree1DRemove(root, mn, mx, val, row)]);;
+
+
+fun _tree1DVisit(root, cb)=
+	match root with
+		_nodeT left right -> _tree1DVisit(left, cb)&& _tree1DVisit(right, cb),
+		_uniqueT v -> call cb(v),
+		_leafT l -> listVisit(l, cb),
+		_ -> true;;
+
+fun tree1DVisit(t, cb)=
+	if t<>nil then let t->[mn, mx, root] in _tree1DVisit(root, cb);;
+
+fun _tree1DVisitDesc(root, cb)=
+	match root with
+		_nodeT left right -> _tree1DVisitDesc(right, cb)&& _tree1DVisitDesc(left, cb),
+		_uniqueT v -> call cb(v),
+		_leafT l -> listVisit(l, cb),
+		_ -> true;;
+
+fun tree1DVisitDesc(t, cb)=
+	if t<>nil then let t->[mn, mx, root] in _tree1DVisitDesc(root, cb);;
+
+fun _tree1DVisitRange(root, mn, mx, a, b, cb)=
+	if mn>= b then false
+	else if mx<=a then true
+	else
+	match root with
+		_nodeT left right ->
+			let (mn+mx)>>1 -> pivot in
+			_tree1DVisitRange(left, mn, pivot, a, b, cb)&& _tree1DVisitRange(right, pivot, mx, a, b, cb),
+		_uniqueT v -> call cb(v),
+		_leafT l -> listVisit(l, cb),
+		_ -> true;;
+
+fun _tree1DVisitRangeDesc(root, mn, mx, a, b, cb)=
+	if mn>= b then true
+	else if mx<=a then false
+	else
+	match root with
+		_nodeT left right ->
+			let (mn+mx)>>1 -> pivot in
+			_tree1DVisitRangeDesc(right, pivot, mx, a, b, cb)&&_tree1DVisitRangeDesc(left, mn, pivot, a, b, cb),
+		_uniqueT v -> call cb(v),
+		_leafT l -> listVisit(l, cb),
+		_ -> true;;
+
+fun tree1DVisitRange(t, a, b, cb)=
+	if t<>nil then let t->[mn, mx, root] in
+	if a<=b then _tree1DVisitRange(root, mn, mx, a, b, cb)
+	else _tree1DVisitRangeDesc(root, mn, mx, b, a, cb);;
+
+fun _tree1DContains(root, row)=
+	match root with
+		_nodeT left right -> _tree1DContains(left, row)|| _tree1DContains(right, row),
+		_uniqueT v -> v==row,
+		_leafT l -> listContains(l, row);;
+
+fun tree1DContains(t, row)=
+	if t<>nil then let t->[mn, mx, root] in _tree1DContains(root, row);;
+
+fun _tree1DIndex(root, mn, mx, val)=
+	match root with
+		_nodeT left right ->
+			let (mn+mx)>>1 -> pivot in
+			if val<pivot then _tree1DIndex(left, mn, pivot, val)
+			else _tree1DIndex(right, pivot, mx, val),
+		_leafT l -> l;;
+
+fun tree1DIndex(t, val)=
+	if t<>nil then let t->[mn, mx, root] in _tree1DIndex(root, mn, mx, val);;
+
+fun _tree1DRow(root, mn, mx, val)=
+	match root with
+		_nodeT left right ->
+			let (mn+mx)>>1 -> pivot in
+			if val<pivot then _tree1DRow(left, mn, pivot, val)
+			else _tree1DRow(right, pivot, mx, val),
+		_uniqueT v -> v;;
+
+fun tree1DRow(t, val)=
+	if t<>nil then let t->[mn, mx, root] in _tree1DRow(root, mn, mx, val);;
+

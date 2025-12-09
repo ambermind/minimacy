@@ -1,0 +1,1097 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2022, Sylvain Huet, Ambermind
+// Minimacy (r) System
+
+// hostList is a list of tuples [privateKey pwd certList authForClientCert] where
+// - privateKey is the content of the PEM file
+// - pwd is the password for the privateKey data (nil if none)
+// - certList is a list of PEM certificate contents
+// - authForClientCert is a certificate for client authentication (nil if none)
+// tlsMakeHosts returns the data you should pass to tlsStartServer
+export TLS12;;
+export tlsMakeHosts(hostList);;
+export tlsStage(tls);;
+export tlsSetCipherSuites(tls, cipherSuites);;
+export tlsSetSignatureAlgorithms(tls, signatureAlgorithms);;
+export tlsSetSupportedGroups(tls, supportedGroups);;
+export tlsGetClientCertificate(tls);;
+export tlsGetCertificateChain(tls);;
+export tlsAlert(tls);;
+export tlsWho(tls);;
+export tlsGetServerName(tls) ;;
+export tlsStartClientExt(substream, serverName, cipherSuites, clientCertificate, clientKey);;
+export tlsStartClient(substream, serverName);;
+export tlsStartServer(substream, hosts);;
+export tlsFromStream(substream);;
+
+const _DEBUG=false;;
+use core.crypto.hash;;
+use core.crypto.block;;
+use core.crypto.pem;;
+use core.crypto.rsa;;
+use core.crypto.aes;;
+use core.crypto.x25519;;
+use core.crypto.ec;;
+use core.crypto.sign;;
+use core.crypto.pkcs1;;
+use core.crypto.asn1;;
+use core.crypto.cer;;
+use core.crypto.oid;;
+use core.crypto.key;;
+use core.net.tls;;
+
+fun _strCutFromList(l, data, i)= if l<>nil then let head(l)-> len in strSlice(data, i, len)::_strCutFromList(tail(l), data, i+len);;
+fun strCutFromList(l, data) = _strCutFromList(l, data, 0);;
+fun strLenFromList(l) = if l==nil then 0 else head(l)+strLenFromList(tail(l));;
+
+struct TlsCipher=[
+		encodeDataC, decodeDataC, makePremasterC, keyExchangeC, parseClientKeyExchangeC, serverKeyExchangeC,
+		macComputeC,
+		materialHmacC, payloadHashC,
+		macLengthC, keyLengthC, fixedIvLengthC, recordIvLengthC
+	];;
+
+struct TLS12= Stream+ [
+	serverTLS, hostsTLS,
+	cipherSuitesTLS, supportedGroupsTLS, signatureAlgorithmsTLS,
+	clientCertificateTLS, clientKeyTLS,
+
+	stageTLS, alertTLS, dataTLS,
+
+	randomClientTLS, randomServerTLS, 
+
+	sessionTLS, serverNameTLS, 
+	cipherSuiteTLS, cipherTLS, peerPublicKeyTLS, curveTLS, signatureAlgoTLS, cipherOnTLS,
+
+	supportedGroupsCH, signatureAlgorithmsCH, ecPointsFormatsCH,
+	
+
+	premasterCKE, curveTypeSKE, signatureSKE,
+
+	serverCertificatRequestTLS,
+
+	clientSignAlgoTLS,
+
+	peerCertificatesTLS, clientValidatedCertificateTLS, siteCertificateTLS,
+	certificateChainTLS,
+
+	preMasterKeyTLS, masterSecretTLS,
+	clientWriteMacKeyTLS, serverWriteMacKeyTLS, clientWriteKeyTLS, serverWriteKeyTLS, clientWriteIVTLS, serverWriteIVTLS,
+	clientSeqTLS, serverSeqTLS,
+
+	payloadTLS, _handshakeDataTLS,
+
+	substreamTT, sendTT, iTT, closeAfterTT, fifoReadTT
+
+];;
+
+sum Stages =
+	STAGE_CLI_START, STAGE_CLI_HELLO, STAGE_CLI_CERTIF_SENT, STAGE_CLI_CERTIF, STAGE_CLI_VERIFY, STAGE_CLI_DONE,
+	STAGE_SRV_START, STAGE_SRV_HELLO, STAGE_SRV_CERTIF, STAGE_SRV_DONE,
+	STAGE_READY, STAGE_ERROR;;
+
+fun _checkBlockOrder(tls, expected)=
+	if tls.stageTLS==expected then true
+	else _setError(tls, strFormat("Block out of order *<>*", tls.stageTLS, expected));;
+fun _checkBlockOrder2(tls, expected1, expected2)=
+	if tls.stageTLS==expected1 || tls.stageTLS==expected2 then true
+	else _setError(tls, strFormat("Block out of order *<>* or *", tls.stageTLS, expected1, expected2));;
+fun _checkBlockOrderExclude(tls, exclude)=
+	if tls.stageTLS<>exclude then true
+	else _setError(tls, strFormat("Block out of order *==*", tls.stageTLS, exclude));;
+
+fun _alive(tls)= tls.stageTLS<>STAGE_ERROR;;
+
+fun tlsUpdateStage(tls, stage)= if tls.stageTLS<>STAGE_ERROR then set tls.stageTLS=stage;;
+
+fun _setError(tls, txt)=
+	if _DEBUG then echoLn strFormat("*----------ERROR *: *", tlsWho(tls), hexFromInt(tlsAlert(tls)), txt);
+	tlsUpdateStage(tls, STAGE_ERROR);
+	streamClose(tls.substreamTT);
+	_tlsClosedSubstream(tls);
+	nil;;
+
+//----------------- Computation
+fun _sequence(tls, server)=
+	let if server then set tls.serverSeqTLS=tls.serverSeqTLS+1
+		else set tls.clientSeqTLS=tls.clientSeqTLS+1
+	-> sequence in
+	strConcat(strInt32Msb(0), strInt32Msb(sequence));;
+
+fun _addPayload(tls, data)=
+	if data<>nil then set tls.payloadTLS=data::tls.payloadTLS;
+	data;;
+
+fun _signatureData(tls)=
+	strBuild({
+		tls.randomClientTLS,
+		tls.randomServerTLS, 
+		strInt8(tls.curveTypeSKE),
+		strInt16Msb(tls.curveTLS.nameC),
+		mkBlock8(tls.peerPublicKeyTLS)
+	});;
+fun _makeSignature(tls)=
+	let _signatureData(tls) -> data in
+	let _getServerKey(tls) -> rsa in
+	set tls.signatureSKE=signatureGenerate(tls.signatureAlgoTLS, rsa, data);;
+
+fun _select(prefered, proposed)=
+	if prefered<>nil then
+	let head(prefered) -> candidate in
+	if listTest(proposed, lambda(val)= val==candidate) then candidate
+	else _select(tail(prefered), proposed);;
+
+fun _setCurve(tls, curveInfo)=
+	set tls.curveTLS= makeCurve(curveInfo);
+	if tls.curveTLS==nil then _setError(tls, ["UNKNOWN CURVE ", hexFromInt(curveInfo)]);;
+
+fun _keyExchangeEcdhe(tls)= mkBlock8(tls.curveTLS.publicKeyC);;
+
+fun _keyExchangeRSA(tls)=
+	let tls.siteCertificateTLS -> certificate in
+	let pkcs1EncryptPubRsa(rsaFromKey(cerKey(certificate)), tls.preMasterKeyTLS) -> data in
+	mkBlock16(data);;
+
+fun payloadHash256()=
+	let sha256Create() -> sha in lambda(tls)=
+	(
+		for data in listReverse(tls.payloadTLS) do sha256Process(sha, data, 0, nil);
+		set tls.payloadTLS=nil;
+		sha256Output(sha)
+	);;
+
+fun payloadHash384()=
+	let sha384Create() -> sha in lambda(tls)=
+	(
+		for data in listReverse(tls.payloadTLS) do sha384Process(sha, data, 0, nil);
+		set tls.payloadTLS=nil;
+		sha384Output(sha)
+	);;
+
+fun _rsa()= [
+	makePremasterC=#_rsaPremaster,
+	keyExchangeC=#_keyExchangeRSA,
+	parseClientKeyExchangeC=#_parseClientKeyExchangeRsa,
+	serverKeyExchangeC=nil,
+	materialHmacC=#hmacSha256
+];;
+fun _ecdhe()= [
+	makePremasterC=#_ecdhePremaster,
+	keyExchangeC=#_keyExchangeEcdhe,
+	parseClientKeyExchangeC=#_parseClientKeyExchangeEcdhe,
+	serverKeyExchangeC=#_serverKeyExchangeEcdh
+];;
+
+fun _sha256(c) = set c.materialHmacC=#hmacSha256; set c.payloadHashC=payloadHash256(); c;;
+fun _sha384(c) = set c.materialHmacC=#hmacSha384; set c.payloadHashC=payloadHash384(); c;;
+
+fun _aes128(c) = set c.keyLengthC=16; c;;
+fun _aes256(c) =	set c.keyLengthC=32; c;;
+
+fun _cbc(c, macCompute, macLength)=
+	set c.encodeDataC=#_encodeCBC;
+	set c.decodeDataC=#_decodeCBC;
+	set c.fixedIvLengthC=16;
+	set c.recordIvLengthC=16;
+	set c.macComputeC=macCompute;
+	set c.macLengthC=macLength;
+	c;;
+
+fun _cbc1(c)= _cbc(c, #hmacSha1, 20);;
+fun _cbc256(c)= _cbc(c, #hmacSha256, 32);;
+fun _cbc384(c)= _cbc(c, #hmacSha384, 48);;
+
+fun _gcm(c)=
+	set c.encodeDataC=#_encodeGCM;
+	set c.decodeDataC=#_decodeGCM;
+	set c.fixedIvLengthC=4;
+	set c.recordIvLengthC=8;
+	c;;
+
+fun _setCipherSuite(tls, cipherSuite)=
+	set tls.cipherTLS= match cipherSuite with
+		TLS_RSA_WITH_AES_128_GCM_SHA256->         _gcm(   _aes128(_sha256(_rsa()))),
+		TLS_RSA_WITH_AES_256_GCM_SHA384->         _gcm(   _aes256(_sha256(_rsa()))),
+		TLS_RSA_WITH_AES_128_CBC_SHA256->         _cbc256(_aes128(_sha256(_rsa()))),
+		TLS_RSA_WITH_AES_256_CBC_SHA256->         _cbc256(_aes256(_sha256(_rsa()))),
+		TLS_RSA_WITH_AES_128_CBC_SHA->            _cbc1(  _aes128(_sha256(_rsa()))),
+		TLS_RSA_WITH_AES_256_CBC_SHA->            _cbc1(  _aes256(_sha256(_rsa()))),
+		TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA ->     _cbc1(  _aes128(_sha256(_ecdhe()))),
+		TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA ->     _cbc1(  _aes256(_sha256(_ecdhe()))),
+		TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256 ->  _cbc256(_aes128(_sha256(_ecdhe()))),
+		TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256 ->  _gcm(   _aes128(_sha256(_ecdhe()))),
+		TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA384 ->  _cbc384(_aes256(_sha384(_ecdhe()))),
+		TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384 ->  _gcm(   _aes256(_sha384(_ecdhe()))),
+		TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256-> _gcm(   _aes128(_sha256(_ecdhe()))),
+		TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384-> _gcm(   _aes256(_sha384(_ecdhe()))),
+		_ -> _setError(tls, ["UNKNOWN CIPHERSUITE ", hexFromInt(cipherSuite)]);;
+
+fun __makeMaterial(hashFun, key, a, seed, len)=
+	if len>0 then
+	let call hashFun(key, a) -> a1 in
+	let call hashFun(key, strConcat(a1, seed)) -> p1 in
+	p1::__makeMaterial(hashFun, key, a1, seed, len-strLength(p1));;
+
+fun _makeMaterial(hashFun, key, seed, sizes)=
+	let strLenFromList(sizes) -> len in
+	let strBuild(__makeMaterial(hashFun, key, seed, seed, len)) -> data in
+	strCutFromList(sizes, data);;
+
+fun _ecdhePremaster(tls)= ecdhePremaster(tls.curveTLS, tls.peerPublicKeyTLS);;
+
+fun _rsaPremaster(tls)=
+	if tls.serverTLS then tls.premasterCKE
+	else strConcat("\3\3", strRand(46));;
+
+fun _keyComputation(tls)=
+	let call tls.cipherTLS.makePremasterC(tls) -> PreMasterKey in
+	let strBuild({"master secret", tls.randomClientTLS, tls.randomServerTLS}) -> seed in
+	let _makeMaterial(tls.cipherTLS.materialHmacC, PreMasterKey, seed, 48::nil) -> (MasterSecret::_) in
+	
+	let tls.cipherTLS.macLengthC -> macLen in
+	let tls.cipherTLS.keyLengthC -> keyLen in
+	let tls.cipherTLS.fixedIvLengthC -> ivLen in
+	let MasterSecret->key in
+	let strBuild({"key expansion", tls.randomServerTLS, tls.randomClientTLS}) -> seed in
+	let _makeMaterial(tls.cipherTLS.materialHmacC, key, seed, macLen::macLen::keyLen::keyLen::ivLen::ivLen::nil) ->
+		(clientWriteMacKey::serverWriteMacKey::clientWriteKey::serverWriteKey::clientWriteIV::serverWriteIV::nil) in
+	(
+		set tls.preMasterKeyTLS= PreMasterKey;
+		set tls.masterSecretTLS= MasterSecret;
+		set tls.clientWriteMacKeyTLS= clientWriteMacKey;
+		set tls.serverWriteMacKeyTLS= serverWriteMacKey;
+		set tls.clientWriteKeyTLS= clientWriteKey;
+		set tls.serverWriteKeyTLS= serverWriteKey;
+		set tls.clientWriteIVTLS= clientWriteIV;
+		set tls.serverWriteIVTLS= serverWriteIV;
+	);;
+
+fun _finished(tls, server, encryptionIV)=
+	let if server then "server finished" else "client finished" -> seed in
+	let strConcat(seed, call tls.cipherTLS.payloadHashC(tls))-> seed in
+	let tls.masterSecretTLS -> key in
+	let _makeMaterial(tls.cipherTLS.materialHmacC, key, seed, 12::nil) -> (verify_data::_) in
+	let mkTypedBlock24(TLS_FINISHED, verify_data) -> msg in
+	let _addPayload(tls, msg) -> _ in	// we rebuild an uncrypted frame and use it for the payload hash
+	call tls.cipherTLS.encodeDataC(tls, TLS_HANDSHAKE, server, encryptionIV, msg);;
+
+fun _makeClearDataFrame(tls, header, server, msg)=
+	strBuild({
+		_sequence(tls, server),
+		strInt8(header),
+		TLS_1_2,
+		mkBlock16(msg)
+	});;
+
+//----------- CBC
+fun _decodeCBC(tls, header, server, data)=
+	let if server then tls.serverWriteMacKeyTLS else tls.clientWriteMacKeyTLS -> mackey in
+	let if server then tls.serverWriteKeyTLS else tls.clientWriteKeyTLS -> aeskey in
+	let strLeft(data, tls.cipherTLS.recordIvLengthC) -> encryptionIV in
+	let strSlice(data, tls.cipherTLS.recordIvLengthC, nil) -> data in
+	let aesDecryptCbc(aeskey, encryptionIV, data) -> decrypted in
+	let unPaddingTLS(decrypted) -> endMac in
+	let endMac-tls.cipherTLS.macLengthC -> endMsg in
+	let strLeft(decrypted, endMsg) -> msg in
+	// now we check the mac
+	let _makeClearDataFrame(tls, header, server, msg) -> src in
+	let call tls.cipherTLS.macComputeC(mackey, src) -> mac in
+	if mac==strSlice(decrypted, endMsg, endMac-endMsg) then msg
+	else _setError(tls, "DECODE CBC ERROR");;
+
+fun _encodeCBC(tls, header, server, encryptionIV, msg)=
+	let _makeClearDataFrame(tls, header, server, msg) -> src in
+	let if server then tls.serverWriteMacKeyTLS else tls.clientWriteMacKeyTLS -> mackey in
+	let if server then tls.serverWriteKeyTLS else tls.clientWriteKeyTLS -> aeskey in
+	let call tls.cipherTLS.macComputeC(mackey, src) -> hash in
+	let strConcat(msg, hash) -> msg in
+	let paddingTLS(msg, AES_BLOCK) -> padding in
+	let strConcat(msg, padding) -> toEncode in
+	aesEncryptCbc(aeskey, encryptionIV, toEncode);;
+
+//----------- GCM
+fun _makeGCMAuthData(tls, header, server, msgLen)=
+	strBuild({
+		_sequence(tls, server),
+		strInt8(header),
+		TLS_1_2,
+		strInt16Msb(msgLen)
+	});;
+
+fun _decodeGCM(tls, header, server, data)=
+	let if server then tls.serverWriteKeyTLS else tls.clientWriteKeyTLS -> aeskey in
+	let if server then tls.serverWriteIVTLS else tls.clientWriteIVTLS -> iv in
+	let strConcat(iv, strLeft(data, tls.cipherTLS.recordIvLengthC)) -> encryptionIV in
+	let strSlice(data, tls.cipherTLS.recordIvLengthC, nil) -> data in
+	let _makeGCMAuthData(tls, header, server, strLength(data)-AES_BLOCK) -> A in
+	let aesGcmDecryptGroup(aeskey, data, encryptionIV, A) -> msg in
+	if msg<>nil then msg
+	else _setError(tls, "DECODE GCM ERROR");;
+
+fun _encodeGCM(tls, header, server, encryptionIV, msg)=
+	let _makeGCMAuthData(tls, header, server, strLength(msg)) -> A in
+	let if server then tls.serverWriteKeyTLS else tls.clientWriteKeyTLS -> aeskey in
+	let if server then tls.serverWriteIVTLS else tls.clientWriteIVTLS -> iv in
+	let strConcat(iv, encryptionIV) -> encryptionIV in
+	let aesGcmEncrypt(aeskey, msg, encryptionIV, A) -> [cipherText, authBlock] in
+	let strConcat(cipherText, authBlock) -> encoded in
+	encoded;;
+
+//----------------- BUILDING FRAMES
+
+fun _mkHandshake(tls, type, data)=
+	let strBuild(data) -> data in
+	let strInt24Msb(strLength(data)) -> size in
+	let if type==TLS_CLIENT_HELLO then TLS_1_1 else TLS_1_2 -> protocol in
+	mkRecord(protocol, _addPayload(tls, mkTypedBlock24(type, data)));;
+
+fun client_ext_status_request()=
+	mkExtension(EXT_STATUS_REQUEST, {
+		strInt8(1),
+		strInt16Msb(0),
+		strInt16Msb(0)
+	});;
+
+fun client_ext_ec_point_format(data)=
+	mkExtension(EXT_EC_POINT_FORMATS, data);;
+
+fun client_ext_renegotiation_info()=
+	mkExtension(EXT_RENEGOTIATE, strInt8(0));;
+
+fun client_ext_sct()=
+	mkExtension(EXT_SIGNED_CERTIFICATE_TIMESTAMP, "");;
+
+fun client_ext_encrypt_then_mac()=
+	mkExtension(EXT_ENCRYPT_THEN_MAC, "");;
+
+fun client_ext_extented_master_secret()=
+	mkExtension(EXT_EXTENDED_MASTER_SECRET, "");;
+
+fun _clientExtensions(tls)=
+	mkBlock16({
+		client_ext_server_name(tls.serverNameTLS),
+		client_ext_status_request(),
+		client_ext_supported_groups(tls.supportedGroupsTLS),
+		client_ext_ec_point_format(mkBlock8(strInt8(EC_POINT_FORMAT_UNCOMPRESSED))),
+		client_ext_signature_algorithms(tls.signatureAlgorithmsTLS),
+		client_ext_renegotiation_info(),
+		client_ext_sct()
+	});;
+
+fun _serverExtensions(tls)=
+	mkBlock16({
+		client_ext_renegotiation_info()
+	});;
+
+fun _clientCertificate(tls)=
+	if tls.clientSignAlgoTLS<>nil then
+	let strLength(tls.clientCertificateTLS) -> len in
+	_mkHandshake(tls, TLS_CERTIFICATE, // certificate
+		if len>0 then
+		{
+			strInt24Msb(len+3),
+			strInt24Msb(len),
+			tls.clientCertificateTLS
+		}
+		else
+		{
+			strInt24Msb(0)
+		})
+	;;
+fun _clientCertificateVerify(tls)=
+	if tls.clientSignAlgoTLS<>nil && tls.clientKeyTLS<>nil then
+	let strListConcat(listReverse(tls.payloadTLS)) -> payload in	// the payload list is still complete as tlsFinished not yet called
+	let signatureGenerate(tls.clientSignAlgoTLS, tls.clientKeyTLS, payload) -> sign in
+	_mkHandshake(tls, TLS_CERTIFICATE_VERIFY, {
+		strInt16Msb(tls.clientSignAlgoTLS),
+		mkBlock16(sign)
+	});;
+
+fun _clientKeyExchange(tls, data)=
+	_mkHandshake(tls, TLS_CLIENT_KEY_EXCHANGE,
+		data);;
+
+fun _clientChangeCipherSpec ()=
+	strBuild({
+		strInt8(TLS_CHANGE_CIPHER_SPEC),
+		TLS_1_2,
+		mkBlock16(strInt8(0x01))
+	});;
+
+
+fun _clientHandshakeFinished(tls) =
+	let strRand(tls.cipherTLS.recordIvLengthC) -> encryptionIV in
+	let _finished(tls, tls.serverTLS, encryptionIV) -> encrypted in
+	mkRecord(TLS_1_2, {
+		encryptionIV,
+		encrypted
+	});;
+
+fun _serverChangeCipherSpec()=_clientChangeCipherSpec();;
+fun	_serverHandshakeFinished(tls) =_clientHandshakeFinished(tls);;
+
+fun _serverCertificates(tls, certblockList)=
+	_mkHandshake(tls, TLS_CERTIFICATE, mkBlock24(certblockList));;
+
+fun _serverHello(tls) =
+	_mkHandshake(tls, TLS_SERVER_HELLO, // server hello
+	{
+		TLS_1_2,	// TLS1.2
+		tls.randomServerTLS,
+		strInt8(0),	// no session id
+		strInt16Msb(tls.cipherSuiteTLS),
+		strInt8(0),	// compression
+		_serverExtensions(tls)
+	});;
+
+fun _serverKeyExchangeEcdh(tls)=
+	_mkHandshake(tls, TLS_SERVER_KEY_EXCHANGE,
+	{
+		strInt8(tls.curveTypeSKE), // named_curve
+		strInt16Msb(tls.curveTLS.nameC),
+		mkBlock8(tls.peerPublicKeyTLS),			
+		strInt16Msb(tls.signatureAlgoTLS),
+		mkBlock16(tls.signatureSKE)
+	});;
+
+
+fun _serverKeyExchange(tls) =
+	call tls.cipherTLS.serverKeyExchangeC(tls);;
+
+fun _serverCertificateRequest(tls)=
+	if nil<>_getAuthForClientCert(tls) then
+	_mkHandshake(tls, TLS_CERTIFICATE_REQUEST,
+	[
+		mkBlock8(strInt8(SIGN_RSA)),
+		mkBlock16({
+			strInt16Msb(RSA_PKCS1_SHA256),
+			strInt16Msb(RSA_PKCS1_SHA384),
+			strInt16Msb(RSA_PKCS1_SHA512)
+		}),
+		mkBlock16("")
+	]);;
+
+fun _serverDone(tls) =
+	_mkHandshake(tls, TLS_SERVER_DONE,
+		"")
+	;;
+
+
+//-------------- PARSING BY SERVER
+fun _getServerCertificate(tls)= hashmapGet(tls.hostsTLS, tls.serverNameTLS);;
+
+fun _getAuthForClientCert(tls)=
+	let _getServerCertificate(tls) -> [serverKey, certblockList, authForClientCert] in authForClientCert;;
+
+fun _getServerKey(tls)=
+	let _getServerCertificate(tls) -> [serverKey, certblockList, authForClientCert] in serverKey;;
+
+fun _parseServerName(tls, data)=
+	let strRead8(data, 2) -> type in
+	if type==0 then set tls.serverNameTLS=strSlice(data, 5, nil);
+	nil;;
+
+fun _parseSupportedGroups(tls, data)=
+	let strRead16Msb(data, 0) -> supportedGroupsLength in
+	set tls.supportedGroupsCH = parse16MsbList(data, 2, 2+supportedGroupsLength);
+	nil;;
+
+fun _parseSignatureAlgorithms(tls, data)=
+	let strRead16Msb(data, 0) -> signatureAlgorithmsLength in
+	set tls.signatureAlgorithmsCH = parse16MsbList(data, 2, 2+signatureAlgorithmsLength);
+	nil;;
+
+fun _parseEcPointsFormats(tls, data)=
+	let strRead8(data, 0) -> ecPointsFormatsLength in
+	set tls.ecPointsFormatsCH = parseByteList(data, 1, 1+ecPointsFormatsLength);
+	nil;;
+
+fun _serverParseExtensions(tls, data, i)=
+	if i<strLength(data) then
+	let strRead16Msb(data, i) -> extension in
+	let strRead16Msb(data, i+2) -> length in
+	let strSlice(data, i+4, length) -> content in
+	(
+		match extension with
+			EXT_SERVER_NAME -> _parseServerName(tls, content),
+			EXT_SUPPORTED_GROUPS -> _parseSupportedGroups(tls, content),
+			EXT_EC_POINT_FORMATS -> _parseEcPointsFormats(tls, content),
+			EXT_SIGNATURE_ALGORITHMS -> _parseSignatureAlgorithms(tls, content),
+			_ -> (if _DEBUG then echoLn strFormat("unknown extension *", hexFromInt(extension)); nil);
+		_serverParseExtensions(tls, data, i+4+length)
+	);;
+
+fun _serverParseClientHello(tls, data)=
+	let strRead16Msb(data, 0) -> version in
+	let strSlice(data, 2, 32) -> random in
+	let 34 -> i in
+	let strRead8(data, i)-> sessionLength in
+	let hexFromStr(strSlice(data, i+1, sessionLength)) -> session in
+	let i+1+sessionLength -> i in
+	let strRead16Msb(data, i) -> cipherSuitesLength in
+	let parse16MsbList(data, i+2, i+2+cipherSuitesLength) -> cipherSuites in
+	let i+2+cipherSuitesLength -> i in
+	let strRead8(data, i) -> compressionsLength in
+	let parseByteList(data, i+1, i+1+compressionsLength) -> compressions in
+	let i+1+compressionsLength -> i in
+	let strRead16Msb(data, i) -> extLength in
+	let _select(tls.cipherSuitesTLS, cipherSuites) -> cipherSuite in
+	let if _DEBUG then echoLn strFormat("cipherSuite: *", hexFromInt(cipherSuite)) ->_ in
+	if cipherSuite<>nil then
+	let _serverParseExtensions(tls, data, i+2) -> _ in
+	let tls.supportedGroupsCH -> supportedGroups in
+	let _select(tls.supportedGroupsTLS, supportedGroups) -> curveInfo in
+	let if _DEBUG then echoLn strFormat("curveInfo: *", curveInfo) ->_ in
+	if curveInfo<>nil then
+	let _select(tls.signatureAlgorithmsTLS, tls.signatureAlgorithmsCH) -> signatureAlgo in
+	let if _DEBUG then echoLn strFormat("signatureAlgo: *", signatureAlgo) ->_ in
+	if signatureAlgo<>nil then
+	let _getServerCertificate(tls) -> hostCertificate in
+	if hostCertificate==nil then _setError(tls, ["UNAVAILABLE SERVER ", tls.serverNameTLS ])
+	else
+	let hostCertificate -> [serverKey, certblockList, authForClientCert] in
+	(
+		if _DEBUG then (echoLn "serverName"; dump tls.serverNameTLS);
+		set tls.sessionTLS=session;
+		set tls.randomClientTLS=random;
+		set tls.sessionTLS="\0";
+		set tls.randomServerTLS=strRand(32);
+		set tls.cipherSuiteTLS=cipherSuite;
+		if _DEBUG then echoTime ["CIPHERSUITE---> ", hexFromInt(cipherSuite)];
+		_setCipherSuite(tls, cipherSuite);
+		_setCurve(tls, curveInfo);
+		set tls.curveTypeSKE=3;
+		set tls.peerPublicKeyTLS=tls.curveTLS.publicKeyC;
+		set tls.signatureAlgoTLS=signatureAlgo;
+		_makeSignature(tls);
+		_tlsSendSubstream(tls, strBuild({
+			_serverHello(tls),
+			_serverCertificates(tls, certblockList),
+			_serverKeyExchange(tls),
+			_serverCertificateRequest(tls),
+			_serverDone(tls)
+		}));
+		tlsUpdateStage(tls, STAGE_SRV_HELLO);
+		nil
+	);;
+
+fun _parseClientKeyExchangeRsa(tls, data)=
+	let strRead16Msb(data, 0)-> encodedLength in
+	let strSlice(data, 2, encodedLength) -> encoded in
+	let rsaFromKey(_getServerKey(tls)) -> rsa in
+	let pkcs1DecryptPrivRsa(rsa, encoded) -> premaster in
+	(
+		set tls.premasterCKE=premaster;
+		_keyComputation(tls);
+		true
+	);;
+
+fun _parseClientKeyExchangeEcdhe(tls, data)=
+	let strRead8(data, 0)-> publickKeyLength in
+	let strSlice(data, 1, publickKeyLength) -> publickKey in
+	(
+		set tls.peerPublicKeyTLS=publickKey;
+		_keyComputation(tls);
+		true
+	);;
+
+fun _serverParseClientKeyExchange(tls, data)=
+	call tls.cipherTLS.parseClientKeyExchangeC(tls, data);
+	tlsUpdateStage(tls, STAGE_SRV_DONE);;
+
+fun _serverParseCertificateVerify(tls, data)=
+	let strRead16Msb(data, 0) -> signAlgo in
+	let strRead16Msb(data, 2) -> len in
+	let strSlice(data, 4, len) -> sign in
+	let listLast(tls.peerCertificatesTLS) -> certificate in
+	let strListConcat(listReverse(tail(tls.payloadTLS))) -> payload in	// the payload list is still complete as tlsFinished not yet called has not make it empty
+	let signatureCheckFromCertificate(signAlgo, certificate, payload, sign) -> result in
+	if !result then _setError(tls, "CLIENT CERTIFICATE NOT ACCEPTED")
+	else
+	let _getAuthForClientCert(tls) -> authForClientCert in
+	if authForClientCert<>nil && !cerCheckByAuth(certificate, authForClientCert) then (
+		set tls.peerCertificatesTLS=nil;
+		_setError(tls, "INVALID AUTHORITY")
+	)
+	else (
+		set tls.clientValidatedCertificateTLS=certificate;
+		tlsUpdateStage(tls, STAGE_SRV_DONE);
+		nil
+	);;
+
+//-------------- PARSING BY CLIENT
+
+fun _clientParseServerHello(tls, data)=
+	let strRead16Msb(data, 0) -> version in
+	let strSlice(data, 2, 32) -> random in
+	let 34 -> i in
+	let strRead8(data, i)-> sessionLength in
+	let strSlice(data, i+1, sessionLength) -> session in
+	let i+1+sessionLength -> i in
+	let strRead16Msb(data, i) -> cipherSuite in
+	let strRead8(data, i+2) -> compression in
+	let strRead16Msb(data, i+3) -> extLength in
+	let i+5-> i in
+	(
+		set tls.sessionTLS=session;
+		set tls.randomServerTLS=random;
+		set tls.cipherSuiteTLS=cipherSuite;
+		if _DEBUG then echoTime ["CIPHERSUITE---> ", hexFromInt(cipherSuite)];
+		_setCipherSuite(tls, cipherSuite);
+		tlsUpdateStage(tls, STAGE_CLI_HELLO);
+		nil
+	);;
+
+fun _parsePeerCertificate(tls, nextStage, data)=
+	tlsUpdateStage(tls, nextStage);
+	if 0<strLength(data) then
+	let strRead24Msb(data, 0) -> certificateLength in
+	let strSlice(data, 3, certificateLength) -> cer in
+	let cerFromDER(cer) -> certificate in
+	(
+		set tls.peerCertificatesTLS = certificate::tls.peerCertificatesTLS;
+		_parsePeerCertificate(tls, nextStage, strSlice(data, 3+certificateLength, nil))
+	);;
+
+fun _clientParseCertificateVerify(tls, signAlgo, payload, sign)=
+//echoLn "\n\n\ncertifs"; 	for cer in tls.peerCertificatesTLS do (cerEcho (cer); echoLn "\n---------\n");
+	let time()->t0 in
+	let listReverse(tls.peerCertificatesTLS) -> lCertificates in
+	let set tls.siteCertificateTLS= cerByServerName(tls.serverNameTLS, lCertificates) -> siteCertificate in
+	if siteCertificate==nil then _setError(tls, ["SERVERNAME NOT FOUND IN CERTIFICATE ", tls.serverNameTLS])
+	else
+	let set tls.certificateChainTLS=cerCheckChain(t0, siteCertificate, lCertificates) -> certificateChain in
+	if certificateChain==nil then
+		match lastError() with msgError error -> _setError(tls, error)
+	else
+	let signatureCheckFromCertificate(signAlgo, siteCertificate, payload, tls.signatureSKE) -> result in
+	if !result then
+		let if result==false then "WRONG SIGNATURE " else "UNKNOWN ALGO " -> txt in
+		_setError(tls, [txt, hexFromInt(signAlgo)])
+	else 
+		tlsUpdateStage(tls, STAGE_CLI_VERIFY)
+	;;
+
+fun _clientParseServerKeyExchange(tls, data)=
+	let strRead8(data, 0)-> curveType in
+	let strRead16Msb(data, 1) -> curveInfo in
+	let strRead8(data, 3)-> publickKeyLength in
+	let strSlice(data, 4, publickKeyLength) -> publickKey in
+	let strLeft(data, 4+publickKeyLength) -> payload in
+	let 4+publickKeyLength -> i in
+	let strRead16Msb(data, i) -> signatureAlgo in
+	let strRead16Msb(data, i+2)-> signatureLength in
+	let strSlice(data, i+4, signatureLength) -> signature in
+	(
+		set tls.curveTypeSKE=curveType;
+		set tls.peerPublicKeyTLS=publickKey;
+		set tls.signatureAlgoTLS=signatureAlgo;
+		set tls.signatureSKE=signature;
+		if _DEBUG then echoTime ["SIGNATURE ALGO---> ", hexFromInt(signatureAlgo)];
+		_setCurve(tls, curveInfo);
+		_clientParseCertificateVerify(tls, tls.signatureAlgoTLS, _signatureData(tls), tls.signatureSKE)
+	);;
+
+fun _tlsSelectClientSignHash(tls, signatureHashAlgos)=
+	for a in RSA_PKCS1_SHA512::RSA_PKCS1_SHA384::RSA_PKCS1_SHA256::nil do
+		if listContains(signatureHashAlgos, a) then return a;;
+
+fun _selectSignAlgo(tls, algos)=
+	let listFilter(algos, #signatureForRsa) -> algos in
+	for a in algos do if listContains(tls.signatureAlgorithmsTLS, a) then return a;;
+
+fun _clientParseCertificateRequest(tls, data)=
+	let strRead8(data, 0)-> certificateTypeCount in
+	let 1+certificateTypeCount -> i in
+	let parseByteList(data, 1, i) -> certificateTypes in
+	let strRead16Msb(data, i) -> signatureHashAlgosLength in
+	let i+2 -> i in
+	let parse16MsbList(data, i, i+signatureHashAlgosLength) -> signatureHashAlgos in
+	let i+signatureHashAlgosLength -> i in
+	let strRead16Msb(data, i+2) -> DistinguishedNamesLength in
+	let strSlice(data, i+4, DistinguishedNamesLength) -> DistinguishedNames in
+	let _selectSignAlgo(tls, signatureHashAlgos) -> signAlgo in
+	if signAlgo==nil then _setError(tls, "NO SUPPORTED SIGNATURE HASH ALGORITHMS")
+	else (
+		if _DEBUG then echoTime ["CLIENT SIGNATURE ALGO---> ", hexFromInt(signAlgo)];
+		set tls.serverCertificatRequestTLS=[
+			certificateTypes,
+			signatureHashAlgos,
+			asn1DistinguishedName(DistinguishedNames)
+		];
+		set tls.clientSignAlgoTLS=signAlgo;
+		tlsUpdateStage(tls, STAGE_CLI_CERTIF_SENT);
+	);;
+
+fun _clientParseServerDone(tls)=
+	_keyComputation(tls);
+	tlsUpdateStage(tls, STAGE_CLI_DONE);
+	_tlsSendSubstream(tls, strBuild({
+		_clientCertificate(tls),
+		_clientKeyExchange(tls, call tls.cipherTLS.keyExchangeC(tls)),
+		_clientCertificateVerify(tls),
+
+		_clientChangeCipherSpec(),
+		_clientHandshakeFinished(tls)
+	}));
+	nil;;
+
+//------------ COMMON PARSING
+
+fun _parseHandshakeSrv(tls, type, data)=
+	if _DEBUG then (echoLn strFormat("_parseHandshake *", type); /*hexDump data;*/);
+	match type with
+		TLS_CLIENT_HELLO -> if _checkBlockOrder(tls, STAGE_SRV_START) then
+			_serverParseClientHello(tls, data),
+		TLS_CERTIFICATE -> if _checkBlockOrder(tls, STAGE_SRV_HELLO) then
+			_parsePeerCertificate(tls, STAGE_SRV_CERTIF, strSlice(data, 3, nil)),
+		TLS_CLIENT_KEY_EXCHANGE -> if _checkBlockOrder2(tls, STAGE_SRV_HELLO, STAGE_SRV_CERTIF) then
+			_serverParseClientKeyExchange(tls, data),
+		TLS_CERTIFICATE_VERIFY -> if _checkBlockOrder(tls, STAGE_SRV_DONE) then
+			_serverParseCertificateVerify(tls, data),
+		_ -> (if _DEBUG then echoLn strFormat("unknown handshake code *", type);nil)
+	;;
+
+fun _parseHandshakeCli(tls, type, data)=
+	if _DEBUG then (echoLn strFormat("_parseHandshake *", type); /*hexDump data;*/);
+	match type with
+		TLS_SERVER_HELLO -> if _checkBlockOrder(tls, STAGE_CLI_START) then
+			_clientParseServerHello(tls, data),
+		TLS_CERTIFICATE -> if _checkBlockOrder(tls, STAGE_CLI_HELLO) then
+			_parsePeerCertificate(tls, STAGE_CLI_CERTIF, strSlice(data, 3, nil)),
+		TLS_SERVER_KEY_EXCHANGE -> if _checkBlockOrder(tls, STAGE_CLI_CERTIF) then
+			_clientParseServerKeyExchange(tls, data),
+		TLS_CERTIFICATE_REQUEST -> if _checkBlockOrder(tls, STAGE_CLI_VERIFY) then
+			_clientParseCertificateRequest(tls, data),
+		TLS_SERVER_DONE -> if _checkBlockOrder2(tls, STAGE_CLI_CERTIF_SENT, STAGE_CLI_VERIFY) then
+			_clientParseServerDone(tls),
+		_ -> (if _DEBUG then echoLn strFormat("unknown handshake code *", type);nil);
+	nil;;
+
+fun _parseHandshakes(tls, data, i)=
+	if i>=strLength(data) then set tls._handshakeDataTLS=nil
+	else 
+	let strRead8(data, i) -> type in
+	let strRead24Msb(data, i+1) -> len in
+	if len>HANDSHAKE_BLOCK_MAX then _setError(tls, "LARGE HANDSHAKE BLOCK SIZE")
+	else
+	if i+len+4 > strLength(data) then (
+		if _DEBUG then echoLn "uncomplete data";
+		set tls._handshakeDataTLS=strSlice(data, i, nil)
+	)
+	else
+	(
+		if tls.serverTLS then _parseHandshakeSrv(tls, type, strSlice(data, i+4, len))
+		else _parseHandshakeCli(tls, type, strSlice(data, i+4, len));
+		_parseHandshakes(tls, data, i+4+len)
+	);;
+
+fun _parseHandshakeFinished(tls, data)=
+	let strLeft(data, tls.cipherTLS.recordIvLengthC) -> encryptionIV in
+	let strSlice(data, tls.cipherTLS.recordIvLengthC, nil) -> data in
+	let _finished(tls, !tls.serverTLS, encryptionIV) -> encrypted in
+	if data==encrypted then true
+	else (
+		_setError(tls, "data encryption error");
+		false
+	);;
+
+fun _parseApplicationData(tls, data)=
+	let call tls.cipherTLS.decodeDataC(tls, TLS_APPLICATION_DATA, !tls.serverTLS, data) -> msg in
+	if _checkBlockOrder(tls, STAGE_READY)&& msg<>nil then (
+		if _DEBUG then echoLn "----------ONRECEIVE ";
+		fifoIn(tls.fifoReadTT, msg);
+		streamSetReadable(tls, true);
+		nil
+	);;
+
+fun _parseAlertData(tls, data)= call tls.cipherTLS.decodeDataC(tls, TLS_ALERT_RECORD, !tls.serverTLS, data);;
+
+fun _parse(tls, data)=
+	if _alive(tls) then
+	if 5>strLength(data) then data	// need more data
+	else 
+	let strRead16Msb(data, 1) -> version in
+	let 5+strRead16Msb(data, 3) -> len in
+	if len>strLength(data) then data	// need more data
+	else let strSlice(data, len, nil) -> nextData in
+	let strRead8(data, 0) -> type in
+	(
+		if _DEBUG then echoLn strFormat("_parseBlock *", type);// hexDump strLeft data len;
+		match type with
+			TLS_APPLICATION_DATA->
+			(
+//				echoLn "_parseApplicationData"; hexDump data;
+				_parseApplicationData(tls, strSlice(data, 5, len-5));
+				nil
+			),
+			TLS_HANDSHAKE->
+			(
+//				echoLn "_parse 0x16"; hexDump data;
+				if !tls.cipherOnTLS then
+				(
+					let strSlice(data, 5, len-5) -> data in
+					let _addPayload(tls, data) -> data in 
+					set tls._handshakeDataTLS=strConcat(tls._handshakeDataTLS, data);
+					_parseHandshakes(tls, tls._handshakeDataTLS, 0);
+				)
+				else
+				if _checkBlockOrder2(tls, STAGE_SRV_DONE, STAGE_CLI_DONE) then 
+				if _parseHandshakeFinished(tls, strSlice(data, 5, len-5)) then (
+					tlsUpdateStage(tls, STAGE_READY);
+					if tls.serverTLS then _tlsSendSubstream(tls, strBuild({
+						_serverChangeCipherSpec(),
+						_serverHandshakeFinished(tls)
+					}));
+					if _DEBUG then echoLn strFormat("*----------READY", tlsWho(tls));	
+					streamSetWritable(tls, true);
+					nil
+				)
+			),
+			TLS_ALERT_RECORD->
+			(
+//				echoLn "Alert";
+				let match tls.stageTLS with
+					STAGE_READY -> _parseAlertData(tls, strSlice(data, 5, len-5)),
+					_ -> strSlice(data, 5, nil)
+				-> data in
+				let strRead16Msb(data, 0) -> alert in
+				let alert>>8 -> level in
+				let alert&255 -> code in	// https://www.gnutls.org/manual/html_node/The-TLS-Alert-Protocol.html
+				(
+//					hexDump data;
+					set tls.alertTLS=alert;
+					if level<>1 then _setError(tls, "alert record");
+					if _DEBUG then echoLn strFormat("*----------ONALERT *: *", tlsWho(tls), level, code);
+					nil
+				)
+			),
+			TLS_CHANGE_CIPHER_SPEC->
+			(
+//				echoLn "_parseChangeCipherSpec";
+				set tls.cipherOnTLS=true;
+				nil
+			);
+		_parse(tls, nextData)
+	);;
+
+
+//--------------- SENDING
+
+
+fun _sendBlock(tls, header, msg, i)=
+	let strLength(msg) -> len in
+	let min(TLS_MAX_DATA_BLOCK, len-i) -> toSend in
+	if toSend>0 then
+	let strRand(tls.cipherTLS.recordIvLengthC) -> encryptionIV in
+	let call tls.cipherTLS.encodeDataC(tls, header, tls.serverTLS, encryptionIV, strSlice(msg, i, toSend)) -> encrypted in
+	let strBuild({
+		strInt8(header),
+		TLS_1_2,
+		mkBlock16({
+			encryptionIV,
+			encrypted
+		})
+	}) -> encoded in
+	encoded::_sendBlock(tls, header, msg, i+toSend);;
+
+fun _send(tls, header, msg)=
+	if _alive(tls) then strListConcat(_sendBlock(tls, header, msg, 0));;
+
+
+// ------------- INITS
+fun _create()=
+	[
+		cipherSuitesTLS=
+			TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256::
+			TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384::
+			TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA384::
+			TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256::
+			TLS_RSA_WITH_AES_256_GCM_SHA384::
+			TLS_RSA_WITH_AES_128_GCM_SHA256::
+			TLS_RSA_WITH_AES_256_CBC_SHA256::
+			TLS_RSA_WITH_AES_128_CBC_SHA256::
+			TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384::
+			TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256::
+			TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA::
+			TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA::
+			TLS_RSA_WITH_AES_256_CBC_SHA::
+			TLS_RSA_WITH_AES_128_CBC_SHA::
+			nil,
+		signatureAlgorithmsTLS=
+			RSA_PKCS1_SHA256:: // assigned value for RSA/PKCS1/SHA256
+			RSA_PKCS1_SHA384:: // assigned value for RSA/PKCS1/SHA386
+			RSA_PKCS1_SHA512:: // assigned value for RSA/PKCS1/SHA512
+			RSA_PKCS1_SHA1:: // assigned value for RSA/PKCS1/SHA1
+			ECDSA_SECP256R1_SHA256:: // assigned value for ECDSA/SECP256r1/SHA256
+//			ECDSA_SECP384R1_SHA384: // assigned value for ECDSA/SECP384r1/SHA384	// not tested
+//			0x0603: // assigned value for ECDSA/SECP521r1/SHA512
+//			0x0203: // assigned value for ECDSA/SHA1
+			nil,
+
+		supportedGroupsTLS=
+			TLS_x25519::
+			TLS_secp256r1::
+			TLS_secp384r1::
+			TLS_secp521r1::
+			nil,
+
+		clientSeqTLS= -1,
+		serverSeqTLS= -1
+	];;
+
+fun _importCert(l)=
+	if l<>nil then 
+	listConcat(
+		listMap(pemRead(head(l)), lambda(bloc)= let bloc -> [name, headers, bin] in bin),
+		_importCert(tail(l)));;
+
+fun _addHost(hosts, host)=
+	let host ->[privateKey, pwd, certList, authForClientCert] in
+	let keyFromPEM(privateKey, pwd) -> serverKey in
+	let _importCert(certList) -> derList in
+	let listMap(derList, lambda(bin)= cerFromDER(bin)) -> certificateList in
+	let head(certificateList) -> certificate in
+	let strBuild(listMap(derList, lambda(bin)= mkBlock24(bin))) -> certblockList in
+	let cerSubjectAltName(certificate) -> serverNames in
+	let [serverKey, certblockList, cerFromPEM(authForClientCert, nil)] -> block in
+	(
+		for serverName in serverNames do hashmapSet(hosts, serverName, block);
+//		cerEcho(certificate);
+	);;
+
+
+//------------------------ Public API
+fun tlsMakeHosts(hostList)=
+	if hostList<>nil then
+	let hashmapCreate(6) -> hosts in
+	(
+		for host in hostList do _addHost(hosts, host); 
+		hosts
+	);;
+
+fun tlsStage(tls)= tls.stageTLS;;
+
+fun tlsClientHello(tls) =
+	_mkHandshake(tls, TLS_CLIENT_HELLO, {
+		TLS_1_2,
+		tls.randomClientTLS,
+		strInt8(0),	// no session id
+		mkCipherSuites(tls.cipherSuitesTLS),
+		mkBlock8(strInt8(COMPRESSION_METHOD_NO)),
+		_clientExtensions(tls)
+	});;
+
+
+fun tlsCreateCli(serverName, cipherSuites, clientCertificate, clientKey)= 
+	let _create()-> tls in
+	let keyFromPEM(clientKey, nil) -> clientKey in
+	let head(pemRead(clientCertificate)) -> [name, headers, clientCertificate] in
+	(
+		if cipherSuites<>nil then set tls.cipherSuitesTLS= cipherSuites;
+		set tls.clientCertificateTLS=clientCertificate;
+		set tls.clientKeyTLS=clientKey;
+		set tls.serverTLS=false;
+		set tls.serverNameTLS=serverName;
+		set tls.randomClientTLS=strRand(32);
+		set tls.sendTT=tlsClientHello(tls);
+		tlsUpdateStage(tls, STAGE_CLI_START);
+		tls
+	);;
+
+
+fun tlsCreateSrv(hosts) = 
+	let _create()-> tls in
+	(
+		set tls.serverTLS=true;
+		set tls.hostsTLS=hosts;
+		tlsUpdateStage(tls, STAGE_SRV_START);
+		tls
+	);;
+
+fun tlsSetCipherSuites(tls, cipherSuites)= set tls.cipherSuitesTLS= cipherSuites;;
+fun tlsSetSignatureAlgorithms(tls, signatureAlgorithms)= set tls.signatureAlgorithmsTLS= signatureAlgorithms;;
+fun tlsSetSupportedGroups(tls, supportedGroups)= set tls.supportedGroupsTLS= supportedGroups;;
+
+fun tlsGetClientCertificate(tls)= tls.clientValidatedCertificateTLS;;
+fun tlsGetCertificateChain(tls)= tls.certificateChainTLS;;
+
+fun tlsReceive(tls, data)=
+//echoLn strFormat("tlsReceive * bytes", strLength(data));
+	if _alive(tls) then set tls.dataTLS=_parse(tls, strConcat(tls.dataTLS, data));;
+
+fun tlsSend(tls, msg)= _send(tls, TLS_APPLICATION_DATA, msg);;
+fun tlsAlert(tls)= tls.alertTLS;;
+fun tlsWho(tls)= if tls.serverTLS then "SERVER> " else "CLIENT> ";;
+
+fun tlsGetServerName(tls) = tls.serverNameTLS;;
+
+fun tlsClose(tls)= streamClose(TLS12<tls);;
+
+fun _tlsClosedSubstream(tls)=
+	fifoIn(tls.fifoReadTT, nil);
+	streamSetReadable(tls, true);
+	0;;
+
+fun _tlsSendSubstream(tls, data)=
+//hexDump 
+	set tls.sendTT=strConcat(tls.sendTT, data);
+//	echo "send "; echoLn 
+	set tls.iTT=streamWrite(tls.substreamTT, tls.sendTT, tls.iTT);
+	if tls.iTT>=strLength(tls.sendTT) then (
+		if tls.closeAfterTT then streamClose(tls.substreamTT);
+		set tls.sendTT=nil;
+		set tls.iTT=0;
+	);
+	strLength(data);;
+
+fun _tlsManageSubstream(substream, tls)=
+	set tls.substreamTT=substream;
+	set tls.iTT=0;
+	set tls.fifoReadTT=fifoCreate();
+	streamInit(tls, nil,
+		lambda ()=	// onSelectRead
+			let fifoOut(tls.fifoReadTT) -> data in (
+				streamSetReadable(tls, fifoCount(tls.fifoReadTT)>0);
+				streamReadEvent(tls, data);
+				if data==nil then void streamClose(tls);
+			)
+		,
+		lambda(data, start) =	// write
+			let match tls.stageTLS with
+				STAGE_READY -> _tlsSendSubstream(tls, tlsSend(tls, strSlice(data, start, nil))),
+				_ -> 0
+			-> len in
+			if len<>nil then start+len
+		,
+		(lambda ()= streamClose(substream); streamCommonClose(tls)),	// close
+		(lambda(fEcho)=	// show
+			call fEcho("TLS1.2", strFormat("*:*", tcpRemoteIp(substream), tcpRemotePort(substream)))
+		));
+	streamOnEvent(substream,
+		lambda(data)=
+//				echoLn "<< receive"; hexDump data;
+//			echoLn hexFromStr(data);
+			if data<>nil then tlsReceive(tls, data)
+			else
+			(
+				if _DEBUG then echoLn "----------ONCLOSE";
+				_tlsClosedSubstream(tls);
+				nil
+			)
+		,
+		(lambda ()= _tlsSendSubstream(tls, nil)));
+	streamSetSelectWrite(tls, true);
+	tls;;
+
+fun tlsStartClientExt(substream, serverName, cipherSuites, clientCertificate, clientKey)=
+	let tlsCreateCli(serverName, cipherSuites, clientCertificate, clientKey) -> tls in
+	_tlsManageSubstream(substream, tls);;
+
+fun tlsStartClient(substream, serverName)= tlsStartClientExt(substream, serverName, nil, nil, nil);;
+
+fun tlsStartServer(substream, hosts) =
+	let tlsCreateSrv(hosts) -> tls in
+	_tlsManageSubstream(substream, tls);;
+
+fun tlsFromStream(substream)= match substream with TLS12 tls -> tls;;
