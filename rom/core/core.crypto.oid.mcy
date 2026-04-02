@@ -165,7 +165,7 @@ fun _prefixOID(prefixName, prefix, map, oid)=
 	let strLength(prefix) -> start in
 	let strCharPos(oid, '.', start) -> i in
 	let if i==nil then strLength(oid) else i -> i in
-	let intFromDec(strSlice(oid, start, i-start)) -> number in
+	let intFromStr(strSlice(oid, start, i-start)) -> number in
 	let hashmapGet(map, number) -> name in
 	if name==nil then strFormat("[*].*", prefixName, strTail(oid, start))
 	else strFormat("[*]*", name, strTail(oid, i));;
@@ -183,8 +183,8 @@ fun _oidVarUInt(bin, i)=
 
 fun oidFromStr(bin)=
 	let _oidVarUInt(bin, 0) ->(first::next) in
-	strJoin(".", listMap((first/40)::(first%40)::next, lambda(a)=decFromInt(a)));;
+	strJoin(".", listMap((first/40)::(first%40)::next, lambda(a)=strFromInt(a)));;
 
 fun strFromOid(oid)=
-	let listMap(strSplit(".", oid), lambda(a)=intFromDec(a)) ->(a::b::next) in
+	let listMap(strSplit(".", oid), lambda(a)=intFromStr(a)) ->(a::b::next) in
 	strBuild(listMap((40*a+b)::next, lambda(x)=strVarUInt(x)));;

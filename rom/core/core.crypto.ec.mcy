@@ -169,12 +169,12 @@ fun ecDump(str, p)=
 	p;;
 
 fun ecStrFromPoint(curve, p) =
-	let p->[x, y] in strBuild({"\$04", strFromBig(x, curve._byteLength), strFromBig(y, curve._byteLength)});;
+	let p->[x, y] in strBuild({"\$04", bigSerialize(x, curve._byteLength), bigSerialize(y, curve._byteLength)});;
 
 fun ecPointFromStr(str) =
 	let strGet(str, 0) -> header in
 	let strLength(str)>>1 -> len in
-	if header==0x04 then [bigFromStr(strSlice(str, 1, len)), bigFromStr(strTail(str, 1+len))];;
+	if header==0x04 then [bigDeserialize(strSlice(str, 1, len)), bigDeserialize(strTail(str, 1+len))];;
 
 
 //------- KEYPAIR
@@ -220,7 +220,7 @@ fun ecEcdh(keyAlice, pubBob) =
 fun ecEcdhStr(keyAlice, pubBob) =
 	let keyAlice._curveEK -> curve in
 	let ecMul(curve, keyAlice._privEK, ecPointFromStr(pubBob)) -> [x, _] in
-	strFromBig(x, curve._byteLength);;
+	bigSerialize(x, curve._byteLength);;
 
 //------- ECDSA
 
@@ -228,7 +228,7 @@ fun ecEcdhStr(keyAlice, pubBob) =
 fun ecSign(key, msg, fHash)=
 	let key._curveEK -> curve in
 \modBarrett( curve._N, curve._muN)
-	let bigFromStr(call fHash(msg)) % -> h in
+	let bigDeserialize(call fHash(msg)) % -> h in
 	let ecRandom(curve) -> k in
 	let ecMul(curve, k, curve._G) -> R in
 	let R -> [x, y] in let x % -> r in
@@ -242,7 +242,7 @@ fun ecVerify(key, sign, msg, fHash)=
 	let key._curveEK -> curve in
 \modBarrett( curve._N, curve._muN)
 	let sign -> [r, s] in
-	let bigFromStr(call fHash(msg)) % -> h in
+	let bigDeserialize(call fHash(msg)) % -> h in
 	let bigInv(s, curve._N) -> w in
 	let ecAdd(curve, ecMul(curve, h, ecMul(curve, w, curve._G)), ecMul(curve, r, ecMul(curve, w, key._pubEK))) -> [a, b] in
 	let a %-> rr in	// must be equal to r

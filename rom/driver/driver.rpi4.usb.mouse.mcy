@@ -1,0 +1,101 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2022, Sylvain Huet, Ambermind
+// Minimacy (r) System
+
+use driver.rpi4.usb;;
+use driver.rpi4.usb.hid;;
+
+//----------------- MOUSE
+const DEBUG=false;;
+//const DEBUG=true;;
+
+struct Mouse=[buttonStartM, buttonCountM, xReadM, yReadM, vWheelReadM, hWheelReadM, lenM, xM, yM, bM];;
+
+fun _hidReportMouseParse(md, lItems, count, size, lAxis, bits)=
+	if lItems==nil then (set md.lenM=(bits+7)/8; md)
+	else
+	let head(lItems) -> [header, arg] in
+	match header&0xfc with
+		HID_USAGE -> (
+			if arg==HID_USAGE_X || arg==HID_USAGE_Y || arg==HID_USAGE_Z || arg==HID_USAGE_WHEEL then _hidReportMouseParse(md, tail(lItems), count, size, arg::lAxis, bits)
+			else _hidReportMouseParse(md, tail(lItems), count, size, lAxis, bits)
+		),
+		HID_USAGE_PAGE -> (
+			if arg==HID_USAGE_PAGE_BUTTONS then set md.buttonStartM=bits;
+			_hidReportMouseParse(md, tail(lItems), count, size, nil, bits)
+		),
+		HID_REPORT_COUNT -> 
+			_hidReportMouseParse(md, tail(lItems), arg, size, lAxis, bits)
+		,
+		HID_REPORT_SIZE -> _hidReportMouseParse(md, tail(lItems), count, arg, lAxis, bits),
+		HID_REPORT_ID -> _hidReportMouseParse(md, tail(lItems), count, size, lAxis, ((bits+7)/8)*8+8),
+		HID_INPUT -> (
+			if md.buttonStartM<>nil && md.buttonCountM==nil then set md.buttonCountM=count;
+			listReduce(listReverse(lAxis), bits, (lambda(start, axis)=
+				let start/8 -> offset in
+				let start&7 -> shift in
+				let if size<=8 then (lambda(data)= signExtend8(0xff&(strRead8(data, offset)<<(8-size)))>>(shift+8-size))
+					elif size<=16 then (lambda(data)= signExtend16(0xffff&(strRead16Lsb(data, offset)<<(16-size)))>>(shift+16-size))
+					else lambda(data)= signExtend32(0xffffff&(strRead32Lsb(data, offset)<<(32-size)))>>(shift+32-size)
+				-> fRead in (
+					if axis==HID_USAGE_X then set md.xReadM=fRead;
+					if axis==HID_USAGE_Y then set md.yReadM=fRead;
+					if axis==HID_USAGE_WHEEL then set md.vWheelReadM=fRead;
+					if axis==HID_USAGE_Z then set md.hWheelReadM=fRead;
+				);
+				start+size
+			));
+			_hidReportMouseParse(md, tail(lItems), count, size, nil, bits+(size*count))
+		),
+		_ -> _hidReportMouseParse(md, tail(lItems), count, size, lAxis, bits);;
+
+fun hidReportMouseParse(data)=
+	let hidReportExtract(data, 0) -> lItems in 
+	let hidReportFind(lItems, HID_USAGE_PAGE_GENERIC_DESKTOP, HID_USAGE_MOUSE) -> lItems in
+	_hidReportMouseParse([xM=0, yM=0], lItems, 0, 0, nil, 0);;
+
+fun _mouseButton(data, i, n)=
+	for i=0;i<n do if bitTest(data, 1<<i) then return 1+(if i==1 then 2 elif i==2 then 1 else i);
+	nil;;
+
+fun _mouseLoop(ep, md)=
+	interruptTransfer(ep, md.lenM, lambda(data)=
+		if strEmpty(data) then return nil;
+		if DEBUG then echoLn "Mouse Interrupt";
+		if DEBUG then hexDump data;
+		let uiComputeMouseX(call md.xReadM(data)) -> x in
+		let uiComputeMouseY(call md.yReadM(data)) -> y in
+		let call md.vWheelReadM(data) -> dVwheel in
+		let call md.hWheelReadM(data) -> dHwheel in
+		let _mouseButton(strGet(data, md.buttonStartM/8), 0, md.buttonCountM) -> button in (
+			if x<>md.xM || y<>md.yM then uiPostMouseMove(x, y, button);
+			if dVwheel<>0 && dVwheel<>nil then uiPostVwheel(x, y, dVwheel);
+			if dHwheel<>0 && dHwheel<>nil then uiPostHwheel(x, y, (-dHwheel));
+			if button<>md.bM then (
+				if md.bM<>nil then uiPostUnclick(x, y, md.bM);
+				if button<>nil then uiPostClick(x, y, button);
+			);
+			set md.xM=x;
+			set md.yM=y;
+			set md.bM=button;
+			if DEBUG then echoLn strFormat("mouse * * * *", md.xM, md.yM, dVwheel, md.bM);
+		);
+		_mouseLoop(ep, md)
+	);;
+
+fun mouseCreate(d, protocol, interfaceNumber, epDescriptors)=
+	echoLn strFormat("> USB: start mouse");
+	if DEBUG then for ep in epDescriptors do hexDump ep;
+	let epDescriptors -> hidDescriptor::epDescriptor::_ in
+	let hidGetReport(d, interfaceNumber, hidDescriptor) -> report in
+	if report==nil then return msgAndReturn("mouse report failed", nil)
+	else
+	let hidReportMouseParse(report) -> md in
+	let hidEpStart(d, protocol, interfaceNumber, epDescriptor) -> ep in 
+	if ep==nil then return msgAndReturn("mouse endpoint failed", nil)
+	else _mouseLoop(ep, md);
+	true;;
+
+fun _init()=
+	usbRegister("int-3-1-2", #mouseCreate);
+	usbRegister("int-3-0-2", #mouseCreate);;

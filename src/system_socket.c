@@ -448,7 +448,7 @@ int fun_udpRead(Thread* th)
 
 	FUN_PUSH_STR(SocketBuffer, len);
 	FUN_PUSH_STR(ip_str, -1);
-	FUN_PUSH_INT(port);
+	FUN_PUSH_INT((LINT)port);
 
 	STACK_PUSH_FILLED_ARRAY_ERR(th, 3, DBG_TUPLE, EXEC_OM);
 	return 0;
@@ -622,7 +622,7 @@ int fun_tcpAccept(Thread* th)
 
 	FUN_PUSH_PNT((LB*)s);
 	FUN_PUSH_STR(ip_str, -1);
-	FUN_PUSH_INT(port);
+	FUN_PUSH_INT((LINT)port);
 
 	STACK_PUSH_FILLED_ARRAY_ERR(th, 3, DBG_TUPLE, EXEC_OM);
 	return 0;
@@ -860,7 +860,7 @@ int fun_select(Thread* th)
 			p = ARRAY_PNT(p, LIST_NXT);
 		}
 	}
-	FUN_RETURN_INT(k);
+	FUN_RETURN_INT((LINT)k);
 }
 #else
 int fun_select(Thread* th)
@@ -968,6 +968,7 @@ int fun_watcherUpdate(Thread* th)
 	LINT addr = STACK_INT(th, 2);
 	Socket* s = (Socket*)STACK_PNT(th,3);
 	if (!s) FUN_RETURN_NIL;
+	addr&=0xffffffff;
 	s->watchAddress = addr;
 	s->watchMask = mask;
 	s->watchValue = val;

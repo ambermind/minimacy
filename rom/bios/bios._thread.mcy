@@ -75,10 +75,10 @@ fun appStart(lck, fIsStarted, name, fStart)=
 		if !call fIsStarted() then
 		let joinCreate() -> join in
 		(
-			_threadNew(name, caller, (lambda()=
+			_threadNew(name, caller, lambda()=
 				joinSend(join, call fStart());
 				//joinSend join true
-			));
+			);
 			joinWait(join)
 		)
 	);;

@@ -1,6 +1,5 @@
-// SPDX-License-Identifier: GPL-3.0-only
-// Copyright (c) 2022, Sylvain Huet, Ambermind
-// Minimacy (r) Demonstration
+
+// Tetris - Feb 2003 - by Sylvain HUET
 
 use core.2d.font;;
 use core.2d.png;;
@@ -19,7 +18,6 @@ const Font=fontFixedFromBitmap(bitmapFromPng(load("rsc/fonts/LIGHT8x16.png")), 8
 sum Game= iniG, startG, downG, runningG, clignoG _ _, endG, pauseG;;
 var State;;
 
-var Bmp;;
 var Grid;;
 var Score=0;;
 
@@ -77,26 +75,26 @@ const Spaces="     ";;
 
 fun setScore(i)=
 	set Score=i;
-	let strConcat("Score: ", strRight(strConcat(Spaces, decFromInt(Score)), 8)) -> str in
-	bitmapText(Bmp, (GRID_SQUARE*GRID_WIDTH)/2, GRID_SQUARE*(GRID_HEIGHT+1-GRID_TOP_OUTSIDE), ALIGN_CENTER, str, Font, TEXT_COLOR, 0xff000000);;
+	let strConcat("Score: ", strRight(strConcat(Spaces, strFromInt(Score)), 8)) -> str in
+	bitmapText(uiBuffer(), (GRID_SQUARE*GRID_WIDTH)/2, GRID_SQUARE*(GRID_HEIGHT+1-GRID_TOP_OUTSIDE), ALIGN_CENTER, str, Font, TEXT_COLOR, 0xff000000);;
 
 fun drawFinal()=
 	match State with
 	endG -> (
-		bitmapText(Bmp, (GRID_SQUARE*GRID_WIDTH)/2, 200, ALIGN_CENTER, "Game Over", Font, TEXT_COLOR, nil);
-		bitmapText(Bmp, (GRID_SQUARE*GRID_WIDTH)/2, 200+fontH(Font), ALIGN_CENTER, "press 'space'", Font, TEXT_COLOR, nil)
+		bitmapText(uiBuffer(), (GRID_SQUARE*GRID_WIDTH)/2, 200, ALIGN_CENTER, "Game Over", Font, TEXT_COLOR, nil);
+		bitmapText(uiBuffer(), (GRID_SQUARE*GRID_WIDTH)/2, 200+fontH(Font), ALIGN_CENTER, "press 'space'", Font, TEXT_COLOR, nil)
 	),
 	pauseG -> (
-		bitmapText(Bmp, (GRID_SQUARE*GRID_WIDTH)/2, 200, ALIGN_CENTER, "Pause", Font, TEXT_COLOR, nil);
-		bitmapText(Bmp, (GRID_SQUARE*GRID_WIDTH)/2, 200+fontH(Font), ALIGN_CENTER, "press 'P'", Font, TEXT_COLOR, nil)
+		bitmapText(uiBuffer(), (GRID_SQUARE*GRID_WIDTH)/2, 200, ALIGN_CENTER, "Pause", Font, TEXT_COLOR, nil);
+		bitmapText(uiBuffer(), (GRID_SQUARE*GRID_WIDTH)/2, 200+fontH(Font), ALIGN_CENTER, "press 'P'", Font, TEXT_COLOR, nil)
 	);
 	uiUpdate();;
 
 fun drawSquare(x, y, col)=
-	bitmapFillRectangle(Bmp, x*GRID_SQUARE+1, y*GRID_SQUARE+1, GRID_SQUARE-2, GRID_SQUARE-2, col, nil);;
+	bitmapFillRectangle(uiBuffer(), x*GRID_SQUARE+1, y*GRID_SQUARE+1, GRID_SQUARE-2, GRID_SQUARE-2, col, nil);;
 
 fun drawAll()=
-	bitmapErase(Bmp, 0xff000000);
+	bitmapErase(uiBuffer(), 0xff000000);
 	for y=0;y<GRID_HEIGHT-GRID_TOP_OUTSIDE do
 	for x=0;x<GRID_WIDTH do
 		drawSquare(x, y, Grid[((y+GRID_TOP_OUTSIDE)*GRID_WIDTH+x)]);
@@ -279,9 +277,9 @@ fun onClose ()=
 
 fun play()=
 	uiStart(nil, nil, GRID_SQUARE*GRID_WIDTH, GRID_SQUARE*(GRID_HEIGHT-GRID_TOP_OUTSIDE)+FOOTER_HEIGHT, UI_RESIZE, "Tetris");
-	set Bmp=uiBuffer();
 	uiOnKeyDown(#onKeyDown);
 	uiOnSize(lambda(w, h)=nil);
+	uiOnPaint(lambda()=uiUpdate());
 	set State=endG;
 	initGrid();
 	drawAll();;

@@ -33,7 +33,7 @@ fun _checkInit ()=
 	);;
 
 fun _modp_inv(x)= \modBarrett( _EcP, _EcMuP) x**(_EcP - 2);;
-fun _sha512_modq(s) = bigModBarrett(bigFromStr(strSwap(sha512(s))), _EcQ, _EcMuQ);;
+fun _sha512_modq(s) = bigModBarrett(bigDeserialize(strSwap(sha512(s))), _EcQ, _EcMuQ);;
 
 fun _point_dump(str, p)=
 	let p->[x, y, z, t] in
@@ -105,7 +105,7 @@ fun _point_compress(P)=
 	let x*zinv -> x in
 	let y*zinv -> y in
 	let if bigIsEven(x) then y else bigAdd(y, bigFromHex("8000000000000000000000000000000000000000000000000000000000000000")) -> y in
-	strSwap(strFromBig(y, \integer 32));;
+	strSwap(bigSerialize(y, \integer 32));;
 
 fun _point_decompress(s)=
 	if 32==strLength(s) then
@@ -114,7 +114,7 @@ fun _point_decompress(s)=
 	let 0<>val&0x80 -> sign in
 	(
 		bytesSet(y, 0, val&0x7f);
-		let bigFromBytes(y) -> y in
+		let bigDeserializeBytes(y) -> y in
 		let _recover_x(y, sign) -> x in
 		if x<>nil then \modBarrett( _EcP, _EcMuP) [x, y, 1, x*y]
 	);;
@@ -126,7 +126,7 @@ fun _secret_expand(secret)=
 	(
 		bytesSet(a, 0, 0x40 | (0x3f & bytesGet(a, 0)));
 		bytesSet(a, 31, 0xf8 & bytesGet(a, 31));
-		[bigFromBytes(a), strTail(h, 32)]
+		[bigDeserializeBytes(a), strTail(h, 32)]
 	);;
 
 fun _dom2(x, y)= if x<>nil then strBuild({
@@ -146,7 +146,7 @@ fun _ed25519Sign(secret, msg, phflag, context)=
 	let _point_compress(R) -> Rs in
 	let _sha512_modq(strBuild({d2, Rs, A, msg})) -> h in
 	let \modBarrett( _EcQ, _EcMuQ) r+ h*a -> s in
-	strConcat(Rs, strSwap(strFromBig(s, 32)));;
+	strConcat(Rs, strSwap(bigSerialize(s, 32)));;
 
 fun _ed25519Verify(public, msg, signature, phflag, context)=
 	_checkInit();
@@ -158,7 +158,7 @@ fun _ed25519Verify(public, msg, signature, phflag, context)=
 	let _point_decompress(Rs) -> R in
 	if R<>nil then
 	let _dom2(phflag, context) -> d2 in
-	let bigFromStr(strSwap(strRight(signature, 32))) -> s in
+	let bigDeserialize(strSwap(strRight(signature, 32))) -> s in
 	\modBarrett( _EcP, _EcMuP)
 		if s<_EcQ then
 		let _sha512_modq(strBuild({d2, Rs, public, msg})) -> h in

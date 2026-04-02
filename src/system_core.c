@@ -527,7 +527,7 @@ int fun_intRand(Thread* th)
 	unsigned int x;
 	hwRandomBytes((char*)&x,4);
 	x &= 0x7fffffff;
-	FUN_RETURN_INT(x);
+	FUN_RETURN_INT((LINT)x);
 }
 
 int fun_randomHardware(Thread* th)
@@ -696,9 +696,6 @@ int systemCoreInit(Pkg *system)
 
 		{ NATIVE_FUN, "floatFromInt", fun_floatFromInt, "fun Int -> Float" },
 		{ NATIVE_FUN, "intFromFloat", fun_intFromFloat, "fun Float -> Int" },
-
-		{ NATIVE_OPCODE, "tron", (void*)OPtron, "fun -> Int"},
-		{ NATIVE_OPCODE, "troff", (void*)OPtroff, "fun -> Int"},
 
 		{ NATIVE_OPCODE, "equals", (void*)OPeq, "fun a1 a1 -> Bool"},
 

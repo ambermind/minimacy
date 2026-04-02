@@ -43,7 +43,7 @@ int fun_bufferGet(Thread* th)
 	LINT index = STACK_PULL_INT(th);
 	Buffer* b = (Buffer*)STACK_PNT(th, 0);
 	FUN_CHECK_CONTAINS(b,index,1,bufferSize(b));
-	FUN_RETURN_INT(255& bufferGetChar(b,index));
+	FUN_RETURN_INT((LINT)(255& bufferGetChar(b,index)));
 }
 int fun_bufferAppendChar(Thread* th)
 {

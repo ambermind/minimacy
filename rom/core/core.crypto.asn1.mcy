@@ -189,7 +189,7 @@ fun listFromAsn1(a) = match a with
 
 fun asn1ListOfStr(l)= if l<>nil then strFromAsn1(head(l))::asn1ListOfStr(tail(l));;
 fun asn1ListOfHex(l)=listMap(asn1ListOfStr(l), #hexFromStr);;
-fun asn1ListOfBignum(l)=listMap(asn1ListOfStr(l), #bigFromStr);;
+fun asn1ListOfBignum(l)=listMap(asn1ListOfStr(l), #bigDeserialize);;
 
 fun _distinguishedName(l)=
 	if l<>nil then
@@ -205,10 +205,10 @@ fun asn1DistinguishedName(bin)=
 fun ecPointFromAsn1(asn1)=
 	let listFromAsn1(asn1Unpack(asn1)) -> x::y::_ in
 	if y<>nil then
-	[bigFromStr(strFromAsn1(x)), bigFromStr(strFromAsn1(y))];;
+	[bigDeserialize(strFromAsn1(x)), bigDeserialize(strFromAsn1(y))];;
 
 fun _asn1EcCoord(x)=
-	let strFromBig(x, nil) -> str in
+	let bigSerialize(x, nil) -> str in
 	strConcat(if bitTest(0x80, strGet(str, 0)) then "\z", str);;
 
 fun asn1EcPoint([x, y])=

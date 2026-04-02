@@ -1,0 +1,550 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2022, Sylvain Huet, Ambermind
+// Minimacy (r) System
+
+// TODO:
+// png with palette
+// unicode
+
+use core.2d.jpg;;
+use core.2d.png;;
+use core.2d.font.pdf.corefonts;;
+use core.2d.font.ttf.parser;;
+
+struct PdfMaker=[
+	wP, hP,
+	pagesP,	// reverse order list
+	fontsP,
+	imagesP,
+	countP,
+	objP,
+
+	_lineWidthP,
+	_textColorP,
+
+	_fontHashmapP,
+	_fontCurrentP,	// [font size]
+	_alignP,
+	_imageHashmapP
+];;
+
+struct Page= [ streamP ];;
+struct Font= [ numF, familyStyleF, ttfF];;
+struct Image=[ numI, wI, hI, dataI, infosI, maskI ];;
+
+const TimesRoman="Times-Roman";;
+const TimesBold="Times-Bold";;
+const TimeItalic="Time-Italic";;
+const TimeBoldItalic="Time-BoldItalic";;
+const Courier="Courier";;
+const CourierBold="Courier-Bold";;
+const CourierOblique="Courier-Oblique";;
+const CourierBoldOblique="Courier-BoldOblique";;
+const Helvetica="Helvetica";;
+const HelveticaBold="Helvetica-Bold";;
+const HelveticaOblique="Helvetica-Oblique";;
+const HelveticaBoldOblique="Helvetica-BoldOblique";;
+const Symbol="Symbol";;
+const ZapfDingbats="ZapfDingbats";;
+
+const COMPRESS_CONTENT=false;;	// should be true except for debug
+
+const HEADER="%PDF-1.3\n";;
+const SCALE= 72. /. 25.4;;	// convert mm -> pt
+
+const PDF_DRAW_BORDER="S";;
+const PDF_DRAW_INSIDE="f";;
+const PDF_DRAW_FULL="B";;
+
+sum PDF_ALIGN= PDF_LEFT, PDF_CENTER, PDF_RIGHT;;
+
+const STR_ESCAPE=["\\", "\\\\"]::["(", "\\)"]::[")", "\\)"]::["\r", "\\r"]::nil;;
+
+const CORE_FONTS=
+	TimesRoman::TimesBold::TimeItalic::TimeBoldItalic::
+	Courier::CourierBold::CourierOblique::CourierBoldOblique::
+	Helvetica::HelveticaBold::HelveticaOblique::HelveticaBoldOblique::
+	Symbol::
+	ZapfDingbats::
+	nil;;
+// all lengths in mm
+fun pdfInit(w, h)= [
+	wP=w,
+	hP=h,
+	countP=0,
+	_lineWidthP=0.2,
+	_fontHashmapP=hashmapCreate(4),
+	_imageHashmapP=hashmapCreate(8)
+];;
+
+fun hex2(val)= strRight(strConcat("0", hexFromInt(val)), 2);;
+fun hex4(val)= strRight(strConcat("000", hexFromInt(val)), 4);;
+fun _compress(data)= strFormat("\$78\$9C**", deflate(data), strInt32Msb(strAdler32(data, 1)));;
+
+fun strReplaceMulti(text, replace)=
+	if replace==nil then text
+	else
+	let head(replace) ->[from, to] in
+	strReplaceMulti(strReplace(text, from, to), tail(replace));;
+
+fun _pdfEscape(text)= strReplaceMulti(text, STR_ESCAPE);;
+
+fun _getFont(pdf, familyStyle)=
+	let hashmapGet(pdf._fontHashmapP, familyStyle) -> font in
+	if font<>nil then font
+	else
+	let [
+		numF=1+listLength(pdf.fontsP),
+		familyStyleF=familyStyle
+	] -> font in
+	(
+		if strEndsWith(strLowercase(familyStyle), ".ttf") then
+			let ttfParse(load(familyStyle)) -> ttf in
+			set font.ttfF=ttf;
+		set pdf.fontsP=font::pdf.fontsP;
+		hashmapSet(pdf._fontHashmapP, familyStyle, font);
+		font
+	);;
+
+fun _getImage(pdf, key, fReadImage)=
+	let hashmapGet(pdf._imageHashmapP, key) -> image in
+	if image<>nil then image
+	else
+	let call fReadImage ()-> [w, h, infos, data, mask] in
+	if w<>nil then
+	let [
+		numI=1+listLength(pdf.imagesP),
+		wI=floatFromInt(w),
+		hI=floatFromInt(h),
+		infosI=infos,
+		dataI=data,
+		maskI=mask
+	] -> image in
+	(
+		set pdf.imagesP=image::pdf.imagesP;
+		hashmapSet(pdf._imageHashmapP, key, image);
+		image
+	);;
+
+fun _getImageJpg(pdf, jpg)=
+	_getImage(pdf, jpg, lambda ()=
+		let jpgDecodeOpen(jpg) -> j in
+		if j<>nil then
+		let jpgW(j) -> w in
+		let jpgH(j) -> h in
+		let jpgNbComponents(j) -> nbComponents in
+		let
+			(strFormat("/ColorSpace *", if nbComponents==1 then "/DeviceGray" else "/DeviceRGB"))::
+			"/BitsPerComponent 8"::
+			"/Filter /DCTDecode"::
+			nil
+		-> infos in
+		[w, h, infos, jpg, nil]
+	);;
+
+fun _pngExtractMask(w, h, infos, input, bpp)=
+	let strSlice(input, 2, strLength(input)-6) -> input in
+	let inflate(input) -> data in
+	let strLength(data) -> dataLen in
+	let bufferCreateWithSize(strLength(data)) -> rgb in
+	let bufferCreateWithSize(strLength(data)) -> alpha in
+	let w*bpp -> dataPerLine in
+	let 1+dataPerLine -> bpl in	// there is a type byte at the beginning of each line
+	let bpl*h -> jMax in
+	(
+		for j=0;j<jMax;j+bpl do (
+			bufferAppendChar(rgb, strGet(data, j));
+			bufferAppendChar(alpha, strGet(data, j));
+			// this loop could be optimized natively: bufferExtract buffer src start end take skip
+			for i=0;i<dataPerLine;i+bpp do (
+				bufferAppendChar(rgb, strGet(data, j+1+i));
+				if bpp>=2 then bufferAppendChar(rgb, strGet(data, j+2+i));
+				if bpp>=3 then bufferAppendChar(rgb, strGet(data, j+3+i));
+				bufferAppendChar(alpha, strGet(data, j+bpp+i));
+			)
+		);
+		let _compress(strFromBuffer(rgb)) -> idat in
+		let _compress(strFromBuffer(alpha)) -> mask in
+		[w, h, infos, idat, mask]
+	);;
+
+fun _getImagePng(pdf, png)=
+	_getImage(pdf, png, lambda ()=
+		let pngDecodeOpen(png) -> p in
+		if p<>nil then
+		let pngW(p) -> w in
+		let pngH(p) -> h in
+		let pngColorType(p) -> colorType in
+		let if colorType==2 || colorType==6 then 3 else 1 -> colors in
+		let pngDepth(p) -> bpc in
+		let "/ColorSpace /DeviceRGB"::
+			(strFormat("/BitsPerComponent *", bpc))::
+			"/Filter /FlateDecode"::
+			(strFormat("/DecodeParms <</Predictor 15 /Colors * /BitsPerComponent * /Columns *>>", colors, bpc, w))::
+			nil
+		-> infos in
+		let pngIDAT(p) -> idat in
+		match colorType with
+			4 -> _pngExtractMask(w, h, infos, idat, 2),
+			6 -> _pngExtractMask(w, h, infos, idat, 4),
+			_ -> [w, h, infos, idat, nil]
+	);;
+
+//- - - - - - - - -
+fun pdfNewPage(pdf)=
+	set pdf.pagesP=[
+		streamP= "2 J"::nil
+	]::pdf.pagesP;
+	pdfSetLineWidth(pdf._lineWidthP, pdf);;
+
+fun pdfCurrentPageNumber(pdf) = listLength(pdf.pagesP);;
+
+fun pdfAddContent(data, pdf)=
+	let head(pdf.pagesP) -> page in (
+		set page.streamP=data::page.streamP;
+		pdf
+	);;
+
+fun pdfSetLineWidth(w, pdf) =
+	set pdf._lineWidthP=w;
+	pdfAddContent(\float strFormat("* w", w*SCALE), pdf);;
+
+fun pdfSetDrawColor(r, g, b, pdf) =
+	pdfAddContent(\float strFormat("* * * RG", r/255, g/255, b/255), pdf);;
+
+fun pdfSetTextColor(r, g, b, pdf) = set pdf._textColorP = \float strFormat("* * * rg", r/255, g/255, b/255); pdf;;
+
+fun pdfSetFillColor(r, g, b, pdf) =
+	pdfAddContent(\float strFormat("* * * rg", r/255, g/255, b/255), pdf);;
+
+fun pdfDrawLine(x1, y1, x2, y2, pdf) =
+	pdfAddContent(\float strFormat("* * m * * l S", x1*SCALE, (pdf.hP-y1)*SCALE, x2*SCALE, (pdf.hP-y2)*SCALE), pdf);;
+
+fun pdfDrawRectangle(x, y, w, h, style, pdf)=
+	pdfAddContent(\float strFormat("* * * * re *", x*SCALE, (pdf.hP-y)*SCALE, w*SCALE, (-h)*SCALE, style), pdf);;
+
+fun _pdfDrawRoundedCorner(x, y, dx, dy, horizontalStart, borderStyle, pdf) =	// borderStyle is either m (for move) or l (for draw line)
+\float 
+	let x*SCALE -> x in
+	let (pdf.hP-y)*SCALE -> y in
+	let dx*SCALE -> dx in
+	let -dy*SCALE -> dy in
+	let dx*0.5522-> dx2 in
+	let dy*0.5522-> dy2 in
+	let if horizontalStart then
+		strFormat("* * * * * * c", x+dx2, y, x+dx, y+dy-dy2, x+dx, y+dy)
+		else
+		strFormat("* * * * * * c", x, y+dy2, x+dx-dx2, y+dy, x+dx, y+dy)
+	-> content in
+	pdfAddContent(content, 
+	pdfAddContent(strFormat(" * * *", x, y, borderStyle), pdf))
+;;
+
+fun pdfDrawRoundedRectangle(x, y, w, h, radius, style, pdf)=
+\float (
+	_pdfDrawRoundedCorner(x, y+radius, radius, -radius, false, "m", pdf);
+	_pdfDrawRoundedCorner(x+w-radius, y, radius, radius, true,  "l", pdf);
+	_pdfDrawRoundedCorner(x+w, y+h-radius, -radius, radius, false,  "l", pdf);
+	_pdfDrawRoundedCorner(x+radius, y+h, -radius, -radius, true,  "l", pdf);
+	pdfAddContent(strFormat("h *", style), pdf)
+);;
+
+//https://www.vsmp.ch/crm/articles/articles_bulletin/B103_JML.pdf
+fun pdfDrawCircle(x, y, w, h, style, pdf)=
+	pdfAddContent("q", pdf);
+	let 0.5*.w -> w in
+	let 0.5*.h -> h in
+		pdfAddContent(\float strFormat("* 0 0 * * * cm", w*SCALE, h*SCALE, (x+w)*SCALE, (pdf.hP-y-h)*SCALE), pdf);
+	pdfAddContent(\float strFormat("* w", pdf._lineWidthP/maxf(1, maxf(w, h))), pdf);
+	pdfAddContent("0 1 m", pdf);
+	pdfAddContent(".551915 1 1 .551915 1 0 c", pdf);
+	pdfAddContent("1 -.551915 .551915 -1 0 -1 c", pdf);
+	pdfAddContent("-.551915 -1 -1 -.551915 -1 0 c", pdf);
+	pdfAddContent("-1 .551915 -.551915 1 0 1 c", pdf);
+	pdfAddContent(strFormat("* Q", style), pdf);;
+
+fun pdfTextAlign(align, pdf) =
+	set pdf._alignP = align;
+	pdf;;
+
+fun pdfSetFont(familyStyle, size, pdf)=
+	let _getFont(pdf, familyStyle) -> font in
+	if font<>nil then (
+		set pdf._fontCurrentP=[font, size];
+		pdfAddContent(strFormat("BT /F* * Tf ET", font.numF, size), pdf)
+	);;
+
+fun _alignText(align, text, [font, size])=
+	if align==nil || align==PDF_LEFT then 0.
+	else
+	let if font.ttfF<>nil then ttfGetWidths(font.ttfF, nil) else pdfCoreFontWidths(font.familyStyleF) -> widths in
+	if widths==nil then 0.
+	else
+	let 0->w in
+	(
+		for i=0;i<strLength(text) do set w=w+widths[strGet(text, i)];
+	\float 
+		let floatFromInt(w)*size/1000 -> w in
+		if align==PDF_CENTER then w/2
+		else w
+	);;
+
+fun pdfDrawText(x, y, text, pdf)=
+	let _alignText(pdf._alignP, text, pdf._fontCurrentP) -> dx in
+	let \float strFormat("BT * * Td (*) Tj ET", x*SCALE-dx, (pdf.hP-y)*SCALE, _pdfEscape(text))  -> content in
+	let if pdf._textColorP<>nil then strFormat("q * * Q", pdf._textColorP, content) else content -> content in
+	pdfAddContent(content, pdf);;
+
+fun _pdfDrawImage(pdf, x, y, w, h, image)=
+	if image<>nil then
+	let \float if w==nil then image.wI * h / image.hI else w  -> w in
+	let \float if h==nil then image.hI * w / image.wI else h  -> h in
+	pdfAddContent(\float strFormat("q * 0 0 * * * cm /I* Do Q",
+		w*SCALE, h*SCALE, x*SCALE, (pdf.hP - y - h)*SCALE, image.numI), pdf);;
+
+fun pdfDrawJpg(x, y, w, h, jpg, pdf)= _pdfDrawImage(pdf, x, y, w, h, _getImageJpg(pdf, jpg));;
+fun pdfDrawPng(x, y, w, h, png, pdf)= _pdfDrawImage(pdf, x, y, w, h, _getImagePng(pdf, png));;
+
+
+//- - - - - - - - - - - -
+
+fun _getNextId(pdf) = set pdf.countP = 1 + pdf.countP;;
+fun _mkObj(id, data)=	strJoin("\n", [strFormat("* 0 obj", id), data, "endobj\n"]);;
+
+fun _addObjWithId(pdf, id, data)=
+	let _mkObj(id, data) -> obj in
+	(
+		set pdf.objP=[id, obj]::pdf.objP;
+		id
+	);;
+
+fun _addObj(pdf, data)= _addObjWithId(pdf, _getNextId(pdf), data);;
+
+fun _mkStream(pdf, stream)=
+	let if COMPRESS_CONTENT then _compress(stream) else stream -> data in
+	let if COMPRESS_CONTENT then "<</Filter /FlateDecode /Length *>>" else "<</Length *>>" ->format in
+	_addObj(pdf,
+		(strFormat(format, strLength(stream)))::
+		"stream"::
+		data::
+		"endstream"::
+		nil);;
+
+fun _mkContent(pdf, page)= _mkStream(pdf, strJoin("\n", listReverse(page.streamP)));;
+
+fun _mkCMap(pdf, ttf)=
+	let ttfGetUnicodeMap(nil) -> [ranges, chars] in 
+	_mkStream(pdf, strJoin("\n",
+	"/CIDInit /ProcSet findresource begin"::
+	"12 dict begin"::
+	"begincmap"::
+	"/CIDSystemInfo <</Registry (Adobe) /Ordering (UCS) /Supplement 0 >> def"::
+	"/CMapName /Adobe-Identity-UCS def"::
+	"/CMapType 2 def"::
+//	"/WMode 0 def":	// writing mode: 0=horizontal, 1=vert.
+	"1 begincodespacerange"::
+	(strFormat("<*> <*>", hex2(0), hex2(255)))::
+	"endcodespacerange"::
+	(strFormat("* beginbfrange", listLength(ranges)))::
+	listConcat(listMap(ranges, lambda([from1, from2, to1]) = strFormat("<*> <*> <*>", hex2(from1), hex2(from2), hex4(to1))),
+	"endbfrange"::
+	(strFormat("* beginbfchar", listLength(chars)))::
+	listConcat(listMap(chars, lambda([from1, to1]) = strFormat("<*> <*>", hex2(from1), hex4(to1))),
+	"endbfchar"::
+	"endcmap"::
+	"CMapName currentdict /CMap defineresource pop"::
+	"end"::
+	"end"::
+	nil))));;
+
+fun _mkFontFile(pdf, ttf)=
+	let if COMPRESS_CONTENT then _compress(ttf.dataT) else ttf.dataT -> data in
+	let if COMPRESS_CONTENT then "<</Length * /Filter /FlateDecode /Length1 *>>" else "<</Length * /Length1 *>>" ->format in
+	_addObj(pdf,
+		(strFormat(format, strLength(data), strLength(ttf.dataT)))::
+		"stream"::
+		data::
+		"endstream"::
+		nil);;
+
+fun _mkFontDescriptor(pdf, ttf)=
+	let _mkFontFile(pdf, ttf) -> fontFileId in
+	let 32| if ttf.isFixedPitchT then 1 -> flags in
+	let flags| if ttf.italicAngleT<>0 then 64 -> flags in
+	_addObj(pdf, 
+		"<</Type /FontDescriptor"::
+		(strFormat("/FontName /*", ttf.postScriptNameT))::
+		(strFormat("/Ascent * /Descent *", ttf.typoAscenderT, ttf.typoDescenderT))::
+		(strFormat("/CapHeight *", if ttf.capHeightT<>0 then ttf.capHeightT else ttf.typoAscenderT))::
+		(strFormat("/Flags *", flags))::
+		(strFormat("/FontBBox [* * * *]", ttf.xMinT, ttf.yMinT, ttf.xMaxT, ttf.yMaxT) )::
+		(strFormat("/ItalicAngle *", ttf.italicAngleT))::
+		(strFormat("/StemV *", if ttf.boldT then 120 else 70))::
+		(strFormat("/MissingWidth *", ttfGetDefaultWidth(ttf)))::
+		(strFormat("/FontFile2 * 0 R", fontFileId))::
+		">>"::
+		nil);;
+
+fun _fontTTF(pdf, ttf)=
+	let _mkFontDescriptor(pdf, ttf) -> fontDescriptorId in
+	let strFormat("[*]", strJoin(" ", ttfGetWidths(ttf, nil))) -> widths in
+	let _addObj(pdf, widths::nil) -> widthsId in
+	let _mkCMap(pdf, ttf) -> cmapId in
+	_addObj(pdf, 
+		"<</Type /Font"::
+		(strFormat("/BaseFont /*", ttf.postScriptNameT))::
+		"/Subtype /TrueType"::
+		"/FirstChar 0 /LastChar 255"::
+		(strFormat("/Widths * 0 R", widthsId))::
+		(strFormat("/FontDescriptor * 0 R", fontDescriptorId))::
+		"/Encoding /WinAnsiEncoding"::
+		(strFormat("/ToUnicode * 0 R", cmapId))::
+		">>"::
+		nil);;
+
+fun _fontStr(pdf, font)=
+	let font.familyStyleF -> familyStyle in
+	if font.ttfF<>nil then _fontTTF(pdf, font.ttfF)
+	else
+	let if listContains(CORE_FONTS, familyStyle) then familyStyle else Helvetica -> familyStyle in
+	_addObj(pdf, 
+		"<</Type /Font"::
+		(strFormat("/BaseFont /*", familyStyle))::
+		"/Subtype /Type1"::
+		listConcat(if familyStyle<>Symbol && familyStyle<>ZapfDingbats then "/Encoding /WinAnsiEncoding"::nil,
+		// /ToUnicode 5 0 R
+		">>"::
+		nil));;
+
+fun _fontList(pdf)= listMap(pdf.fontsP, lambda(font) = strFormat("/F* * 0 R", font.numF, _fontStr(pdf, font)));;
+
+fun _imageMask(pdf, image)=
+	let image.maskI -> mask in
+	if mask<>nil then
+	let _addObj(pdf, 
+		"<</Type /XObject"::
+		"/Subtype /Image"::
+		(strFormat("/Width *", intFromFloat(image.wI)))::
+		(strFormat("/Height *", intFromFloat(image.hI)))::
+		"/ColorSpace /DeviceGray"::
+		"/BitsPerComponent 8"::
+		"/Filter /FlateDecode"::
+		(strFormat("/DecodeParms <</Predictor 15 /Colors 1 /BitsPerComponent 8 /Columns *>>", intFromFloat(image.wI)))::
+		(strFormat("/Length *>>", strLength(mask)))::
+		"stream"::
+		mask::
+		"endstream"::
+		nil)
+	-> obj in
+	(strFormat("/SMask * 0 R", obj))::nil;;
+
+fun _imageStr(pdf, image)=
+	let _imageMask(pdf, image) -> mask in
+	_addObj(pdf, 
+		"<</Type /XObject"::
+		"/Subtype /Image"::
+		(strFormat("/Width *", intFromFloat(image.wI)))::
+		(strFormat("/Height *", intFromFloat(image.hI)))::
+		listConcat(image.infosI,
+		listConcat(mask,
+		(strFormat("/Length *>>", strLength(image.dataI)))::
+		"stream"::
+		image.dataI::
+		"endstream"::
+		nil)));;
+
+fun _imageList(pdf)= listMap(pdf.imagesP, lambda(image)= strFormat("/I* * 0 R", image.numI, _imageStr(pdf, image)));;
+
+fun _rscFromPdf(pdf)=
+	_addObj(pdf, 
+		"<<"::
+		"/ProcSet [/PDF /Text /ImageB /ImageC /ImageI]"::
+		"/Font <<"::
+		listConcat(_fontList(pdf),
+		">>"::
+		"/XObject <<"::
+		listConcat(_imageList(pdf),
+		">>"::
+		">>"::nil)));;
+
+fun _xrefList(offset, lObj)=
+	if lObj<>nil then
+	let strLength(head(lObj)) -> len in
+	let strFromInt(offset) -> sLen in
+	let strLeft("0000000000", 10-strLength(sLen)) -> padding in
+	// without the final space after the 'n' the user is asked to save his modifications when closing the pdf reader
+	(strFormat("** 00000 n ", padding, sLen))::_xrefList(offset+len, tail(lObj));;
+
+fun strFromPdf(pdf)=
+	set pdf.objP=nil;
+	let _getNextId(pdf) -> pagesId in
+	let _rscFromPdf(pdf) -> rsc in
+	let listMap(listReverse(pdf.pagesP), lambda(page)=
+		let _mkContent(pdf, page) -> content in
+		_addObj(pdf, "<</Type /Page"::
+			(strFormat("/Parent * 0 R", pagesId))::
+			(strFormat("/Resources * 0 R", rsc))::
+			(strFormat("/Contents * 0 R>>", content))::
+			nil)
+	) -> pages in
+	let strJoin(" ", listMap(pages, lambda(pid)= strFormat("* 0 R", pid))) -> kids in
+	let _addObjWithId(pdf, pagesId, 
+		"<</Type /Pages"::
+		(strFormat("/Kids [*]", kids))::
+		(strFormat("/Count *", listLength(pages)))::
+		(strFormat("/MediaBox [0 0 * *]", pdf.wP*.SCALE, pdf.hP*.SCALE))::
+		">>"::
+		nil)
+	-> pages in
+	let date(time()) -> [y, month, d, w, h, m, s] in
+	let strFormat("******", intPad0(4, y), intPad0(2, month), intPad0(2, d), intPad0(2, h), intPad0(2, m), intPad0(2, s)) -> d in
+	let _addObj(pdf,
+		"<<"::
+		"/Producer (Minimacy)"::
+		(strFormat("/CreationDate (D:*)", d))::
+		">>"::
+		nil)
+	-> info in
+	let _addObj(pdf,
+		"<<"::
+		"/Type /Catalog"::
+		(strFormat("/Pages * 0 R", pages))::
+		">>"::
+		nil)
+	-> root in
+	let strJoin("\n", 
+		"trailer"::
+		"<<"::
+		(strFormat("/Size *", 1+pdf.countP))::
+		(strFormat("/Root * 0 R", root))::
+		(strFormat("/Info * 0 R", info))::
+		">>"::
+		""::
+		nil)
+	-> trailer in
+
+	let quicksort(pdf.objP, lambda([a, _], [b, _])= a<b) -> lObj in
+	let listMap(lObj, lambda([_, obj])=obj) -> lObj in
+
+	let strListConcat(HEADER::lObj) -> begin in
+	let _xrefList(strLength(HEADER), lObj) -> xrefList in
+	let strJoin("\n", "xref"::(strFormat("0 *", 1+pdf.countP))::"0000000000 65535 f "::xrefList) -> xref in
+	let strJoin("\n", "startxref"::strFromInt(strLength(begin))::"%%EOF"::nil) -> end in
+	strFormat("**\n**\n", begin, xref, trailer, end);;
+
+// DEMO:
+//fun main()=
+//	let pdfInit(210., 297.) -> pdf in (
+
+//		pdfNewPage(pdf);
+
+//		pdfTextAlign(PDF_CENTER, pdf);
+//		pdfSetFont(Helvetica, 30., pdf);
+//		pdfSetTextColor(89., 89., 119., pdf);
+//		pdfDrawText(105., 150., "Hello, world!", pdf);
+
+//		pdfSetDrawColor(128., 128., 128., pdf);
+//		pdfDrawRectangle(40., 40., 130., 217., PDF_DRAW_BORDER, pdf);
+
+//		save(strFromPdf(pdf), dump "pdfSample.pdf")
+//	);;

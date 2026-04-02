@@ -349,7 +349,7 @@ fun _ttfParsePost(ttf) =
 			let arrayFromList(__ttfGetGlyphNames(ttf.dataT, offset+N*2, maxNameIndex+1)) -> names in
 			for i=0;i<N do
 				let strRead16Msb(ttf.dataT, offset+2*i) -> index in
-				set ttf.glyphsT[i].nameG = if index>=258 then names[(index-258)] else decFromInt(index);
+				set ttf.glyphsT[i].nameG = if index>=258 then names[(index-258)] else strFromInt(index);
 		ttf
 	);;
 

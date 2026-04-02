@@ -1,0 +1,14 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2022, Sylvain Huet, Ambermind
+// Minimacy (r) System
+
+#ifndef gpioInit
+fun gpioInit(a:Int) =nil;;
+fun gpioDeinit(a) =nil;;
+fun gpioSetDir(a, b) = nil;;
+fun gpioGet(a) =nil;;
+fun gpioPut(a, b)=nil;;
+fun gpioSetPulls(a, b, c)=nil;;
+fun gpioWatcherAddress(a)=nil;;
+fun gpioWatcherMask(a)=nil;;
+#endif

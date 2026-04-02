@@ -42,25 +42,35 @@ void bufferMark(LB* user)
 	}
 }
 
+Buffer* bufferReset(Buffer* b, LINT size)
+{
+	LB* p;
+	if (!b) return NULL;
+	if (size < BUFFER_SIZE0) size = BUFFER_SIZE0;
+	b->index = 0;
+	b->pth = NULL;
+	b->link = NULL;
+	if (b->size && b->size < 1024) return b;
+	b->size = size;
+	b->bloc = NULL;
+	p = memoryAllocBin(NULL, b->size + 1, DBG_BIN); if (!p) return NULL;
+	b->bloc = p;
+	b->buffer = BIN_START(b->bloc);
+	return b;
+}
+
+
 Buffer* bufferCreateWithSize(LINT size)
 {
 	Buffer* b;
-	LB* p;
-	if (size < BUFFER_SIZE0) size = BUFFER_SIZE0;
 	memoryEnterSafe();
 	b=(Buffer*)memoryAllocNative(sizeof(Buffer),DBG_BUFFER,NULL,bufferMark); if (!b) return NULL;
-	b->index=0;
-	b->size=size;
-	b->pth=NULL;
-	b->link = NULL;
-	b->bloc = NULL;	// required because the following memoryAlloc may fire a GC
-	p= memoryAllocBin(NULL,size+1,DBG_BIN); if (!p) return NULL;
-	b->bloc = p;
-	b->buffer=BIN_START(b->bloc);
-//	PRINTF(LOG_DEV, "_create Buffer "LSX" size "LSD"\n", (void*)b, b->size);
+	b->size = 0;
+	b = bufferReset(b, size); if (!b) return NULL;
 	memoryLeaveSafe();
 	return b;
 }
+
 Buffer* bufferCreate(void)
 {
 	return bufferCreateWithSize(0);
@@ -77,6 +87,7 @@ void bufferUnsetWorkerThread(volatile Buffer** pb, volatile Thread** pth)
 	(*pb)->pth = NULL;
 	(*pth)->link = NULL;
 }
+
 
 void bufferReinit(Buffer* b)
 {

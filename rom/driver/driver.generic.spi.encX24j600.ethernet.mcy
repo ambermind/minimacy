@@ -1,0 +1,273 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2022, Sylvain Huet, Ambermind
+// Minimacy (r) System
+
+// to be used with: https://www.olimex.com/Products/Modules/Ethernet/MOD-ENC624J600/
+// references:
+//	- ENC424J600/624J600 datasheet
+//	- ENC424J600/624J600 Silicon Errata and Data Sheet Clarification
+
+export encX24j600Init(name, spiPort, spiClk, spiMosi, spiMiso, spiCs, spiInt);;
+export encX24j600SetLock(lock);;
+export encX24j600Receive(enc);;
+export encX24j600Send(enc, data);;
+export encX24j600OnReceive(enc, fReceive);;
+export encX24j600LinkStatus(enc);;
+export encX24j600WaitForLink(enc);;
+export encX24j600SetPromiscuous(enc, promiscuous);;
+
+use driver.generic.spi;;
+use driver.generic.gpio;;
+
+const DEBUG=false;;
+
+struct Encx24j600 = Network + [spiPortE, spiCsE, spiIntE, framesE, readIndexE];;
+
+const SPI_CPOL_0 = 0;;
+const SPI_CPHA_0 = 0;;
+const SPI_MSB_FIRST = 1;;
+
+const CMD_RCRU   = 0x20;;
+const CMD_WCRU   = 0x22;;
+const CMD_BFSU   = 0x24;;
+const CMD_BFCU   = 0x26;;
+const CMD_WGPDATA= 0x2a;;
+const CMD_RRXDATA= 0x2c;;
+
+const ENC_ETXST   = 0x00;;
+const ENC_ETXLEN  = 0x02;;
+const ENC_ERXST   = 0x04;;
+const ENC_ERXTAIL = 0x06;;
+const ENC_EUDAST  = 0x16;;
+const ENC_ESTAT   = 0x1a;;
+	const ESTAT_PKTCNT= 0x00ff;;
+	const ESTAT_CLKRDY= 0x1000;;
+const ENC_ECON1   = 0x1e;;
+	const ECON1_RXEN  = 0x0001;;
+	const ECON1_TXRTS = 0x0002;;
+	const ECON1_PKTDEC= 0x0100;;
+const ENC_ERXFCON = 0x34;;
+	const ERXFCON_BCEN   = 0x0001;;
+	const ERXFCON_MCEN   = 0x0002;;
+	const ERXFCON_NOTMEEN= 0x0004;;
+	const ERXFCON_UCEN   = 0x0008;;
+	const ERXFCON_RUNTEN = 0x0010;;
+	const ERXFCON_CRCEN  = 0x0040;;
+const ENC_MACON2  = 0x42;;
+	const MACON2_FULDPX     = 0x0001;;
+	const MACON2_B1_SET     = 0x0002;;
+	const MACON2_TXCRCEN    = 0x0010;;
+	const MACON2_PADCFG_AUTO= 0x00a0;;
+const ENC_MAIPG   = 0x42;;
+const ENC_MABBIPG = 0x44;;
+const ENC_MAMXFL  = 0x4a;;
+const ENC_MICMD   = 0x52;;
+	const MICMD_MIIRD= 0x0001;;
+const ENC_MIREGADR= 0x54;;
+	const MIREGADR_R12_8_DEFAULT= 0x0100;;
+const ENC_MAADR3  = 0x60;;
+const ENC_MAADR2  = 0x62;;
+const ENC_MAADR1  = 0x64;;
+const ENC_MIWR    = 0x66;;
+const ENC_MIRD    = 0x68;;
+const ENC_MISTAT  = 0x6a;;
+	const MISTAT_BUSY= 0x0001;;
+const ENC_ECON2   = 0x6e;;
+	const ECON2_ETHRST= 0x0010;;
+const ENC_EIE     = 0x72;;
+	const EIE_PKTIE  = 0x0040;;
+	const EIE_INTIE  = 0x8000;;
+const ENC_EGPWRPT = 0x88;;
+const ENC_ERXRDPT = 0x8a;;
+// PHY registers
+const ENC_PHSTAT1 = 0x01;;
+	const PHSTAT1_LLSTAT= 0x0004;;
+const ENC_PHANA = 0x04;;
+	const PHANA_ADIEEE_DEFAULT= 0x0001;;
+	const PHANA_AD10FD        = 0x0040;;
+	const PHANA_AD100FD       = 0x0100;;
+	const PHANA_ADPAUS0       = 0x0400;;
+
+const MEM_TX_START = 0x0000;;	//	1.536 bytes
+const MEM_RX_START = 0x0600;;	//	23.040 bytes
+const MEM_RX_STOP  = 0x5ffe;;
+
+const CONFIG_NET_ETH_MTU = 1500;;
+const CMD_TIMEOUT = 100;;
+const LINK_TIMEOUT = 3000;;
+const RESET_PATTERN= 0x55aa;;
+
+var EncLock=lockCreate();;
+
+fun encX24j600SetLock(lock) = set EncLock=lock;;
+
+fun _loopTimeout(timeout, errorMsg, fTest)=
+	let timeMs()+timeout -> tEnd in
+	while (tEnd-timeMs())>0 do 
+		if call fTest ()then return true
+		else sleepMs(1);
+	echoLn errorMsg;
+	false;;
+
+fun cselect(enc) = gpioPut(false, enc.spiCsE);;
+fun cunselect(enc) = gpioPut(true, enc.spiCsE);;
+
+fun readBuffer(enc, len) = cselect(enc); spiWriteByte(enc.spiPortE, CMD_RRXDATA); let spiRead(enc.spiPortE, 0xff, len) -> data in (cunselect(enc); data);;
+fun sendBuffer(enc, data) = cselect(enc); spiWriteByte(enc.spiPortE, CMD_WGPDATA); spiWrite(enc.spiPortE, data); cunselect(enc);;
+
+fun regRead(enc, reg) =
+	cselect(enc); spiWrite(enc.spiPortE, strInt16Lsb(CMD_RCRU|(reg<<8)));
+	let spiRead(enc.spiPortE, 0x00, 2) -> data in (cunselect(enc); strRead16Lsb(data, 0));;
+
+fun regWriteCmd(enc, cmd, reg, value)=
+	cselect(enc); spiWrite(enc.spiPortE, strInt32Lsb(cmd|(reg<<8)|(value<<16))); cunselect(enc);;
+fun regWrite(enc, reg, value)= regWriteCmd(enc, CMD_WCRU, reg, value);;
+fun regSetBits(enc, reg, value)= regWriteCmd(enc, CMD_BFSU, reg, value);;
+fun regClrBits(enc, reg, value)= regWriteCmd(enc, CMD_BFCU, reg, value);;
+
+fun regWritePhy(enc, reg, value)=
+	regWrite(enc, ENC_MIREGADR, MIREGADR_R12_8_DEFAULT | reg);
+	regWrite(enc, ENC_MIWR, value);
+	while bitTest(MISTAT_BUSY, regRead(enc, ENC_MISTAT)) do true;;
+
+fun regReadPhy(enc, reg)=
+	regWrite(enc, ENC_MIREGADR, MIREGADR_R12_8_DEFAULT | reg);
+	regWrite(enc, ENC_MICMD, MICMD_MIIRD);
+	sleepMs(1);
+	while bitTest(MISTAT_BUSY, regRead(enc, ENC_MISTAT)) do true;
+	regWrite(enc, ENC_MICMD, 0x0000);
+	regRead(enc, ENC_MIRD);;
+
+fun encX24j600Reset(enc)=
+	if _loopTimeout(CMD_TIMEOUT, "> encX24j600: reset timeout", lambda ()= 
+		regWrite(enc, ENC_EUDAST, RESET_PATTERN);
+		regRead(enc, ENC_EUDAST)==RESET_PATTERN
+	) then
+	if _loopTimeout(CMD_TIMEOUT, "> encX24j600: clock timeout", lambda ()= bitTest(ESTAT_CLKRDY, regRead(enc, ENC_ESTAT))) then
+	(
+		regSetBits(enc, ENC_ECON2, ECON2_ETHRST);
+		sleepMs(1);
+		if 0<>regRead(enc, ENC_EUDAST) then false
+		else (
+			sleepMs(1);
+			true
+		)
+	);;
+
+fun encX24j600LinkStatus(enc) = 
+	if enc<>nil then
+	lockSync(EncLock, lambda ()=
+		bitTest(PHSTAT1_LLSTAT, regReadPhy(enc, ENC_PHSTAT1))
+	);;
+
+fun encX24j600Receive(enc) =
+	if enc<>nil then
+	lockSync(EncLock, lambda ()=
+		let ESTAT_PKTCNT & regRead(enc, ENC_ESTAT) -> epkcnt in
+		if epkcnt<>0 then (
+			regSetBits(enc, ENC_ECON1, ECON1_PKTDEC);
+			if DEBUG then dump epkcnt;
+			regWrite(enc, ENC_ERXRDPT, enc.readIndexE);
+			let readBuffer(enc, 8) -> header in	// example: 56 0d 52 02 c0 00 10 00
+			let set enc.readIndexE=strRead16Lsb(header, 0) -> _ in
+			let strRead16Lsb(header, 2) -> len in	// rsv_0-15
+			let strRead32Lsb(header, 4) -> rsv16_47 in	// example: 0x1c0
+			let	if rsv16_47<>0 then readBuffer(enc, len-4) -> data in (	// we don't read the final crc (4 bytes)
+//				if bitTest rsv16_47 1 then echoLn "ignored packet";
+				regWrite(enc, ENC_ERXTAIL, if enc.readIndexE<=MEM_RX_START then MEM_RX_STOP else enc.readIndexE-2);
+				if DEBUG then (dump rsv16_47; hexDump data);
+				data
+			)
+		)
+	);;
+
+fun encX24j600Send(enc, data)=
+	if enc<>nil then
+	lockSync(EncLock, lambda ()=
+		if DEBUG then (echoLn "> encX24j600Send"; hexDump data);
+		if _loopTimeout(CMD_TIMEOUT, "> encX24j600: waitForTxReady timeout", lambda()= !bitTest(ECON1_TXRTS, regRead(enc, ENC_ECON1))) then 
+		let strLength(data) -> len in (
+			regWrite(enc, ENC_EGPWRPT, MEM_TX_START);
+			sendBuffer(enc, data);
+
+			regWrite(enc, ENC_ETXST, MEM_TX_START);
+			regWrite(enc, ENC_ETXLEN, len);
+			regSetBits(enc, ENC_ECON1, ECON1_TXRTS);
+			true
+		)
+	);;
+
+fun encX24j600OnReceive(enc, fReceive)=
+	if enc<>nil then
+	let watcherOpen("encX24j600Int") -> watcher in
+		let gpioWatcherAddress(enc.spiIntE) -> addr in
+		let gpioWatcherMask(enc.spiIntE) -> mask in (
+			watcherUpdate(watcher, addr, mask, mask);
+			watcherOnEvent(watcher, lambda()= call fReceive(encX24j600Receive(enc)); true)
+		);;
+
+fun _netFeed(enc, data)=
+	if data<>nil then fifoIn(enc.framesE, data);
+	streamSetReadable(enc, fifoCount(enc.framesE)>0);;
+	
+fun _netActivate(enc)=
+	if DEBUG then echoLn "> encX24j600: ethActivate";
+	streamInit(enc, nil,
+		lambda()=	// onSelectRead
+			let fifoOut(enc.framesE) -> data in (
+				_netFeed(enc, nil);
+				streamReadEvent(enc, data)
+			)
+		,
+		lambda(data, start) = if encX24j600Send(enc, data) then strLength(data),	// write
+		lambda()= streamCommonClose(enc),	// close
+		lambda(fEcho)=	call fEcho("ethernet", enc.nameI)	// show
+	);
+	streamSetWritable(enc, true);
+	encX24j600OnReceive(enc, lambda(data)= _netFeed(enc, data));
+	Network<enc;;
+
+fun encX24j600WaitForLink(enc) =
+	if DEBUG then echoLn "> encX24j600: wait for link";
+	 _loopTimeout(LINK_TIMEOUT, "> encX24j600: waitForUp timeout", lambda ()= encX24j600LinkStatus(enc));;
+
+fun encX24j600SetPromiscuous(enc, promiscuous) =
+	regClrBits(enc, ENC_ECON1, ECON1_RXEN);
+	regWrite(enc, ENC_ERXFCON, (ERXFCON_CRCEN | ERXFCON_RUNTEN | ERXFCON_UCEN | ERXFCON_MCEN | if promiscuous then ERXFCON_NOTMEEN));
+	regSetBits(enc, ENC_ECON1, ECON1_RXEN);
+	enc;;
+
+fun encX24j600Init(name, spiPort, spiClk, spiMosi, spiMiso, spiCs, spiInt) =
+	if DEBUG then echoLn "> encX24j600Init: start init";
+    spiInit(spiPort, 12500*1000, spiClk, spiMosi, spiMiso);
+
+	gpioSetDir(true, gpioInit(spiCs));
+	if spiInt<>nil then gpioSetDir(false, gpioInit(spiInt));
+	let [
+		spiPortE=spiPort, spiCsE=spiCs, spiIntE=spiInt, framesE=fifoCreate(), readIndexE=MEM_RX_START
+	] -> enc in (
+		if !encX24j600Reset(enc) then return nil;
+
+		regWrite(enc, ENC_ERXST, MEM_RX_START);
+		regWrite(enc, ENC_ERXTAIL, MEM_RX_STOP);
+		regWrite(enc, ENC_ERXFCON, (ERXFCON_CRCEN | ERXFCON_RUNTEN | ERXFCON_UCEN | ERXFCON_MCEN));
+
+		// full duplex
+		regWrite(enc, ENC_MACON2, (MACON2_PADCFG_AUTO | MACON2_TXCRCEN | MACON2_B1_SET | MACON2_FULDPX));
+		regWrite(enc, ENC_MAIPG, 0x0012);
+		regWrite(enc, ENC_MABBIPG, 0x0015);
+		regWrite(enc, ENC_MAMXFL, CONFIG_NET_ETH_MTU+18);
+
+		regWritePhy(enc, ENC_PHANA, (PHANA_ADPAUS0 | PHANA_AD100FD | PHANA_AD10FD | PHANA_ADIEEE_DEFAULT));
+
+		regWrite(enc, ENC_EIE, (EIE_INTIE | EIE_PKTIE)); // useful only when SPI_INT_PIN<>nil, we use it only for rx events
+
+		regSetBits(enc, ENC_ECON1, ECON1_RXEN);
+
+		if DEBUG then echoLn "> encX24j600: register eth device";
+		let strBuild([strInt16Lsb(regRead(enc, ENC_MAADR1)), strInt16Lsb(regRead(enc, ENC_MAADR2)), strInt16Lsb(regRead(enc, ENC_MAADR3))]) -> mac in
+		netSetup(enc, name, strFromMac(mac), CONFIG_NET_ETH_MTU);
+		netOnActivate(enc, lambda()= _netActivate(enc));
+		netAdd(enc)
+	);;
+

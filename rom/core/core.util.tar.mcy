@@ -67,7 +67,7 @@ fun _octalFromInt(val)=
 	else let nil -> lChars in
 	(
 		while val<>0 do (
-			set lChars=decFromInt(val&7)::lChars;
+			set lChars=strFromInt(val&7)::lChars;
 			set val=val>>3
 		);
 		strListConcat(lChars)

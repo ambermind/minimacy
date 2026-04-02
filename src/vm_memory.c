@@ -141,7 +141,7 @@ LB* memoryAllocArray(LINT size, LW dbg)
 	LB* p=memoryAlloc(size<< LSHIFT, TYPE_ARRAY, dbg);
 	if (!p) return NULL;
 #ifdef USE_ALL_BITS
-	memset(BIN_START(p), 0, size + (size << LSHIFT));
+	memset(BIN_START(p), 0, size + (size << LSHIFT));	// works because VAL_TYPE_PNT=0 with USE_ALL_BITS
 #else
 	{
 		LINT i;
@@ -153,14 +153,12 @@ LB* memoryAllocArray(LINT size, LW dbg)
 
 LB* memoryAllocNative(LINT sizeofExt,LW dbg,FORGET forget,MARK mark)
 {
-	void** q;
 	LB* p=memoryAlloc(sizeofExt- sizeof(LB),TYPE_NATIVE,dbg);
 	if (!p) return NULL;
 	memset((void*)(&p->data[1]),0,sizeofExt-sizeof(LB));
 
-	q =(void**) &p->data[1];
-	q[0]=forget;
-	q[1]=mark;
+	p->data[1 + NATIVE_FORGET] = (LW)forget;
+	p->data[1 + NATIVE_MARK] = (LW)mark;
 	return p;
 }
 
@@ -207,8 +205,7 @@ void memoryDesalloc(LB* p)
 
 	if (type==TYPE_NATIVE)
 	{
-		void** q = (void**)&p->data[1];	// complicated because of the 32/64 bits compatibility
-		FORGET forget = (FORGET)q[NATIVE_FORGET];
+		FORGET forget = (FORGET)p->data[1+ NATIVE_FORGET];
 		if (forget && (*forget)(p)) goto cleanup;
 	}
 	MM.blocs_nb--;
@@ -323,8 +320,7 @@ void memoryGC(LINT period)
 			}
 			else if (HEADER_TYPE(p)==TYPE_NATIVE)
 			{
-				void** q = (void**)&p->data[1];	// complicated because of the 32/64 bits compatibility
-				MARK mark = (MARK)q[NATIVE_MARK];
+				MARK mark = (MARK)p->data[1 + NATIVE_MARK];
 				if (mark) (*mark)(p);
 			}
 
@@ -495,6 +491,7 @@ void memoryInit(int argc, const char** argv)
 
 	MM.reboot = 0;
 	MM.OM = 0;
+	MM.resign = 0;
 
 
 	memoryEnterSafe();
@@ -520,7 +517,7 @@ void memoryInit(int argc, const char** argv)
 
 //	memoryFinalizeGC();
 //	memoryRecount();
-	if (MM.gcTrace) PRINTF(LOG_SYS, "> GC: Memory after init : " LSD " bytes\n", MM.blocs_length);
+	if (MM.gcTrace) PRINTF(LOG_SYS, "> GC: Allocated memory after init : " LSD " bytes\n", MM.blocs_length);
 //	exit(0);
 }
 void memoryEnterSafe(void)	// after this, newly allocated blocks cannot be GCized

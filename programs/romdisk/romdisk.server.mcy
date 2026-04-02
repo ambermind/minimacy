@@ -1,0 +1,124 @@
+
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2022, Sylvain Huet, Ambermind
+// Minimacy (r) System
+   
+const SRC="romdisk/romdisk.server.txt";;
+
+fun _mkTitleAndContent(content, files)=
+	if files<>nil then
+	let strSplit("\t", head(files))-> path::alias::_ in
+	let load(path) -> data in
+	if data==nil then _mkTitleAndContent(content, tail(files))
+	else
+	let if strEmpty(alias) then path else alias -> path in
+	let strListConcat(path::"\0"::data::nil) -> data in
+	let strLength(data) -> len in
+	(
+		echo "+ "; echoLn path;
+		bufferAppend(content, data);
+		len::_mkTitleAndContent(content, tail(files))
+	);;
+
+fun _recTable(offset, lSize)=
+	if lSize==nil then 0::nil
+	else offset::_recTable(offset+head(lSize), tail(lSize));;
+	
+fun _mkTable(lSize) =
+	let listReduce(lSize, 0, lambda(s, v)= s+v) -> dataLen in
+	let listLength(lSize) -> nbEntry in
+	let (nbEntry+2)*4 -> dataOffset in
+	let (dataLen+dataOffset)::_recTable(dataOffset, lSize) -> table in
+	let strBuild(listMap(time()::table, lambda(offset)= strInt32Lsb(offset))) -> data in
+	data;;
+	
+fun mkFs(files)=
+	echoLn "\nFile list:";
+	let bufferCreate() -> content in
+	let _mkTitleAndContent(content, files) -> lSize in
+	let if lSize<>nil then _mkTable(lSize) else strInt32Lsb(time()) -> data in
+	strConcat(data, strFromBuffer(content));;
+	
+const BOOTDISK="<BOOTDISK>";;
+
+fun _sendFS(serial, data, i)=
+	echo "+";
+	if i<strLength(data) then
+	let serialWrite(serial, strSlice(data, i, 1024), 0) -> j in
+	if j>=0 then
+	onTimeout(100, lambda ()= _sendFS(serial, data, i+j));;
+	
+fun sendFS(serial)=
+	let strLines(load(SRC)) -> files in
+	let mkFs(files) -> data in
+	if data<>nil then (
+		echoLn strFormat("Disk image size: * bytes", strLength(data)-4);
+		echoLn strFormat("Sent time: *", fullDate(strRead32Lsb(data, 0)));
+		_sendFS(serial, data, 0)
+	);;
+
+var BufferRx;;	// we use this buffer to detect <BOOTDISK> when it is split into several receptions
+
+fun serialStart(port)=
+	echoLn strFormat("> open serial port '*'", port);
+	let serialOpen(port, 115200, SERIAL_8BITS, SERIAL_NOPARITY, SERIAL_ONESTOPBIT) -> serial in
+	if serial==nil then (
+		echoLn "> Failed to open serial link";
+		if device=="Unix" then echoLn "> (sudo is required on Unix)";
+		nil
+	)
+	else
+	(
+		onInput(lambda(input)=serialWrite(serial, input, 0), nil);
+		serialOnEvent(serial, 
+			lambda(input)=
+				if input==nil then (
+					echoLn "\n> Serial port disconnected!";
+					void onPrompt("Connect a usb/uart cable and press enter when ready> ", lambda(input)= serialLoop())
+				)
+				else (
+					set BufferRx=strRight(strConcat(BufferRx, input), 32);
+					echo input;
+				//	if false then
+					if nil<>strPos(BufferRx, BOOTDISK, 0) then (set BufferRx=nil; sendFS(serial))
+				)
+			,
+			lambda ()= true)
+	);;
+
+fun serialLoop()=
+	let serialList() -> serials in
+	if serialList()==nil then (
+		echoLn "> No available serial port!";
+		void onPrompt("Connect a usb/uart cable and press enter when ready> ", lambda(input)= serialLoop())
+	)
+	else
+	(
+		echoLn "Available serial ports:\n";
+		listReduce(serials, 1, (lambda(index, [port, label]) = echoLn strFormat("*. *: *", index, port, label); index+1));
+		echoLn "";
+		if serials<>nil then
+		let serials ->[port, _]::nxt in
+		if nxt==nil then (
+			echoLn "> Try the only available port";
+			serialStart(port)
+		)
+		else
+		void onPrompt("Enter number> ", (lambda(port)=
+			let listGet(serials, intFromStr(port)-1) -> [port, _] in
+			if !strEmpty(port) then onTimeout(500, (lambda()=serialStart(port)));
+			false
+		))
+	);;
+
+fun main ()=
+	echoLn "
+Bootdisk server & console - 2026 - Sylvain Huet
+-----------------------------------------------
+(edit the bootdisk content in file romdisk/romdisk.server.txt)
+
+";
+	let listLast(args()) -> port in
+	if port<>nil then serialStart(port)
+	else serialLoop();;
+

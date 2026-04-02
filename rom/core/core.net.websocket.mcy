@@ -39,7 +39,7 @@ fun _urlParse(url)=
 	let strPos(url, "/", 0) -> i in
 	let if i==nil then [url, "/"] else [strLeft(url, i), strSlice(url, i, nil)] -> [server, uri] in
 	let strPos(server, ":", 0) -> i in
-	let if i==nil then [server, if tls then 443 else 80] else [strLeft(url, i), intFromDec(strSlice(url, i+1, nil))] -> [server, port] in
+	let if i==nil then [server, if tls then 443 else 80] else [strLeft(url, i), intFromStr(strSlice(url, i+1, nil))] -> [server, port] in
 	[tls, server, port, uri];;
 
 
@@ -68,7 +68,7 @@ fun _checkHeader(h, data)=
 	let firstLine -> (version::code::reply) in
 	(
 		set h._bufferH=nil;
-		set h.statusH=[version, intFromDec(code), strJoin(" ", reply)];
+		set h.statusH=[version, intFromStr(code), strJoin(" ", reply)];
 		set h.replyHeadersH=headers;
 		true
 	);;

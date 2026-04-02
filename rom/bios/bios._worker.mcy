@@ -52,7 +52,7 @@ fun _handleInternal(i)=
 		set _InternalBuffer=nil;
 		_flushInternalGrouping(nil)
 	)
-	else if (i+4)>len then _flushInternalGrouping(nil)
+	elif (i+4)>len then _flushInternalGrouping(nil)
 	else
 	let strRead16Lsb(_InternalBuffer, i) -> eventSize in
 	let strRead16Lsb(_InternalBuffer, i+2) -> event in
@@ -124,8 +124,8 @@ fun nameByIp(ip)= let bufferCreateWithSize(32) -> output in (
 //		_workerEnter;
 //		let _inflate infl._bufferI infl._srcI infl._bitI -> result in
 //		if result==-1 then strFromBuffer infl._bufferI
-//		else if result<0 then void set infl._bufferI=nil
-//		else if result>=1024 then (
+//		elif result<0 then void set infl._bufferI=nil
+//		elif result>=1024 then (
 //			set infl._srcI= strSlice infl._srcI result>>7 nil;
 //			set infl._bitI= result&7;
 //			nil

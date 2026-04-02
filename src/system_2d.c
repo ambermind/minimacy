@@ -28,7 +28,7 @@ LBitmap* _bitmapCreate(LINT w, LINT h)
 	b->bytes = p;
 	b->start8 = (lchar*)STR_START(b->bytes);
 	b->start32 = (int*)b->start8;
-#ifdef ON_WINDOWS
+#ifdef WITH_UI
 	b->bmp = NULL;
 #endif
 	memoryLeaveSafe();
@@ -241,12 +241,12 @@ int fun_bitmapCopy(Thread* th)
 int fun_rgbFromYCrCb(Thread* th)
 {
 	LINT rgb = STACK_INT(th, 0);
-	FUN_RETURN_INT(_rgbFromYCrCb(rgb));
+	FUN_RETURN_INT((LINT)_rgbFromYCrCb(rgb));
 }
 int fun_yCrCbFromRgb(Thread* th)
 {
 	LINT ycrcb = STACK_INT(th, 0);
-	FUN_RETURN_INT(_yCrCbFromRgb(ycrcb));
+	FUN_RETURN_INT((LINT)_yCrCbFromRgb(ycrcb));
 }
 int fun_bitmapFromYCrCb(Thread* th)
 {

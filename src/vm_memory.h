@@ -4,29 +4,31 @@
 #ifndef _CORE_MEMORY_
 #define _CORE_MEMORY_
 
+typedef int* LW;
 
 #ifdef ATOMIC_32
 #define LSHIFT 2
-typedef char* LW;
 typedef int LINT;
 typedef unsigned int LUINT;
 typedef float LFLOAT;
-#define SIGN_BIT 0x80000000
+
 #define LSX "%x"
 #define LSD "%d"
 #define USE_ALL_BITS
 #else
 #define LSHIFT 3
-typedef long long LW;
 typedef long long LINT;
 typedef unsigned long long LUINT;
 typedef double LFLOAT;
 
 #define LSX "%llx"
 #define LSD "%lld"
+
+//#define USE_ALL_BITS
 #define NUMBER_RESERVED_BITS 32
-#define SIGN_BIT (0x8000000000000000>>NUMBER_RESERVED_BITS)
+
 #endif
+#define SIGN_BIT ((LINT)0x80000000)
 
 #ifdef USE_MEMORY_C
 void cMallocInit();
@@ -37,6 +39,7 @@ void bmmDump(void);
 void bmmMayday(void);
 LINT bmmReservedMem(void);
 void bmmUpdateSize(int index,LINT size);
+void bmmUpdateCount(int count);
 
 char* bmmAllocForEver(LINT size);
 extern LINT BmmTotalSize;
@@ -221,6 +224,7 @@ typedef struct {
 	int gcTrace;
 	int reboot;
 	int OM;
+	int resign;
 }Memory;
 
 extern Memory MM;
@@ -280,32 +284,26 @@ int checkPointer(LB* p);
 #define HEADER_SIZE(p) (((p)->sizeAndType)>>2)
 #define HEADER_SET_SIZE_AND_TYPE(p,size,type) ((p)->sizeAndType=(((size)<<2)+((type)&3)))
 #define HEADER_DBG(p) ((p)->data[0])
+
 #ifdef USE_ALL_BITS
+// with USE_ALL_BITS, types (PNT|INT|FLOAT) are stored in a separate byte at the end of the arrays
+#define VAL_TYPE_PNT 0
+#define VAL_TYPE_INT 1
+#define VAL_TYPE_FLOAT 2
+
 #define BLOCK_TOTAL_MEMORY(type,size) \
 	(sizeof(LB) + (((size)+ LWLEN_MASK)&~LWLEN_MASK)+\
 	(((type) != TYPE_ARRAY)?0:(((size) >> LSHIFT) + LWLEN_MASK) &~LWLEN_MASK))
 
-
-#else
-#define BLOCK_TOTAL_MEMORY(type,size) (sizeof(LB) + (((size)+ LWLEN_MASK)&~LWLEN_MASK))
-#endif
-
-
-#ifdef USE_ALL_BITS
-#define NUMBER_RESERVED_BITS 0
 #define DBG_IS_PNT(v) (!(((LINT)(v))&1))
 
 #define VAL_FROM_PNT(p) ((LW)(p))
-#define VAL_FROM_INT(i) ((LW)(i))
+#define VAL_FROM_INT(i) ((LW)((LINT)((int)(i))))
 #define VAL_FROM_FLOAT(v) ((LW)*(LINT*)(&(v)))
 
 #define PNT_FROM_VAL(v) ((LB*)(v))
-#define INT_FROM_VAL(v) ((LINT)(v))
+#define INT_FROM_VAL(v) ((LINT)((int)((LINT)(v))))
 #define FLOAT_FROM_VAL(v) (*((LFLOAT*)(&(v))))
-
-#define VAL_TYPE_PNT 0
-#define VAL_TYPE_INT 1
-#define VAL_TYPE_FLOAT 2
 
 #define VAL_FROM_DEBUG(x) VAL_FROM_INT((LINT)(2*(x)+1))
 #define NIL ((LW)0)	// nil
@@ -327,32 +325,39 @@ int checkPointer(LB* p);
 	(p)->data[1+ memI]=v; \
 }
 #else
-#define MASK_RESERVED_BITS (~3)
-#define DBG_IS_PNT(v) (((LINT)v)&1)
-
-#define VAL_FROM_PNT(p) ((LW)((LINT)(1+((LINT)(p)))))
-#define VAL_FROM_INT(i) ((LW)((LINT)((((LUINT)i)<<NUMBER_RESERVED_BITS)|2)))
-#define VAL_FROM_FLOAT(v) ((LW)((LINT)((MASK_RESERVED_BITS&(*(LINT*)(&(v)))))))
-
-#define PNT_FROM_VAL(v) ((LB*)(((LINT)v)-1))
-#define INT_FROM_VAL(v) ((LINT)(((LINT)v)>>NUMBER_RESERVED_BITS))
-#define FLOAT_FROM_VAL(v) (*((LFLOAT*)(&(v))))
-
+// without USE_ALL_BITS, types (PNT|INT|FLOAT) are merged in the first bits of the value. We remove:
+// - NUMBER_RESERVED_BITS bits from integers,
+// - 2 bits from float mantisse,
+// and we know that pointers are aligned on 4 bytes. So we just set the bit 0.
 #define VAL_TYPE_FLOAT 0
 #define VAL_TYPE_PNT 1
 #define VAL_TYPE_INT 2
+#define MASK_TYPE_BITS (3)
+
+#define BLOCK_TOTAL_MEMORY(type,size) (sizeof(LB) + (((size)+ LWLEN_MASK)&~LWLEN_MASK))
+
+#define MASK_USED_BITS (~MASK_TYPE_BITS)
+#define DBG_IS_PNT(v) (((LINT)v)&VAL_TYPE_PNT)
+
+#define VAL_FROM_PNT(p) ((LW)(((LINT)(p))|VAL_TYPE_PNT))
+#define VAL_FROM_INT(i) ((LW)((LINT)((((LUINT)(i))<<NUMBER_RESERVED_BITS)|VAL_TYPE_INT)))
+#define VAL_FROM_FLOAT(v) ((LW)((LINT)((MASK_USED_BITS&(*(LINT*)(&(v)))))))
+
+#define PNT_FROM_VAL(v) ((LB*)(((LINT)(v))&MASK_USED_BITS))
+#define INT_FROM_VAL(v) ((LINT)(((LINT)(v))>>NUMBER_RESERVED_BITS))
+#define FLOAT_FROM_VAL(v) (*((LFLOAT*)(&(v))))
 
 #define VAL_FROM_DEBUG(x) VAL_FROM_INT(x)
-#define NIL ((LW)1)	// nil
+#define NIL ((LW)VAL_TYPE_PNT)	// nil
 
-#define ARRAY_TYPE(p,i) (((LINT)(p)->data[1+(i)])&3)
+#define ARRAY_TYPE(p,i) (((LINT)(p)->data[1+(i)])&MASK_TYPE_BITS)
+
 #define ARRAY_SET_TYPE(p,i,v,type) \
 { \
-	LINT memVal=(LINT)v; \
-	int memType=type; \
-	memVal=(memVal&-4)|type;	\
-	(p)->data[1+(i)]=(LW)memVal; \
- 	if (memType==VAL_TYPE_PNT) BLOCK_MARK(PNT_FROM_VAL((LW)memVal)); \
+	LW memVal=v; \
+	LINT memType=type; /* we need this, because 'type' may be a full expression and the following line may change its evaluation */ \
+	(p)->data[1+(i)]=memVal; \
+ 	if (memType==VAL_TYPE_PNT) BLOCK_MARK(PNT_FROM_VAL(memVal)); \
 }
 #define ARRAY_SET_TYPE_NO_MARK(p,i,v,type) \
 { \

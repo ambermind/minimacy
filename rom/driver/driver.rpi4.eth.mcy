@@ -1,0 +1,463 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2022, Sylvain Huet, Ambermind
+// Minimacy (r) System
+
+export pi4EthInit();;
+
+const DEBUG=false;;
+
+const BASE_BCM54213=0xFD580000;;
+const PhyId=1;;
+
+const CH_PROP=8;;
+const TAG_GET_MAC=0x10003;;
+
+fun getMacAddress ()=
+	let mbox(CH_PROP, {TAG_GET_MAC, 8, 0, 0, 0}, 8) -> result in
+	strConcat(strInt16Msb(result[6]), strInt32Msb(result[5]));;
+
+// Register block offsets
+const BASE_SYS     = BASE_BCM54213+0x0000;;
+const BASE_EXT     = BASE_BCM54213+0x0080;;
+const BASE_INTRL2_0= BASE_BCM54213+0x0200;;
+const BASE_INTRL2_1= BASE_BCM54213+0x0240;;
+const BASE_RBUF    = BASE_BCM54213+0x0300;;
+const BASE_UMAC    = BASE_BCM54213+0x0800;;
+const BASE_RDMA    = BASE_BCM54213+0x2000;;
+const BASE_TDMA    = BASE_BCM54213+0x4000;;
+const BASE_HFB     = BASE_BCM54213+0x8000;;
+const BASE_HFB_REG = BASE_BCM54213+0xFC00;;
+
+// SYS
+const SYS_PORT_CTRL      = BASE_SYS+0x04;;
+	const PORT_MODE_EXT_GPHY= 3;;
+const SYS_RBUF_FLUSH_CTRL= BASE_SYS+0x08;;
+// RGMII: Reduced Gigabit Media Independent Interface
+const EXT_RGMII_OOB_CTRL = BASE_EXT+0x0C;;
+	const RGMII_LINK       = 0x10;;
+	const RGMII_OOB_DISABLE= 0x20;;
+	const RGMII_MODE_EN    = 0x40;;
+	const RGMII_MODE_DIS   = 0x10000;;
+
+// UMAC: Unified Media Access Control
+const UMAC_CMD          = BASE_UMAC+0x008;;
+	const CMD_TX_EN          = 0x01;;
+	const CMD_RX_EN          = 0x02;;
+	const CMD_SPEED_10       = 0x00;;
+	const CMD_SPEED_100      = 0x04;;
+	const CMD_SPEED_MASK     = 0x0c;;
+	const CMD_PROMISC        = 0x10;;
+	const CMD_RX_PAUSE_IGNORE= 0x100;;
+	const CMD_HD_EN          = 0x400;;
+	const CMD_SW_RESET       = 0x2000;;
+	const CMD_LCL_LOOP_EN    = 0x8000;;
+	const CMD_TX_PAUSE_IGNORE= 0x10000000;;
+const UMAC_MAC0         = BASE_UMAC+0x00C;;
+const UMAC_MAC1         = BASE_UMAC+0x010;;
+const UMAC_MAX_FRAME_LEN= BASE_UMAC+0x014;;
+const UMAC_TX_FLUSH     = BASE_UMAC+0x334;;
+const UMAC_MDIO_CMD     = BASE_UMAC+0x614;;
+	// MDIO: Management Data Input/Output
+	const MDIO_START_BUSY= 0x20000000;;
+	const MDIO_READ_FAIL = 0x10000000;;
+	const MDIO_RD        =  0x8000000;;
+		// MII: Media Independent Interface (IEEE 802.3)
+		const MII_REG_BMSR     = 0x01;;
+			const BMSR_LSTATUS = 0x0004;;
+		const MII_REG_ADVERTISE= 0x04;;
+		const MII_REG_LPA      = 0x05;;
+
+const UMAC_MDF_CTRL     = BASE_UMAC+0x650;;
+	const MDF_MC_HIGHEST= 0x10000;;
+const UMAC_MDF_ADDR     = BASE_UMAC+0x654;;
+const UMAC_MIB_CTRL     = BASE_UMAC+0x580;;
+	// MIB: Management Information Base
+	const MIB_RESET_RX  = 0x01;;
+	const MIB_RESET_RUNT= 0x02;;
+	const MIB_RESET_TX  = 0x04;;
+
+// RBUF
+const RBUF_CTRL          = BASE_RBUF+0x00;;
+	const RBUF_CTRL_ALIGN_2B      = 0x02;;
+const RBUF_TBUF_SIZE_CTRL= BASE_RBUF+0xB4;;
+
+// LPA: Link Partner Ability (MII_REG_ADVERTISE, MII_REG_LPA)
+const LPA_10HALF   = 0x0020;;
+const LPA_10FULL   = 0x0040;;
+const LPA_100HALF  = 0x0080;;
+const LPA_100FULL  = 0x0100;;
+const LPA_PAUSE_CAP= 0x0400;;
+
+// HFB: hardware filtering block
+const HFB_CTRL             = BASE_HFB_REG+0x00;;
+const HFB_FLT_ENABLE_V3PLUS= BASE_HFB_REG+0x04;;
+const HFB_FLT_LEN_V3PLUS   = BASE_HFB_REG+0x1C;;
+
+const HFB_FILTER_CNT = 48;;
+const HFB_FILTER_SIZE= 128;;
+
+// INTRL2
+const INTRL2_0_CPU_CLEAR   = BASE_INTRL2_0+0x08;;
+const INTRL2_0_CPU_MASK_SET= BASE_INTRL2_0+0x10;;
+const INTRL2_1_CPU_CLEAR   = BASE_INTRL2_1+0x08;;
+const INTRL2_1_CPU_MASK_SET= BASE_INTRL2_1+0x10;;
+
+// DMA
+
+// DMA Memory structure
+// for each direction (Tx/Rx):
+// - 256 descriptors (12 bytes each)
+// - 1+16 rings, we only use the last one
+// - dma registers
+const DMA_DESC_COUNT= 256;; // number of buffer descriptors
+
+const DMA_DESC_SIZE= 12;;    // DMA_DESC_LENGTH_STATUS (32 bits), DMA_DESC_ADDRESS (64 bits)
+const DMA_DESC_LENGTH_STATUS= 0;;
+	const DMA_EOP              = 0x4000;;
+	const DMA_SOP              = 0x2000;;
+	const DMA_TX_QTAG          = 0x1F80;;
+	const DMA_TX_APPEND_CRC    = 0x0040;;
+const DMA_DESC_ADDRESS      = 4;;
+
+const RING_INDEX= 16;;    // rx and tx ring index: we use only one ring for each
+const DMA_RING_SIZE = 0x40;;
+const DMA_RING      = DMA_RING_SIZE * RING_INDEX;;
+const DMA_RINGS_SIZE= DMA_RING_SIZE * (RING_INDEX + 1);;
+
+const BASE_RDMA_RINGS = BASE_RDMA + DMA_DESC_COUNT * DMA_DESC_SIZE;;
+const BASE_TDMA_RINGS = BASE_TDMA + DMA_DESC_COUNT * DMA_DESC_SIZE;;
+const BASE_RDMA_RING= BASE_RDMA_RINGS + DMA_RING;;
+const BASE_TDMA_RING= BASE_TDMA_RINGS + DMA_RING;;
+const BASE_RDMA_REGS= BASE_RDMA_RINGS + DMA_RINGS_SIZE;;
+const BASE_TDMA_REGS= BASE_TDMA_RINGS + DMA_RINGS_SIZE;;
+
+const TDMA_RING_READ_PTR        = BASE_TDMA_RING+0x00;;
+const TDMA_RING_CONS_INDEX      = BASE_TDMA_RING+0x08;;
+const TDMA_RING_PROD_INDEX      = BASE_TDMA_RING+0x0C;;
+const TDMA_RING_BUF_SIZE        = BASE_TDMA_RING+0x10;;
+const TDMA_RING_START_ADDR      = BASE_TDMA_RING+0x14;;
+const TDMA_RING_END_ADDR        = BASE_TDMA_RING+0x1C;;
+const TDMA_RING_MBUF_DONE_THRESH= BASE_TDMA_RING+0x24;;
+const TDMA_RING_FLOW_PERIOD     = BASE_TDMA_RING+0x28;;
+const TDMA_RING_WRITE_PTR       = BASE_TDMA_RING+0x2C;;
+
+const RDMA_RING_WRITE_PTR      = BASE_RDMA_RING+0x00;;
+const RDMA_RING_WRITE_PTR_HI   = BASE_RDMA_RING+0x04;;
+const RDMA_RING_PROD_INDEX     = BASE_RDMA_RING+0x08;;
+const RDMA_RING_CONS_INDEX     = BASE_RDMA_RING+0x0C;;
+const RDMA_RING_BUF_SIZE       = BASE_RDMA_RING+0x10;;
+const RDMA_RING_START_ADDR     = BASE_RDMA_RING+0x14;;
+const RDMA_RING_END_ADDR       = BASE_RDMA_RING+0x1C;;
+const RDMA_RING_XON_XOFF_THRESH= BASE_RDMA_RING+0x28;;
+	const DMA_FC_THRESH_HI=        DMA_DESC_COUNT >> 4;;
+	const DMA_FC_THRESH_LO=        5;;
+const RDMA_RING_READ_PTR       = BASE_RDMA_RING+0x2C;;
+
+
+const TDMA_REG_RING_CFG      = BASE_TDMA_REGS+0x00;;
+const RDMA_REG_RING_CFG      = BASE_RDMA_REGS+0x00;;
+const TDMA_REG_CTRL          = BASE_TDMA_REGS+0x04;;
+const RDMA_REG_CTRL          = BASE_RDMA_REGS+0x04;;
+	const CTRL_EN      = 0x01;;
+const TDMA_REG_SCB_BURST_SIZE= BASE_TDMA_REGS+0x0c;;
+const RDMA_REG_SCB_BURST_SIZE= BASE_RDMA_REGS+0x0c;;
+	const MAX_BURST_SIZE= 8;;
+
+// Rx Specific Dma descriptor bits
+const DMA_RX_LG       = 0x0010;;
+const DMA_RX_NO       = 0x0008;;
+const DMA_RX_RXER     = 0x0004;;
+const DMA_RX_CRC_ERROR= 0x0002;;
+const DMA_RX_OV       = 0x0001;;
+
+// Ethernet defaults
+const ETH_MIN_LENGTH= 60;;
+
+const MTU_MAX= 0x600;;
+const DMA_BUFFER_SIZE= 2048;;
+const DMA_BUFFERS_SIZE= DMA_BUFFER_SIZE*DMA_DESC_COUNT;;
+
+// we can use global variables as there is only one ethernet port on the PI4.
+var MAC;;
+var TxBuffers;;
+var RxBuffers;;
+var ReadIndex=0;;
+var WriteIndex=0;;
+
+fun clr32(addr, mask) = write32(addr, read32(addr)&(~mask));;
+fun set32(addr, mask) = write32(addr, read32(addr)|mask);;
+
+fun umacInit()=
+	write32(SYS_RBUF_FLUSH_CTRL, 0);
+	sleepMs(1); 
+	write32(UMAC_CMD, 0);
+	write32(UMAC_CMD, CMD_SW_RESET | CMD_LCL_LOOP_EN);
+	sleepMs(1); 
+	write32(UMAC_CMD, 0);
+
+	set32(SYS_RBUF_FLUSH_CTRL, 2);
+	sleepMs(1); 
+	clr32(SYS_RBUF_FLUSH_CTRL, 2);
+	sleepMs(1); 
+
+	write32(UMAC_MIB_CTRL, MIB_RESET_RX | MIB_RESET_TX | MIB_RESET_RUNT);
+	write32(UMAC_MIB_CTRL, 0);
+	write32(UMAC_MAX_FRAME_LEN, MTU_MAX);
+	write32(UMAC_MAC0, strRead32Msb(MAC, 0));
+	write32(UMAC_MAC1, strRead16Msb(MAC, 4));
+
+	set32(RBUF_CTRL, RBUF_CTRL_ALIGN_2B);
+	write32(RBUF_TBUF_SIZE_CTRL, 1);
+	true;;
+
+fun interruptDisable()=
+	// Mask all interrupts
+	write32(INTRL2_0_CPU_MASK_SET, 0xFFFFFFFF);
+	write32(INTRL2_0_CPU_CLEAR, 0xFFFFFFFF);
+	write32(INTRL2_1_CPU_MASK_SET, 0xFFFFFFFF);
+	write32(INTRL2_1_CPU_CLEAR, 0xFFFFFFFF);;
+
+fun dmaSetBufferAddr(buffer, base)=
+	for i=0;i<DMA_DESC_COUNT do 
+		let base + i*DMA_DESC_SIZE -> dmaBlockAddr in 
+		let buffer+ i*DMA_BUFFER_SIZE -> bufferAddr in (
+			write32(dmaBlockAddr + DMA_DESC_ADDRESS, bufferAddr);
+			write32(dmaBlockAddr + DMA_DESC_ADDRESS+4, 0);
+		);;
+
+fun init_rdma()=
+	write32(RDMA_REG_SCB_BURST_SIZE, MAX_BURST_SIZE);
+	dmaSetBufferAddr(RxBuffers, BASE_RDMA);
+
+	write32(RDMA_RING_PROD_INDEX, 0);
+	write32(RDMA_RING_CONS_INDEX, 0);
+	write32(RDMA_RING_BUF_SIZE, (DMA_DESC_COUNT << 16) | DMA_BUFFER_SIZE);
+	write32(RDMA_RING_XON_XOFF_THRESH, (DMA_FC_THRESH_LO << 16)| DMA_FC_THRESH_HI);
+
+	write32(RDMA_RING_START_ADDR, 0);
+	write32(RDMA_RING_READ_PTR, 0);
+	write32(RDMA_RING_WRITE_PTR, 0);
+	write32(RDMA_RING_END_ADDR, DMA_DESC_COUNT*3 - 1);
+
+	write32(RDMA_REG_RING_CFG, 1<<RING_INDEX);;
+
+
+fun init_tdma()=
+	write32(TDMA_REG_SCB_BURST_SIZE, MAX_BURST_SIZE);
+	dmaSetBufferAddr(TxBuffers, BASE_TDMA);
+
+	write32(TDMA_RING_PROD_INDEX, 0);
+	write32(TDMA_RING_CONS_INDEX, 0);
+	write32(TDMA_RING_MBUF_DONE_THRESH, 1);
+	write32(TDMA_RING_FLOW_PERIOD, MTU_MAX);
+	write32(TDMA_RING_BUF_SIZE, (DMA_DESC_COUNT << 16) | DMA_BUFFER_SIZE);
+
+	write32(TDMA_RING_START_ADDR, 0);
+	write32(TDMA_RING_READ_PTR, 0);
+	write32(TDMA_RING_WRITE_PTR, 0);
+	write32(TDMA_RING_END_ADDR, DMA_DESC_COUNT*3 - 1);
+
+	write32(TDMA_REG_RING_CFG, 1<<RING_INDEX);;
+
+fun dmaInit()=
+	write32(TDMA_REG_CTRL, 0);
+	write32(RDMA_REG_CTRL, 0);
+	write32(UMAC_TX_FLUSH, 1);
+	sleepMs(10);
+	write32(UMAC_TX_FLUSH, 0);
+
+	set TxBuffers = sharedMemAllocateAlign(DMA_BUFFERS_SIZE*2, 4096);	// address of memory in a non cacheable region
+	set RxBuffers = TxBuffers+DMA_BUFFERS_SIZE;
+
+	init_rdma();
+	init_tdma();
+
+	let (2 << RING_INDEX) | CTRL_EN -> dma_ctrl in (
+		// we use only one ring (RING_INDEX)
+		write32(TDMA_REG_CTRL, dma_ctrl);
+		write32(RDMA_REG_CTRL, dma_ctrl)
+	);;
+
+fun hfbInit()=
+	write32(HFB_CTRL, 0);
+	write32(HFB_FLT_ENABLE_V3PLUS, 0);
+	write32(HFB_FLT_ENABLE_V3PLUS+4, 0);
+	for i=0; i < HFB_FILTER_CNT; i+4 do write32(HFB_FLT_LEN_V3PLUS+i, 0);
+	for i=0; i < HFB_FILTER_CNT*HFB_FILTER_SIZE do write32(BASE_HFB+i*4, 0);
+	true;;
+
+fun mdio_reg_read(reg)=
+	write32(UMAC_MDIO_CMD, MDIO_RD | (PhyId << 21) | (reg << 16));
+	set32(UMAC_MDIO_CMD, MDIO_START_BUSY);
+	sleepMs(10);
+	while bitTest(read32(UMAC_MDIO_CMD), MDIO_START_BUSY) do true;
+	let read32(UMAC_MDIO_CMD) -> cmd in
+	if !bitTest(cmd, MDIO_READ_FAIL) then cmd & 0xFFFF;;
+
+fun phyReadConfig()=
+	let mdio_reg_read(MII_REG_BMSR) -> bmsr in
+	if bitTest(bmsr, BMSR_LSTATUS) then	// check connected ethernet
+	let mdio_reg_read(MII_REG_LPA) -> lpa in
+	if lpa!=nil then
+	let mdio_reg_read(MII_REG_ADVERTISE) -> adv in
+	if adv!=nil then
+	let lpa & adv -> common_adv in
+	let
+		if bitTest(common_adv, LPA_100FULL) then [CMD_SPEED_100, false]
+		elif bitTest(common_adv, LPA_100HALF) then [CMD_SPEED_100, true]
+		elif bitTest(common_adv, LPA_10FULL) then [CMD_SPEED_10, false]
+		elif bitTest(common_adv, LPA_10HALF) then [CMD_SPEED_100, true]
+	-> [speed, halfDuplex] in
+	if speed<>nil then
+	let (!halfDuplex)&& bitTest(lpa, LPA_PAUSE_CAP) -> pause in
+	[speed, halfDuplex, pause];;
+
+fun miiInit()=
+	mdio_reg_read(MII_REG_BMSR);
+	let phyReadConfig() -> [speed, halfDuplex, pause] in
+	if speed==nil then (
+		echoLn "> Eth: not connected";
+		false
+	)
+	else
+	let CMD_SPEED_MASK |CMD_HD_EN|CMD_RX_PAUSE_IGNORE|CMD_TX_PAUSE_IGNORE -> cmd_mask in
+	let speed | (if halfDuplex then CMD_HD_EN) | (if !pause then CMD_RX_PAUSE_IGNORE | CMD_TX_PAUSE_IGNORE) -> cmd_bits in
+	(
+		clr32(EXT_RGMII_OOB_CTRL, RGMII_OOB_DISABLE);
+		set32(EXT_RGMII_OOB_CTRL, RGMII_LINK);
+		clr32(UMAC_CMD, cmd_mask);
+		set32(UMAC_CMD, cmd_bits);
+		write32(SYS_PORT_CTRL, PORT_MODE_EXT_GPHY);
+		set32(EXT_RGMII_OOB_CTRL, RGMII_MODE_EN| RGMII_MODE_DIS);
+		echoLn strFormat("> Eth: connected * *",
+			if speed==CMD_SPEED_100 then "100BASE-TX" else "10BASE-TX",
+			if halfDuplex then "Half-duplex" else "Full-duplex"
+		);
+		true
+	);;
+
+fun umacAddMacFilter(i, addr)=
+	write32(UMAC_MDF_ADDR+i*8, strRead16Msb(addr, 0));
+	write32(UMAC_MDF_ADDR+i*8+4, strRead32Msb(addr, 2));
+	set32(UMAC_MDF_CTRL, MDF_MC_HIGHEST>>i);;
+
+fun _pi4EthInit()=
+	set MAC=getMacAddress();
+	umacInit();
+	interruptDisable();
+	dmaInit();
+	hfbInit();
+	if !miiInit() then return false;
+
+	clr32(UMAC_CMD, CMD_PROMISC);
+	set32(UMAC_CMD, CMD_TX_EN | CMD_RX_EN);
+	umacAddMacFilter(0, "\$ff\$ff\$ff\$ff\$ff\$ff");
+	umacAddMacFilter(1, MAC);
+	
+	cacheInvalidate(RxBuffers, DMA_BUFFERS_SIZE);
+	cacheInvalidate(TxBuffers, DMA_BUFFERS_SIZE);
+	set ReadIndex=0;
+	set WriteIndex=0;
+	true;;
+
+fun pi4EthReceive()=
+//	echo "pi4EthReceive:";
+	let read32(RDMA_RING_PROD_INDEX) -> counts in
+	//Nice to have: handle discards ? but how and why ?
+	let counts&0xFFFF -> index in
+	let (index-ReadIndex)&0xFFFF -> framesToRead in
+	if framesToRead>0 then
+	let ReadIndex%DMA_DESC_COUNT-> blockIndex in
+	let BASE_RDMA + blockIndex*DMA_DESC_SIZE -> dmaBlockAddr in 
+	let read32(dmaBlockAddr + DMA_DESC_LENGTH_STATUS) -> lengthStatus in
+	let lengthStatus&0xFFFF -> flags in
+	let lengthStatus>>16 -> len in
+	if bitTest(flags, DMA_EOP)&&bitTest(flags, DMA_SOP) then
+	if !bitTest(flags, DMA_RX_CRC_ERROR | DMA_RX_OV | DMA_RX_NO | DMA_RX_LG | DMA_RX_RXER) then
+	let blockIndex*DMA_BUFFER_SIZE -> frameStart in
+	(
+		cacheInvalidate(RxBuffers+frameStart, DMA_BUFFER_SIZE);
+		set ReadIndex=(ReadIndex+1)&0xFFFF;
+		write32(RDMA_RING_CONS_INDEX, ReadIndex);
+		let sharedMemExport(RxBuffers+frameStart+2, len-2) -> frame in
+		frame
+	);;
+
+fun pi4EthTransmit(eth, frame)=
+//	echoLn "pi4EthTransmit:";
+	let read32(TDMA_RING_CONS_INDEX) -> counts in
+	let counts&0xFFFF -> index in
+	let (WriteIndex-index)&0xFFFF -> framesToSend in
+	if framesToSend>= DMA_DESC_COUNT-2 then (
+		watcherOutUpdateAddr(eth, counts, true);
+		0
+	)
+	else
+	let strLength(frame) -> resultIfSucceed in
+	let if strLength(frame)<ETH_MIN_LENGTH then strConcat(frame, strCreate(ETH_MIN_LENGTH-strLength(frame), 0)) else frame -> frame in	// padding with zeros
+	let WriteIndex%DMA_DESC_COUNT-> blockIndex in
+	let BASE_TDMA + blockIndex*DMA_DESC_SIZE -> dmaBlockAddr in 
+	let blockIndex*DMA_BUFFER_SIZE -> frameStart in
+	let (strLength(frame)<<16)| DMA_EOP | DMA_SOP | DMA_TX_QTAG | DMA_TX_APPEND_CRC -> lengthStatus in
+	(
+		sharedMemImport(TxBuffers+frameStart, frame, 0, nil);
+		cacheInvalidate(TxBuffers+frameStart, DMA_BUFFER_SIZE);
+		write32(dmaBlockAddr + DMA_DESC_LENGTH_STATUS, lengthStatus);		
+		set WriteIndex=(WriteIndex+1)&0xFFFF;
+		write32(TDMA_RING_PROD_INDEX, WriteIndex);
+		resultIfSucceed
+	);;
+
+//---------------------- link ethernet to Minimacy bios
+struct EthRpi4 = Network + [framesE];;	// Minimacy Network structure extended with the fifo of received frames
+
+fun watcherOutUpdateAddr(watcher, value, enable) =
+	watcherUpdate(watcher, TDMA_RING_CONS_INDEX, if enable then 0xFFFF else 0, value);;
+
+fun watcherInUpdateAddr(watcher) =
+	watcherUpdate(watcher, RDMA_RING_PROD_INDEX, 0xFFFF, ReadIndex);;
+
+fun _ethFeed(eth)=
+	let pi4EthReceive() -> frame in
+	if frame<>nil then fifoIn(eth.framesE, frame);
+	streamSetReadable(eth, fifoCount(eth.framesE)>0);;
+
+fun _netActivate(eth)=
+	streamInit(eth, nil,	// initialize stream
+		lambda()=	// onSelectRead
+			let fifoOut(eth.framesE) -> data in (
+				_ethFeed(eth);
+				streamReadEvent(eth, data)
+			)
+		,
+		lambda(data, start) = pi4EthTransmit(eth, data),	// write
+		lambda()= streamCommonClose(eth),	// close
+		lambda(fEcho)=	call fEcho("ethernet", eth.nameI)	// show
+	);
+	let watcherOpen("ethIn") -> watcher in (	// watcher on incoming frames
+		watcherInUpdateAddr(watcher);
+		watcherOnEvent(watcher, lambda()= 
+			if DEBUG then echo "R";
+			_ethFeed(eth); 
+			watcherInUpdateAddr(watcher)
+		)
+	);
+	let watcherOpen("ethOut") -> watcher in (	// watcher on ready to transmit
+		watcherOutUpdateAddr(watcher, 0, false);
+		watcherOnEvent(watcher, lambda()=
+			if DEBUG then echo "W";
+			streamSetWritable(eth, true);
+			watcherOutUpdateAddr(watcher, 0, false)
+		)
+	);
+	streamSetWritable(eth, true);
+	Network<eth;;	// cast to Network
+
+fun pi4EthInit()=
+	echoLn "> Eth: init";
+	if _pi4EthInit() then
+	let [framesE=fifoCreate()] -> eth in (
+		netSetup(eth, "eth0", strFromMac(MAC), MTU_MAX);
+		netOnActivate(eth, lambda()= _netActivate(eth));
+		netAdd(eth)
+	);;

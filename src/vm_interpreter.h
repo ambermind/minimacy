@@ -4,8 +4,6 @@
 #ifndef _INTERPRETER_
 #define _INTERPRETER_
 
-extern int interpreterTRON;
-
 #define CALLSTACK_LENGTH 3 // taille de la callstack sans les variables locales
 #define CALLSTACK_FUN 2	// function index
 #define CALLSTACK_PC 1	// program counter

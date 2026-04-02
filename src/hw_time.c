@@ -3,15 +3,14 @@
 // Minimacy (r) System
 #include"minimacy.h"
 
-#ifdef USE_TIME_ANSI
+#ifdef USE_TIME_WIN
 LINT hwTime(void)
 {
 	time_t x;
 	time(&x);
 	return (LINT)x;
 }
-#endif
-#ifdef USE_TIME_MS_WIN
+
 #define LocalTickCount GetTickCount64
 LINT DeltaTimeMs = 0;
 LARGE_INTEGER CurrentTimer;
@@ -44,7 +43,14 @@ void hwTimeInit()
 }
 #endif
 
-#ifdef USE_TIME_MS_ANSI
+#ifdef USE_TIME_ANSI
+LINT hwTime(void)
+{
+	time_t x;
+	time(&x);
+	return (LINT)x;
+}
+
 LINT hwTimeMs(void)
 {
 	LINT t;
@@ -68,14 +74,13 @@ void hwTimeInit(void)
 #endif
 
 #ifdef USE_TIME_STUB
-LINT fakeTime = 0;
+LINT fakeTime;
 LINT hwTime()
 {
 	fakeTime += 10;
 	return fakeTime/1000;
 }
-#endif
-#ifdef USE_TIME_MS_STUB
+
 LINT hwTimeMs()
 {
 	fakeTime+=10;
@@ -83,5 +88,6 @@ LINT hwTimeMs()
 }
 void hwTimeInit()
 {
+	fakeTime=0;
 }
 #endif

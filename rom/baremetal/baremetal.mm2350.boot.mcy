@@ -1,0 +1,188 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2022, Sylvain Huet, Ambermind
+// Minimacy (r) System
+
+use driver.generic.flash;;
+use driver.generic.gpio;;
+use driver.generic.i2c;;
+use driver.generic.spi;;
+
+use driver.generic.display;;
+use driver.generic.i2c.mcp7940n.rtc;;
+use driver.generic.i2c.ssd1306.oled;;
+use driver.generic.spi.encX24j600.ethernet;;
+use driver.generic.spi.sdcard.storage;;
+use core.storage.fat32;;
+use core.storage.romdisk;;
+use core.storage.format;;
+
+const SPI_PORT=Spi0;;
+const SPI_CLK_PIN = 2;;
+const SPI_MOSI_PIN= 3;;
+const SPI_MISO_PIN= 4;;
+
+const SD_CS_PIN  = 5;;
+const SPI_CS_LEFT_PIN  = 7;;
+const SPI_CS_RIGHT_PIN = 6;;
+const SPI_INT_LEFT_PIN = 23;;
+const SPI_INT_RIGHT_PIN= 22;;
+
+const I2C_PORT    = I2c0;;
+const I2C_SDA_PIN = 16;;
+const I2C_SCL_PIN = 17;;
+
+const SWITCH_LEFT = 20;;
+const SWITCH_RIGHT= 18;;
+
+const EXT_SPI_PORT    =Spi1;;
+const EXT_SPI_CLK_PIN = 10;;
+const EXT_SPI_MOSI_PIN= 11;;
+const EXT_SPI_MISO_PIN= 12;;
+const EXT_SPI_CS_PIN  = 13;;
+
+const EXT_I2C_PORT   = I2c1;;
+const EXT_I2C_SDA_PIN= 14;;
+const EXT_I2C_SCL_PIN= 15;;
+
+const EXT_GPIO_26_PIN= 26;;
+const EXT_GPIO_27_PIN= 27;;
+const EXT_GPIO_28_PIN= 28;;
+const EXT_GPIO_29_PIN= 29;;
+
+const SPLASH= strFromLzw(strFromHex(strBuild({
+"00040e2458d0e0418409152e64d8d0e143880c78f0a358b122338819356ee4d811e180073ffe8d24f90f1f384008fd31c00106984060607030f047b0e6c09518",
+"60a0147813a74d962e61caa4491010380c060c60e029101e060206044c1560808040073a5d828181c1c1c6a3f070801459f29fbf9329073e181860c080006b09",
+"b295db768001ba7505e6750bb72e020770030c1e3cc00102006e093040d0180183ab05f36624e0e0c1e5070e2213c0dcf9b266857f808c0602000715d4580020",
+"414d85c4ead6af0f12e9531a366ad905f910808ac73411e03800f041408000e2d3a93d2e67dedc797340d1a54fa75eddfa75ecd9b56fe7deddfb75b3237b7972",
+"652bd7bf60e57505fb37befc796cbae41b0bffefdefdfbf501f59bd70fd0bffdfafb0fbffcdc33ef1f6f7cd1851667fe896f3ef4d4632f3c02efa92f1b5b326c",
+"0640fcfeab2f20"
+})), nil);;
+
+const CommonI2c0Lock=lockCreate();;
+const CommonSpi0Lock=lockCreate();;
+const CommonI2c1Lock=lockCreate();;
+const CommonSpi1Lock=lockCreate();;
+const ETH_LEFT="left";;
+const ETH_RIGHT="right";;
+
+var RTC;;
+var SdCard;;
+var _FlashVolume;;
+
+var _EthLeft;;
+var _EthRight;;
+var _Oled;;
+
+fun oled()=_Oled;;
+fun ethLeft()=_EthLeft;;
+fun ethRight()=_EthRight;;
+
+extend VolumeType with flashVolume;;
+
+const FLASHDISK_START = 2*1024*1024;;	// we keep 2MB for the Minimacy firmware
+const FLASHDISK_WRITE_LEN = 4096/512;;	// nb of sectors per flash writing block
+
+fun flashMemRead(start, nb)= flashRead(FLASHDISK_START+start*512, nb*512);;
+
+fun _flashMemWrite(sector, data, offset, nbSectors) =
+	if nbSectors>0 then
+	let sector%FLASHDISK_WRITE_LEN -> sectorOffset in
+	let sector/FLASHDISK_WRITE_LEN -> flashCluster in
+	if sectorOffset==0 && nbSectors>=FLASHDISK_WRITE_LEN then
+		let bytesSlice(data, offset, 4096) -> bytes in (
+			flashWrite(bytes, FLASHDISK_START+flashCluster*4096);
+			set bytes=nil;	// allow gc on this
+			4096+_flashMemWrite(sector+8, data, offset+4096, nbSectors-8)
+		)
+	else
+	let flashRead(FLASHDISK_START+ flashCluster*4096, 4096) -> bytes in (
+		bytesCopyBytes(bytes, sectorOffset*512, data, offset, 512);
+		flashWrite(bytes, FLASHDISK_START+ flashCluster*4096);
+		set bytes=nil;	// allow gc on this
+		512+_flashMemWrite(sector+1, data, offset+512, nbSectors-1)
+	);;
+
+fun flashMemWrite(sector, data)= 
+	let bytesLength(data)>>9 -> nbSectors in
+	if (nbSectors>=1) && !bitTest(bytesLength(data), 511) then
+	_flashMemWrite(sector, data, 0, nbSectors);;
+
+fun flashFormat ()=
+	volumeFormatFat32(_FlashVolume, (flashSize() - FLASHDISK_START)/512, 8, "FLASH", true);;
+
+fun _sdRead(sector, nbSectors) = sdRead(SdCard, sector, nbSectors);;
+fun _sdWrite(sector, data) = sdWrite(SdCard, sector, data);;
+
+fun _disksInit(biosMode) =
+	volumeSetCacheSize(1024*64);
+	let set _FlashVolume= volumeCreate(flashVolume, nil, true, #flashMemRead, #flashMemWrite, (flashSize() - FLASHDISK_START)/512, 512) -> volume in
+	let volumeMount(volume, if biosMode then "flash/" else "", "/") -> mounts in
+	if !biosMode then
+		for m in mounts do romdiskFromMountSources(mountIndex(m), 2);
+
+	hide flashRead flashWrite flashMemRead flashMemWrite;	// prevent programs from addressing flash directly
+
+	set SdCard=sdInit(SPI_PORT, SPI_CLK_PIN, SPI_MOSI_PIN, SPI_MISO_PIN, SD_CS_PIN);
+	if SdCard<>nil then
+	let volumeCreate(sdVolume, nil, true, #_sdRead, #_sdWrite, sdNbSectors(SdCard), sdSectorSize(SdCard))-> volume in
+//		let volumeFormatFat32 (volume, sdNbSectors (SdCard), 32, "SD32", true) -> _ in
+		let volumeMount(volume, if biosMode then "sd/" else "", "/") -> mounts in
+		if !biosMode then
+			for m in mounts do romdiskFromMountSources(mountIndex(m), 2);
+	true;;
+
+fun splashDisplay(splash)=
+	ssd1306BlitRaw(oled(), splash);;
+
+//var LastLeft;;
+//var LastRight;;
+//fun gpioLoop()=
+//	if !gpioGet (SWITCH_LEFT) then (set LastLeft=timeMs; echo "L")
+//	else if timeMs-LastLeft<20 then echo "-";
+//	if !gpioGet (SWITCH_RIGHT) then (set LastRight=timeMs; echo "R")
+//	else if timeMs-LastRight<20 then echo "-";
+//	onTimeout (1, #gpioLoop);;
+
+fun main()=
+	gpioPut(true, gpioSetDir(true, gpioInit(SD_CS_PIN)));
+	gpioPut(true, gpioSetDir(true, gpioInit(SPI_CS_LEFT_PIN)));
+	gpioPut(true, gpioSetDir(true, gpioInit(SPI_CS_RIGHT_PIN)));
+
+	ssd1306SetLock(CommonI2c0Lock);
+	mcp7940nSetLock(CommonI2c0Lock);
+	encX24j600SetLock(CommonSpi0Lock);
+	sdSetLock(CommonSpi0Lock);
+
+	set RTC=mcp7940nInit(I2C_PORT, I2C_SDA_PIN, I2C_SCL_PIN);
+	if time()>1000 then mcp7940nSetTime(RTC, time());	// t is 0 at startup when not provided by bootloader
+	let mcp7940nTime(RTC) -> t in (
+		echoLn strFormat("> RTC: *", fullDate(t));
+		timeSet(t)
+	);
+	set _Oled=ssd1306Init(I2C_PORT, I2C_SDA_PIN, I2C_SCL_PIN);
+	splashDisplay(SPLASH);
+
+	gpioSetPulls(true, false, gpioSetDir(false, gpioInit(SWITCH_LEFT)));
+	gpioSetPulls(true, false, gpioSetDir(false, gpioInit(SWITCH_RIGHT)));
+
+	keyEmulateWithGpio(Key_Left, SWITCH_LEFT);
+	keyEmulateWithGpio(Key_Right, SWITCH_RIGHT);
+	displaySetup(128, 64, (lambda(bmp)=ssd1306Blit(oled(), bmp, 0); true));
+
+	set _EthLeft = encX24j600Init(ETH_LEFT,  SPI_PORT, SPI_CLK_PIN, SPI_MOSI_PIN, SPI_MISO_PIN, SPI_CS_LEFT_PIN,  SPI_INT_LEFT_PIN);
+	set _EthRight= encX24j600Init(ETH_RIGHT, SPI_PORT, SPI_CLK_PIN, SPI_MOSI_PIN, SPI_MISO_PIN, SPI_CS_RIGHT_PIN, SPI_INT_RIGHT_PIN);
+
+	//if true then void gpioLoop()
+	//else
+	if !gpioGet(SWITCH_RIGHT) then (
+		start("demo.fun.wall")
+	)
+	else let !gpioGet(SWITCH_LEFT) -> biosMode in
+	if biosMode then (
+		_disksInit(biosMode);
+		start("baremetal.mm2350.admin")
+	)
+	else (
+		_disksInit(biosMode);
+		start("boot");
+	);;

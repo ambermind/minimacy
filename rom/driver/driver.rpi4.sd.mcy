@@ -1,0 +1,319 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2022, Sylvain Huet, Ambermind
+// Minimacy (r) System
+
+export pi4SdInit();;
+export pi4SdCID();;
+export pi4SdCSD();;
+export pi4SdNbSectors();;
+export pi4SdSectorSize();;
+export pi4SdRead(sector, nbSectors);;
+export pi4SdWrite(sector, data);;
+
+const DEBUG=false;;
+const MMIO_BASE = 0xFE000000;;
+
+const GPFSEL0   = MMIO_BASE+0x00200000;;
+const GPHEN0    = MMIO_BASE+0x00200064;;
+const GPPUD     = MMIO_BASE+0x00200094;;
+const GPPUDCLK0 = MMIO_BASE+0x00200098;;
+
+const EMMC_BASE = MMIO_BASE+0x00340000;;
+	
+const EMMC_BLKSIZECNT = EMMC_BASE+0x04;;
+const EMMC_ARG1       = EMMC_BASE+0x08;;
+const EMMC_CMDTM      = EMMC_BASE+0x0C;;
+const EMMC_RESP0      = EMMC_BASE+0x10;;
+const EMMC_RESP1      = EMMC_BASE+0x14;;
+const EMMC_RESP2      = EMMC_BASE+0x18;;
+const EMMC_RESP3      = EMMC_BASE+0x1C;;
+const EMMC_DATA       = EMMC_BASE+0x20;;
+const EMMC_STATUS     = EMMC_BASE+0x24;;
+const EMMC_CONTROL0   = EMMC_BASE+0x28;;
+const EMMC_CONTROL1   = EMMC_BASE+0x2C;;
+const EMMC_INTERRUPT  = EMMC_BASE+0x30;;
+const EMMC_IRPT_MASK  = EMMC_BASE+0x34;;
+const EMMC_IRPT_EN    = EMMC_BASE+0x38;;
+
+const STATUS_READ_AVAILABLE = 0x00000800;;
+const STATUS_WRITE_READY    = 0x00000400;;
+const STATUS_DAT_INHIBIT    = 0x00000002;;
+const STATUS_CMD_INHIBIT    = 0x00000001;;
+
+const INT_ALL_ERRORS_MASK = 0x017F8000;;
+const INT_READ_RDY  = 0x00000020;;
+const INT_WRITE_RDY = 0x00000010;;
+const INT_DATA_DONE = 0x00000002;;
+const INT_CMD_DONE  = 0x00000001;;
+
+const C0_VDD1_3_3V   = 0x00000F00;;
+const C0_HCTL_DWITDH = 0x00000002;;
+
+const C1_SRST_HC    = 0x01000000;;
+const C1_TOUNIT_MAX = 0x000e0000;;
+const C1_CLK_EN     = 0x00000004;;
+const C1_CLK_STABLE = 0x00000002;;
+const C1_CLK_INTLEN = 0x00000001;;
+
+// standard commands
+const CMD_GO_IDLE       = 0x00000000;;
+const CMD_ALL_SEND_CID  = 0x02010000;;
+const CMD_SEND_REL_ADDR = 0x03020000;;
+const CMD_CARD_SELECT   = 0x07030000;;
+const CMD_SEND_IF_COND  = 0x08020000;;
+const CMD_SEND_CSD      = 0x09010000;;
+const CMD_STOP_TRANS    = 0x0C030000;;
+const CMD_READ_SINGLE   = 0x11220010;;
+const CMD_READ_MULTI    = 0x12220032;;
+const CMD_SET_BLOCKCNT  = 0x17020000;;
+const CMD_WRITE_SINGLE  = 0x18220000;;
+const CMD_WRITE_MULTI   = 0x19220022;;
+const CMD_APP_CMD       = 0x37020000;;
+
+// application specific commands
+const ACMD_SET_BUS_WIDTH = 0x06020000;;
+const ACMD_SEND_OP_COND  = 0x29020000;;	// Operating Condition register
+const ACMD_SEND_SCR      = 0x33220010;;	// SD Configuration Register, 64 bits
+
+const REL_ADDR_MASK = 0xFFFF0000;;
+
+const IF_COND = 0x000001AA;;	// interface condition: 1 means [2.7, 3.6V] | aa=check pattern
+
+const APP_CMD_OK = 0x00000020;;
+
+const BUS_WIDTH_4BITS = 0x00000002;;	// 4 bits
+
+const OP_COND_READY   = 0x80000000;;	// card power up status bit
+const OP_COND_HCS     = 0x40000000;;	// High Capacity Support
+const OP_COND_VOLTAGE = 0x00FF8000;;	// ff8 means [2.7, 3.6V]
+
+const SCR_SUPPORT_SET_BLKCNT = 0x02000000;;
+
+// we can use global variables as there is only one SD card reader on the PI4.
+var UseBlkCnt=false;;
+var CID;;
+var CSD;;
+var RelativeCardAddress=0;;
+var SectorSize;;
+var NbSectors;;
+
+fun clr32(addr, mask) = write32(addr, read32(addr)&(~mask));;
+fun set32(addr, mask) = write32(addr, read32(addr)|mask);;
+
+fun commonTimeout()= timeMs()+2000;;
+
+fun commonLoop(t, fUntil)=
+	if (timeMs()-t)<0 then
+	(call fUntil())||(sleepMs(1); commonLoop(t, fUntil));;
+
+fun waitForStatus(t, mask)=
+	if (timeMs()-t)>0 || bitTest(read32(EMMC_INTERRUPT), INT_ALL_ERRORS_MASK) then (
+		if DEBUG then echoLn "> waitForStatus timeout";
+		false
+	)
+	elif !bitTest(read32(EMMC_STATUS), mask) then true
+	else (sleepMs(1); waitForStatus(t, mask));;
+
+fun waitForInterrupt(t, mask)=
+	if (timeMs()-t)>0 then (
+		if DEBUG then echoLn "> waitForInterrupt timeout";
+		false
+	)
+	else let read32(EMMC_INTERRUPT) -> reg in
+	if bitTest(reg, INT_ALL_ERRORS_MASK) then void write32(EMMC_INTERRUPT, reg)
+	elif bitTest(reg, mask) then (write32(EMMC_INTERRUPT, mask); true)
+	else (sleepMs(1); waitForInterrupt(t, mask));;
+
+fun sendCmd(code, arg)=
+	if waitForStatus(commonTimeout(), STATUS_CMD_INHIBIT) then (
+		write32(EMMC_ARG1, arg);
+		write32(EMMC_CMDTM, code);
+		if waitForInterrupt(commonTimeout(), INT_CMD_DONE) then read32(EMMC_RESP0)
+	);;
+
+fun sendAcmd(code, arg)=
+	if bitTest(APP_CMD_OK, sendCmd(CMD_APP_CMD, RelativeCardAddress)) then
+	sendCmd(code, arg);;
+
+fun setClock(freq)=
+	if commonLoop(commonTimeout(), lambda ()= !bitTest(read32(EMMC_STATUS), STATUS_CMD_INHIBIT|STATUS_DAT_INHIBIT)) then
+	let max(2, 41666666/freq) -> period in
+	let ((period&0xFF)<<8) | ((period&0x300)>>2) -> controlValue in (
+		clr32(EMMC_CONTROL1, C1_CLK_EN);
+		sleepMs(10);
+		clr32(EMMC_CONTROL1, 0xFFC0);
+		set32(EMMC_CONTROL1, controlValue);
+		sleepMs(10);
+		set32(EMMC_CONTROL1, C1_CLK_EN);
+		sleepMs(10);
+		commonLoop(commonTimeout(), lambda ()= bitTest(read32(EMMC_CONTROL1), C1_CLK_STABLE))
+	);;
+
+fun _waitForOpCond(n)=
+	if n>0 then (
+		sleepMs(1); 
+		let sendAcmd(ACMD_SEND_OP_COND, OP_COND_HCS|OP_COND_VOLTAGE) -> result in
+		if !bitTest(result, OP_COND_READY) then _waitForOpCond(n-1)
+		else
+		bitTest(result, OP_COND_VOLTAGE)
+	);;
+
+fun _readSCR ()=
+	write32(EMMC_BLKSIZECNT, 0x10000 | 8);	// SCR is 64 bits
+	if nil<>sendAcmd(ACMD_SEND_SCR, 0) then
+	if waitForInterrupt(commonTimeout(), INT_READ_RDY) then
+	if commonLoop(commonTimeout(), lambda ()= bitTest(read32(EMMC_STATUS), STATUS_READ_AVAILABLE)) then
+	let read32(EMMC_DATA) -> scr0 in
+	if commonLoop(commonTimeout(), lambda ()= bitTest(read32(EMMC_STATUS), STATUS_READ_AVAILABLE)) then
+	let read32(EMMC_DATA) -> scr1 in	// we read it but don't use it
+	scr0;;
+
+fun _gpioPudClk(pin, mode)=
+	let GPFSEL0+ (pin/10)*4 -> selreg in
+	let (pin%10)*3 -> selshift in
+	let (pin/32)*4 -> offset in
+	let 1<<(pin%32) -> mask in
+	(
+		clr32(selreg, 7<<selshift);
+		set32(selreg, mode<<selshift);
+		write32(GPPUD, 2);	// Enable Pull Up control
+		sleepMs(1); 
+		write32(GPPUDCLK0+offset, mask);
+		sleepMs(1); 
+		write32(GPPUD, 0);	// Off – disable pull-up/down
+		if pin==47 then set32(GPHEN0+offset, mask);
+	);;
+
+fun _read128Response ()=
+	let bytesCreate(16, 0) -> r128 in (
+		for i=0;i<16 do bytesSet(r128, i, read8(EMMC_RESP0+15-i));
+		strFromBytes(r128);
+	);;
+
+fun pi4SdInit ()=
+	if DEBUG then echoLn "> pi4SdInit";
+	_gpioPudClk(47, 0);
+	for i=48;i<=53 do _gpioPudClk(i, 7);
+
+	write32(EMMC_CONTROL0, 0);
+	set32(EMMC_CONTROL1, C1_SRST_HC);
+	if !commonLoop(commonTimeout(), lambda ()= !bitTest(read32(EMMC_CONTROL1), C1_SRST_HC)) then return false;
+
+	set32(EMMC_CONTROL0, C0_VDD1_3_3V);
+	sleepMs(10);
+
+	set32(EMMC_CONTROL1, C1_CLK_INTLEN | C1_TOUNIT_MAX);
+	sleepMs(10);
+
+	if !setClock(400000) then return false;
+	write32(EMMC_IRPT_EN,   0xffffffff);
+	write32(EMMC_IRPT_MASK, 0xffffffff);
+
+	if nil==sendCmd(CMD_GO_IDLE, 0) then return false;
+	if nil==sendCmd(CMD_SEND_IF_COND, IF_COND) then return false;
+	if !_waitForOpCond(30) then return false;
+	if nil==sendCmd(CMD_ALL_SEND_CID, 0) then return false;
+	set CID = _read128Response();
+	set RelativeCardAddress=sendCmd(CMD_SEND_REL_ADDR, 0) & REL_ADDR_MASK;
+	if DEBUG then echoLn strFormat("> RelativeCardAddress=*", hexFromInt(RelativeCardAddress));
+	if RelativeCardAddress <= 0 then return false;
+
+	if nil==sendCmd(CMD_SEND_CSD, RelativeCardAddress) then return false;
+	set CSD = _read128Response();
+// for unknown reason, there is a 8bits shift
+// we can read 120 bits LSB from EMMC_RESP0, the 8 initial bits (1 reserved bit and 7 crc bits) are skipped
+// the first 8 bits of (read32 EMMC_RESP0) are bits 15:8
+// the last 8 bits of (read32 EMMC_RESP3) are bits 135:128
+// see: http://problemkaputt.de/gbatek-dsi-sd-mmc-protocol-csd-register-128bit-card-specific-data.htm
+// and: https://goughlui.com/2014/01/03/project-read-collect-decode-sd-card-csd-register-data/
+	let (read32(EMMC_RESP3)>>22)&3 -> csd_version in	// 127:126
+	let (read32(EMMC_RESP2)>>8)&15 -> read_bl_len in	// 83:80
+	let ((read32(EMMC_RESP2)&0x3)<<24)|((read32(EMMC_RESP1)>>8)&0xffffff) -> c_size_sdhc in	// 69:48
+	let ((read32(EMMC_RESP2)&0x3)<<20)|((read32(EMMC_RESP1)>>22)&0x3ff) -> c_size_sdsc in	// 73:62
+	let (read32(EMMC_RESP2)>>5)&7 -> c_size_multi_sdsc in	// 49:47
+	let 1<<read_bl_len -> sectorSize in
+	let if csd_version<>0 then (c_size_sdhc+1)*1024
+	else (1<<(c_size_multi_sdsc+2))*(c_size_sdsc+1)
+	-> nbSectors in
+	if setClock(25000000) then
+	if nil<>sendCmd(CMD_CARD_SELECT, RelativeCardAddress) then
+	if waitForStatus(commonTimeout(), STATUS_DAT_INHIBIT) then
+	let _readSCR() -> scr in
+	if scr<>nil then
+	(
+		set UseBlkCnt= bitTest(scr, SCR_SUPPORT_SET_BLKCNT);
+		if nil==sendAcmd(ACMD_SET_BUS_WIDTH, BUS_WIDTH_4BITS) then return nil;
+		set32(EMMC_CONTROL0, C0_HCTL_DWITDH);
+
+		if DEBUG then echoLn strFormat("> EMMC: BlkCnt=*", UseBlkCnt);
+		set SectorSize = sectorSize;
+		set NbSectors = nbSectors;
+		echoLn strFormat("> EMMC: version *, * sectors (* bytes per sector)", csd_version, intWithDelimiter(".", nbSectors), sectorSize);
+//		hexDump CID;
+//		hexDump CSD;
+		true
+	);;
+
+fun _storageReadLoop(buffer, start, lba, num)=
+	if num>0 then
+	if waitForInterrupt(commonTimeout(), INT_READ_RDY) then (
+		read32Repeat(EMMC_DATA, buffer, start, 128);
+		512+_storageReadLoop(buffer, start+512, lba+1, num-1)
+	);;
+
+fun _pi4SdRead(buffer, start, lba, num)=
+	//	if DEBUG then echoLn strFormat("> pi4SdRead * * *", start, lba, num);
+	if num>=1 then
+	if bytesLength(buffer)>= start+num*512 then
+	if waitForStatus(commonTimeout(), STATUS_DAT_INHIBIT) then (
+		write32(EMMC_BLKSIZECNT, (num << 16) | 512);
+		if num>1 then (
+			if (!UseBlkCnt) || nil<>sendCmd(CMD_SET_BLOCKCNT, num) then
+			if nil<>sendCmd(CMD_READ_MULTI, lba) then
+			let _storageReadLoop(buffer, start, lba, num) -> result in
+			if UseBlkCnt || nil<>sendCmd(CMD_STOP_TRANS, 0) then result
+		)
+		else 
+			if nil<>sendCmd(CMD_READ_SINGLE, lba) then
+			_storageReadLoop(buffer, start, lba, 1)
+		
+	);;
+
+fun pi4SdRead(sector, nbSectors)=
+	let bytesCreate(512*nbSectors, 0) -> buffer in
+	let _pi4SdRead(buffer, 0, sector, nbSectors) -> len in
+	bytesSlice(buffer, 0, len);;
+
+
+fun _storageWriteLoop(buffer, start, lba, num)=
+	if num<=0 then (
+		if waitForInterrupt(commonTimeout(), INT_DATA_DONE) then 0
+	)
+	else
+	if waitForInterrupt(commonTimeout(), INT_WRITE_RDY) then (
+		write32Repeat(EMMC_DATA, buffer, start, 128);
+		512+_storageWriteLoop(buffer, start+512, lba+1, num-1)
+	);;
+
+fun pi4SdWrite(sector, data)=
+	//	if DEBUG then echoLn strFormat "> pi4SdWrite * *" sector bytesLength data;
+	let bytesLength(data)>>9 -> nbSectors in
+	if (nbSectors>=1) && !bitTest(bytesLength(data), 511) then
+	if waitForStatus(commonTimeout(), STATUS_DAT_INHIBIT|STATUS_WRITE_READY) then (
+		write32(EMMC_BLKSIZECNT, (nbSectors << 16) | 512);
+		if nbSectors>1 then (
+			if (!UseBlkCnt) || nil<>sendCmd(CMD_SET_BLOCKCNT, nbSectors) then
+			if nil<>sendCmd(CMD_WRITE_MULTI, sector) then
+			let _storageWriteLoop(data, 0, sector, nbSectors) -> result in
+			if UseBlkCnt || nil<>sendCmd(CMD_STOP_TRANS, 0) then result
+		)
+		else 
+			if nil<>sendCmd(CMD_WRITE_SINGLE, sector) then
+			_storageWriteLoop(data, 0, sector, 1)
+		
+	);;
+
+fun pi4SdSectorSize()= SectorSize;;
+fun pi4SdNbSectors()= NbSectors;;
+fun pi4SdCID()= CID;;
+fun pi4SdCSD()= CSD;;

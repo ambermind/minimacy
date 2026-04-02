@@ -59,6 +59,9 @@ int systemUiInit(Pkg* system)
 
 		{ NATIVE_FUN, "_uiStart", fun_uiStart, "fun Int Int Int Int Int Str -> Bool"},
 		{ NATIVE_FUN, "_uiStop", fun_uiStop, "fun -> Bool" },
+#ifdef WITH_X11_BITMAP
+		{ NATIVE_FUN, "_uiUpdate", fun_uiUpdate, "fun Bitmap Int Int Int Int -> Bitmap"},
+#endif
 		{ NATIVE_FUN, "uiResize", fun_uiResize, "fun Int Int -> Bool" },
 		{ NATIVE_FUN, "_uiW", fun_uiW, "fun -> Int" },
 		{ NATIVE_FUN, "_uiH", fun_uiH, "fun -> Int" },

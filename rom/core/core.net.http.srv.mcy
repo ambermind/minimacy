@@ -196,7 +196,7 @@ fun _httpBuildHeaderList(headers, content)=
 fun _httpBuild(h, firstLine, data)=
 	let if data==nil then "" else data -> content in
 	(
-		httpSrvSetHeader(h, HTTP_CONTENT_LENGTH, decFromInt(if data<>nil then strLength(data) else 0));
+		httpSrvSetHeader(h, HTTP_CONTENT_LENGTH, strFromInt(if data<>nil then strLength(data) else 0));
 		let firstLine::_httpBuildHeaderList(h.replyHeadersH, content) -> lines in
 		strJoin("\r\n", lines)
 	);;
@@ -368,7 +368,7 @@ fun _checkHeader(h, data)=
 	let strLeft(begining, i) -> header in
 	let strSplit("\r\n", header) -> header in
 	let _httpHeaders(header) -> headers in
-	let intFromDec(hashmapGet(headers, strLowercase(HTTP_CONTENT_LENGTH))) -> contentLength in
+	let intFromStr(hashmapGet(headers, strLowercase(HTTP_CONTENT_LENGTH))) -> contentLength in
 	let HTTP_CHUNKED==hashmapGet(headers, strLowercase(HTTP_TRANSFER_ENCODING)) -> chunked in
 	let strSplit(" ", head(header)) -> firstLine in
 	let strSlice(begining, i+4, nil) -> ending in

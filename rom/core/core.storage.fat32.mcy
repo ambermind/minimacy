@@ -557,11 +557,9 @@ fun _openFile(p, d, mode, creation)=
 			set f.partitionF=nil;
 			nil
 		);
-		set f.oblivionF = oblivionCreate((lambda ()=  
-			if f.partitionF<>nil then (
-			hashsetRemove(f.partitionF.openFilesP, hashEntry);
-		)));
-		set f.oblivionF=nil;
+		set f.oblivionF = oblivionCreate(lambda ()=  
+			if f.partitionF<>nil then hashsetRemove(f.partitionF.openFilesP, hashEntry);
+		);
 
 		set f.sizeF= (lambda ()= lockSync(p.lockP, lambda ()=
 			if _checkFile(f) then _fileLength(f)
@@ -706,7 +704,10 @@ fun _partitionInitFat32(bootSector, partitionStart, volume)=
 		);
 		let listFind(_partitionDir(p, ""), lambda(d)= isVolumeName(d)) -> d in
 		if d<>nil then set p.volumeLabelP=d.fullNameDF;
-		echoLn strFormat("> Storage: found fat32 partition (* Bytes, cluster size: *): *", \bigNum bigFromInt(largeTotalSector)*bigFromInt(bytesPerSector), p.bytesPerClusterP, p.volumeLabelP);
+		echoLn strFormat("> Storage: found fat32 partition (* Bytes, cluster size: *): *",
+			strWithDelimiter(3, ".", strFromBig(\bigNum bigFromInt(largeTotalSector)*bigFromInt(bytesPerSector))),
+			p.bytesPerClusterP, p.volumeLabelP
+		);
 		p::nil
 	);;
 

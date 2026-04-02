@@ -190,7 +190,6 @@ int fun_threadCreate(Thread* th)
 {
 	Thread* t=threadCreate(THREAD_STACK_LENGTH0);
 	if (MM.OM) return EXEC_OM;
-//interpreterTRON=1;
 	if (t)
 	{
 		t->listNext = MM.listThreads;
@@ -266,7 +265,6 @@ int fun_threadResume(Thread* th)
 //	stack(th,0) contains the result of the function to resume
 	Thread* t=(Thread*)STACK_PNT(th,1);
 	if (!t) FUN_RETURN_INT(-1);
-//interpreterTRON=1;
 	STACK_PUSH_NIL_ERR(t,EXEC_OM);	// make space on the other thread
 	STACK_COPY(t,0,th,0);	// move onto the other thread
 	FUN_RETURN_INT(0);
@@ -290,7 +288,6 @@ int fun_threadExec(Thread* th)
 	Thread* t = (Thread*)STACK_PNT(th, 1);
 
 	if (!STACK_PNT(th,0) || (!t)) FUN_RETURN_INT(-1);
-	//interpreterTRON=1;
 	STACK_PUSH_NIL_ERR(t,EXEC_OM);	// make space on the other thread
 	STACK_COPY(t,0,th,0);	// move onto the other thread
 	interpreterExec(t, 0, 0);	// make it ready to go
@@ -375,7 +372,7 @@ int systemThreadInit(Pkg *system)
 		{ NATIVE_FUN, "_threadExec", fun_threadExec, "fun _Thread (fun -> a1) -> Int" },
 		{ NATIVE_FUN, "_threadRun", fun_threadRun, "fun _Thread Int -> Int" },
 		{ NATIVE_OPCODE, "_threadHoldOn", (void*)OPholdon, "fun -> a1" },
-		{ NATIVE_OPCODE, "_threadResign", (void*)OPresign, "fun -> a1" },
+		{ NATIVE_OPCODE, "threadResign", (void*)OPresign, "fun -> a1" },
 		{ NATIVE_FUN, "_threadResume", fun_threadResume, "fun _Thread a1 -> Int" },
 		{ NATIVE_FUN, "_threadDump", fun_threadDump, "fun _Thread -> _Thread" },
 		{ NATIVE_FUN, "_threadNext", fun_threadNext, "fun _Thread -> _Thread" },

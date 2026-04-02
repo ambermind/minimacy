@@ -1,0 +1,13 @@
+#
+# Minimacy config file for Raspberry Pi 4
+#
+
+arm_64bit=1
+kernel_address=0x80000
+
+# Enable this for JTAG / SWD debugging
+#enable_jtag_gpio=1
+
+[pi4]
+kernel=minimacyRpi4.img
+max_framebuffers=2

@@ -1,0 +1,190 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2022, Sylvain Huet, Ambermind
+// Minimacy (r) System
+
+export KeyCodes;;
+
+use driver.rpi4.usb;;
+use driver.rpi4.usb.hid;;
+
+//----------------- KEYBOARD
+const DEBUG=false;;
+//const DEBUG=true;;
+
+var KeyCodes={
+nil,	nil,	nil,	nil,	//0x00
+nil,	nil,	nil,	nil,	//0x01
+nil,	nil,	nil,	nil,	//0x02
+nil,	nil,	nil,	nil,	//0x03
+'a',	'A',	0xE1,	0xC1,	//0x04
+'b',	'B',	nil,	nil,	//0x05
+'c',	'C',	0xA9,	0xA2,	//0x06
+'d',	'D',	0xF0,	0xD0,	//0x07
+'e',	'E',	0xE9,	0xC9,	//0x08
+'f',	'F',	nil,	nil,	//0x09
+'g',	'G',	nil,	nil,	//0x0A
+'h',	'H',	nil,	nil,	//0x0B
+'i',	'I',	0xED,	0xCD,	//0x0C
+'j',	'J',	nil,	nil,	//0x0D
+'k',	'K',	nil,	nil,	//0x0E
+'l',	'L',	0xF8,	0xD8,	//0x0F
+'m',	'M',	0xB5,	nil,	//0x10
+'n',	'N',	0xF1,	0xD1,	//0x11
+'o',	'O',	0xF3,	0xD3,	//0x12
+'p',	'P',	0xF6,	0xD6,	//0x13
+'q',	'Q',	0xE4,	0xC4,	//0x14
+'r',	'R',	0xAE,	nil,	//0x15
+'s',	'S',	0xDF,	0xA7,	//0x16
+'t',	'T',	0xFE,	0xDE,	//0x17
+'u',	'U',	0xFA,	0xDA,	//0x18
+'v',	'V',	nil,	nil,	//0x19
+'w',	'W',	0xE5,	0xC5,	//0x1A
+'x',	'X',	nil,	nil,	//0x1B
+'y',	'Y',	0xFC,	0xDC,	//0x1C
+'z',	'Z',	0xE6,	0xC6,	//0x1D
+'1',	'!',	0xA1,	0xB9,	//0x1E
+'2',	'@',	0xB2,	nil,	//0x1F
+'3',	'#',	0xB3,	nil,	//0x20
+'4',	'$',	0xA4,	0xA3,	//0x21
+'5',	'%',	0x80,	nil,	//0x22
+'6',	'^',	0xBC,	nil,	//0x23
+'7',	'&',	0xBD,	nil,	//0x24
+'8',	'*',	0xBE,	nil,	//0x25
+'9',	'(',	nil,	nil,	//0x26
+'0',	')',	nil,	nil,	//0x27
+13,	13,	nil,	nil,	//0x28
+27,	27,	nil,	nil,	//0x29
+8,	8,	nil,	nil,	//0x2A
+9,	9,	nil,	nil,	//0x2B
+32,	32,	nil,	nil,	//0x2C
+'-',	'_',	0xA5,	nil,	//0x2D
+'=',	'+',	0xD7,	0xF7,	//0x2E
+'[',	'{',	0xAB,	nil,	//0x2F
+']',	'}',	0xBB,	nil,	//0x30
+'\',	'|',	0xAC,	0xA6,	//0x31
+'#',	'~',	nil,	nil,	//0x32
+';',	':',	0xB6,	0xB0,	//0x33
+''',	'""',	0xB4,	0xA8,	//0x34
+'`',	'~',	nil,	nil,	//0x35
+',',	'<',	0xE7,	nil,
+'.',	'>',	nil,	nil,	//0x37
+'/',	'?',	0xBF,	nil,	//0x38
+Key_Caps_Lock,	Key_Caps_Lock,	nil,	nil,	//0x39
+Key_F1,	nil,	nil,	nil,	//0x3A
+Key_F2,	nil,	nil,	nil,	//0x3B
+Key_F3,	nil,	nil,	nil,	//0x3C
+Key_F4,	nil,	nil,	nil,	//0x3D
+Key_F5,	nil,	nil,	nil,	//0x3E
+Key_F6,	nil,	nil,	nil,	//0x3F
+Key_F7,	nil,	nil,	nil,	//0x40
+Key_F8,	nil,	nil,	nil,	//0x41
+Key_F9,	nil,	nil,	nil,	//0x42
+Key_F10,	nil,	nil,	nil,	//0x43
+Key_F11,	nil,	nil,	nil,	//0x44
+Key_F12,	nil,	nil,	nil,	//0x45
+nil,	nil,	nil,	nil,	//0x46
+Key_Scroll_Lock,	nil,	nil,	nil,	//0x47
+Key_Pause,	nil,	nil,	nil,	//0x48
+Key_Insert,	nil,	nil,	nil,	//0x49
+Key_Home,	nil,	nil,	nil,	//0x4A
+Key_Page_Up,	nil,	nil,	nil,	//0x4B
+Key_Delete,	nil,	nil,	nil,	//0x4C
+Key_End,	nil,	nil,	nil,	//0x4D
+Key_Page_Down,	nil,	nil,	nil,	//0x4E
+Key_Right,	nil,	nil,	nil,	//0x4F
+Key_Left,	nil,	nil,	nil,	//0x50
+Key_Down,	nil,	nil,	nil,	//0x51
+Key_Up,	nil,	nil,	nil,	//0x52
+Key_Num_Lock,	Key_Num_Lock,	nil,	nil,	//0x53
+'/',	'/',	nil,	nil,	//0x54
+'*',	'*',	nil,	nil,	//0x55
+'-',	'-',	nil,	nil,	//0x56
+'+',	'+',	nil,	nil,	//0x57
+13,	13,	nil,	nil,	//0x58
+Key_End,	'1',	nil,	nil,	//0x59
+Key_Down,	'2',	nil,	nil,	//0x5A
+Key_Page_Down,	'3',	nil,	nil,	//0x5B
+Key_Left,	'4',	nil,	nil,	//0x5C
+nil,	'5',	nil,	nil,	//0x5D
+Key_Right,	'6',	nil,	nil,	//0x5E
+Key_Home,	'7',	nil,	nil,	//0x5F
+Key_Up,	'8',	nil,	nil,	//0x60
+Key_Page_Up,	'9',	nil,	nil,	//0x61
+Key_Insert,	'0',	nil,	nil,	//0x62
+Key_Delete,	'.',	nil,	nil,	//0x63
+'\',	'|',	nil,	nil	//0x64
+};;
+
+const Hid_KeyMask_Controls_Mask= 0x11;;
+const Hid_KeyMask_Shifts_Mask  = 0x22;;
+const Hid_KeyMask_Metas_Mask   = 0x88;;
+const Hid_KeyMask_Alt_Mask     = 0x04;;
+const Hid_KeyMask_AltGr_Mask   = 0x40;;
+
+const KEYBOARD_REPORT_SIZE=8;;
+
+//Minimacy constants:
+// KeyMask_Shift  =1
+// KeyMask_Alt    =2
+// KeyMask_Control=4
+// KeyMask_Meta   =8
+
+struct Keyboard=[stateK, vectorK, modifierK];;
+fun _keyboardCode(kb, key)=
+	let (if bitTest(kb.modifierK, Hid_KeyMask_Shifts_Mask) then 1)|(if bitTest(kb.modifierK, Hid_KeyMask_AltGr_Mask) then 2) -> offset in
+	KeyCodes[key<<2 + offset];;
+
+fun _keyboardRepeat(kb, i, code, delay) =
+	let _keyboardCode(kb, code) -> key in
+	if key<>nil then (
+		if DEBUG then echoLn strFormat("keyDown *", key);
+		uiPostKeyDown(key)
+	);
+	onTimeout(delay, lambda ()=
+		if strGet(kb.vectorK, i)==code then _keyboardRepeat(kb, i, code, 100)
+	);;
+fun _keyboardLoop(ep, kb)=
+	interruptTransfer(ep, KEYBOARD_REPORT_SIZE, lambda(data)=
+		if !strEmpty(data) then (
+			if DEBUG then echoLn "Keyboard Interrupt";
+			if DEBUG then hexDump data;
+			set kb.modifierK=strGet(data, 0);
+			set kb.stateK=	// for minimacy keyboardState function
+				(if bitTest(kb.modifierK, Hid_KeyMask_Shifts_Mask  ) then KeyMask_Shift)|
+				(if bitTest(kb.modifierK, Hid_KeyMask_Controls_Mask) then KeyMask_Control)|
+				(if bitTest(kb.modifierK, Hid_KeyMask_Alt_Mask     ) then KeyMask_Alt)|
+				(if bitTest(kb.modifierK, Hid_KeyMask_Metas_Mask   ) then KeyMask_Meta);
+
+			for i=2;i<KEYBOARD_REPORT_SIZE do
+				let strGet(data, i) -> now in
+				let strGet(kb.vectorK, i) -> before in
+				if now<>before then (
+					if 0<>now then _keyboardRepeat(kb, i, now, 500)
+					else
+					let _keyboardCode(kb, before) -> key in 
+					if key<>nil then
+					(
+						if DEBUG then echoLn strFormat("keyUp *", key);
+						uiPostKeyUp(key)
+					)
+				);
+			set kb.vectorK=data
+		);
+		_keyboardLoop(ep, kb)
+	);;
+
+fun keyboardCreate(d, protocol, interfaceNumber, epDescriptors)=
+	echoLn strFormat("> USB: start keyboard");
+	if DEBUG then for epDescriptor in epDescriptors do hexDump epDescriptor;
+	let epDescriptors -> hidDescriptor::epDescriptor::_ in
+	let hidGetReport(d, interfaceNumber, hidDescriptor) -> report in
+	if report==nil then return msgAndReturn("keyboard report failed", nil)
+	else
+	let hidEpStart(d, protocol, interfaceNumber, epDescriptor) -> ep in 
+	if ep==nil then return msgAndReturn("keyboard endpoint failed", nil)
+	else (
+		_keyboardLoop(ep, [vectorK=strCreate(KEYBOARD_REPORT_SIZE, 0)]);
+		true
+	);;
+
+fun _init()= usbRegister("int-3-1-1", #keyboardCreate);;

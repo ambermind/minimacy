@@ -1,0 +1,14 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2022, Sylvain Huet, Ambermind
+// Minimacy (r) System
+
+#ifndef i2cInit
+const I2c0=0;;
+const I2c1=1;;
+fun i2cInit(a:Int, b, c, d)=nil;;
+fun i2cBaudrate(a) = nil;;
+fun i2cSetBaudrate(a, b) = nil;;
+fun i2cWrite(a, b, c)=nil;;
+fun i2cWriteBytes(a, b, c)=nil;;
+fun i2cRead(a, b, c)=nil;;
+#endif

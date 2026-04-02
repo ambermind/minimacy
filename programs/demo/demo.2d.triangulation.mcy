@@ -1,8 +1,4 @@
-// SPDX-License-Identifier: GPL-3.0-only
-// Copyright (c) 2022, Sylvain Huet, Ambermind
-// Minimacy (r) Demonstration
-
-// Triangulation 2d of Delaunay
+// Triangulation 2d de Delaunay - Feb 03 - by Sylvain Huet
 use core.2d.font;;
 use core.2d.polygon;;
 use core.2d.png;;
@@ -134,7 +130,7 @@ fun display()=
 	(
 		bitmapErase(bmp, 0x8080);
 		for [col, lp, _, _, _] in Triangles do drawPoly(bmp, tuplefromlistpoly(lp), col);
-		bitmapText(bmp, 0, 0, 0, strConcat("nb of triangles = ", decFromInt(listLength(Triangles))), Font, 0xffffff, 0);
+		bitmapText(bmp, 0, 0, 0, strConcat("nb of triangles = ", strFromInt(listLength(Triangles))), Font, 0xffffff, 0);
 		uiUpdate()
 	);;
 

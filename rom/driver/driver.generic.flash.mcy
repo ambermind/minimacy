@@ -1,0 +1,9 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2022, Sylvain Huet, Ambermind
+// Minimacy (r) System
+
+#ifndef flashRead
+fun flashSize ()=nil;;
+fun flashRead(a, b) = nil;;
+fun flashWrite(a, b) =nil;;
+#endif

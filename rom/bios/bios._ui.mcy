@@ -6,7 +6,9 @@ var _Uicb;;
 const _UI_DEBUG=false;;
 var _UiThread;;
 
-var _BackBuffer :Bitmap;;
+var _BackBuffer;;
+fun _backBufferResize(w, h)=
+	if w<>bitmapW(_BackBuffer) || h<>bitmapH(_BackBuffer) then set _BackBuffer=bitmapCreate(w, h, 0);;
 
 #ifdef useSoftCursor
 struct SoftCursor=[bmpC, xC, yC, dxC, dyC, backC, displayedC];;
@@ -247,7 +249,7 @@ fun _uiStartDefault(x, y, w, h, flag, name)=
 
 fun uiBufferSetSize(w, h, filter)=
 	if _UiFullGL then return nil;
-	set _BackBuffer=bitmapCreate(w, h, 0);
+	_backBufferResize(w, h);
 	set _BackBytes =nil;
 	_uiVrtUpdate();
 	_textureCreate(filter);;
@@ -300,7 +302,7 @@ fun _yConvert(x, y)= y;;
 
 fun graphicList ()=
 	for [i, w, h, f] in graphicModes() do
-		echoLn strFormat("*: * x * / *", strLeftSpacePadding(3, strBuild(i)), w, h, f);
+		echoLn strFormat("*: * x * / *", intPad(3, i), w, h, f);
 	true;;
 
 fun _bestMode(w, h) =
@@ -317,9 +319,8 @@ fun _bestMode(w, h) =
 
 fun _uiStartDefault(x, y, w, h, flag, name)= 
 	let _bestMode(w, h) -> mode in (
-		graphicSetMode(mode);
-		echoLn strFormat("> graphic mode * *x*", mode, graphicW(), graphicH());
-		set _BackBuffer=bitmapCreate(w, h, 0);
+		if graphicSetMode(mode)<>nil then echoLn strFormat("> graphic mode * *x*", mode, graphicW(), graphicH());
+		_backBufferResize(w, h);
 		set _OffX= (graphicW()-w)/2;
 		set _OffY= (graphicH()-h)/2;
 		nil
@@ -340,6 +341,44 @@ fun uiUpdate ()=
 	_cursorRemove();;
 
 fun uiMultiTouch ()= nil;;
+
+#elifdef _uiUpdate
+
+fun _uiOnPaintDefault()= nil;;
+fun _uiOnSizeDefault(x, y)= 
+	_backBufferResize(x, y);
+	call _Uicb[_EVENT_SIZE](x, y, 0);;
+
+fun _uiAlive()= _UiThread<>nil;;
+fun _uiStopThread(th)= if th==_UiThread then uiStop();;
+
+fun uiW()=bitmapW(_BackBuffer);;
+fun uiH()=bitmapH(_BackBuffer);;
+fun _xConvert(x, y)= x;;
+fun _yConvert(x, y)= y;;
+
+fun _uiStartDefault(x, y, w, h, flag, name)= 
+	if bitTest(flag, UI_GL) then (
+		echoLn "> This Minimacy VM doesn't support openGL";
+		return nil
+	);
+	_workerEnter();
+	if _uiStart(x, y, w, h, flag, name) then
+	(
+		_backBufferResize(w, h);
+		true
+	);;
+
+fun uiBufferSetSize(w, h, filter)= _backBufferResize(w, h);;
+fun uiBuffer()= _BackBuffer;;
+
+fun uiUpdateRegion(x, y, w, h) =
+	_uiUpdate(_BackBuffer, x, y, w, h);;
+
+fun uiUpdate ()=
+	_uiUpdate(_BackBuffer, 0, 0, nil, nil);;
+
+fun uiMultiTouch ()= nil;;
 #else
 fun _uiOnPaintDefault()= nil;;
 fun _uiOnSizeDefault(x, y)= nil;;
@@ -356,7 +395,7 @@ fun _yConvert(x, y)= y;;
 fun _uiStartDefault(x, y, w, h, flag, name)=
 	echoLn "> This Minimacy VM doesn't support UI";
 	if device=="Unix" then echoLn "> You may launch minimacyX11GL instead of minimacy";
-	if device=="MacOsCmdLine" then echoLn "> You may launch minimacyMacX11GL instead of minimacyMac";
+	if device=="MacOsCmdLine" then echoLn "> You may launch minimacyMacX11 instead of minimacyMac";
 	nil;;
 fun uiBufferSetSize(w, h, filter)= nil;;
 fun uiBuffer ()= nil;;
@@ -405,6 +444,8 @@ fun _uiOnKeyUp(x, y, v)    =
 
 var _MouseMoveBusy;;
 var _MouseMoveNext;;
+var _MouseLastX;;
+var _MouseLastY;;
 
 fun _mouseMoveSend(x, y, v) =
 	threadPost(_UiThread, (lambda()= 
@@ -419,6 +460,7 @@ fun _mouseMoveSend(x, y, v) =
 	nil;;
 
 fun _uiOnMouseMove(x0, y0, v)= 
+	set _MouseLastX=x0; set _MouseLastY= y0;
 	let _xConvert(x0, y0) -> x in
 	let _yConvert(x0, y0) -> y in (
 		_cursorUpdatePos(x, y); 
@@ -431,6 +473,7 @@ fun _uiOnMouseMove(x0, y0, v)=
 	);;
 
 fun _uiCommonEvent(x0, y0, v, name, index)=
+	set _MouseLastX=x0; set _MouseLastY= y0;
 	let _xConvert(x0, y0) -> x in
 	let _yConvert(x0, y0) -> y in (
 		_cursorUpdatePos(x, y); 
@@ -470,6 +513,9 @@ fun uiPostClick(x, y, v) = _uiOnClick(x, y, v);;
 fun uiPostUnclick(x, y, v) = _uiOnUnclick(x, y, v);;
 fun uiPostVwheel(x, y, v) = _uiOnVwheel(x, y, v);;
 fun uiPostHwheel(x, y, v) = _uiOnHwheel(x, y, v);;
+
+fun uiComputeMouseX(dx)= max(0, min(uiW(), _MouseLastX+dx));;
+fun uiComputeMouseY(dy)= max(0, min(uiH(), _MouseLastY+dy));;
 
 fun uiOnPaint(cb)= set _Uicb[_EVENT_PAINT]=(lambda(x, y, v) = call cb(); true);true;;
 fun uiOnMouseMove(cb)= set _Uicb[_EVENT_MOUSEMOVE]=(lambda(x, y, v) = call cb(x, y, v); true);true;;

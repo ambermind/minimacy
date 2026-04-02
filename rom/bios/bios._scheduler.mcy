@@ -2,8 +2,6 @@
 // Copyright (c) 2022, Sylvain Huet, Ambermind
 // Minimacy (r) System
 
-fun oblivionCreate(f) = _oblivionCreate((lambda ()= call f(); nil));;
-
 //-------------- SCHEDULER
 const _RunList=fifoCreate();;
 
@@ -14,8 +12,8 @@ fun _scheduleThread(th)=
 fun _isAlive()=
 	let _oblivionPop() -> f in if f<>nil then threadStart("_oblivion_", f);
 	if _HardStop then false
-	else if _NiceStop then (0<fifoCount(_RunList)) || _workerAlive()
-	else (0<fifoCount(_RunList)) || _timerAlive() || _streamAlive() || _workerAlive() || _internalExtAlive() || _uiAlive() || audioPlaying();;
+	elif _NiceStop then (0<fifoCount(_RunList)) || _workerAlive()
+	else fifoCount(_RunList)>0 || _timerAlive() || _streamAlive() || _workerAlive() || _internalExtAlive() || _uiAlive() || audioPlaying();;
 
 fun _schedulerLoop()=
 	while _isAlive() do
@@ -27,12 +25,12 @@ fun _schedulerLoop()=
 			set _This._cyclesT=_threadCount(_This._threadT);
 			set _This=th;
 			_echoEnable(_This._echoEnableT);
-			match _threadRun(th._threadT, _MAX_THREAD_EXEC) with
+			void match _threadRun(th._threadT, _MAX_THREAD_EXEC) with
 				EXEC_IDLE -> set th._stateT=_THREAD_IDLE,
-				EXEC_PREEMPTION -> (_scheduleThread(th);nil),
-				EXEC_WAIT -> (set th._stateT= _THREAD_WAIT),
-				EXEC_EXIT -> (threadStop(th); nil),
-				EXEC_OM -> (echoLn "> Thread is out of memory"; threadStop(th); set th=nil; gcCompact(); nil);
+				EXEC_PREEMPTION -> _scheduleThread(th),
+				EXEC_WAIT -> set th._stateT= _THREAD_WAIT,
+				EXEC_EXIT -> threadStop(th),
+				EXEC_OM -> (echoLn "> Thread is out of memory"; threadStop(th); set th=nil; gcCompact());
 			_threadsCheckPendingTasks(th);
 
 			set th._cyclesT=_threadCount(th._threadT);

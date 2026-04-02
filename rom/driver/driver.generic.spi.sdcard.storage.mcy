@@ -1,0 +1,284 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2022, Sylvain Huet, Ambermind
+// Minimacy (r) System
+
+// to be used with: https://letmeknow.fr/fr/autres/2936-mini-module-carte-micro-sd-9052458557521.html
+
+export sdInit(spiPort, spiClk, spiMosi, spiMiso, spiCs);;
+export sdNbSectors(sd);;
+export sdSectorSize(sd);;
+export sdRead(sd, sector, nbSectors);;
+export sdWrite(sd, sector, data);;
+export sdSetLock(lock);;
+
+use driver.generic.spi;;
+use driver.generic.gpio;;
+
+const DEBUG=true;;
+
+struct SdSpi=[spiPortS, csS, sectorSizeS, nbSectorsS, highCapacityS];;
+
+//-------------- do not change below
+const SPI_CPOL_0 = 0;;
+const SPI_CPHA_0 = 0;;
+const SPI_MSB_FIRST = 1;;
+
+const TOKEN_START_MULTIPLE = 0xfc;;
+const TOKEN_STOP_TRAN = 0xfd;;
+const TOKEN_START = 0xfe;;
+const TOKEN_DUMMY = 0xff;;
+
+const SD_COMMAND_TIMEOUT= 1000;;
+
+const CMD0_GO_IDLE_STATE = 0;;             //Resets the SD Memory Card
+const CMD1_SEND_OP_COND = 1;;              //Sends host capacity support
+const CMD8_SEND_IF_COND = 8;;              //Supply voltage info
+const CMD9_SEND_CSD = 9;;                  //Provides Card Specific data
+const CMD12_STOP_TRANSMISSION = 12;;       //Forces the card to stop transmission
+const CMD13_SEND_STATUS = 13;;             //Asks the selected card to send its status
+const CMD16_SET_BLOCKLEN = 16;;            //Length for SC card is set
+const CMD17_READ_SINGLE_BLOCK = 17;;       //Read single block of data
+const CMD18_READ_MULTIPLE_BLOCK = 18;;     //Card transfers data blocks to host until interrupted by a STOP_TRANSMISSION command
+const CMD24_WRITE_BLOCK = 24;;             //Write single block of data
+const CMD25_WRITE_MULTIPLE_BLOCK = 25;;    //Continuously writes blocks of data until 'Stop Tran' token is sent
+const CMD55_APP_CMD = 55;;                 //Extend to Applications specific commands
+const CMD58_READ_OCR = 58;;                //Read OCR register of card
+const CMD59_CRC_ON_OFF = 59;;              //Turns the CRC option on or off
+
+const ACMD23_SET_WR_BLK_ERASE_COUNT = 23;;
+const ACMD41_SD_SEND_OP_COND = 41;;
+
+const R1_NO_RESPONSE     =0xFF;;
+const R1_IDLE_STATE      =0x01;;
+const R1_ERASE_RESET     =0x02;;
+const R1_ILLEGAL_COMMAND =0x04;;
+const R1_COM_CRC_ERROR   =0x08;;
+const R1_ERASE_SEQUENCE_ERROR =0x10;;
+const R1_ADDRESS_ERROR   =0x20;;
+const R1_PARAMETER_ERROR =0x40;;
+const R1_RESPONSE_RECV   =0x80;;
+
+const OCR_HCS_CCS =1<<30;;
+const OCR_3_3V    =1<<20;;
+
+const CMD8_PATTERN =0x55;;
+const CMD8_3_3V    =0x100;;
+
+const SPI_HIGH_FREQ = 12500*1000;;
+const SPI_LOW_FREQ = 400*1000;;
+
+const SPI_DATA_ACCEPTED     =5;;
+const SPI_DATA_RESPONSE_MASK=0x1f;;
+
+var SdLock=lockCreate();;
+
+fun sdSetLock(lock) = set SdLock=lock;;
+
+fun readyWait(sd) =
+	for i=0;i<SD_COMMAND_TIMEOUT do
+		let spiWriteByte(sd.spiPortS, TOKEN_DUMMY) -> result in
+		if result<>0 then return true
+		else void sleepMs(1);
+	if DEBUG then echoLn "> SD: readyWait failed";
+	nil;;
+
+fun tokenWait(sd, token) =
+	for i=0;i<SD_COMMAND_TIMEOUT do
+		let spiWriteByte(sd.spiPortS, TOKEN_DUMMY) -> result in
+		if result==token then return true
+		else void sleepMs(1);
+	if DEBUG then echoLn "> SD: tokenWait failed";
+	nil;;
+
+fun singleCmdFinalize(sd, i)=
+	let spiWriteByte(sd.spiPortS, TOKEN_DUMMY) -> val in
+	if !bitTest(val, R1_RESPONSE_RECV) then val
+	else if i>0 then singleCmdFinalize(sd, i-1);;
+
+fun singleCmd(sd, cmd, arg)=
+	let strConcat(strInt8(0x40|(cmd&0x3f)), strInt32Msb(arg)) -> body in
+	let strConcat(body, strInt8((strCrc7(body, 0)<<1)|1)) -> data in (
+		spiWrite(sd.spiPortS, data);
+		singleCmdFinalize(sd, 16)
+	);;
+
+fun cmdLoop(sd, retry, cmd, arg, isAcmd)=
+	if (!isAcmd) || (singleCmd(sd, CMD55_APP_CMD, 0); readyWait(sd)) then
+	let singleCmd(sd, cmd, arg) -> result in
+	if result<>nil then result
+	else
+	if retry>0 then cmdLoop(sd, retry-1, cmd, arg, isAcmd);;
+
+fun sdCmd(sd, cmd, arg, isAcmd)=
+	if !readyWait(sd) then void (if DEBUG then echoLn "> SD: card not ready")
+	else cmdLoop(sd, 3, cmd, arg, isAcmd);;
+
+fun cmdWait(sd, cmd, arg, isAcmd) =
+	for i=0;i<SD_COMMAND_TIMEOUT do
+		let sdCmd(sd, cmd, arg, isAcmd) -> result in
+		if !bitTest(R1_IDLE_STATE, result) then return result
+		else void sleepMs(1);
+	if DEBUG then echoLn "> SD: cmdWait failed";
+	nil;;
+
+fun goIdleState(sd) =
+	R1_IDLE_STATE==sdCmd(sd, CMD0_GO_IDLE_STATE, 0x0, false);;
+
+fun sendIfCond(sd) =
+	let CMD8_PATTERN | CMD8_3_3V -> arg in
+	let sdCmd(sd, CMD8_SEND_IF_COND, arg, false) -> status in
+	let strRead32Msb(spiRead(sd.spiPortS, TOKEN_DUMMY, 4), 0) -> result in
+	arg==result;;
+
+fun readOCR(sd) =
+	let sdCmd(sd, CMD58_READ_OCR, 0, false) -> status in
+	let strRead32Msb(spiRead(sd.spiPortS, TOKEN_DUMMY, 4), 0) -> ocr in (
+		set sd.highCapacityS=bitTest(ocr, OCR_HCS_CCS);
+		bitTest(ocr, OCR_3_3V)
+	);;
+
+fun sendOpCond(sd) =
+	0==cmdWait(sd, ACMD41_SD_SEND_OP_COND, OCR_HCS_CCS, true);;
+
+fun crcOff(sd) =
+	let sdCmd(sd, CMD59_CRC_ON_OFF, 0, false) -> status in
+	true;;
+
+fun sendCSD(sd) = 
+	let sdCmd(sd, CMD9_SEND_CSD, 0, false) -> status in
+	if tokenWait(sd, TOKEN_START) then
+	let spiRead(sd.spiPortS, TOKEN_DUMMY, 16) -> result in
+	// example 8GB SDHC : 40 0e 00 32 5b 59 00 00 3b 37 7f 80 0a 40 40 af
+	// MSB: first byte is 127:120
+	let strRead8(result, 0)>>6 -> csd_version in	// 127:126
+	let strRead8(result, 5)&0x0f -> read_bl_len in	// 83:80
+	let strRead32Msb(result, 6)&0x3fffff -> c_size_sdhc in	// 69:48
+	let (strRead32Msb(result, 6)>>14)&0x3ff -> c_size_sdsc in	// 73:62
+	let (strRead16Msb(result, 9)>>7)&7 -> c_size_multi_sdsc in	// 49:47
+	let 1<<read_bl_len -> sectorSize in
+	let if csd_version<>0 then (c_size_sdhc+1)*1024
+	else (1<<(c_size_multi_sdsc+2))*(c_size_sdsc+1)
+	-> nbSectors in
+	(
+//		hexDump result;
+		echoLn strFormat("> SD: EMMC version *, highCapacity *, * sectors (* bytes per sector)", csd_version, sd.highCapacityS, intWithDelimiter(".", nbSectors), sectorSize);
+		set sd.sectorSizeS=sectorSize;
+		set sd.nbSectorsS=nbSectors;
+		true
+	);;
+
+fun setBlockLen(sd) =
+	let sdCmd(sd, CMD16_SET_BLOCKLEN, 512, false) -> result in
+	true;;
+
+fun reset(sd)=
+	for i=0;i<20 do spiWriteByte(sd.spiPortS, TOKEN_DUMMY);
+	gpioPut(false, sd.csS);
+	for i=0;i<20 do spiWriteByte(sd.spiPortS, TOKEN_DUMMY);
+	true;;
+
+
+fun sdInit(spiPort, spiClk, spiMosi, spiMiso, spiCs)=
+	lockSync(SdLock, (lambda ()=
+		if DEBUG then echoLn "> SD: sdInit";
+		spiInit(spiPort, SPI_LOW_FREQ, spiClk, spiMosi, spiMiso);
+		gpioPut(true, gpioSetDir(true, gpioInit(spiCs)));
+		let [spiPortS=spiPort, csS=spiCs] -> sd in
+		if reset(sd) then
+		if goIdleState(sd) then
+		if sendIfCond(sd) then
+		if readOCR(sd) then
+		if sendOpCond(sd) then
+		if readOCR(sd) then
+		if crcOff(sd) then
+		if sendCSD(sd) then 
+		if setBlockLen(sd) then
+		(
+			spiSetBaudrate(spiPort, SPI_HIGH_FREQ);
+			gpioPut(true, spiCs);
+			sd
+		)
+	));;
+
+fun sdSectorSize(sd) = sd.sectorSizeS;;
+fun sdNbSectors(sd) = sd.nbSectorsS;;
+
+fun spiInside(sd, f) =
+	lockSync(SdLock, (lambda ()=
+		gpioPut(false, sd.csS);
+		let call f ()-> result in (
+			gpioPut(true, sd.csS);
+			result
+		)
+	));;
+
+fun _sdReadSector(sd, start) =
+//if DEBUG then echoLn strFormat( "_sdReadSector *", hexFromInt (start));
+	if tokenWait(sd, TOKEN_START) then
+	let spiReadBytes(sd.spiPortS, TOKEN_DUMMY, 512) -> data in 
+	let spiRead(sd.spiPortS, TOKEN_DUMMY, 2) -> crc in
+	data;;
+
+fun _firstArg(a, b) = a;;
+
+fun _sdReadLoop(sd, start, nbSectors, i)=
+	if i<nbSectors then 
+	let _sdReadSector(sd, start+i) -> data in
+	if data<>nil then data::_sdReadLoop(sd, start, nbSectors, i+1);;
+
+fun sdRead(sd, sector, nbSectors)= 
+//if DEBUG then echoLn strFormat("sdRead * *",hexFromInt (sector), nbSectors);
+//let timeMs -> t in
+	if nbSectors>=1 then
+	let if sd.highCapacityS then sector else sector*sd.sectorSizeS -> start in
+	spiInside(sd, lambda ()=
+		let if nbSectors>1 then CMD18_READ_MULTIPLE_BLOCK else CMD17_READ_SINGLE_BLOCK -> cmd in
+		if 0==sdCmd(sd, cmd, start, false) then
+		if nbSectors==1 then _sdReadSector(sd, start)
+		else 
+		let _sdReadLoop(sd, start, nbSectors, 0) -> lst in
+		let sdCmd(sd, CMD12_STOP_TRANSMISSION, 0, false) -> _ in
+//		let echoLn timeMs-t -> _ in
+		bytesBuild(lst)		
+	);;
+
+fun _sdWriteSector(sd, token, data, offset)=
+	spiWriteByte(sd.spiPortS, token);
+	spiWriteBytes(sd.spiPortS, bytesSlice(data, offset, 512));
+	spiWrite(sd.spiPortS, "\$ff\$ff");	// crc16 disabled
+	let SPI_DATA_RESPONSE_MASK&spiWriteByte(sd.spiPortS, TOKEN_DUMMY) -> result in (
+		readyWait(sd);
+		result==SPI_DATA_ACCEPTED
+	);;
+
+fun sdWrite(sd, sector, data)= 
+	let bytesLength(data)>>9 -> nbSectors in
+//let echoLn strFormat "sdWrite * *" (hexFromInt sector) nbSectors -> _ in
+//let timeMs -> t in
+	if (nbSectors>=1) && !bitTest(bytesLength(data), 511) then
+	let if sd.highCapacityS then sector else sector*sd.sectorSizeS -> start in
+//let 
+	spiInside(sd, lambda ()= 
+		if nbSectors==1 then (
+			if 0==sdCmd(sd, CMD24_WRITE_BLOCK, start, false) then
+			if _sdWriteSector(sd, TOKEN_START, data, 0) then (
+				sdCmd(sd, CMD13_SEND_STATUS, 0, false);
+				512
+			)
+		)
+		else	// multiple write
+		if 0==sdCmd(sd, ACMD23_SET_WR_BLK_ERASE_COUNT, nbSectors, true) then (
+			gpioPut(true, sd.csS);
+			gpioPut(false, sd.csS);
+			if 0==sdCmd(sd, CMD25_WRITE_MULTIPLE_BLOCK, start, false) then
+			let for i=0;i<nbSectors do (
+				if !_sdWriteSector(sd, TOKEN_START_MULTIPLE, data, i*512) then break i*512;
+				nil
+			) -> size in (
+				spiWriteByte(sd.spiPortS, TOKEN_STOP_TRAN);
+				sdCmd(sd, CMD13_SEND_STATUS, 0, false);
+				if size<>nil then size else nbSectors*512
+			)
+		)
+	);;
+//-> data in _firstArg data (echoLn timeMs-t);;

@@ -110,7 +110,7 @@ fun huffmanDumpEx(t)=
 
 fun _huffmanDump(t)=
 	match t with
-		leafH count val -> decFromInt(val),
+		leafH count val -> strFromInt(val),
 		nodeH count a b -> if b==nil then strFormat("[*_]",_huffmanDump(a))
 			else if a==nil then strFormat("[_*]",_huffmanDump(b))
 			else strFormat("[*, *]", _huffmanDump(a), _huffmanDump(b));;		

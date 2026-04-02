@@ -4,7 +4,9 @@
 #ifndef _MINIMACY_
 #define _MINIMACY_
 
-#define VERSION_MINIMACY "2.0.0"
+#define VERSION_MINIMACY "2.1.0"
+//#undef ON_WINDOWS
+//#define ON_NOTHING
 
 #ifdef ON_WINDOWS
 #define DEVICE_MODE "Windows"
@@ -17,21 +19,25 @@
 #define WITH_GL
 #define WITH_AUDIO
 //#define WITH_DECODE_MP3
+//#define WITH_SERIAL_BLE	// uncomment also #define ENABLE_BLE in windows/ble_c.h
 #define WITH_NATIVE_FONT
 #define GROUP_COMMON_ANSI
 #define USE_CONSOLE_OUT_ANSI
 #define USE_CONSOLE_IN_WIN
-#define USE_TIME_MS_WIN
+#define USE_TIME_WIN
 #define USE_RANDOM_WIN
 #define USE_THREAD_WIN
 
 //#define USE_MEMORY_C
-#define MEMORY_STATICS MEMORY_STATIC(0,1024*300);MEMORY_STATIC(1,1024*500);
-#define MEMORY_PARTS MEMORY_PART_STATIC(0),MEMORY_PART_STATIC(1)
-#define MEMORY_SAFE_SIZE (32*1024)
+//#define MEMORY_STATICS MEMORY_STATIC(0,1024 * 1024 * 384);
+//#define MEMORY_PARTS MEMORY_PART_STATIC(0)
+////#define MEMORY_STATICS MEMORY_STATIC(0,1024 * 1024 * 128);MEMORY_STATIC(1,1024 * 1024 * 256);
+////#define MEMORY_PARTS MEMORY_PART_STATIC(0),MEMORY_PART_STATIC(1)
+//#define MEMORY_SAFE_SIZE (128 * 1024)
+
 
 //#define FORGET_PARSER
-//// #define USE_FS_ROMDISK0 "../baremetal/nothing/nothing_romdisk0.h"
+//// #define USE_FS_ROMDISK0 "../baremetal/nothing/nothing-native-romdisk.h"
 
 #define USE_WORKER_ASYNC // when USE_WORK_ASYNC is not defined, no UI is possible as the event loop runs in a dedicated worker and never returns
 
@@ -48,18 +54,24 @@
 #ifdef ON_NOTHING
 #define DEVICE_MODE "BareMetal"
 #define GROUP_BAREMETAL
-#define MEMORY_C_SIZE (1024 * 1024 * 2)
+#define USE_MEMORY_C
+#define MEMORY_STATICS MEMORY_STATIC(0,1024 * 1024 * 900);
+#define MEMORY_PARTS MEMORY_PART_STATIC(0)
+#define MEMORY_SAFE_SIZE (128 * 1024)
+
 #define USE_STDARG_ANSI
 #define USE_RANDOM_C
 #define USE_TIME_STUB
-#define USE_TIME_MS_STUB
 #define USE_ETH_STUB
-#define USE_FS_ROMDISK0 "../baremetal/nothing/nothing_romdisk0.h"
+#define NEED_ALIGN
+//#define USE_FS_ROMDISK0 "../baremetal/nothing/nothing-native-romdisk.h"
+#define USE_FS_ROMDISK0 "../baremetal/nothing/nothing-native-romdisk.h"
 #define USE_FS_SYSTEMDIR_STUB
 #define USE_SERIAL_STUB
 #ifdef WIN32
 #define USE_CONSOLE_OUT_ANSI
 #else
+#define USE_CONSOLE_OUT_ANSI
 // #define USE_CONSOLE_OUT_STUB
 #endif
 // #define USE_CONSOLE_IN_ANSI
@@ -76,12 +88,11 @@
 #define USE_STDARG_ANSI
 #define USE_RANDOM_UEFI
 #define USE_TIME_UEFI
-#define USE_TIME_MS_UEFI
 #define USE_SOCKET_UEFI
 #define USE_CONSOLE_OUT_UART
 #define USE_CONSOLE_IN_UART
 #define USE_FS_SYSTEMDIR_STUB
-#define USE_FS_ROMDISK0 "../baremetal/uefi/uefi_romdisk0.h"
+#define USE_FS_ROMDISK0 "../baremetal/uefi/uefi-native-romdisk.h"
 // #define USE_UEFI_MANUAL_BLIT
 #define USE_SERIAL_STUB
 #define USE_HOST_ONLY_FUNCTIONS
@@ -111,9 +122,8 @@
 #define USE_STDARG_ANSI
 #define USE_RANDOM_C
 #define USE_TIME_ANSI
-#define USE_TIME_MS_ANSI
 #define USE_ETH_STUB
-#define USE_FS_ROMDISK0 "esp32_romdisk0.h"
+#define USE_FS_ROMDISK0 "esp32-native-romdisk.h"
 #define USE_FS_SYSTEMDIR_STUB
 #define USE_SERIAL_STUB
 #define USE_CONSOLE_OUT_ANSI
@@ -126,7 +136,7 @@
 #define DEVICE_MODE "ON_STM32F7"
 #define ATOMIC_32
 #define WITH_UART
-#define WITH_ACTIVITY_LED
+#define WITH_LED
 #define WITH_SDRAM
 #define WITH_SECTOR_STORAGE
 #define GROUP_BAREMETAL
@@ -144,7 +154,7 @@
 #define USE_CONSOLE_IN_UART
 #define USE_ETH_STUB
 #define USE_FS_SYSTEMDIR_STUB
-#define USE_FS_ROMDISK0 "../baremetal/st/stm32f769/Core/Src/stm32_romdisk0.h"
+#define USE_FS_ROMDISK0 "../baremetal/st/stm32f769/Core/Src/stm32-native-romdisk.h"
 #define USE_SERIAL_STUB
 #define USE_BOOTLOADER
 #define USE_HOST_ONLY_FUNCTIONS
@@ -206,12 +216,12 @@
 #ifdef GROUP_RP2350
 #define ATOMIC_32
 #define WITH_UART
-#define WITH_ACTIVITY_LED
+#define WITH_LED
 #define GROUP_BAREMETAL
 
 #define USE_STDARG_ANSI
 #define USE_ETH_STUB
-#define USE_FS_ROMDISK0 "../baremetal/raspberry-2350/rp2350_romdisk0.h"
+#define USE_FS_ROMDISK0 "../baremetal/raspberry-2350/raspberry-2350-native-romdisk.h"
 #define USE_FS_SYSTEMDIR_STUB
 #define USE_CONSOLE_OUT_UART
 #define USE_CONSOLE_IN_UART
@@ -222,59 +232,55 @@
 #define MEMORY_STATICS MEMORY_STATIC(0,1024*470);
 #endif
 
-#ifdef ON_RPI3
-#define DEVICE_MODE "RPi3"
-#define GROUP_RPI
-#define USE_SERIAL_STUB
-#endif
-
 #ifdef ON_RPI4
 #define DEVICE_MODE "RPi4"
 #define GROUP_RPI
-// comment this if your raspberry is less than 1GB, else define total ram in GB
-#define RAM_TOTAL_GB 2
 #endif
 
 #ifdef ON_RPI5
 #define DEVICE_MODE "RPi5"
 #define GROUP_RPI
-#define RAM_TOTAL_GB 2
 #define USE_SERIAL_STUB
 #define WITH_POWER_SWITCH
 #endif
 
 #ifdef GROUP_RPI
 #define WITH_UART
-#define WITH_ACTIVITY_LED
+//#define USE_SERIAL_STUB
+#define WITH_LED
 #define GROUP_BAREMETAL
 #define USE_STDARG_GCC
+//#define USE_TIME_STUB
 #define USE_TIME_RPI
-#define USE_TIME_MS_RPI
 #define USE_CONSOLE_OUT_UART
 #define USE_CONSOLE_IN_UART
+//#define USE_CONSOLE_IN_STUB
 #define USE_BOOTLOADER
 #define USE_FS_SYSTEMDIR_STUB
-#define USE_FS_ROMDISK0 "../baremetal/raspberry/pi_romdisk0.h"
+#define USE_FS_ROMDISK0 "../baremetal/raspberry-pi/raspberry-pi-native-romdisk.h"
 #define USE_SOFT_CURSOR
 #define USE_HOST_ONLY_FUNCTIONS
 #define USE_ETH_STUB
 #define NEED_ALIGN
 extern volatile unsigned char _end;
-#ifdef RAM_TOTAL_GB
 #define MEMORY_PARTS \
-	MEMORY_PART_FIXED((&_end)+4096 * 33,1024 * 1024 * 900), \
-	MEMORY_PART_FIXED(0x40000000,1024 * 1024 * 1024 * (RAM_TOTAL_GB-1))
+	MEMORY_PART_FIXED((&_end)+4096 * 33,1024 * 1024 * 940), \
+	MEMORY_PART_FIXED(0x40000000,0), \
+	MEMORY_PART_FIXED(0x100000000,0)
 #define MEMORY_SAFE_SIZE (128 * 1024)
-#else
-#define MEMORY_PARTS MEMORY_PART_FIXED((&_end)+4096 * 33,1024 * 1024 * 900)
-#define MEMORY_SAFE_SIZE (64 * 1024)
-#endif
 #endif
 
 #ifdef ON_UNIX_X11GL
 #define ON_UNIX
 #define WITH_UI
 #define WITH_GL
+#define WITH_AUDIO
+#endif
+
+#ifdef ON_UNIX_X11
+#define ON_UNIX
+#define WITH_UI
+#define WITH_X11_BITMAP
 #define WITH_AUDIO
 #endif
 
@@ -299,10 +305,8 @@ extern volatile unsigned char _end;
 #define USE_RANDOM_C
 #define USE_TIME_ANSI
 //#define USE_TIME_STUB
-#define USE_TIME_MS_ANSI
-//#define USE_TIME_MS_STUB
 #define USE_ETH_STUB
-#define USE_FS_ROMDISK0 "../baremetal/nothing/nothing_romdisk0.h"
+#define USE_FS_ROMDISK0 "../baremetal/nothing/nothing-native-romdisk.h"
 #define USE_FS_SYSTEMDIR_STUB
 #define USE_SERIAL_STUB
 #define USE_CONSOLE_OUT_ANSI
@@ -330,6 +334,13 @@ extern volatile unsigned char _end;
 #define ON_MACOS_CMDLINE
 #define WITH_UI
 #define WITH_GL
+#define WITH_AUDIO
+#endif
+
+#ifdef ON_MACOS_X11
+#define ON_MACOS_CMDLINE
+#define WITH_UI
+#define WITH_X11_BITMAP
 #define WITH_AUDIO
 #endif
 
@@ -371,7 +382,7 @@ extern volatile unsigned char _end;
 #define USE_CONSOLE_OUT_ANSI
 #define USE_CONSOLE_IN_STUB
 // #define USE_CONSOLE_IN_ANSI
-#define USE_TIME_MS_ANSI
+#define USE_TIME_ANSI
 #define USE_GLES
 #define USE_AUDIOTOOLBOX
 #define DEPRECATED_SEM
@@ -388,7 +399,7 @@ extern volatile unsigned char _end;
 #define USE_CONSOLE_OUT_ANDROID
 #define USE_CONSOLE_IN_STUB
 // #define USE_CONSOLE_IN_ANSI
-#define USE_TIME_MS_ANSI
+#define USE_TIME_ANSI
 #define USE_GLES
 #define USE_OPENSLES
 #define USE_ETH_STUB
@@ -422,13 +433,12 @@ int startInThread(int argc, const char **argv);
 #define GROUP_COMMON_ANSI
 #define USE_CONSOLE_OUT_ANSI
 #define USE_CONSOLE_IN_ANSI
-#define USE_TIME_MS_ANSI
+#define USE_TIME_ANSI
 #endif
 
 #ifdef GROUP_COMMON_ANSI
 #define USE_MEMORY_ANSI
 #define USE_STDARG_ANSI
-#define USE_TIME_ANSI
 #define USE_MATH_ANSI
 #define USE_STR_ANSI
 #endif
@@ -482,8 +492,8 @@ int storageWritable(int index);
 int storageCount();
 #endif
 
-#ifdef WITH_ACTIVITY_LED
-void hwActivityLedSet(int val);
+#ifdef WITH_LED
+void hwLedSet(int val);
 #endif
 
 #ifdef USE_BOOTLOADER

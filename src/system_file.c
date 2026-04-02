@@ -123,7 +123,7 @@ int fun_ansiDirDelete(Thread* th)
 int fun_ansiFileTell(Thread* th)
 {
 	File* f = (File*)STACK_PNT(th, 0);
-	if (f) STACK_SET_INT(th, 0, ansiFileTell(f->file));
+	if (f) STACK_SET_INT(th, 0, (LINT)ansiFileTell(f->file));
 	return 0;
 }
 int fun_devNbSectors(Thread* th)
@@ -140,7 +140,7 @@ int fun_devSectorSize(Thread* th)
 	if (!path) FUN_RETURN_NIL;
 	int sectorSize=devSectorSize(STR_START(path));
 	if (sectorSize<0) FUN_RETURN_NIL;
-	FUN_RETURN_INT(sectorSize);
+	FUN_RETURN_INT((LINT)sectorSize);
 }
 #else
 int fun_ansiFileOpen(Thread* th) FUN_RETURN_NIL
@@ -183,7 +183,7 @@ int fun_romdiskImport(Thread* th)
 	k = romdiskImport(bin);
 	if (k < 0) FUN_RETURN_NIL;
 
-	FUN_RETURN_INT(k);
+	FUN_RETURN_INT((LINT)k);
 }
 
 int fun_volumes(Thread* th)

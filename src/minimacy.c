@@ -30,7 +30,7 @@ int start(int argc, const char** argv)
 #ifdef ON_WINDOWS
 	int directQuit = 0;
 #endif	
-//	char* args[]={"minimacy.exe","../../programs/demo/demo.fun.pacman.mcy"};	argc=2;argv=args;
+//	char* args[]={"minimacy.exe","../../programs/demo/demo.fun.maze.mcy"};	argc=2;argv=args;
 //	for (i = 0; i < argc; i++) PRINTF(LOG_DEV,"arg %d: '%s'\n", i, argv[i]);
 	termInit();
 
@@ -63,7 +63,7 @@ int start(int argc, const char** argv)
 		if ((strlen(arg) >= strlen(SUFFIX_CODE)) && !strcmp(arg + strlen(arg) - strlen(SUFFIX_CODE), SUFFIX_CODE)) standalone = 0;
 	}
 
-	PRINTF(LOG_SYS,"\n> Minimacy - Sylvain Huet - 2020-25 - "VERSION_MINIMACY"/"DEVICE_MODE"\n");
+	PRINTF(LOG_SYS,"\n> Minimacy - Sylvain Huet - 2020-26 - "VERSION_MINIMACY"/"DEVICE_MODE"\n");
 	PRINTF(LOG_SYS,"> ----\n");
 
 //	if (!standalone) termSetMask(LOG_USER);	// disable LOG_SYS

@@ -89,8 +89,8 @@ Type* typeInstance(Compiler* c, Def* def)
 	ARRAY_SET_PNT(list, INSTANCE_DEF, ((LB*)def));
 	ARRAY_SET_PNT(list, INSTANCE_TYPE, ((LB*)t));
 	ARRAY_SET_PNT(list, INSTANCE_PARSER, ((LB*)c->parser));
-	ARRAY_SET_INT(list, INSTANCE_POSITION, (c->parser->index0));
-	ARRAY_SET_PNT(list, INSTANCE_NEXT, (from->instances));
+	ARRAY_SET_INT(list, INSTANCE_POSITION, (LINT)c->parser->index0);
+	ARRAY_SET_PNT(list, INSTANCE_NEXT, from->instances);
 	from->instances = list;
 	return t;
 }

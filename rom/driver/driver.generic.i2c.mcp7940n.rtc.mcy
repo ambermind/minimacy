@@ -1,0 +1,86 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2022, Sylvain Huet, Ambermind
+// Minimacy (r) System
+
+// https://www.microchip.com/en-us/product/mcp7940n
+// There is probably no module available. So you need a breadboard, one 32.768kHz quartz and two 7pF capacitors.
+
+// MCP7940N encodes year in the range 0-99, without any more detail. Therefore weekDay is free: it can't be infered from the other values
+// in this library we assume that this range covers 2000-2099
+
+export mcp7940nInit(i2cPort, i2cSda, i2cScl);;
+export mcp7940nTime(rtc);;
+export mcp7940nSetTime(rtc, t);;	// t=nil => stop rtc and disable battery
+export mcp7940nSetLock(lock);;
+
+use driver.generic.i2c;;
+
+struct RTCmcp7940n=[i2cR];;
+
+const I2C_ADDR = 0x6f;;
+const REG_SECONDS =0x00;;
+const NUM_REGS =7;;
+
+var I2cLock=lockCreate();;
+
+fun mcp7940nSetLock(lock) = set I2cLock=lock;;
+
+fun mcp7940nLock(rtc, f) = 
+	lockSync(I2cLock, lambda ()=
+		let i2cBaudrate(rtc.i2cR) -> baudrate in
+		let call f ()-> result in (
+			i2cSetBaudrate(rtc.i2cR, baudrate);
+			result
+		)
+	);;
+
+fun intFromBCD(bcd) = (bcd>>4)*10 + (bcd&15);;
+fun bcdFromInt(val) = ((val/10)<<4) + (val%10);;
+
+fun mcp7940nDecode(data) =
+	let strGet(data, 2) -> hourReg in [ // [y month d w h m s], same as Bios date function
+		intFromBCD(strGet(data, 6))+2000,	// year
+		intFromBCD(strGet(data, 5)),	// month
+		intFromBCD(strGet(data, 4)),	// day
+		intFromBCD(strGet(data, 3))-1,	// weekday
+		if bitTest(hourReg, 0x40) then (if bitTest(hourReg, 0x20) then 12)+intFromBCD(hourReg&0x1f)
+			else intFromBCD(hourReg&0x3f),
+		intFromBCD(strGet(data, 1)),		// minutes
+		intFromBCD(0x7f & strGet(data, 0))		// seconds
+	];;
+
+fun mcp7940nSetTime(rtc, t) =
+	let date(t) -> [year, month, day, weekday, h, m, s] in
+	if t==nil || year>=2000 then
+	let strBuild([
+		strInt8(REG_SECONDS),
+		strInt8(bcdFromInt(s)|if t<>nil then 0x80),	// activate the rtc
+		strInt8(bcdFromInt(m)),
+		strInt8(bcdFromInt(h)),
+		strInt8(bcdFromInt(1+weekday)|if t<>nil then 0x08),	// enable the battery
+		strInt8(bcdFromInt(day)),
+		strInt8(bcdFromInt(month)),
+		strInt8(bcdFromInt(year-2000))
+	]) -> data in
+	mcp7940nLock(rtc, (lambda ()= 
+		i2cWrite(rtc.i2cR, I2C_ADDR, data);
+		t
+	));;
+
+fun mcp7940nTime(rtc) =
+	let mcp7940nLock(rtc, (lambda ()= 
+		i2cWrite(rtc.i2cR, I2C_ADDR, strInt8(REG_SECONDS));
+		i2cRead(rtc.i2cR, I2C_ADDR, NUM_REGS)
+	)) -> data in
+	let mcp7940nDecode(data) -> [year, month, day, weekday, h, m, s] in
+	timeFromDate(year, month, day, h, m, s);;
+
+fun mcp7940nInit(i2cPort, i2cSda, i2cScl) =
+	i2cInit(i2cPort, 400000, i2cSda, i2cScl);
+	[i2cR=i2cPort];;
+//----------------
+//fun run =
+//	mcp7940nInit I2C_PORT I2C_SDA_PIN I2C_SCL_PIN;
+////	mcp7940nSetTime 1751981907;
+//	timeSet mcp7940nTime;
+//	consoleStart nil;;

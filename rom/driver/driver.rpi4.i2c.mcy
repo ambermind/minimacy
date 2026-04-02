@@ -1,0 +1,122 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2022, Sylvain Huet, Ambermind
+// Minimacy (r) System
+export I2c0, I2c1, I2c3, I2c4, I2c5, I2c6;; 
+export i2cInit(i2c, baudrate, sda_pin, scl_pin);; 
+export i2cWrite(i2c, addr, data);;
+export i2cWriteBytes(i2c, addr, data);;
+export i2cRead(i2c, addr, len);;
+
+// based on "BCM2711 ARM Peripherals" documentation, chapter 3 'BSC', and chapter 5.3 'Alternative Function Assignments'
+
+
+use driver.rpi4.gpio;;
+
+const CLOCK_ID_CORE=4;;
+const I2C_BASE= 0xFE200000;;
+const I2c0 = I2C_BASE+0x5000;;
+const I2c1 = I2C_BASE+0x604000;;
+const I2c3 = I2C_BASE+0x5600;;
+const I2c4 = I2C_BASE+0x5800;;
+const I2c5 = I2C_BASE+0x5a80;;
+const I2c6 = I2C_BASE+0x5c00;;
+
+const BSC_C   = 0x00;;
+	const C_READ = 0x01;;
+	const C_CLEAR= 0x10;;
+	const C_ST   = 0x80;;
+	const C_I2CEN= 0x8000;;
+const BSC_S   = 0x04;;
+	const S_TA   = 0x01;;
+	const S_DONE = 0x02;;
+	const S_TXD  = 0x10;;
+	const S_RXD  = 0x20;;
+	const S_ERR  = 0x100;;
+	const S_CLKT = 0x200;;
+const BSC_DLEN= 0x08;;
+const BSC_A   = 0x0c;;
+const BSC_FIFO= 0x10;;
+	const FIFO_SIZE = 16;;
+const BSC_DIV = 0x14;;
+const BSC_DEL = 0x18;;
+const BSC_CLKT= 0x1c;;
+
+fun i2cAltFunc(i2c, sda_pin, scl_pin) =
+// nothing smart here, see 'Table 94. GPIO Pins Alternative Function Assignment'
+	if scl_pin == sda_pin+1 then
+	match i2c with
+		I2c0 -> if sda_pin == 0 || sda_pin == 28 then FSEL_ALT0
+			elif sda_pin==44 then FSEL_ALT1,
+		I2c1 -> if sda_pin == 2 then FSEL_ALT0
+			elif sda_pin==44 then FSEL_ALT2,
+		I2c3 -> if sda_pin == 2 || sda_pin == 4 then FSEL_ALT5,
+		I2c4 -> if sda_pin == 6 || sda_pin == 8 then FSEL_ALT5,
+		I2c5 -> if sda_pin == 10 || sda_pin == 12 then FSEL_ALT5,
+		I2c6 -> if sda_pin == 0 || sda_pin == 22 then FSEL_ALT5;;
+
+fun i2cInit(i2c, baudrate, sda_pin, scl_pin)=
+	let i2cAltFunc(i2c, sda_pin, scl_pin) -> fsel_alt in
+	if fsel_alt<>nil then (
+		gpioSetPulls(true, false, gpioSetAlt(fsel_alt, sda_pin));
+		gpioSetPulls(true, false, gpioSetAlt(fsel_alt, scl_pin));
+		let clockRate(CLOCK_ID_CORE) -> rate in
+		let rate/baudrate -> divider in
+		write32(i2c+BSC_DIV, divider);
+		i2c
+	);;
+
+fun i2cWrite(i2c, addr, data)=
+	write32(i2c+BSC_A, addr);
+	write32(i2c+BSC_C, C_CLEAR);
+	write32(i2c+BSC_S, S_CLKT | S_ERR | S_DONE);
+	let strLength(data) -> len in 
+	let min(FIFO_SIZE, len) -> j in (
+		write32(i2c+BSC_DLEN, len);
+		for i=0;i<j do write32(i2c+BSC_FIFO, strGet(data, i));
+	
+		write32(i2c+BSC_C, C_I2CEN | C_ST);
+		while true do let read32(i2c+BSC_S) -> state in
+			if j<len && bitTest(S_TXD, state) then (
+				write32(i2c+BSC_FIFO, strGet(data, j));
+				set j=j+1
+			)
+			elif j>=len && bitTest(state, S_DONE) then (
+				write32(i2c+BSC_S, S_DONE);
+				return len
+			)
+			elif bitTest(state, S_ERR) then (
+				write32(i2c+BSC_S, S_ERR);
+				return nil
+			)
+			elif bitTest(state, S_CLKT) then (
+				write32(i2c+BSC_S, S_CLKT);
+				return nil
+			)
+	);;
+fun i2cWriteBytes(i2c, addr, data)= i2cWrite(i2c, addr, strFromBytes(data));;
+
+fun i2cRead(i2c, addr, len)= 
+	write32(i2c+BSC_A, addr);
+	write32(i2c+BSC_C, C_CLEAR);
+	write32(i2c+BSC_S, S_CLKT | S_ERR | S_DONE);
+	write32(i2c+BSC_DLEN, len);
+	write32(i2c+BSC_C, C_I2CEN | C_ST | C_READ);
+	let bytesCreate(len, 0) -> bytes in
+	let 0 -> i in (
+		while i<len do let read32(i2c+BSC_S) -> state in
+			if bitTest(state, S_RXD) then (
+				bytesSet(bytes, i, read32(i2c+BSC_FIFO));
+				set i=i+1
+			)
+			elif bitTest(state, S_ERR) then (
+				write32(i2c+BSC_S, S_ERR);
+				return nil
+			)
+			elif bitTest(state, S_CLKT) then (
+				write32(i2c+BSC_S, S_CLKT);
+				return nil
+			);
+		write32(i2c+BSC_S, S_DONE);
+		strFromBytes(bytes)
+	);;
+

@@ -82,15 +82,15 @@ fun _promptDelete()=
 	_promptRight();
 	_promptRemove();;
 
-fun _utf8Complete(c0, len)= len>= if c0<0xdf then 2 else if c0<0xef then 3 else 4;;
+fun _utf8Complete(c0, len)= len>= if c0<0xdf then 2 elif c0<0xef then 3 else 4;;
 
 fun _escComplete(str, c)=
 	if !strStartsWith(str, "^[[") then true
-	else if str=="^[[" then false
-	else if c=='~' then true
-	else if c==';' then false
-	else if str=="^[[O" then false
-	else if c>='0' && c<='9' then false
+	elif str=="^[[" then false
+	elif c=='~' then true
+	elif c==';' then false
+	elif str=="^[[O" then false
+	elif c>='0' && c<='9' then false
 	else true;;
 
 fun _tmpComplete(str, c)=
@@ -125,12 +125,12 @@ fun _promptInput(c)=	// return true when a line is complete, available as _Promp
 			nil
 		)
 	)
-	else if c==0x7f then void _promptRemove()
-	else if c==0x1b then void set _PromptTmp="^["
-	else if c>=0xc2 && c<=0xf4 then void set _PromptTmp=strFromChar(c)
-	else if c==10 || c==13 then _promptSend(false)
-	else if c==4 then _promptSend(true)	// ctrl-D
-	else if c>=32 then void _promptInsert(strFromChar(c));;
+	elif c==0x7f then void _promptRemove()
+	elif c==0x1b then void set _PromptTmp="^["
+	elif c>=0xc2 && c<=0xf4 then void set _PromptTmp=strFromChar(c)
+	elif c==10 || c==13 then _promptSend(false)
+	elif c==4 then _promptSend(true)	// ctrl-D
+	elif c>=32 then void _promptInsert(strFromChar(c));;
 
 fun _promptFeed(inputRef, input, fOnInput)=
 	set input=strConcat(_PromptInput, input);

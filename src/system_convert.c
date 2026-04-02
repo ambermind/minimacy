@@ -246,13 +246,13 @@ int fun_strFromFloat(Thread* th)
 	return 0;
 }
 
-int fun_intFromDec(Thread* th)
+int fun_intFromStr(Thread* th)
 {
 	LB* a = STACK_PNT(th, 0);
 	if (!a) FUN_RETURN_NIL;
 	FUN_RETURN_INT(intFromAsc(STR_START(a), 0));
 }
-int fun_decFromInt(Thread* th)
+int fun_strFromInt(Thread* th)
 {
 	char buf[32];
 	LINT a = STACK_INT(th, 0);
@@ -260,16 +260,6 @@ int fun_decFromInt(Thread* th)
 	snprintf(buf, 32, LSD, a);
 	FUN_PUSH_STR( buf, strlen(buf));
 	return 0;
-}
-
-int fun_strFloat(Thread* th)
-{
-	double d;
-
-	LFLOAT f = STACK_FLOAT(th, 0);
-	if (STACK_IS_NIL(th, 0)) FUN_RETURN_NIL;
-	d = (double)f;
-	FUN_RETURN_STR((char*)&d, sizeof(double));
 }
 
 int fun_intFromHex(Thread* th)
@@ -294,6 +284,13 @@ int fun_isU8(Thread* th)
 	LB* a = STACK_PNT(th, 0);
 	if (!a) FUN_RETURN_NIL;
 	STACK_SET_BOOL(th, 0, isU8(STR_START(a),STR_LENGTH(a)));
+	return 0;
+}
+int fun_isText(Thread* th)
+{
+	LB* a = STACK_PNT(th, 0);
+	if (!a) FUN_RETURN_NIL;
+	STACK_SET_BOOL(th, 0, isText(STR_START(a),STR_LENGTH(a)));
 	return 0;
 }
 int fun_strLengthU8(Thread* th)
@@ -386,6 +383,7 @@ int systemConvertInit(Pkg *system)
 {
 	static const Native nativeDefs[] = {
 		{ NATIVE_FUN, "isHex", fun_isHex, "fun Str -> Bool"},
+		{ NATIVE_FUN, "isText", fun_isText, "fun Str -> Bool"},
 		{ NATIVE_FUN, "isU8", fun_isU8, "fun Str -> Bool"},
 		{ NATIVE_FUN, "strSwap", fun_strSwap, "fun Str -> Str"},
 		{ NATIVE_FUN, "bytesSwapStr", fun_strSwap, "fun Str -> Bytes"},
@@ -395,13 +393,10 @@ int systemConvertInit(Pkg *system)
 		{ NATIVE_FUN, "strFromHex", fun_strFromHex, "fun Str -> Str"},
 		{ NATIVE_FUN, "hexFilter", fun_hexFilter, "fun Str -> Str"},
 		{ NATIVE_FUN, "hexFromStr", fun_hexFromStr, "fun Str -> Str"},
-		{ NATIVE_FUN, "intFromDec", fun_intFromDec, "fun Str -> Int"},
-		{ NATIVE_FUN, "intFromStr", fun_intFromDec, "fun Str -> Int"},
-		{ NATIVE_FUN, "decFromInt", fun_decFromInt, "fun Int -> Str"},
-		{ NATIVE_FUN, "strFromInt", fun_decFromInt, "fun Int -> Str"},
+		{ NATIVE_FUN, "intFromStr", fun_intFromStr, "fun Str -> Int"},
+		{ NATIVE_FUN, "strFromInt", fun_strFromInt, "fun Int -> Str"},
 		{ NATIVE_FUN, "floatFromStr", fun_floatFromStr, "fun Str -> Float"},
 		{ NATIVE_FUN, "strFromFloat", fun_strFromFloat, "fun Float -> Str"},
-		{ NATIVE_FUN, "strFloat", fun_strFloat, "fun Float -> Str"},
 		{ NATIVE_FUN, "intFromHex", fun_intFromHex, "fun Str -> Int"},
 		{ NATIVE_FUN, "hexFromInt", fun_hexFromInt, "fun Int -> Str"},
 		{ NATIVE_FUN, "strLengthU8", fun_strLengthU8, "fun Str -> Int"},

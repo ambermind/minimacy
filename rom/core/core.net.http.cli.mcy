@@ -74,7 +74,7 @@ fun _urlParse(url)=
 	let strPos(url, "/", 0) -> i in
 	let if i==nil then [url, "/"] else [strLeft(url, i), strSlice(url, i, nil)] -> [server, uri] in
 	let strPos(server, ":", 0) -> i in
-	let if i==nil then [server, if tls then 443 else 80] else [strLeft(url, i), intFromDec(strSlice(url, i+1, nil))] -> [server, port] in
+	let if i==nil then [server, if tls then 443 else 80] else [strLeft(url, i), intFromStr(strSlice(url, i+1, nil))] -> [server, port] in
 	[tls, server, port, uri];;
 
 fun _httpHeaders(header)=
@@ -99,7 +99,7 @@ fun _checkHeader(h, data)=
 	let strLeft(begining, i) -> header in
 	let strSplit("\r\n", header) -> header in
 	let _httpHeaders(header) -> headers in
-	let intFromDec(hashmapGet(headers, "content-length")) -> contentLength in
+	let intFromStr(hashmapGet(headers, "content-length")) -> contentLength in
 	let HTTP_CHUNKED==hashmapGet(headers, "transfer-encoding") -> chunked in
 	let head(header) -> status in
 	let strSplit(" ", status) -> version::code::_ in
@@ -118,7 +118,7 @@ fun _checkHeader(h, data)=
 
 		set h.statusH=status;
 		set h.versionH=version;
-		set h.codeH=intFromDec(code);
+		set h.codeH=intFromStr(code);
 		set h.replyHeadersH=headers;
 		true
 	);;
@@ -161,7 +161,7 @@ fun _checkContent(h, data)=
 fun _httpBuild(firstLine, headers, data)=
 	let if data==nil then "" else data -> content in
 	(
-		hashmapSet(headers, HTTP_CONTENT_LENGTH, decFromInt(if data<>nil then strLength(data) else 0));
+		hashmapSet(headers, HTTP_CONTENT_LENGTH, strFromInt(if data<>nil then strLength(data) else 0));
 		let hashmapMap(headers, lambda(key, val)=strBuild({key, ": ", val})) -> headersLines in
 		let firstLine::listConcat(headersLines, ""::content::nil) -> lines in
 		strJoin("\r\n", lines)

@@ -1,10 +1,16 @@
 This directory is expected to contain the binary versions of the Minimacy Virtual Machine:
 
-- minimacy.exe : windows version
-- minimacy : linux without GUI
-- minimacyX11GL : linux with X11 and openGL
+- minimacy.exe    : windows version
+- minimacy        : linux without GUI
+- minimacyX11     : linux with X11
+- minimacyX11GL   : linux with X11 and openGL
 - minimacyRPiOS64 : raspberry Pi OS 64 bits with X11 and openGL
-- minimacyMac : macos command line without GUI
-- minimacyMacX11GL: macos command line with X11 and openGL
+- minimacyMac     : macos command line without GUI
+- minimacyMacX11  : macos command line with X11
+- minimacyMacX11GL: macos command line with X11 and openGL (not working on Tahoe)
+- minimacyRpi4.img: baremetal raspberry Pi 4
+
+Binary for MM-2350 is built in: ./baremetal/raspberry-2350/build/minimacy.uf2
+We are manually copying and renaming it here as: minimacyMM2350.uf2
 
 In order to build these binaries, see: https://github.com/ambermind/minimacy/blob/main/README.md

@@ -62,7 +62,17 @@ fun joinWait(m)=
 	else
 	(
 		set m._threadJ= _This;
-		set m._oblivionJ = oblivionCreate((lambda ()= joinSend(m, nil)));
+		_threadHoldOn()	
+	);;
+
+fun joinSafeWait(m)=
+\atomic
+	if m._threadJ == nil then
+	if m._doneJ then m._valJ
+	else
+	(
+		set m._threadJ= _This;
+		set m._oblivionJ = oblivionCreate(lambda ()= joinSend(m, nil));
 		set m=nil;	// forget the join so that it can be oblivioned
 		_threadHoldOn()	
 	);;
@@ -96,3 +106,6 @@ fun await(asyncFun)=
 		)
 		else val
 	);;
+
+//------------ Oblivion
+fun oblivionCreate(f) = _oblivionCreate(lambda()= void call f());;

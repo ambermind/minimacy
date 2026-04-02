@@ -39,6 +39,8 @@ var _Mounts;;
 fun _strFromPath(path)= if strEmpty(path) then "[empty]" else path;;
 
 // Volumes
+fun volumeList() = _Volumes;;
+
 fun volumeCreate(type, index, writable, fRead, fWrite, nbSectors, sectorSize)=
 	let if index<>nil then index
 		else listReduce(_Volumes, 0, lambda(index, v)= if v.typeV==type then max(index, 1+v.indexV) else index)
@@ -54,12 +56,16 @@ fun fsAddVolume(volume)=
 	volume;;
 
 fun volumeIsWritable(volume) = volume.writableV;;
+fun volumeName(volume) = volume.nameV;;
 
 fun volumeAddPartition(volume, partition) =
 	set volume.partitionsV= partition::volume.partitionsV;
 	partition;;
 
 // Partitions
+fun partitionList(volume)=volume.partitionsV;;
+fun partitionName(partition)=partition.nameP;;
+
 fun _mkAnsiPartition(volume, name, writable)=
 	let writable&&volume.writableV -> writable in
 	volumeAddPartition(volume, [
@@ -136,7 +142,7 @@ fun _fsInit(programDir) =
 					partitionMount(partition, true, "", programDir);
 				partitionMount(partition, true, "/", "/");
 			),
-			romdiskVolume -> let _mkRomdiskPartition(volume, index, if index==0 then "BOOTLOADER" else "NATIVE") -> partition in 
+			romdiskVolume -> let _mkRomdiskPartition(volume, index, if index==0 then "BOOTDISK" else "NATIVE") -> partition in 
 				partitionMount(partition, false, "", root)
 			,
 			_ -> nil;
@@ -171,7 +177,7 @@ fun fileFromContent(content)=
 
 fun _mkAnsiFileWrite(file) = lambda(seek, src, start, len) =
 	if len==0 then 0
-	else if !(len<0) then
+	elif !(len<0) then
 	(
 		_workerEnter();
 		_ansiFileWrite(file, seek, src, start, len)
@@ -180,7 +186,7 @@ fun _mkAnsiFileWrite(file) = lambda(seek, src, start, len) =
 
 fun _mkAnsiFileRead(file) = lambda(seek, len) =
 	if len==0 then ""
-	else if !(len<0) then
+	elif !(len<0) then
 	let bytesCreate(len, 0) -> buffer in
 	(
 		_workerEnter(); 
@@ -261,8 +267,8 @@ fun _mountFilter(m, path) =
 	let cleanPath(path) -> path in
 	if _absoluteDir(m._mountPathM)==_absoluteDir(path) then
 	if strEmpty(m._mountPathM) then strConcat(m._partitionPathM, path)
-	else if m._mountPathM=="/" && m._partitionPathM=="/" then path
-	else if strStartsWith(path, m._mountPathM) then
+	elif m._mountPathM=="/" && m._partitionPathM=="/" then path
+	elif strStartsWith(path, m._mountPathM) then
 	strConcat(m._partitionPathM, strSlice(path, strLength(m._mountPathM), nil));;
 
 fun __decodeDir(mount, path0, l)=
@@ -277,7 +283,7 @@ fun __decodeDir(mount, path0, l)=
 fun _decodeDir(mount, path0, str)= __decodeDir(mount, path0, strSplit("\0", str));;
 
 fun mountDiskList(m, path0)=
-	let if path0<>"" && !strEndsWith(path0, "/") then strConcat(path0, "/") else path0 -> path0 in
+	let if !strEmpty(path0) && !strEndsWith(path0, "/") then strConcat(path0, "/") else path0 -> path0 in
 	let _mountFilter(m, path0) -> path in
 	if path==nil then (
 		let cleanPath(path0) -> path in

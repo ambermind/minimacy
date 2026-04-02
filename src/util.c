@@ -346,6 +346,7 @@ unsigned long long RandomSeed=SEED_INIT_VALUE;
 void pseudoRandomInit(void)
 {
 	pseudoRandomEntropy(hwTimeMs());	// clearly not enough...
+	// during development, it is useful to have a reproductible random sequence
 }
 LINT pseudoRandom32(void)
 {

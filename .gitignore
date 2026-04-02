@@ -1,10 +1,22 @@
 
+/android/minimacy/.gradle
+/android/minimacy/.idea
+/android/minimacy/build
+/android/minimacy/app/.cxx
+/android/minimacy/app/build
+/android/minimacy/local.properties
+
+/baremetal/raspberry-2350/build
 /obj
 
 /bin/*
 !/bin/README
 
-/windows/minimacy/.vs
-/windows/minimacy/build
+/windows/visual2019/.vs
+/windows/visual2019/build
+/windows/visual2022/.vs
+/windows/visual2022/build
+/windows/visual2026/.vs
+/windows/visual2026/build
 #misc
 .DS_Store

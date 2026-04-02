@@ -1,0 +1,43 @@
+.pio_version 0 // only requires PIO version 0
+
+.program ws2812
+.side_set 1
+
+; 800.000 Hz -> 1.25us per bit
+; 10 cycles per bit:
+; 1: 0111111000
+; 0: 0111000000
+; we starts with 0, so that it sticks to 0 when fifo is empty
+
+.wrap_target
+bitloop:
+    out x, 1       side 0 [0] ; in any case, 0 for at least 1 cycle
+    jmp !x do_zero side 1 [2] ; in any case, 1 for 3 cycles
+do_one:
+    nop            side 1 [2] ; 1 for 3 more cycles (total 6 cycles)
+    jmp  bitloop   side 0 [2] ; 0 for 3 cycles (total 4 cycles including the 'out x,1' cycle)
+do_zero:
+    nop            side 0 [5] ; 0 for 6 cycles (total 7 cycles including the 'out x,1' cycle)
+.wrap
+
+% c-sdk {
+#include "hardware/clocks.h"
+
+static inline void ws2812_program_init(PIO pio, uint sm, uint offset, uint pin, float freq, bool rgbw) {
+
+    pio_gpio_init(pio, pin);
+    pio_sm_set_consecutive_pindirs(pio, sm, pin, 1, true);
+
+    pio_sm_config c = ws2812_program_get_default_config(offset);
+    sm_config_set_sideset_pins(&c, pin);
+    sm_config_set_out_shift(&c, false, true, rgbw ? 32 : 24);
+    sm_config_set_fifo_join(&c, PIO_FIFO_JOIN_TX);
+
+    int cycles_per_bit = 10;
+    float div = clock_get_hz(clk_sys) / (freq * cycles_per_bit);
+    sm_config_set_clkdiv(&c, div);
+
+    pio_sm_init(pio, sm, offset, &c);
+    pio_sm_set_enabled(pio, sm, true);
+}
+%}

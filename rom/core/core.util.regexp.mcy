@@ -55,8 +55,8 @@ fun _tokenizeRepeat(str, i, val, result)=
 	if i>=strLength(str) then result
 	else let strGet(str, i) -> c in
 	if c>='0' && c<='9' then _tokenizeRepeat(str, i+1, val*10+(c-'0'), result)
-	else if c==',' then _tokenizeRepeat(str, i+1, nil, ","::if val<>nil then decFromInt(val)::result else result)
-	else if c=='}' then _tokenize(str, i+1, "}"::if val<>nil then decFromInt(val)::result else result)
+	else if c==',' then _tokenizeRepeat(str, i+1, nil, ","::if val<>nil then strFromInt(val)::result else result)
+	else if c=='}' then _tokenize(str, i+1, "}"::if val<>nil then strFromInt(val)::result else result)
 	else _tokenError(strBuild(["unexpected char in repeat, found ", c]));;
 
 fun _tokenize(str, i, result)=
@@ -143,13 +143,13 @@ fun _rChar(tokens, next)=
 
 fun _rRange(tokens, next)=
 	let tokenVal(tokens) -> token in
-	let if token<>"," then (tokenNext(tokens); intFromDec(token)) -> mx in
+	let if token<>"," then (tokenNext(tokens); intFromStr(token)) -> mx in
 	let tokenVal(tokens) -> token in
 	if token=="{" then mRepeat mx mx _rChar(tokenNext(tokens), mDone) next
 	else if token=="," then
 	let tokenNext(tokens) -> tokens in
 	let tokenVal(tokens) -> token in
-	let if token<>"{" then (tokenNext(tokens); intFromDec(token)) -> mn in
+	let if token<>"{" then (tokenNext(tokens); intFromStr(token)) -> mn in
 	let tokenVal(tokens) -> token in
 	if token=="{" then mRepeat mn mx _rChar(tokenNext(tokens), mDone) next
 	else _tokenError(strBuild(["} expected, found ", token]));;

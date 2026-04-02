@@ -431,7 +431,7 @@ fun dbUpdateUInt(num, val) = if val<>nil then let strVarUInt(val) -> val in {num
 fun dbUpdateTime(num, val) = if val<>nil then let strVarUInt(val) -> val in {num, strVarUInt(strLength(val)), val};;
 fun dbUpdateBool(num, val) = if val<>nil then let if val then "\$01" else "\$00" -> val in {num, "\$01", val};;
 fun dbUpdateFloat(num, val) = if val<>nil then let strFloat(val) -> val in {num, strVarUInt(strLength(val)), val};;
-fun dbUpdateBigNum(num, val) = if val<>nil then let signedStrFromBig(val) -> val in {num, strVarUInt(strLength(val)), val};;
+fun dbUpdateBigNum(num, val) = if val<>nil then let signedBigSerialize(val) -> val in {num, strVarUInt(strLength(val)), val};;
 
 fun dbCreateMap(size)= hashmapCreate(hashSize(size));;
 fun dbAddMap(db, h, row, val)= if row<>nil then lockSync(db.lockD, lambda()=hashmapSet(h, val, row::hashmapGet(h, val)));;
@@ -490,10 +490,10 @@ fun dbTablePrint(fVisit, columns, fToTable, f)=
 
 fun dbShowGhost(db)=
 	hashmapFind(db.ghostTablesD, (lambda(table, ghost)=
-		if ghost.countG>0 then echoLn ["WARNING: database contains ",ghost.countG," row(s) (", intAbbrev(1000, ghost.sizeG),"b) for the unknown table ", table];
+		if ghost.countG>0 then echoLn ["WARNING: database contains ",ghost.countG," row(s) (", intShortFormat(1000, ghost.sizeG),"b) for the unknown table ", table];
 		hashmapFind(ghost.fieldsCountG, (lambda(field, val)=
 			let hashmapGet(ghost.fieldsSizeG, field) -> size in
-			echoLn ["WARNING: database contains ",val," data (", intAbbrev(1000, size),"b) for the unknown field ",field," in table ", table];
+			echoLn ["WARNING: database contains ",val," data (", intShortFormat(1000, size),"b) for the unknown field ",field," in table ", table];
 			false
 		));
 		false
@@ -511,7 +511,7 @@ fun dbStatus(db)=
 			refSet(size, b.sizeE+refGet(size));
 			false
 		));
-		echoLn ["\nHoles : ",refGet(count)," hole(s) (", intAbbrev(1000, refGet(size)),"b)"];
+		echoLn ["\nHoles : ",refGet(count)," hole(s) (", intShortFormat(1000, refGet(size)),"b)"];
 	);
 
 	let 0-> nb in
@@ -527,7 +527,7 @@ fun dbStatus(db)=
 			refSet(size, block._sizeB+refGet(size));
 			true
 		));
-		echoLn ["\nRows  : ",refGet(count)," row(s) (", intAbbrev(1000, refGet(size)),"b)"];
+		echoLn ["\nRows  : ",refGet(count)," row(s) (", intShortFormat(1000, refGet(size)),"b)"];
 	);
 
 	if 0<hashmapCount(db.ghostTablesD) then

@@ -54,15 +54,15 @@ fun rsaPssSign(rsa, data, fHash, hashLen)=
 		bytesSet(block, blockLen-1, 0xBC);
 		bytesXor(block, 0, mask1, 0, nil);
 		bytesSet(block, 0, firstByteMask&bytesGet(block, 0));
-		let bigFromBytes(block) -> msg in
-		strFromBig(rsaComputePrivateExp(rsa, msg), blockLen)
+		let bigDeserializeBytes(block) -> msg in
+		bigSerialize(rsaComputePrivateExp(rsa, msg), blockLen)
 	);;
 	
 fun rsaPssVerify(rsa, data, fHash, hashLen, signature)=
 	let rsaModulus(rsa) -> modulus in
 	let rsaPubExp(rsa) -> pubExp in
 	let _computeFromPublicKey(modulus) -> [firstByteMask, blockLen] in
-	let strFromBig(bigExpMod(bigFromStr(signature), pubExp, modulus), blockLen) -> block in
+	let bigSerialize(bigExpMod(bigDeserialize(signature), pubExp, modulus), blockLen) -> block in
 	if 0xbc <> strGet(block, -1) then false
 	else let strSliceOfBytes(block, 0, nil) -> buf in
 	let mkMask(strSlice(block, blockLen-hashLen-1, hashLen), blockLen, fHash, hashLen)-> mask in

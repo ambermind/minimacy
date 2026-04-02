@@ -15,12 +15,12 @@ fun _dbGenerator(ll, database, tables, table, fields, indexes, volatiles, extras
 		[database, listReverse(tables)]
 	else let head(ll) -> l in
 	match head(l) with
-		"database"-> let tail(l)-> (name::strNum::_) in _dbGenerator(tail(ll), [if name<>nil then name else "db", intFromDec(strNum)], nil, nil, nil, nil, nil, nil),
-		"table"-> let tail(l) ->(name::strNum::_) in let [name, intFromDec(strNum)] -> nextTable in
+		"database"-> let tail(l)-> (name::strNum::_) in _dbGenerator(tail(ll), [if name<>nil then name else "db", intFromStr(strNum)], nil, nil, nil, nil, nil, nil),
+		"table"-> let tail(l) ->(name::strNum::_) in let [name, intFromStr(strNum)] -> nextTable in
 			if table==nil then _dbGenerator(tail(ll), database, tables, nextTable, nil, nil, nil, nil)
 			else _dbGenerator(tail(ll), database, [table, listReverse(fields), listReverse(indexes), listReverse(volatiles), extras]::tables, nextTable, nil, nil, nil, nil) ,
-		"field"-> let tail(l)->(strNum::name::type::_) in _dbGenerator(tail(ll), database, tables, table, [initialUpper(name), intFromDec(strNum), type]::fields, indexes, volatiles, extras),
-		"index"-> let tail(l)->(name::strSize::_) in _dbGenerator(tail(ll), database, tables, table, fields, [initialUpper(name), intFromDec(if strSize==nil then "0" else strSize)]::indexes, volatiles, extras),
+		"field"-> let tail(l)->(strNum::name::type::_) in _dbGenerator(tail(ll), database, tables, table, [initialUpper(name), intFromStr(strNum), type]::fields, indexes, volatiles, extras),
+		"index"-> let tail(l)->(name::strSize::_) in _dbGenerator(tail(ll), database, tables, table, fields, [initialUpper(name), intFromStr(if strSize==nil then "0" else strSize)]::indexes, volatiles, extras),
 		"volatile"-> let tail(l)->(name::_) in _dbGenerator(tail(ll), database, tables, table, fields, indexes, initialUpper(name)::volatiles, extras),
 		"extra"-> let tail(l)->(name::_) in _dbGenerator(tail(ll), database, tables, table, fields, indexes, volatiles, name::extras),
 		_ -> _dbGenerator(tail(ll), database, tables, table, fields, indexes, volatiles, extras)
@@ -199,7 +199,7 @@ listMap(indexes, lambda([Field2, size]) = if Field==Field2 then [
 		"Time" -> "strReadVarUInt(src, i)",
 		"Bool" -> "(0<>strGet(src, i))",
 		"Float" -> "strReadFloat(src, i)",
-		"BigNum" -> "bigFromSignedStr(strSlice(src, i), len)"
+		"BigNum" -> "signedBigDeserialize(strSlice(src, i), len)"
 	),
 listMap(indexes, lambda([Field2, size]) = if Field==Field2 then [
 ")"
@@ -288,15 +288,15 @@ const ",Db, Table,"Columns={\"Id\"",
 listMap(fields, lambda([Field, num, type]) = [", \"", Field, "\""]),
 
 "};;
-fun ",db, Table,"ToTable(row)={decFromInt(parent.dbId(_",Table,"< row)), ",
+fun ",db, Table,"ToTable(row)={strFromInt(parent.dbId(_",Table,"< row)), ",
 listMap(fields, lambda([Field, num, type]) = [
 	match type with
-		"Int" -> "decFromInt(",
-		"UInt" -> "decFromInt(",
+		"Int" -> "strFromInt(",
+		"UInt" -> "strFromInt(",
 		"Time" -> "fileDateSeconds(",
 		"Float" -> "strFromFloat(",
 		"Bool" -> "strFromBool(",
-		"BigNum" -> "decFromBig(",
+		"BigNum" -> "strFromBig(",
 		_ -> "(",
 	"row._",table, Field, "), "
 ]),

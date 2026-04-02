@@ -29,17 +29,17 @@ fun _pkcs1Encrypt(N, data, forPrivateKey, fexp)=
 		);
 		bytesSet(block, headerLen, 0x00);
 		bytesCopy(block, headerLen+1, data, 0, nil);
-		let bigFromBytes(block) -> bignum in
+		let bigDeserializeBytes(block) -> bignum in
 		let call fexp(bignum) -> encoded in
-		strFromBig(encoded, _pkcs1OutputBlockSize(nbits, 1))
+		bigSerialize(encoded, _pkcs1OutputBlockSize(nbits, 1))
 	);;
 
 fun _pkcs1Decrypt(N, data, forPrivateKey, fexp)=
 	let bigNbits(N) -> nbits in
-	let bigFromStr(data) -> bignum in
+	let bigDeserialize(data) -> bignum in
 	let call fexp(bignum) -> decoded in
 	let _outputBlockSize(nbits, 0) -> blockLen in
-	let strFromBig(decoded, blockLen) -> block in
+	let bigSerialize(decoded, blockLen) -> block in
 	let strGet(block, 0) -> type in
 	if (!forPrivateKey && type==1)||(forPrivateKey && type==2) then	// no else, this returns nil when wrong header byte
 	(

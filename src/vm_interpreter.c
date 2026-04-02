@@ -3,8 +3,6 @@
 // Minimacy (r) System
 #include"minimacy.h"
 
-int interpreterTRON=0;
-
 //LINT* runtimeCheckAddress=NULL;
 //LINT runtimeCheckValue=0;
 
@@ -119,7 +117,6 @@ LINT interpreterExec(Thread* th,LINT argc,LINT tfc)	// fun arg0 ... 0:argn-1
 		STACK_LOAD(th,argc+binds,fun,FUN_USER_NAME);
 		fun=ARRAY_PNT(fun,FUN_USER_NAME);
 //		threadDump(LOG_SYS,th,10); PRINTF(LOG_DEV,">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>done higherfun\n"); getchar();
-//		interpreterTRON=1;
 
 	}
 	else if (ARRAY_LENGTH(fun)==FUN_NATIVE_LENGTH)
@@ -241,6 +238,7 @@ LINT interpreterRun(Thread* th,LINT maxCycles)
 
 	BC_PRECOMPUTE
 
+	bufferReset(MM.tmpBuffer, 0);
 	systemBignumReset();
 	while(1)
 	{
@@ -263,7 +261,7 @@ LINT interpreterRun(Thread* th,LINT maxCycles)
 			if (op & 0x80) op = (op<< 8) + ((*(pc++)) & 255);
 		processOpCode:
 
-//			if (interpreterTRON)
+//			if (MM.gcTrace)
 //			{
 //				LINT pci=(LINT)(pc-1-BC_START(bytecode));
 //				threadDump(LOG_USER,th,20);
@@ -583,9 +581,6 @@ LINT interpreterRun(Thread* th,LINT maxCycles)
 			case OPpowint: BCINT2FUN(powerInt)
 			case OPprompt:
 				if (promptOnThread(th)) return INTERPRETER_OM;
-//				PRINTF(LOG_SYS, "> ----return from OPprompt\n");
-//				interpreterTRON = 1;
-//				threadDump(LOG_SYS, th, 20);
 				break;
 			case OPret:
 				if (STACK_REF(th) - th->callstack != 1)
@@ -674,13 +669,6 @@ LINT interpreterRun(Thread* th,LINT maxCycles)
 				STACK_DROP(th);
 				STACK_PUSH_FILLED_ARRAY_ERR(th, def->type->nb, VAL_FROM_PNT((LB*)def), INTERPRETER_OM);
 				break;
-			case OPswap:
-				STACK_PUSH_NIL_ERR(th, INTERPRETER_OM);
-				STACK_INTERNAL_COPY(th, 0, 1);
-				STACK_INTERNAL_COPY(th, 1, 2);
-				STACK_INTERNAL_COPY(th, 2, 0);
-				STACK_DROP(th);
-				break;
 			case OParraylen:
 				p = STACK_PNT(th, 0);
 				if (p) STACK_SET_INT(th, 0, ARRAY_LENGTH(p));
@@ -704,14 +692,6 @@ LINT interpreterRun(Thread* th,LINT maxCycles)
 				break;
 			case OPtl:
 				if (STACK_PNT(th, 0)) STACK_LOAD(th, 0, STACK_PNT(th, 0), 1);
-				break;
-			case OPtron:
-				interpreterTRON = 1;
-				STACK_PUSH_NIL_ERR(th, INTERPRETER_OM);
-				break;
-			case OPtroff:
-				interpreterTRON = 0;
-				 STACK_PUSH_NIL_ERR(th, INTERPRETER_OM);
 				break;
 			case OPtrue:
 				STACK_PUSH_PNT_ERR(th, MM._true, INTERPRETER_OM);
@@ -765,6 +745,7 @@ LINT interpreterRun(Thread* th,LINT maxCycles)
 					def = STACK_REF(th) - argc +1;	// def is the position of the first arg
 					th->pc = pc - BC_START(bytecode);
 					MM.tmpRoot = NULL;
+					MM.resign = 0;
 					k = (*native)(th);
 					if (scheduler) {
 						th = MM.scheduler;
@@ -784,7 +765,11 @@ LINT interpreterRun(Thread* th,LINT maxCycles)
 						return EXEC_EXIT;  // wrong implementation
 					}
 					else if (skip > 0) STACK_SKIP(th, skip);
-
+					if (MM.resign) {
+						MM.resign = 0;
+						th->count += nloop;
+						return EXEC_PREEMPTION;
+					}
 				}
 				else {
 					PRINTF(LOG_SYS, "\n> Error: Illegal Opcode %d in %s\n", 255 & op, interpreterCurrentFun(th));

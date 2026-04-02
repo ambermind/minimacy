@@ -1,0 +1,220 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2022, Sylvain Huet, Ambermind
+// Minimacy (r) System
+use driver.generic.display;;
+use driver.generic.i2c.mcp7940n.rtc;;
+use baremetal.mm2350.boot;;
+
+const DEBUG=true;;
+
+const LOGO= strFromLzw(strFromHex(strBuild([
+"ffe0012058d0204181071502f8036ee1c1860f0dfe18289120458b043fe0cb0860230040100811801012c38078011e700406c310c996180c6450c90f00383887",
+"48e2248120c0a003364141294408c250121800183be00f002c68848841802a04020036039c668244880804ae5601e018f00f4022916420a01d76154200b38f44",
+"d28020f79fd2b7ff001912c90182a108811001b8aa3724210625230030840182807fc00e93043401c03078100cfc0196d141448b0c7e38b4c801a3451e1f2a4a",
+"f4f3d1e2bf1f362db6e6683120"
+])), nil);;
+
+fun rtcLoop()=
+	let fullDate(time()) -> d in (
+		drawStringRight(128, 32, strLeft(d, 16), false);
+		drawStringRight(128, 40, strSlice(d, 17, nil), false);
+		uiUpdate();
+		onTimeout(1000, #rtcLoop)
+	);;
+
+//----------------------- PARSING
+fun _nextDoubleQuote(str, i)=
+	if i>=strLength(str) then i
+	else
+	let strGet(str, i) -> c in
+	if c==0x22 then i	// 0x22: double quote
+	else _nextDoubleQuote(str, i+if c==0x5c then 2 else 1);;	// 0x5c: backslash
+
+fun _parse(str, i) =
+	if i<strLength(str) then
+	let strGet(str, i) -> c in
+	if c<=32 then _parse(str, i+1)
+	else 
+	if c==0x22 then
+		let _nextDoubleQuote(str, i+1) -> j in
+		let strFromSource(strSlice(str, i, j+1-i)) -> word in
+		if word==nil then abort
+		else word::_parse(str, j+1)
+	else
+		let strCharPos(str, 32, i+1) -> j in
+		let if j<>nil then j else strLength(str) -> j in
+		strSlice(str, i, j-i)::_parse(str, j);;
+
+fun parse(str) = try _parse(str, 0);;
+
+//-----------------------
+const COPY_SLICE_LEN=4096*8;;
+
+fun copyFile(src, dst)=
+echoLn strFormat("Open *", src);
+	let fileOpen(src, FILE_READ_ONLY) -> f in
+	if f<>nil then
+	let dump fileSize(f) -> size in (
+		let fileOpen(dst, FILE_REWRITE) -> g in
+		if g<>nil then (
+			echoLn strFormat("Write *", dst);
+			for i=0;i<size;i+COPY_SLICE_LEN do
+				let fileRead(f, nil, COPY_SLICE_LEN) -> data in (
+					fileWrite(g, nil, data, 0, nil);
+					echo "*"
+				);
+			fileClose(g)
+		);
+		fileClose(f);
+		echoLn ""
+	);;
+//-----------------------
+
+fun adminHelp()= 
+	echoLn "Commands:";
+	echoLn "---------";
+	echoLn "help\n\tthis message";
+	echoLn "setTime\n\tset the current time";
+	echoLn "fs\n\tlist volumes, partitions and mounts";
+	echoLn "flash\n\tlist of all files on flash disk";
+	echoLn "sd\n\tlist of all files on sd card";
+	echoLn "bootdisk\n\tlist of all files on the bootdisk";
+	echoLn "format\n\tformat the flash disk";
+	echoLn "import path\n\tcopy a file from the sd card to the flash disk";
+	echoLn "import\n\tcopy all files from the sd card to the flash disk";
+	echoLn "importBootdisk path\n\tcopy a file from the bootdisk to the flash disk";
+	echoLn "importBootdisk\n\tcopy all files from the bootdisk to the flash disk";
+	echoLn "export path\n\tcopy a file from the flash disk to the sd card";
+	echoLn "export\n\tcopy all files from the sd card to the flash disk";
+	echoLn "dir [path]\n\tshow the directory content";
+	echoLn "copy [src] [dst]\n\tcopy a file";
+	echoLn "delete [path]\n\tdelete a file";
+	echoLn "toplevel\n\tstart the toplevel";
+	echoLn "";
+	promptLoop();;
+
+fun adminSetTime()=
+	echoLn "Enter time as YYMMDDhhmmss (UTC)";
+	onPrompt("YYMMDDhhmmss> ", (lambda(val)=
+		let timeFromYyddmmhhmmssz(strConcat(val, "Z")) -> t in
+		if t==nil then void echoLn "abort"
+		else (
+			mcp7940nSetTime(RTC, t);
+			timeSet(t);
+			echoLn strFormat("new time is: *", fullDate(t))
+		);
+		promptLoop()
+	));;
+
+fun _recList(path, size)=
+	for d in dirList(path) do set size=_recList(d, size);
+	for fi in fileListInfo(path) do (
+		echoLn strFormat("* (* bytes)", fileInfoName(fi), fileInfoSize(fi)); 
+		set size=size+fileInfoSize(fi)
+	);
+	size;;
+
+fun adminFlash()=
+	echoLn "Flash content:";
+	let _recList("flash/", 0) -> size in
+	echoLn strFormat("-> * bytes", size);
+	promptLoop();;
+
+fun adminSd()=
+	echoLn "Sd content:";
+	let _recList("sd/", 0) -> size in
+	echoLn strFormat("-> * bytes", size);
+	promptLoop();;
+
+fun adminBootdisk()=
+	echoLn "Bootdisk content:";
+	let _recList("bootdisk/", 0) -> size in
+	echoLn strFormat("-> * bytes", size);
+	promptLoop();;
+
+fun adminFormat()=
+	echoLn "Format internal flash. Are you sure?";
+	onPrompt("Y/N> ", (lambda(val)=
+		if val<>"Y" then void echoLn "abort"
+		else (
+			flashFormat();
+			echoLn "You may restart the MM2350 now";
+			return nil;
+		);
+		promptLoop()
+	));;
+
+fun _recCopy(path, srcPrefix, dstPrefix)=
+	for d in dirList(path) do _recCopy(d, srcPrefix, dstPrefix);
+	for src in fileList(path) do
+		let strFormat("**", dstPrefix, strSlice(src, strLength(srcPrefix), nil)) -> dst in (
+			echoLn strFormat("copying: *", dst); 
+			copyFile(src, dst)
+		);;
+
+fun _adminImportExport(path, question, srcPrefix, dstPrefix)=
+	if !strEmpty(path) then (
+		copyFile(strConcat(srcPrefix, path), strConcat(dstPrefix, path));
+		promptLoop()
+	)
+	else (
+		echoLn question;
+		onPrompt("Y/N> ", lambda(val)=
+			if val<>"Y" then void echoLn "abort"
+			else (
+				_recCopy(srcPrefix, srcPrefix, dstPrefix);
+				promptLoop()
+			)
+		)
+	);;
+
+fun adminImport(path)= _adminImportExport(path, "Import all SD files into Flash. Are you sure?", "sd/", "flash/");;
+fun adminExport(path)= _adminImportExport(path, "Export all Flash files into SD. Are you sure?", "flash/", "sd/");;
+fun adminImportBootdisk(path)= _adminImportExport(path, "Export all bootdisk files into Flash. Are you sure?", "bootdisk/", "flash/");;
+
+fun adminDir(path)=
+	dir(if path==nil then "" else path);
+	promptLoop();;
+
+fun adminCopy(src, dst)=
+	copyFile(src, dst);
+	promptLoop();;
+
+fun adminDelete(path)=
+	save(nil, path);
+	promptLoop();;
+
+fun promptLoop()=
+	onPrompt("\n> ", lambda(str)=
+		let parse(str) -> cmd::arg1::arg2::_ in match cmd with
+		"help" -> void adminHelp(),
+		"setTime" -> void adminSetTime(),
+		"flash" -> void adminFlash(),
+		"sd" -> void adminSd(),
+		"bootdisk" -> void adminBootdisk(),
+		"format" -> void adminFormat(),
+		"import" -> void adminImport(arg1),
+		"export" -> void adminExport(arg1),
+		"importBootdisk" -> void adminImportBootdisk(arg1),
+		"dir" -> void adminDir(arg1),
+		"copy" -> void adminCopy(arg1, arg2),
+		"delete" -> void adminDelete(arg1),
+		"toplevel" -> void consoleStart(pkg),
+		"fs" -> void (fs(); promptLoop()),
+		_ -> promptLoop()
+	);;
+
+fun main ()=
+	uiStart(10, 10, 128, 64, nil, "admin");
+	drawBitmap(0, 0, LOGO, 112);
+	drawStringCenter(64, 56, "(open console)", false);
+
+	let listFind(volumeList(), lambda(volume)= volumeName(volume)=="romdisk0") -> bootdisk in
+	let head(partitionList(bootdisk)) -> bootPartition in
+	if bootPartition<>nil then partitionMount(bootPartition, false, "bootdisk/", "");
+	//fs();
+
+	threadStart("ui", #rtcLoop);
+	adminHelp();;
+//	adminFlash;;
+//	consoleStart nil;;

@@ -44,18 +44,18 @@ fun _oaepEncrypt(N, data, fexp)=
 				bytesXor(block, _HASHLEN, mask, 0, nil);
 			let _oaepMaskGenerator(bytesSliceOfStr(block, _HASHLEN, nil), _HASHLEN) -> mask in
 				bytesXor(block, 0, mask, 0, nil);
-			let bigFromBytes(block) -> bignum in
+			let bigDeserializeBytes(block) -> bignum in
 			let call fexp(bignum) -> encoded in
-			strFromBig(encoded, _oaepOutputBlockSize(nbits, 1))
+			bigSerialize(encoded, _oaepOutputBlockSize(nbits, 1))
 		)
 	);;
 
 fun _oaepDecrypt(N, data, fexp)=
 	let bigNbits(N) -> nbits in
-	let bigFromStr(data) -> bignum in
+	let bigDeserialize(data) -> bignum in
 	let call fexp(bignum) -> decoded in
 	let _outputBlockSize(nbits, 0) -> blockLen in
-	let strSliceOfBytes(strFromBig(decoded, blockLen), 0, nil) -> block in
+	let strSliceOfBytes(bigSerialize(decoded, blockLen), 0, nil) -> block in
 	(
 		let _oaepMaskGenerator(bytesSliceOfStr(block, _HASHLEN, nil), _HASHLEN) -> mask in
 			bytesXor(block, 0, mask, 0, nil);

@@ -8,6 +8,10 @@
 
 typedef unsigned char lchar;
 
+#ifndef ON_WINDOWS
+#define HBITMAP void*
+#endif
+
 typedef struct
 {
 	LB header;
@@ -21,7 +25,7 @@ typedef struct
 	LINT next32;
 	LINT w;
 	LINT h;
-#ifdef ON_WINDOWS
+#ifdef WITH_UI
 	HBITMAP bmp;
 #endif
 }LBitmap;

@@ -20,7 +20,7 @@ MEMORY_STATICS;
 #endif
 static Strip MemoryStrips[] = { MEMORY_PARTS };
 
-const int MemoryStripsNb = sizeof(MemoryStrips) / sizeof(Strip);
+int MemoryStripsNb = sizeof(MemoryStrips) / sizeof(Strip);
 
 LINT BmmTotalSize = 0;
 LINT BmmTotalFree = 0;
@@ -72,7 +72,7 @@ LINT bmmReservedMem(void) {
 	if (!BmmReserve) return 0;
 	return BMM_SIZE(BmmReserve);
 }
-
+/*
 int _bmmAdd(BMM** parentLink, BMM* nodeToAdd)
 {
 	LINT size;
@@ -92,7 +92,39 @@ int _bmmAdd(BMM** parentLink, BMM* nodeToAdd)
 	*parentLink = nodeToAdd;
 	return 0;
 }
+*/
+int _bmmAdd(BMM** parentLink, BMM* nodeToAdd)
+{
+	while (1) {
+		LINT size;
+		BMM* node = *parentLink;
+		if (!node) {
+			nodeToAdd->left = nodeToAdd->right = nodeToAdd->next = NULL;
+			*parentLink = nodeToAdd;
+			return 0;
+		}
+		size = BMM_SIZE(nodeToAdd);
+		if (size > BMM_SIZE(node)) {
+			parentLink = &node->right;
+			continue;
+		}
+		if (size < BMM_SIZE(node)) {
+			parentLink = &node->left;
+			continue;
+		}
+		nodeToAdd->left = node->left;
+		nodeToAdd->right = node->right;
+		node->left = node->right = NULL;
+		nodeToAdd->next = node;
+		*parentLink = nodeToAdd;
+		return 0;
+	}
+}
 
+void bmmUpdateCount(int count)
+{
+	MemoryStripsNb=count;
+}
 void bmmUpdateSize(int index,LINT size)
 {
 	MemoryStrips[index].size=size;
@@ -103,9 +135,10 @@ void cMallocInit(void) {
 	BmmRoot = NULL;
 	for (i = 0; i < MemoryStripsNb; i++) {
 		BMM* node = (BMM*)MemoryStrips[i].start;
+//		memset(MemoryStrips[i].start,0,MemoryStrips[i].size);
 		HEADER_SET_SIZE_AND_TYPE(node, MemoryStrips[i].size, TYPE_FREE);
 		_bmmAdd(&BmmRoot, node);
-		PRINTF(LOG_SYS, "> Memory strip "LSD": "LSD" bytes ("LSX" - "LSX")\n", i, MemoryStrips[i].size, (LINT)MemoryStrips[i].start,(LINT)MemoryStrips[i].start+MemoryStrips[i].size);
+		PRINTF(LOG_SYS, "> Memory strip "LSD": "LSD" bytes (0x"LSX" - 0x"LSX")\n", i, MemoryStrips[i].size, (LINT)MemoryStrips[i].start,(LINT)MemoryStrips[i].start+MemoryStrips[i].size);
 		BmmTotalFree += MemoryStrips[i].size;
 	}
 	BmmTotalSize = BmmTotalFree;
@@ -220,6 +253,7 @@ void* bmmMalloc(LINT size)
 	HEADER_SET_SIZE_AND_TYPE(newBlock, remainingSize, TYPE_FREE);
 
 	_bmmAdd(&BmmRoot, newBlock);
+//	memset(result,0,size);
 	HEADER_SET_SIZE_AND_TYPE(result, size - sizeof(LB), TYPE_BINARY);
 	BmmTotalFree -= size;
 	bmmComputeMaxSize();
@@ -228,55 +262,66 @@ void* bmmMalloc(LINT size)
 
 int _bmmRemove(BMM** parentLink, BMM* nodeToRemove)
 {
-	LINT size;
-	BMM* node = *parentLink;
-	if (!node) return 0;
-	if (node == nodeToRemove) {
-		node = node->next;
-		if (node) {
-			node->left = nodeToRemove->left;
-			node->right = nodeToRemove->right;
-			*parentLink = node;
+	while (1) {
+		LINT size;
+		BMM* node = *parentLink;
+		if (!node) return 0;
+		if (node == nodeToRemove) {
+			node = node->next;
+			if (node) {
+				node->left = nodeToRemove->left;
+				node->right = nodeToRemove->right;
+				*parentLink = node;
+			}
+			else if (!nodeToRemove->left) *parentLink = nodeToRemove->right;
+			else if (!nodeToRemove->right) *parentLink = nodeToRemove->left;
+			else {
+				*parentLink = nodeToRemove->right;
+				node = nodeToRemove->right;
+				while (node->left) node = node->left;
+				node->left = nodeToRemove->left;
+			}
+			return 0;
 		}
-		else if (!nodeToRemove->left) *parentLink = nodeToRemove->right;
-		else if (!nodeToRemove->right) *parentLink = nodeToRemove->left;
-		else {
-			*parentLink = nodeToRemove->right;
-			node = nodeToRemove->right;
-			while (node->left) node = node->left;
-			node->left = nodeToRemove->left;
+		size = BMM_SIZE(nodeToRemove);
+		if (size > BMM_SIZE(node)) {
+			parentLink = &node->right;
+			continue;
+		}
+		if (size < BMM_SIZE(node)) {
+			parentLink = &node->left;
+			continue;
+		}
+		while (node->next) {
+			if (node->next == nodeToRemove) {
+				node->next = nodeToRemove->next;
+				return 0;
+			}
+			node = node->next;
 		}
 		return 0;
 	}
-	size = BMM_SIZE(nodeToRemove);
-	if (size > BMM_SIZE(node)) return _bmmRemove(&node->right, nodeToRemove);
-	if (size < BMM_SIZE(node)) return _bmmRemove(&node->left, nodeToRemove);
-	while (node->next) {
-		if (node->next == nodeToRemove) {
-			node->next = nodeToRemove->next;
-			return 0;
-		}
-		node = node->next;
-	}
-	return 0;
 }
 void bmmFree(void* block)
 {
 	int i;
 	BMM* node = (BMM*)block;
+
 	for (i = 0; i < MemoryStripsNb; i++) {	// find the strip containing 'block'
 		LINT index;
 		Strip* strip = &MemoryStrips[i];
 		LINT index0 = ((char*)node) - strip->start;
 		if ((index0 < 0) || ((index0 + 4 * ((LINT)sizeof(LB*))) > strip->size)) continue;
 		index = index0 + BMM_SIZE(node);
+/*
+//	merge on free: quite slow
 		while (index < strip->size) {
 			BMM* next = (BMM*)(&strip->start[index]);
 			if (HEADER_TYPE(next) != TYPE_FREE) break;
 			index += BMM_SIZE(next);
 			_bmmRemove(&BmmRoot, next);
 		}
-		BmmTotalFree += BMM_SIZE(node);
+*/		BmmTotalFree += BMM_SIZE(node);
 		HEADER_SET_SIZE_AND_TYPE(node, index - index0, TYPE_FREE);
 		_bmmAdd(&BmmRoot, node);
 //		PRINTF(LOG_SYS,"F:"LSD", ", index - index0);
@@ -343,6 +388,7 @@ LINT bmmCompact(void)
 
 	if (MM.gcTrace) PRINTF(LOG_SYS, "> GC: compacting memory...\n");
 	while (MM.safeAlloc) memoryLeaveSafe();
+	bufferReset(MM.tmpBuffer, 0);
 	memoryFinalizeGC();
 	memoryFinalizeGC();
 

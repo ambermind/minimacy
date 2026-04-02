@@ -1,0 +1,125 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2022, Sylvain Huet, Ambermind
+// Minimacy (r) System
+
+// https://www.usb.org/sites/default/files/usbmassbulk_10.pdf
+// https://docs.oracle.com/en/storage/storage-software/acsls/8.5/acsir/scsi-commands.html
+
+export UsbStorageList;;
+export usbStorageReadFunction(m);;
+export usbStorageWriteFunction(m);;
+export usbStorageSize(m);;
+export usbStorageSectorSize(m);;
+export usbStorageNbSectors(m);;
+export usbStorageName(m);;
+
+use driver.rpi4.usb;;
+
+const DEBUG=false;;
+//----------------- MASS STORAGE
+
+struct MassStorage=[deviceM, inM, outM, tagM, nbSectorsM, sectorSizeM, readyM, lockM];;
+var UsbStorageList;;
+
+fun _massStorageCommand(m, cmd, dataLen, dataToSend)=
+	if DEBUG then echoLn strFormat("_massStorageCommand * * *", hexFromStr(cmd), dataLen, strLength(dataToSend));
+	lockSync(m.lockM, lambda()=
+		if dataToSend<>nil then set dataLen=strLength(dataToSend);
+		if dataLen<0 then return nil;
+		let m.outM.dataE -> data in (	// Command Block Wrapper (CBW)
+			sharedMemClear(data, 0x1f);
+			sharedMemWrite32(data, 0, 0x43425355);	// "USBC"
+			sharedMemWrite32(data, 4, (set m.tagM= m.tagM+1));
+			sharedMemWrite32(data, 8, dataLen);
+			sharedMemWrite8(data, 12, if dataToSend==nil then 0x80 else 0);
+			let strLength(cmd) -> len in (
+				sharedMemWrite8(data, 14, strLength(cmd));
+				sharedMemImport(data+15, cmd, 0, len)
+			);
+	//		if DEBUG then sharedMemDump(data, 0, 0x1f);
+		);
+		let bulkTransfer(m.outM, 0x1f) -> data in
+		if data<>nil then (
+			if dataToSend<>nil then
+				let m.outM.dataE -> data in
+				sharedMemImport(data, dataToSend, 0, dataLen);
+			let if dataLen<=0 then "" else bulkTransfer(if dataToSend==nil then m.inM else m.outM, dataLen) -> result in
+			if result<>nil then
+			let bulkTransfer(m.inM, 13) -> data in	// Command Status Wrapper (CSW)
+			if strRead32Lsb(data, 0)==0x53425355 then	// "USBS"
+			if strRead32Lsb(data, 4)==m.tagM then
+			if strRead8(data, 12)==0 then	// check CSW status ok
+			result
+		)
+	);;
+
+fun _massStorageUntilReady(m, nbTries)=
+	sleepMs(100);
+//echoLn strFormat(":*", nbTries);
+	if nbTries>0 then
+	let "\0\0\0\0\0\0" -> cmd in	// SCSI Test Unit Ready
+	if nil<>_massStorageCommand(m, cmd, nil, "") then true
+	else 
+		let "\$3\0\0\0\$12\0" -> cmd in	// SCSI Request Sense
+		let _massStorageCommand(m, cmd, 0x12, nil) -> result in
+		_massStorageUntilReady(m, nbTries-1)
+	;;
+
+fun massStorageCreate(d, protocol, interfaceNumber, epDescriptors)=
+	echoLn strFormat("> USB: start mass storage");
+	let [deviceM=d, tagM=0, lockM=lockCreate()] -> m in (
+		for epDescriptor in epDescriptors do (
+			if DEBUG then hexDump epDescriptor;
+			if (strGet(epDescriptor, 3) & 0x3f) == 0x02 then
+			if bitTest(0x80, strGet(epDescriptor, 2)) then set m.inM=epStart(d, epDescriptor)
+			else set m.outM=epStart(d, epDescriptor);
+		);
+		if m.inM<>nil && m.outM<>nil then
+		let "\$12\0\0\0\$24\0" -> cmd in	// SCSI Inquiry
+		if nil<>_massStorageCommand(m, cmd, 0x24, nil) then
+		if _massStorageUntilReady(m, 10) then
+		let "\$25\0\0\0\0\0\0\0\0\0" -> cmd in	// SCSI Read Capacity
+		let _massStorageCommand(m, cmd, 8, nil) -> result in
+		if result<>nil then
+		let strRead32Msb(result, 4) -> sectorSize in
+		if sectorSize==512 then (
+			set m.nbSectorsM= 1+strRead32Msb(result, 0);
+			set m.sectorSizeM = sectorSize;
+			echoLn strFormat("> USB: mass storage ready, * sectors (* bytes per sector)", intWithDelimiter(".", m.nbSectorsM), m.sectorSizeM);
+			set UsbStorageList=m::UsbStorageList;
+			set m.readyM = true
+		)
+	);;
+
+
+fun _usbStorageReadLoop(m, sector, nb)=
+	if nb>0 then
+	let strFormat("\$28\0*\0*\0", strInt32Msb(sector), strInt16Msb(1)) -> cmd in
+	_massStorageCommand(m, cmd, 512, nil)::_usbStorageReadLoop(m, sector+1, nb-1);;
+
+fun usbStorageReadSector(m, sector, nb)=
+	if DEBUG then echoLn strFormat(">>>>massReadSector * x*", sector, nb);
+	if m.readyM then
+	bytesBuild(_usbStorageReadLoop(m, sector, nb));;
+
+fun usbStorageWriteSector(m, sector, data)=
+	if DEBUG then echoLn strFormat(">>>>massWriteSector * *", sector, bytesLength(data));
+	if m.readyM then
+	let bytesLength(data)>>9 -> nbSectors in
+	if (nbSectors>=1) && !bitTest(bytesLength(data), 511) then (
+		for i=0;i<nbSectors do
+			let strFormat("*\$08*\0*\0", "\$2a", strInt32Msb(sector+i), strInt16Msb(1)) -> cmd in
+			let bytesSliceOfStr(data, i*512, 512) -> sectorData in
+			_massStorageCommand(m, cmd, nil, sectorData);
+		512*nbSectors;
+	);;
+
+fun usbStorageReadFunction(m) = lambda(sector, nbSectors) = usbStorageReadSector(m, sector, nbSectors);;
+fun usbStorageWriteFunction(m) = lambda(sector, data) = usbStorageWriteSector(m, sector, data);;
+fun usbStorageSize(m) = if m.readyM then m.sectorSizeM*m.nbSectorsM;;
+fun usbStorageSectorSize(m) = if m.readyM then m.sectorSizeM;;
+fun usbStorageNbSectors(m) = if m.readyM then m.nbSectorsM;;
+fun usbStorageName(m) = if m.readyM then m.deviceM.nameD;;
+
+fun _init()=
+	usbRegister("int-8-6-80", #massStorageCreate);;

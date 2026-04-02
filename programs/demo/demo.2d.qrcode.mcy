@@ -1,8 +1,4 @@
 
-// SPDX-License-Identifier: GPL-3.0-only
-// Copyright (c) 2022, Sylvain Huet, Ambermind
-// Minimacy (r) Demonstration
-
 use core.2d.qrcode;;
 
 fun _mkQrCode(str)=

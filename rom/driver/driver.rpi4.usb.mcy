@@ -1,0 +1,386 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2022, Sylvain Huet, Ambermind
+// Minimacy (r) System
+
+// https://www.usb.org/documents
+// http://www.poweredusb.org/pdf/usb20.pdf
+
+use driver.rpi4.usb.pcie;;
+use driver.rpi4.usb.xhci;;
+
+const DEBUG_LOW=false;;
+const DEBUG=false;;
+const DEBUG_DESCRIPTOR=false;;
+
+//const DEBUG_LOW=true;;
+//const DEBUG=true;;
+//const DEBUG_DESCRIPTOR=true;;
+
+const USB_DEFAULT_MAX_PACKET_SIZE = 8;;
+
+const USBSTR_DEFAULT_LANGID=0x409;;
+
+const ENDPOINT_BUFFER_DEFAULT_LEN = 512;;
+
+const EP_TYPE_ISOCH_OUT    = 1;;
+const EP_TYPE_BULK_OUT     = 2;;
+const EP_TYPE_INTERRUPT_OUT= 3;;
+const EP_TYPE_CONTROL      = 4;;
+const EP_TYPE_ISOCH_IN     = 5;;
+const EP_TYPE_BULK_IN      = 6;;
+const EP_TYPE_INTERRUPT_IN = 7;;
+
+const TRB_CONTROL_DIR_IN = 1 << 16;;
+const TRB_CONTROL_IOC = 0x20;;
+const TRB_CONTROL_IDT = 0x40;;
+
+const TRB_CONTROL_TRT_IN    = 3<<16;;
+
+const TRANSFER_RING_SIZE=64;;
+
+const PORT_SPEED_FULL		=1;;
+const PORT_SPEED_LOW		=2;;
+const PORT_SPEED_HIGH		=3;;
+const PORT_SPEED_SUPER		=4;;
+const PORT_SPEED_NAMES={
+	nil,
+	"12 Mbit/s (USB 1.1)",
+	"1.5 Mbit/s (USB 1.0)",
+	"480 Mbit/s (USB 2.0)",
+	"5 Gbit/s (USB 3.0)"
+};;
+const PORT_MAX_PACKET_SIZE={
+	nil,
+	8,
+	8,
+	64,
+	512
+};;
+
+const TRB_EP_NORMAL             = 1<<10;;
+const TRB_EP_SETUP_STAGE        = 2<<10;;
+const TRB_EP_DATA_STAGE         = 3<<10;;
+const TRB_EP_STATUS_STAGE       = 4<<10;;
+const TRB_CMD_ADDRESS_DEVICE    = 11<<10;;
+const TRB_CMD_CONFIGURE_ENDPOINT= 12<<10;;
+const TRB_CMD_EVALUATE_CONTEXT  = 13<<10;;
+
+const REQUEST_OUT         = 0x00;;
+const REQUEST_TO_INTERFACE= 0x01;;
+const REQUEST_TO_OTHER    = 0x03;;
+const REQUEST_CLASS       = 0x20;;
+const REQUEST_IN          = 0x80;;
+
+// transfer requests
+const GET_DESCRIPTOR          = 6;;
+const SET_CONFIGURATION       = 9;;
+
+// descriptor values for transfer requests
+const DESCRIPTOR_DEVICE       = 1;;
+const DESCRIPTOR_CONFIGURATION= 2;;
+const DESCRIPTOR_STRING       = 3;;
+
+const DESCRIPTOR_DEVICE_LENGTH       = 18;;
+const DESCRIPTOR_CONFIGURATION_LENGTH= 9;;
+const DESCRIPTOR_STRING_MIN_LENGTH   = 4;;
+
+const DESCRIPTOR_LENGTH_OFFSET         =0;;
+const DESCRIPTOR_TYPE_OFFSET           =1;;
+const DESCRIPTOR_TOTAL_LENGTH_OFFSET   =2;;
+const DESCRIPTOR_MAX_PACKET_SIZE_OFFSET=7;;
+
+const DESCRIPTOR_TYPE_ENDPOINT= 0x05;;
+const DESCRIPTOR_TYPE_HID     = 0x21;;
+
+const INPUT_CONTEXT_LENGTH= 0x420;;
+
+const SLOT_OFFSET=32;;
+const SLOT_DEV_HUB    = 1<<26;;	// device is a hub
+const SLOT_EPCONTEXT_SHIFT= 27;;
+
+const EP_OFFSET=64;;
+const EP_ERROR_COUNT= 3;;
+const EP_CTX_CYCLE  = 1;;
+
+struct EndPoint=[devE, idE, typeE, ringE, dataE, lenE];;
+struct Device=[nameD, portD, speedD, routeD, epsD, contextD, slotD, descD, configD, langD, splitTransferD, inputContextD];;
+
+const UsbDrivers=hashmapCreate(4);;
+
+fun ilog2(n)=
+	for i=31; i>=0; i-1 do if bitTest(1<<i, n) then return i;
+	return -1;;
+
+fun msgAndReturn(msg, result)= echo "> USB: "; echoLn msg; result;;
+
+fun deviceEp0(d) = d.epsD[0];;
+
+//--------- Transfers
+
+fun _transferWaitForResponse(ep, len)=
+	let transferWait(ep.devE.slotD, ep.idE, len) -> len in
+	if len>=0 then sharedMemExport(ep.dataE, len);;
+
+fun controlTransferIn(d, type, request, valueH, valueL, index, len)= lockSync(UsbLock, lambda()=
+	if DEBUG then echoLn strFormat("ControlTransferIn slot=* ep=* type=* req=* valueH=* valueL=* index=* size=*", (deviceEp0(d)).devE.slotD, (deviceEp0(d)).idE, type, request, valueH, valueL, index, len);
+	let deviceEp0(d) -> ep in
+	if epEnqueue(ep, TRB_EP_SETUP_STAGE| TRB_CONTROL_TRT_IN | TRB_CONTROL_IDT, 8, index | (len<<16), REQUEST_IN|type | (request<<8) | (valueL<<16) | (valueH<<24))
+	then if epEnqueue(ep, TRB_EP_DATA_STAGE | TRB_CONTROL_DIR_IN, len, DMA_BASE_HI, ep.dataE)
+	then if epEnqueue(ep, TRB_EP_STATUS_STAGE | TRB_CONTROL_IOC, 0, 0, 0)
+	then _transferWaitForResponse(ep, len)
+);;
+
+fun controlTransferNoData(d, type, request, value, index)= lockSync(UsbLock, lambda()=
+	if DEBUG then echoLn strFormat("controlTransferNoData slot=* ep=* type=* req=* value=* index=*", (deviceEp0(d)).devE.slotD, (deviceEp0(d)).idE, type, request, value, index);
+	let deviceEp0(d) -> ep in
+	if epEnqueue(ep, TRB_EP_SETUP_STAGE | TRB_CONTROL_IDT, 8, index, REQUEST_OUT | type | (request<<8) | (value<<16))
+	then if epEnqueue(ep, TRB_EP_STATUS_STAGE | TRB_CONTROL_DIR_IN | TRB_CONTROL_IOC, 0, 0, 0 )
+	then _transferWaitForResponse(ep, 0)
+);;
+
+fun interruptTransfer(ep, len, fResult)= lockSync(UsbLock, lambda()=
+	if DEBUG then echoLn strFormat("InterruptMessage slot=* ep=* type=* size=*", ep.devE.slotD, ep.idE, ep.typeE, len);
+	if epEnqueue(ep, TRB_EP_NORMAL | TRB_CONTROL_IOC, len, DMA_BASE_HI, ep.dataE)
+	then transferSetFunction(ep.devE.slotD, ep.idE, len, lambda(len)=
+		if DEBUG then sharedMemDump(ep.dataE, 0, len);
+		call fResult(if len>0 then sharedMemExport(ep.dataE, len))
+	)
+);;
+
+fun bulkTransfer(ep, len)= lockSync(UsbLock, lambda()=
+	if DEBUG then echoLn strFormat("bulkTransfer slot=* ep=* type=* size=*", ep.devE.slotD, ep.idE, ep.typeE, len);
+	if epEnqueue(ep, TRB_EP_NORMAL | TRB_CONTROL_IOC, len, DMA_BASE_HI, ep.dataE)
+	then _transferWaitForResponse(ep, len)
+);;
+
+//--------- InputContexts
+fun _contextInit(d, addFlag)=
+	sharedMemClear(d.inputContextD, INPUT_CONTEXT_LENGTH);
+	sharedMemWrite32(d.inputContextD, 4, addFlag);;
+
+fun _contextEndpointInit(EpContext, ep, type, maxPacketSize, interval)=
+	if bitTest(type, 1) then sharedMemWrite16(EpContext, 2, interval);	// ISOCH/INTERRUPT: period between requests
+	sharedMemWrite16(EpContext, 4, (type<<3)|(EP_ERROR_COUNT<<1));
+	sharedMemWrite16(EpContext, 6, maxPacketSize);
+	sharedMemWrite32(EpContext, 8, ringTrb(ep.ringE)|EP_CTX_CYCLE);
+	sharedMemWrite32(EpContext, 8+4, DMA_BASE_HI);
+	match type&3 with
+		EP_TYPE_BULK_OUT     -> sharedMemWrite16(EpContext, 16, 256),	// average TRB length
+		EP_TYPE_INTERRUPT_OUT-> sharedMemWrite16(EpContext, 16, 16),
+		_    -> sharedMemWrite16(EpContext, 16, maxPacketSize);
+	if bitTest(type, 1) then sharedMemWrite16(EpContext, 18, maxPacketSize);;	// ISOCH/INTERRUPT: max ESIT payload
+
+fun _convertInterval(type, speed, brutInterval)=
+	if bitTest(type, 1) then
+	if speed>=PORT_SPEED_HIGH then max(0, min(15, brutInterval-1))
+	else max(3, min(7, 3+ilog2(8*brutInterval)));;
+
+fun inputContextConfigureEndpoint(d, id, type, maxPacketSize, brutInterval)=
+	_contextInit(d, 1<<id);
+	let d.inputContextD+EP_OFFSET+32*(id-1) -> EpContext in
+		_contextEndpointInit(EpContext, d.epsD[id-1], type, maxPacketSize, _convertInterval(type, d.speedD, brutInterval));
+	if DEBUG_LOW then sharedMemDump(d.inputContextD, 0, INPUT_CONTEXT_LENGTH);
+	d.inputContextD;;
+
+fun inputContextAddressDevice(d, parent)=
+	_contextInit(d, 3);
+	sharedMemWrite32(d.inputContextD, SLOT_OFFSET+0, d.routeD|(d.speedD<<20)|(1<<SLOT_EPCONTEXT_SHIFT));
+	sharedMemWrite16(d.inputContextD, SLOT_OFFSET+6, parent.portD);
+	sharedMemWrite32(d.inputContextD, SLOT_OFFSET+8, if d.splitTransferD then parent.slotD | (d.portD<<8));
+	_contextEndpointInit(d.inputContextD+EP_OFFSET, d.epsD[0], EP_TYPE_CONTROL, PORT_MAX_PACKET_SIZE[d.speedD], nil);
+	if DEBUG_LOW then sharedMemDump(d.inputContextD, 0, INPUT_CONTEXT_LENGTH);
+	d.inputContextD;;
+
+fun inputContextSetMaxPacketSize(d, maxPacket)=
+	_contextInit(d, 2);
+	sharedMemCopy(d.inputContextD+SLOT_OFFSET, d.contextD, 0x400);
+	sharedMemWrite16(d.inputContextD, EP_OFFSET+6, maxPacket);
+	if DEBUG_LOW then sharedMemDump(d.inputContextD, 0, INPUT_CONTEXT_LENGTH);
+	d.inputContextD;;
+
+fun inputContextEnableHubFunction(d, nbPorts, TTThinkTime)=
+	_contextInit(d, 1);
+	sharedMemCopy(d.inputContextD + SLOT_OFFSET, d.contextD, 0x400);
+	sharedMemSet32(d.inputContextD, SLOT_OFFSET, SLOT_DEV_HUB);
+	sharedMemWrite8(d.inputContextD,SLOT_OFFSET+7, nbPorts);
+	sharedMemSet16(d.inputContextD, SLOT_OFFSET+10, if d.speedD==PORT_SPEED_HIGH then TTThinkTime);
+	if DEBUG_LOW then sharedMemDump(d.inputContextD, 0, INPUT_CONTEXT_LENGTH);
+	d.inputContextD;;
+
+//--------- Endpoints
+fun epCreate(dev, id, type, len)=
+	let if len==nil then ENDPOINT_BUFFER_DEFAULT_LEN else len -> len in
+	[
+		devE=dev, idE=id, typeE=type, lenE=len,
+		ringE=ringCreate(TRANSFER_RING_SIZE, false),
+		dataE= if len>0 then sharedMemAllocate(len)
+	];;
+
+fun epEnqueue(ep, control, status, paramH, paramL)=
+	nil<>ringEnqueue(ep.ringE, paramH, paramL, status, control);;
+
+fun epStart(d, epDescriptor)=
+	let strGet(epDescriptor, 2) -> addr in
+	let strGet(epDescriptor, 3) -> attributes in
+	let strRead16Lsb(epDescriptor, 4)&0x7ff -> maxPacketSize in
+	let strGet(epDescriptor, 6) -> brutInterval in
+	let attributes & 0x03 -> type in
+	let (addr&0xf)*2 + if bitTest(addr, 0x80) then 1 -> id in
+	let type | (if type == 0 || bitTest(addr, 0x80) then 4) -> type in
+	let set d.epsD[id-1]=epCreate(d, id, type, nil) -> ep in
+	let inputContextConfigureEndpoint(d, id, type, maxPacketSize, brutInterval)-> inputContext in
+	let cmdOnSlot(d.slotD, TRB_CMD_CONFIGURE_ENDPOINT, inputContext) -> result in
+	if result==nil then return msgAndReturn("endpoint enable error", nil)
+	else ep;;
+
+fun epString(d, index) =
+	let deviceEp0(d) -> ep in
+	let ep.devE.langD -> lang in
+	let controlTransferIn(d, 0, GET_DESCRIPTOR, DESCRIPTOR_STRING, index, lang, DESCRIPTOR_STRING_MIN_LENGTH) -> data in
+	if data==nil then return msgAndReturn("wrong String Descriptor", nil)
+	else
+	let strRead8(data, DESCRIPTOR_LENGTH_OFFSET) -> stringLength in 
+	if bitTest(stringLength, 1) then return msgAndReturn("wrong String Descriptor", nil)
+	elif stringLength<=DESCRIPTOR_STRING_MIN_LENGTH then strSlice(data, 2, stringLength-2)
+	else 
+	let controlTransferIn(d, 0, GET_DESCRIPTOR, DESCRIPTOR_STRING, index, lang, stringLength) -> data in
+	if data==nil then return msgAndReturn("wrong String Descriptor", nil)
+	else strSlice(data, 2, stringLength-2);;
+
+fun deviceSetMaxPacket(d, maxPacket)=
+	if DEBUG then echoLn strFormat("maxPacket *", maxPacket);
+	if d.speedD<>PORT_SPEED_FULL then true
+	else
+	let inputContextSetMaxPacketSize(d, maxPacket) -> inputContext in
+	let cmdOnSlot(d.slotD, TRB_CMD_EVALUATE_CONTEXT, inputContext) -> result in
+	if result==nil then return msgAndReturn("set Max packet failed", nil)
+	else true;;
+
+fun deviceName(d)=
+	let d.descD -> data in
+	let strRead8(data, 4) -> deviceClass in
+	strBuild([
+		strFormat("ven*-*", hexFromInt(strRead16Lsb(data, 8)), hexFromInt(strRead16Lsb(data, 10))),
+		if deviceClass<>0 && deviceClass<>0xff then
+			strFormat(", dev*-*-*", deviceClass, strRead8(data, 5), strRead8(data, 6)),
+		strFormat(", *", PORT_SPEED_NAMES[d.speedD])
+	]);;
+
+fun deviceConfigParse(str, i)=
+	if i<strLength(str) then
+	let strGet(str, i) -> len in
+	[strGet(str, i+1), strSlice(str, i, len)]::deviceConfigParse(str, i+len);;
+
+fun deviceGetEndpoints(l)= 
+	if l<>nil then let head(l) -> [type, val] in
+	if type==DESCRIPTOR_TYPE_ENDPOINT || type==DESCRIPTOR_TYPE_HID then val::deviceGetEndpoints(tail(l))
+	else deviceGetEndpoints(tail(l));;
+
+fun byteIsValid(b)= b<>0 && b<>255;;
+
+fun deviceCreate(parent, port, route, speed)=	// port starts from 1
+	if DEBUG then echoLn strFormat("deviceCreate port * route * speed *", port, hexFromInt(route), speed);
+	let sharedMemAllocate(1024) -> context in
+	let arrayCreate(ENPOINT_MAX_COUNT, nil) -> endpoints in
+	let sharedMemAllocate(INPUT_CONTEXT_LENGTH) -> inputContext in
+	let parent.splitTransferD || (parent.speedD==PORT_SPEED_HIGH && speed<>PORT_SPEED_HIGH) -> splitTransfer in
+	let [portD=port, speedD=speed, routeD=route, epsD=endpoints, contextD=context,
+		splitTransferD=splitTransfer, inputContextD=inputContext] -> d in
+	// request a slot
+	let cmdEnableSlot() ->slot in
+	if slot==nil then return msgAndReturn("no slot", nil)
+	else (
+		set d.slotD=slot;
+		if DEBUG then echoLn strFormat("speed * splitTransfer * slot *", speed, splitTransfer, slot);
+		// create first endpoint
+		set d.epsD[0]=epCreate(d, 1, EP_TYPE_CONTROL, nil);
+		dcbaaSetAddr(d.slotD, d.contextD);
+		if DEBUG_LOW then dcbaaDump();
+
+		// Address Device Command
+		let inputContextAddressDevice(d, parent) -> inputContext in
+		let cmdOnSlot(d.slotD, TRB_CMD_ADDRESS_DEVICE, inputContext) -> result in
+		if result==nil then return msgAndReturn("address device error", nil);
+		sleepMs(50);
+
+		// get device descriptor in d.descD
+		let controlTransferIn(d, 0, GET_DESCRIPTOR, DESCRIPTOR_DEVICE, 0, 0, USB_DEFAULT_MAX_PACKET_SIZE) -> data in
+		if strRead8(data, DESCRIPTOR_LENGTH_OFFSET)<>DESCRIPTOR_DEVICE_LENGTH || 
+		   strRead8(data, DESCRIPTOR_TYPE_OFFSET)<>DESCRIPTOR_DEVICE
+		   then return msgAndReturn("wrong Device Descriptor", nil)
+		else
+		let strRead8(data, DESCRIPTOR_MAX_PACKET_SIZE_OFFSET) -> maxPacket in
+		if deviceSetMaxPacket(d, maxPacket) then
+		let controlTransferIn(d, 0, GET_DESCRIPTOR, DESCRIPTOR_DEVICE, 0, 0, DESCRIPTOR_DEVICE_LENGTH) -> data in
+		if data==nil then return msgAndReturn("device Descriptor failed", nil)
+		else set d.descD=data;
+		if DEBUG_DESCRIPTOR then (echo "> USB: device descriptor: "; echoLn hexFromStr(d.descD));
+
+		// get product name in d.nameD (failure is accepted)
+		let strRead8(d.descD, 14) -> manufacturer in
+		let strRead8(d.descD, 15) -> product in
+		if byteIsValid(manufacturer)||byteIsValid(product) then
+		let epString(d, 0) -> data in (
+			set d.langD=strRead16Lsb(data, 0);
+			if DEBUG then echoLn strFormat("> USB: lang: *", hexFromInt(d.langD));
+			let if byteIsValid(manufacturer) then latinFromU16Le(epString(d, manufacturer)) -> manufacturer in
+			let if byteIsValid(product) then latinFromU16Le(epString(d, product)) -> product in
+			let set d.nameD= strJoin(" / ", manufacturer::product::nil) -> productName in
+			echoLn strFormat("> USB: product '*'", productName);
+		);
+
+		// get configuration descriptor in d.configD
+		let controlTransferIn(d, 0, GET_DESCRIPTOR, DESCRIPTOR_CONFIGURATION, 0, 0, DESCRIPTOR_CONFIGURATION_LENGTH) -> data in
+		if strRead8(data, DESCRIPTOR_LENGTH_OFFSET)<>DESCRIPTOR_CONFIGURATION_LENGTH ||
+		   strRead8(data, DESCRIPTOR_TYPE_OFFSET)<>DESCRIPTOR_CONFIGURATION
+		   then return msgAndReturn("wrong Config Descriptor", nil)
+		else
+		let strRead8(data, DESCRIPTOR_TOTAL_LENGTH_OFFSET) -> configLen in
+		let controlTransferIn(d, 0, GET_DESCRIPTOR, DESCRIPTOR_CONFIGURATION, 0, 0, configLen) -> data in
+		set d.configD=data;
+		if DEBUG_DESCRIPTOR then (echo "> USB: configuration descriptor: "; echoLn hexFromStr(d.configD));
+		echoLn strFormat("> USB: device *", deviceName(d));
+
+		let strRead8(d.configD, 5) -> configurationValue in
+		let controlTransferNoData(d, 0, SET_CONFIGURATION, configurationValue, 0) -> data in
+		if data==nil then return msgAndReturn("device Set Configuration failed", nil);
+		
+		// look for interfaces
+		for p = deviceConfigParse(d.configD, 0); p<>nil; tail(p) do
+			let head(p) ->[type, data] in
+			if type==4 then
+			let strGet(data, 2) -> interfaceNumber in
+			let strGet(data, 7) -> protocol in
+			let strFormat("int-*-*-*", strGet(data, 5), strGet(data, 6), protocol) -> interfaceName in
+			let echoLn strFormat("> USB: interface *", interfaceName);
+				hashmapGet(UsbDrivers, interfaceName)
+			-> fCreate in
+			if fCreate<>nil then	// interface is supported
+				let deviceGetEndpoints(tail(p)) -> epDescriptors in 
+				call fCreate(d, protocol, interfaceNumber, epDescriptors)
+			else void echoLn "> USB: unsupported interface";
+		d
+	);;
+
+fun usbRegister(interfaceName, fCreate)= hashmapSet(UsbDrivers, interfaceName,
+	lambda(d, protocol, interfaceNumber, endpoints)=
+		call fCreate(d, protocol, interfaceNumber, endpoints);
+		true
+	);;
+
+fun pi4UsbInit()= 
+	if DEBUG then echoLn "> USB: start";
+	if !xhciInit() then return msgAndReturn("cannot setup xhci", false);
+	sleepMs(100);
+	for port=1;port<4 do (
+		if DEBUG then echoLn strFormat("> USB: host port * reset", port);
+		if !portCheck(port) then void (
+			if DEBUG then echoLn strFormat("> USB: port * reset failed", port)
+		) else 
+		(
+			echoLn strFormat("> USB: device detected on port *", port);
+			deviceCreate([portD=port], port, 0, portSpeed(port));
+		)
+	);
+	true;;
+

@@ -1,0 +1,8 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2022, Sylvain Huet, Ambermind
+// Minimacy (r) System
+
+use romdisk.native;;
+fun main ()=
+	romdiskMake("romdisk/romdisk.native.rp2350.txt", "../baremetal/raspberry-2350/raspberry-2350-native-romdisk.h");;
+

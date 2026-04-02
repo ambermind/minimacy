@@ -518,6 +518,45 @@ LINT bignumIsEven(bignum a)
 	if (bignumGet(a,0)&1) return 0;
 	return 1;
 }
+
+#define FIRST_FACTORS_NB 7
+#define FIRST_FACTORS_INTERVAL 33
+#define FIRST_FACTORS_PRODUCT 4849845	// = 3*5*7*11*13*17*19
+static const uint FirstFactors[FIRST_FACTORS_NB] = { 3, 5, 7, 11, 13, 17, 19 };
+
+LINT bignumCheckFirstFactors(bignum a)	// return delta so that a+delta is not a multiple of 3, ..., 19
+{
+	uint P = FIRST_FACTORS_PRODUCT;
+	uint sum = 0;
+	uint k = 1;
+	uint i, size;
+	uint factorResults[FIRST_FACTORS_NB];
+	uint iterate = 0;
+	char crible[FIRST_FACTORS_INTERVAL];
+
+	unsigned char* p = (unsigned char*)a->data;
+	size = a->len * sizeof(uint);
+	for (i = 0; i < size; i++) {	// size<BIGNUM_MAXWORDS*4 (=1040)
+		sum += (*(p++)) * k;
+		k <<= 8;
+		if (sum >= P) sum %= P;
+		if (k >= P) k %= P;
+	}
+	// now sum<P
+	for (i = 0; i < FIRST_FACTORS_NB; i++) {
+		if (!(factorResults[i] = sum % FirstFactors[i])) iterate = 1;	// at least one multiple
+	}
+	if (!iterate) return 0;
+	memset(crible, 0, FIRST_FACTORS_INTERVAL);
+	for (i = 0; i < FIRST_FACTORS_NB; i++) {
+		uint f = FirstFactors[i];
+		uint j = f - factorResults[i];
+		for (; j < FIRST_FACTORS_INTERVAL; j += f) crible[j] = 1;
+	}
+	for (i = 2; i < FIRST_FACTORS_INTERVAL; i += 2) if (!crible[i]) return i;
+	return FIRST_FACTORS_INTERVAL;
+}
+
 LINT bignumBit(bignum a,LINT i)
 {
 	if ((i<0)||(i>=bignumLen(a)*32)) return 0;
@@ -921,7 +960,7 @@ bignum bignumModBarrett(bignum x, bignum n, bignum mu)
 
 	N = bignumNbits(n);
 	r=bignumASR(xx, N - 1);
-	r = bignumReplace(r,bignumMul(r, mu));
+	r = bignumReplace(r, bignumMul(r, mu));
 	r = bignumReplace(r, bignumASR(r, N+1));
 	r = bignumReplace(r, bignumMul(r, n));
 	r = bignumReplace(r, bignumSub(xx, r));
@@ -1110,13 +1149,13 @@ int bigPush(Thread* th, bignum b0)
 	return 0;
 }
 
-int fun_bigFromStr(Thread* th)
+int fun_bigDeserialize(Thread* th)
 {
 	LB* p=STACK_PNT(th,0);
 	if (!p) FUN_RETURN_NIL;
 	FUN_RETURN_BIG(bignumFromBin(STR_START(p),STR_LENGTH(p)));
 }
-int fun_strFromBig(Thread* th)
+int fun_bigSerialize(Thread* th)
 {
 	LB* p;
 	LINT size;
@@ -1131,13 +1170,13 @@ int fun_strFromBig(Thread* th)
 	bignumStringBin(b,len, STR_START(p));
 	FUN_RETURN_PNT(p);
 }
-int fun_bigFromSignedStr(Thread* th)
+int fun_signedBigDeserialize(Thread* th)
 {
 	LB* p = STACK_PNT(th, 0);
 	if (!p) FUN_RETURN_NIL;
 	FUN_RETURN_BIG(bignumFromSignedBin(STR_START(p), STR_LENGTH(p)));
 }
-int fun_signedStrFromBig(Thread* th)
+int fun_signedBigSerialize(Thread* th)
 {
 	LB* p;
 	LINT size;
@@ -1151,14 +1190,14 @@ int fun_signedStrFromBig(Thread* th)
 	bignumStringSignedBin(b, STR_START(p));
 	FUN_RETURN_PNT(p);
 }
-int fun_bigFromDec(Thread* th)
+int fun_bigFromStr(Thread* th)
 {
 	LB* p=STACK_PNT(th,0);
 	if (!p) FUN_RETURN_NIL;
 	FUN_RETURN_BIG(bignumFromDec(STR_START(p)));
 }
 
-int fun_decFromBig(Thread* th)
+int fun_strFromBig(Thread* th)
 {
 	int k;
 
@@ -1235,6 +1274,8 @@ int fun_bigEuclid(Thread* th)
 	bigOpeB_I(fun_intFromBig,bignumToInt)
 	bigOpeB_I(fun_bigNbits,bignumNbits)
 	bigOpeB_I(fun_bigLowestBit,bignumLowestBit)
+	bigOpeB_I(fun_bigCheckFirstFactors, bignumCheckFirstFactors)
+	
 	bigOpeB_BOOL(fun_bigPositive,bignumPositive)
 	bigOpeB_BOOL(fun_bigIsNull,bignumIsNull)
 	bigOpeB_BOOL(fun_bigIsOne,bignumIsOne)
@@ -1274,8 +1315,8 @@ int fun_bigEuclid(Thread* th)
 	bigOpeBBBB_B(fun_bigDivModBarrett,bignumDivModBarrett)
 	bigOpeBBBB_B(fun_bigExpModBarrett,bignumExpModBarrett)
 	bigOpeBBBB_B(fun_bigExpChinese,bignumExpChinese)
-	bigOpeBBBBBB_B(fun_bigExpChinese5, bignumExpChinese5)
 
+	bigOpeBBBBBB_B(fun_bigExpChinese5, bignumExpChinese5)
 	bigOpeBBBBBBBB_B(fun_bigExpChinese7,bignumExpChinese7)
 
 
@@ -1315,15 +1356,12 @@ int systemBignumInit(Pkg *system)
 		{ NATIVE_FUN, "bigExpMod", fun_bigExpMod, "fun BigNum BigNum BigNum -> BigNum" },
 		{ NATIVE_FUN, "bigExpModBarrett", fun_bigExpModBarrett, "fun BigNum BigNum BigNum BigNum -> BigNum" },
 		{ NATIVE_FUN, "bigFromStr", fun_bigFromStr, "fun Str -> BigNum" },
-		{ NATIVE_FUN, "bigFromBytes", fun_bigFromStr, "fun Bytes -> BigNum" },
-		{ NATIVE_FUN, "bigFromSignedStr", fun_bigFromSignedStr, "fun Str -> BigNum" },
-		{ NATIVE_FUN, "bigFromSignedBytes", fun_bigFromSignedStr, "fun Bytes -> BigNum" },
-		{ NATIVE_FUN, "bigFromDec", fun_bigFromDec, "fun Str -> BigNum" },
 		{ NATIVE_FUN, "bigFromHex", fun_bigFromHex, "fun Str -> BigNum" },
 		{ NATIVE_FUN, "bigFromInt", fun_bigFromInt, "fun Int -> BigNum" },
 		{ NATIVE_FUN, "bigInv", fun_bigInv, "fun BigNum BigNum -> BigNum" },
 		{ NATIVE_FUN, "bigIsEven", fun_bigIsEven, "fun BigNum -> Bool" },
 		{ NATIVE_FUN, "bigIsNull", fun_bigIsNull, "fun BigNum -> Bool" },
+		{ NATIVE_FUN, "bigCheckFirstFactors", fun_bigCheckFirstFactors, "fun BigNum -> Int" },
 		{ NATIVE_FUN, "bigIsOne", fun_bigIsOne, "fun BigNum -> Bool" },
 		{ NATIVE_FUN, "bigLowestBit", fun_bigLowestBit, "fun BigNum -> Int" },
 		{ NATIVE_FUN, "bigNegMod", fun_bigNegMod, "fun BigNum BigNum -> BigNum" },
@@ -1348,9 +1386,13 @@ int systemBignumInit(Pkg *system)
 		{ NATIVE_FUN, "bigASL1", fun_bigASL1, "fun BigNum -> BigNum" },
 		{ NATIVE_FUN, "bigASR1", fun_bigASR1, "fun BigNum -> BigNum" },
 		{ NATIVE_FUN, "bigSub", fun_bigSub, "fun BigNum BigNum -> BigNum" },
-		{ NATIVE_FUN, "strFromBig", fun_strFromBig, "fun BigNum Int -> Str" },
-		{ NATIVE_FUN, "signedStrFromBig", fun_signedStrFromBig, "fun BigNum -> Str" },
-		{ NATIVE_FUN, "decFromBig", fun_decFromBig, "fun BigNum -> Str" },
+		{ NATIVE_FUN, "bigSerialize", fun_bigSerialize, "fun BigNum Int -> Str" },
+		{ NATIVE_FUN, "bigDeserialize", fun_bigDeserialize, "fun Str -> BigNum" },
+		{ NATIVE_FUN, "bigDeserializeBytes", fun_bigDeserialize, "fun Bytes -> BigNum" },
+		{ NATIVE_FUN, "signedBigSerialize", fun_signedBigSerialize, "fun BigNum -> Str" },
+		{ NATIVE_FUN, "signedBigDeserialize", fun_signedBigDeserialize, "fun Str -> BigNum" },
+		{ NATIVE_FUN, "signedBigDeserializeBytes", fun_signedBigDeserialize, "fun Bytes -> BigNum" },
+		{ NATIVE_FUN, "strFromBig", fun_strFromBig, "fun BigNum -> Str" },
 		{ NATIVE_FUN, "hexFromBig", fun_hexFromBig, "fun BigNum -> Str" },
 		{ NATIVE_FUN, "intFromBig", fun_intFromBig, "fun BigNum -> Int" },
 	};

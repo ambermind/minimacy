@@ -178,7 +178,7 @@ fun _sshMpintFromBin(v)=
 	strBuild(_sshBuildVal(	if 0<>(0x80 & strGet(v, 0)) then strConcat("\0", v)
 	else v));;
 fun _sshMpintFromBig(v)=
-	strBuild(_sshBuildVal(	let strFromBig(v, 0) -> result in
+	strBuild(_sshBuildVal(	let bigSerialize(v, 0) -> result in
 	if 0<>(0x80 & strGet(result, 0)) then strConcat("\0", result)
 	else result));;
 
@@ -196,8 +196,8 @@ fun _sshKeyDerivation(H, K, str, len)=
 
 fun _sshIv(fKey, str, algo)=
 	match algo with
-		"aes256-gcm@openssh.com" -> refCreate(bigFromStr((call fKey(str, 12)))),
-		_ -> refCreate(bigFromStr(call fKey(str, BLOCK_SIZE)));;
+		"aes256-gcm@openssh.com" -> refCreate(bigDeserialize((call fKey(str, 12)))),
+		_ -> refCreate(bigDeserialize(call fKey(str, BLOCK_SIZE)));;
 
 fun _sshCiphering(fKey, str, algo)=
 	match algo with
@@ -349,7 +349,7 @@ fun _sshCheckSignRSA(h, publicKey, keyType, signType, signVal, sign)=
 	let sshParseVals(publicKey, 0, 3) -> (type::rsaE::rsaN::_) in
 	let sshParseVals(sign, 0, 2) -> (signType2::signCrypt::_) in
 	if keyType==type && signType==signType2 then
-	let rsaFromPublic(bigFromStr(rsaN), bigFromStr(rsaE)) -> rsa in
+	let rsaFromPublic(bigDeserialize(rsaN), bigDeserialize(rsaE)) -> rsa in
 	let pkcs1DecryptPubRsa(rsa, signCrypt) -> signVal2 in
 	signVal==signVal2;;
 
@@ -397,7 +397,7 @@ fun sshSendMsg(h, code, data) =
 	if nil<>keys.gcmEncK then	// encrypted with GCM
 		let strLeft(msg, 4) -> A in
 		let strSlice(msg, 4, nil) -> plainText in
-		let strFromBig(refGet(keys.encIvK), 12) -> iv in
+		let bigSerialize(refGet(keys.encIvK), 12) -> iv in
 		let aesGcmEncrypt(keys.gcmEncK, plainText, iv, A) -> [crypt, hmac] in
 		(
 			\bigNum refSet(keys.encIvK, 1+refGet(keys.encIvK));
@@ -427,7 +427,7 @@ fun sshDecodePacket(h, buf)=
 			let strLeft(buf, 4) -> A in
 			let strSlice(buf, 4, len-4-keys.decMacLenK) -> cipherText in
 			let strSlice(buf, len-keys.decMacLenK, keys.decMacLenK) ->mac in
-			let strFromBig(refGet(keys.decIvK), 12) -> iv in
+			let bigSerialize(refGet(keys.decIvK), 12) -> iv in
 			let aesGcmDecrypt(keys.gcmDecK, cipherText, mac, iv, A) -> plainText in
 			if plainText==nil then void (if SSH_DEBUG then echoLn "> aesGcmDecrypt failed")
 			else let strConcat(A, plainText) -> data in
@@ -558,8 +558,8 @@ fun sshSendDhgeRequest(h) =	// client side
 fun sshParseDhgeGroup(h, data)=	// client side
 	if SSH_DEBUG then echoLn strFormat("*< sshParseDhgeGroup", sshWho(h));
 	let sshParseVals(data, 1, 2) -> (P::G::_) in
-	let bigFromStr(P) -> p in
-	let bigFromStr(G) -> g in
+	let bigDeserialize(P) -> p in
+	let bigDeserialize(G) -> g in
 	let bigNbits(p) -> n in
 	let 512 -> n in
 	let bigRand(n, false)-> x in
@@ -592,7 +592,7 @@ fun sshParseDhgeReply(h, data)=	// client side
 	if SSH_DEBUG then echoLn strFormat("*< sshParseDhgeReply", sshWho(h));
 	let sshParseVals(data, 1, 3) -> (serverPublicKey::F::sign::_) in	// hostkey, e^y mod p, hash
 	let h.dhS -> dh in
-	let bigFromStr(F) -> f in
+	let bigDeserialize(F) -> f in
 	let _sshMpintFromBig(bigExpMod(f, dh.xDH, dh.pDH)) -> K in
 	(
 		set h.serverPublicKeyS=serverPublicKey;

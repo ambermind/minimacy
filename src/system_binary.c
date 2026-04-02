@@ -320,6 +320,17 @@ CORE_BYTESWRITE24(fun_bytesWrite24Msb, MSB24)
 CORE_STRFROMINT24(fun_strInt24Lsb, LSB24)
 CORE_STRFROMINT24(fun_strInt24Msb, MSB24)
 
+int fun_strFloat(Thread* th)
+{
+	double d;
+
+	LFLOAT f = STACK_FLOAT(th, 0);
+	if (STACK_IS_NIL(th, 0)) FUN_RETURN_NIL;
+	d = (double)f;
+	FUN_RETURN_STR((char*)&d, sizeof(double));
+}
+
+
 
 int systemBinaryInit(Pkg* system)
 {
@@ -345,16 +356,16 @@ int systemBinaryInit(Pkg* system)
 		{ NATIVE_FUN, "strRead24Msb", fun_bytesRead24Msb, "fun Str Int -> Int"},
 		{ NATIVE_FUN, "strRead16Lsb", fun_bytesRead16Lsb, "fun Str Int -> Int"},
 		{ NATIVE_FUN, "strRead16Msb", fun_bytesRead16Msb, "fun Str Int -> Int"},
-		{ NATIVE_FUN, "strReadFloat", fun_bytesReadFloat, "fun Str Int -> Float"},
 		{ NATIVE_FUN, "strRead8", fun_strGet, "fun Str Int -> Int"},
+		{ NATIVE_FUN, "strReadFloat", fun_bytesReadFloat, "fun Str Int -> Float"},
 		{ NATIVE_FUN, "bytesRead32Lsb", fun_bytesRead32Lsb, "fun Bytes Int -> Int"},
 		{ NATIVE_FUN, "bytesRead32Msb", fun_bytesRead32Msb, "fun Bytes Int -> Int"},
 		{ NATIVE_FUN, "bytesRead24Lsb", fun_bytesRead24Lsb, "fun Bytes Int -> Int"},
 		{ NATIVE_FUN, "bytesRead24Msb", fun_bytesRead24Msb, "fun Bytes Int -> Int"},
 		{ NATIVE_FUN, "bytesRead16Lsb", fun_bytesRead16Lsb, "fun Bytes Int -> Int"},
 		{ NATIVE_FUN, "bytesRead16Msb", fun_bytesRead16Msb, "fun Bytes Int -> Int"},
-		{ NATIVE_FUN, "bytesReadFloat", fun_bytesReadFloat, "fun Bytes Int -> Float"},
 		{ NATIVE_FUN, "bytesRead8", fun_strGet, "fun Bytes Int -> Int"},
+		{ NATIVE_FUN, "bytesReadFloat", fun_bytesReadFloat, "fun Bytes Int -> Float"},
 		{ NATIVE_FUN, "bytesWrite32Lsb", fun_bytesWrite32Lsb, "fun Bytes Int Int -> Bytes"},
 		{ NATIVE_FUN, "bytesWrite32Msb", fun_bytesWrite32Msb, "fun Bytes Int Int -> Bytes"},
 		{ NATIVE_FUN, "bytesWrite24Lsb", fun_bytesWrite24Lsb, "fun Bytes Int Int -> Bytes"},
@@ -369,6 +380,7 @@ int systemBinaryInit(Pkg* system)
 		{ NATIVE_FUN, "strInt16Lsb", fun_strInt16Lsb, "fun Int -> Str"},
 		{ NATIVE_FUN, "strInt16Msb", fun_strInt16Msb, "fun Int -> Str"},
 		{ NATIVE_FUN, "strInt8", fun_strFromChar, "fun Int -> Str"},
+		{ NATIVE_FUN, "strFloat", fun_strFloat, "fun Float -> Str"},
 	};
 	NATIVE_DEF(nativeDefs);
 	return 0;

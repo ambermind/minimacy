@@ -1,0 +1,53 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2022, Sylvain Huet, Ambermind
+// Minimacy (r) System
+export FSEL_INPUT, FSEL_OUTPUT, FSEL_ALT5, FSEL_ALT4, FSEL_ALT0, FSEL_ALT1, FSEL_ALT2, FSEL_ALT3;; 
+export gpioInit(gpio);; 
+export gpioDeinit(gpio);; 
+export gpioSetAlt(fn, gpio);;
+export gpioSetDir(dir, gpio);;
+export gpioSetPulls(up, down, gpio);;
+export gpioGet(gpio);;
+export gpioPut(val, gpio);;
+
+
+
+const GPIO_BASE= 0xFE200000;;
+
+const GPIO_SEL0 = GPIO_BASE+0x00;;
+const GPIO_SET0 = GPIO_BASE+0x1c;;
+const GPIO_CLR0 = GPIO_BASE+0x28;;
+const GPIO_LEV0 = GPIO_BASE+0x34;;
+const GPIO_PUP0 = GPIO_BASE+0xe4;;
+
+// strange yet correct order
+enum FSEL_INPUT, FSEL_OUTPUT, FSEL_ALT5, FSEL_ALT4, FSEL_ALT0, FSEL_ALT1, FSEL_ALT2, FSEL_ALT3;;
+
+fun gpioInit(gpio) = :Int gpio;;
+fun gpioDeinit(gpio) = :Int gpio;;
+
+fun gpioSetAlt(fn, gpio)=	// 10 gpios per SEL register
+	let GPIO_SEL0+ 4*(gpio/10) -> addr in
+	let 3*(gpio%10) -> shift in
+	let 7 << shift -> mask in
+	write32(addr, ((~mask)&read32(addr)) | (fn<<shift));
+	gpio;;
+
+fun gpioSetDir(dir, gpio) = gpioSetAlt(if dir then FSEL_OUTPUT else FSEL_INPUT, gpio);;
+
+fun gpioSetPulls(up, down, gpio)= // 16 gpios per GPIO_PUP register
+	let GPIO_PUP0+ 4*(gpio>>4) -> addr in
+	let 2*(gpio&15) -> shift in
+	let 3 << shift -> mask in
+	let if up then 1 else if down then 2 else 0 -> val in
+	write32(addr, ((~mask)&read32(addr)) | (val<<shift));
+	gpio;;
+
+fun gpioGet(gpio) = // 32 gpios per LEV register
+	bitTest(1<<(gpio&31), read32(GPIO_LEV0+(if gpio>=32 then 4)));;
+
+fun gpioPut(val, gpio) = // 32 gpios per SET/CLR register
+	write32((if val then GPIO_SET0 else GPIO_CLR0 )+(if gpio>=32 then 4), 1<<(gpio&31));;
+
+fun gpioWatcherAddress(gpio) = GPIO_LEV0+(if gpio>=32 then 4);;
+fun gpioWatcherMask(gpio) = 1<<(gpio&31);;

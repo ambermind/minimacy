@@ -79,7 +79,7 @@ fun cbcDecrypt(msg, iv, i, f)=
 fun ctrEncrypt(msg, blockLen, count, i, fencrypt, fcount)=
 	let strLength(msg) -> n in
 	if i<n then
-	let call fencrypt(strFromBig(count, blockLen)) ->  out in
+	let call fencrypt(bigSerialize(count, blockLen)) ->  out in
 	let if (n-i)<blockLen then strLeft(out, n-i) else out -> out in
 	let strSliceOfBytes(out, 0, nil) -> out in
 	(
@@ -90,7 +90,7 @@ fun ctrEncrypt(msg, blockLen, count, i, fencrypt, fcount)=
 fun ctrEncryptRef(msg, blockLen, count, i, fencrypt, fInc)=
 	let strLength(msg) -> n in
 	if i<n then
-	let call fencrypt(strFromBig(refGet(count), blockLen)) ->  out in
+	let call fencrypt(bigSerialize(refGet(count), blockLen)) ->  out in
 	let if (n-i)<blockLen then strLeft(out, n-i) else out -> out in
 	let strSliceOfBytes(out, 0, nil) -> out in
 	(
@@ -104,7 +104,7 @@ fun ctrEncryptOpti(msg, blockLen, count, fencrypt, fcount)=
 	let bytesCreate(n, 0) -> buffer in
 	(
 		for i=0;i<n;i+blockLen do
-			let call fencrypt(strFromBig(count, blockLen)) ->  out in
+			let call fencrypt(bigSerialize(count, blockLen)) ->  out in
 			(
 				set count=call fcount(count);
 				bytesCopy(buffer, i, out, 0, nil)
@@ -144,11 +144,11 @@ fun _gcmCountFromIv(mulH, iv, blockLen)=
 	_gcmGhash(blockLen, mulH, "", iv);;
 
 fun gcmProcess(data, blockLen, iv, A, encrypt, fEncrypt, fNextCount, fMakeMulH)=
-	let bigFromStr(call fEncrypt(strCreate(blockLen, 0))) -> H in
+	let bigDeserialize(call fEncrypt(strCreate(blockLen, 0))) -> H in
 	let call fMakeMulH(H) -> mulH in
-	let bigFromBytes(_gcmCountFromIv(mulH, iv, blockLen)) -> count in
+	let bigDeserializeBytes(_gcmCountFromIv(mulH, iv, blockLen)) -> count in
 
-	let call fEncrypt(strFromBig(count, blockLen)) -> last in
+	let call fEncrypt(bigSerialize(count, blockLen)) -> last in
 	let call fNextCount(count) -> count in
 
 	let ctrEncryptOpti(data, blockLen, count, fEncrypt, fNextCount) -> C in

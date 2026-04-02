@@ -4,6 +4,7 @@
 #ifndef _UTIL_CONVERT_
 #define _UTIL_CONVERT_
 
+int isText(char* src, LINT len);
 int isU8(char* src, LINT len);
 LINT u8Value(char* src, int* len);
 LINT u8Next(char* src);

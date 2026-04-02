@@ -23,13 +23,17 @@ fun __timerCheck(l, now)=
 
 fun _timerCheck()= set _TimerList=__timerCheck(_TimerList, timeMs());;
 
-fun onTimeout(ms, f)=
+fun onTimeoutOnThread(ms, th, f)=
+	if th<>nil then
 	let timeMs()+ms -> t in
-	let [_thTM= _This, _timeTM=t, _cbTM=if f<>nil then (lambda ()= call f();0)] -> p in
+	let [_thTM= th, _timeTM=t, _cbTM=if f<>nil then (lambda ()= call f();0)] -> p in
 	// if two timers have the same time, keep their declaration order:
-	\atomic (set _TimerList=listInsert(_TimerList, p, (lambda(p, q)= p._timeTM<q._timeTM)); if f==nil then _threadHoldOn());
+	\atomic (
+		set _TimerList=listInsert(_TimerList, p, lambda(p, q)= p._timeTM<q._timeTM);
+		if f==nil then _threadHoldOn()
+	);
 	true;;
-
+fun onTimeout(ms, f)= onTimeoutOnThread(ms, _This, f);;
 fun sleepMs(ms)= onTimeout(ms, nil);;
 
 fun _timerList()= listMap(_TimerList, lambda(p)= [p._timeTM, p._thTM]);;

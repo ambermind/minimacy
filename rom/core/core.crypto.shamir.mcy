@@ -7,10 +7,10 @@ fun _randomN(N)= bigRand(bigNbits(N)-1, false);;
 
 fun _joinKey(N, x, y)=
 	let (7+bigNbits(N))/8 -> nbytes in
-	strConcat(strFromBig(x, 1), strFromBig(y, nbytes));;
+	strConcat(bigSerialize(x, 1), bigSerialize(y, nbytes));;
 
 fun _splitKey(key)=
-	[bigFromStr(strLeft(key, 1)), bigFromStr(strTail(key, 1))];;
+	[bigDeserialize(strLeft(key, 1)), bigDeserialize(strTail(key, 1))];;
 
 fun _computeY(N, x, polynomial)=
 \mod( N)
@@ -48,10 +48,10 @@ fun _shamirCheck(N, S, nbNeeded, keys, testList)=
 
 //----------- API
 // the secret may come from another source. Else this function can generate it
-fun shamirMakeSecret(nbits)= strFromBig(bigRand(nbits, true), nil);;
+fun shamirMakeSecret(nbits)= bigSerialize(bigRand(nbits, true), nil);;
 
 // the finite field may come from another source. Else this function selects a finite Field Z/NZ with N primal and one bit greater than S
-fun shamirFiniteField(S)= bigPrimal(1+bigNbits(bigFromStr(S)), 16);;
+fun shamirFiniteField(S)= bigPrimal(1+bigNbits(bigDeserialize(S)), 16);;
 
 // for a given secret S and a finite field Z/NZ:
 // - compute nbKeys keys so that any set of exactly nbNeeded of them can recover the secret
@@ -60,7 +60,7 @@ fun shamirFiniteField(S)= bigPrimal(1+bigNbits(bigFromStr(S)), 16);;
 fun shamirFromSecret(N, S, nbNeeded, nbKeys)=
 	if range(nbKeys, 1, 255) then
 	if range(nbNeeded, 1, nbKeys) then
-	let bigFromStr(S) -> a0 in
+	let bigDeserialize(S) -> a0 in
 	let a0::_computePolynomial(N, nbNeeded-1) -> polynomial in
 	let _computeKeys(N, nbKeys, polynomial) -> keys in
 	if !_shamirCheck(N, S, nbNeeded, keys, nil) then keys;;
@@ -72,7 +72,7 @@ fun shamirSolve(N, keys)=
 	let arrayFromList(listMap(keys, lambda(k)= let _splitKey(k) ->[x, y] in x)) -> x in
 	let arrayFromList(listMap(keys, lambda(k)= let _splitKey(k) ->[x, y] in y)) -> y in
 	let _lagrangeSum(N, x, y, 0) -> S in
-	strFromBig(S, nil);;
+	bigSerialize(S, nil);;
 
 /*
 fun shamirTest()=

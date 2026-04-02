@@ -135,32 +135,39 @@ int usrSdInit(Pkg* system)
 int usrSdInit(Pkg* system){ return 0; }
 #endif
 
-#ifdef WITH_ACTIVITY_LED
-int fun_activityLed(Thread* th)
+
+
+#ifdef WITH_LED
+int fun_led(Thread* th)
 {
 	LB* val=STACK_PNT(th, 0);
-	hwActivityLedSet((val==MM._true)?1:0);
+	hwLedSet((val==MM._true)?1:0);
 	return 0;
 }
 #else
-int fun_activityLed(Thread* th) FUN_RETURN_NIL;
+int fun_led(Thread* th) FUN_RETURN_NIL;
 #endif
 
-int usrActivityLedInit(Pkg* system)
+int usrLedInit(Pkg* system)
 {
 	static const Native nativeDefs[] = {
-		{ NATIVE_FUN, "activityLed", fun_activityLed, "fun Bool -> Bool"},
+		{ NATIVE_FUN, "led", fun_led, "fun Bool -> Bool"},
 	};
 	NATIVE_DEF(nativeDefs);
 
 	return 0;
 }
 
+int systemBleInit(Pkg* system);
+
 int systemTmpInit(Pkg* system)
 {
 	usrSdInit(system);
-	usrActivityLedInit(system);
+	usrLedInit(system);
 	usrMp3Init(system);
+#ifdef WITH_SERIAL_BLE
+	systemBleInit(system);
+#endif
 #ifdef USE_HOST_ONLY_FUNCTIONS
 	hostOnlyFunctionsInit(system);
 #endif

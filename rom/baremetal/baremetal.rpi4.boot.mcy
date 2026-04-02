@@ -1,0 +1,38 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2022, Sylvain Huet, Ambermind
+// Minimacy (r) System
+
+use core.storage.fat32;;
+use core.storage.romdisk;;
+use core.storage.format;;
+use driver.rpi4.sd;;
+use driver.rpi4.eth;;
+use driver.rpi4.usb;;
+use driver.rpi4.usb.hub;;
+use driver.rpi4.usb.mouse;;
+use driver.rpi4.usb.keyboard;;
+use driver.rpi4.usb.storage;;
+
+fun main()=
+	pi4UsbInit();
+	pi4EthInit();
+	pi4SdInit();
+
+	let volumeCreate(sdVolume, nil, true, #pi4SdRead, #pi4SdWrite, pi4SdNbSectors(), pi4SdSectorSize()) -> volume in
+	let volumeMount(volume, "", "/") -> mounts in
+	//if false then
+	for m in mounts do romdiskFromMountSources(mountIndex(m), 2);
+
+	for m in UsbStorageList do
+		let volumeCreate(usbVolume, nil, true,
+			usbStorageReadFunction(m),
+			usbStorageWriteFunction(m),
+			usbStorageNbSectors(m),
+			usbStorageSectorSize(m))
+		-> volume in
+		//let volumeFormatFat32Mbr(volume, nil, 32, "BAREDISK", true) -> _ in
+		let volumeMount(volume, "usb/", "/") -> mounts in
+		if false then
+		for m in mounts do romdiskFromMountSources(mountIndex(m), 2);
+	start("boot");
+	nil;;

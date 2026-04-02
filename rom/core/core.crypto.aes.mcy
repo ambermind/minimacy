@@ -141,7 +141,7 @@ fun _precomputeMulH(H)=	// we precompute *H as 32 tables of 16 values (one for e
 	(
 		for i=0;i<16 do set t[i]=_mul4bits(H, i);	// compute first row
 		for i=16;i<N do set t[i]=_mulx(4, t[(i-16)]) ;	// compute following rows
-		for i=0;i<N do set result[i]=strFromBig(t[i], 16);	// we need to output strings
+		for i=0;i<N do set result[i]=bigSerialize(t[i], 16);	// we need to output strings
 		result
 	);;
 

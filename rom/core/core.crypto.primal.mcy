@@ -2,48 +2,88 @@
 // Copyright (c) 2022, Sylvain Huet, Ambermind
 // Minimacy (r) System
 
-// Primal generation : bigPrimal nbits nloops
+// Primal generation : bigPrimal(nbits, nloops)
 // using Miller–Rabin primality test
 
-const _BIG1= bigFromInt(1);;
-const _BIG2= bigFromInt(2);;
+export bigPrimal(nbits, nloops);;
+const _BIG1= \bigNum 1;;
+const _DEBUG=false;;
 
-fun __bigSecondLoop(nLoop, y, nMinusOne, n, mu)=
-	if y==nMinusOne then true
-	else
-	if nLoop>0 then
-	let bigMulModBarrett(y, y, n, mu) -> y in
-	if y<>_BIG1 then
-	__bigSecondLoop(nLoop-1, y, nMinusOne, n, mu);;
+fun bigDump(str, b) = if _DEBUG then echoLn strFormat("*=*",str,strFromBig(b)); b;;
 
-fun __bigPrimaryLoop(n, mu, nMinusOne, r, s, nloops)=
-	if nloops<=0 then true
-	else
+fun bigDumpHex(str, b) = if _DEBUG then echoLn strFormat("*=*",str,hexFromBig(b)); b;;
+
+// product of primes until 743
+const PRIMAL_PRODUCTS_UNTIL_743=
+	bigFromHex("8138e8a0fcf3a4e84a771d40fd305d7f4aa59306d7251de54d98af8fe95729a1f73d893fa424cd2edc8636a6c3285e022b0e3866a565ae8108eed8591cd4fe8d2ce86165a978d719ebf647f362d33fca29cd179fb42401cbaf3df0c614056f9c8f3cfd51e474afb6bc6974f78db8aba8e9e517fded658591ab7502bd41849462f");;
+const PRIMAL_PRODUCTS_23_743=
+	bigFromHex("1bf05ca9ec4207d5e82daf4b48410614b1b2e9b0313303bf2daace79df7a0c71938fb835261e2c88fa1a16c8919ab02f9f8e97396caf94f8d05d6f6614e4cc94f2b81668783646bf1e315a76b81921fc13519e80f2d34d95e81eba938f0009eddd2bb579d2ebcb9aa8e529279ad85ace2408e46657b3d7a9574e20ab8dd3");;
+
+// Miller-Rabin test
+// https://defeo.lu/in420/DM3%20-%20Test%20de%20Miller-Rabin
+// n prime => for any random number p, p^(n-1)=1[n] (Fermat theorem)
+// n prime => the only square roots are 1 and -1
+fun _randomMillerRabin(n, nMinusOne, s, d, mu)=	// nMinusOne= d.2^s, with s>0
+	// select a random number y in [2, n-2]
 	let bigRand(bigNbits(n), false) -> y in
-	if bigIsNull(y)||bigGreater(y, nMinusOne) then __bigPrimaryLoop(n, mu, nMinusOne, r, s, nloops)
+	if bigIsNull(y) || y==nMinusOne then _randomMillerRabin(n, nMinusOne, s, d, mu)
 	else
-	let bigExpModBarrett(y, r, n, mu)-> y in
-	if y==_BIG1 || __bigSecondLoop(s-1, y, nMinusOne, n, mu) then
-	__bigPrimaryLoop(n, mu, nMinusOne, r, s, nloops-2);;
+	let \bigNum
+		if y>nMinusOne then y-nMinusOne
+		else y
+	-> y in
+	// compute y^d [n]
+	let 
+		bigDump("y",y);
+		bigDump("z",bigExpModBarrett(y, d, n, mu))
+	-> x in
+	if x==_BIG1 || x==nMinusOne then true	// x=1 or x=-1[n] => n might be prime
+	else (
+		for r = 1; r < s do (
+			set x=bigMulModBarrett(x, x, n, mu);	// compute x^2[n]
+			bigDump("z",x);
+			if x==_BIG1 then return false	// x=1 => n can't be prime
+			else if x==nMinusOne then return true	// x=-1 => n might be prime
+		);
+		false	// => n can't be prime
+	);;
 
-fun _bigIsPrimal(n, nloops)=
+fun _millerRabinLoop(n, nloops)=
+	bigDump ("n",n);
+	if bigDump("gcd",bigGcd(PRIMAL_PRODUCTS_23_743,n))==_BIG1 then
+//	if bigDump("gcd",bigGcd(PRIMAL_PRODUCTS_UNTIL_743,n))==_BIG1 then
 	let bigSub(n, _BIG1) -> nMinusOne in
 	let bigLowestBit(nMinusOne) -> s in
-	let bigASR(nMinusOne, s) -> r in
+	let bigASR(nMinusOne, s) -> d in	// nMinusOne= d.2^s, with s>0
 	let bigBarrett(n) -> mu in
-	__bigPrimaryLoop(n, mu, nMinusOne, r, s, nloops);;
+	(
+		if _DEBUG then (
+			bigDump ("nMinusOne",nMinusOne);
+			bigDump ("d",d);
+			echoLn strFormat("s=*",s);
+		);
+		for i=0;i<nloops do if !_randomMillerRabin(n, nMinusOne, s, d, mu) then return false;
+		true
+	);;
 
-fun _bigPrimalCandidate(nbits)=
+fun _primalCheckLoop(n, nloops)=
+	if _DEBUG then echoLn "---------";
+	threadResign();	// on slow platforms
+	// we check n with Miller-Rabin. If it fails we continue with n+2
+	let bigCheckFirstFactors(n) -> delta in
+	let if delta==0 then n else bigAdd(n,bigFromInt(delta)) -> n in
+	if !_millerRabinLoop(n, nloops) then _primalCheckLoop(\bigNum n+2, nloops)
+	else n;;
+
+fun _primalFirstCandidate(nbits, squareMin)=
 	let bigRand(max(2, nbits), true) -> b in
+	// we check that b^2 has 2*nbits (useful for RSA p and q: p and q have nbits, and p*q has 2*nbits, not 2*nbits-1)
+	if \bigNum b*b<squareMin then _primalFirstCandidate(nbits, squareMin)
+	else
 	if bigIsEven(b) then bigAdd(b, _BIG1)
 	else b;;
 
-fun _bigPrimal(nbits, nloops, n)=
-	if bigNbits(n)<>nbits then _bigPrimal(nbits, nloops, _bigPrimalCandidate(nbits))
-	else
-	if _bigIsPrimal(n, nloops) then n
-	else
-	_bigPrimal(nbits, nloops, bigAdd(n, _BIG2));;
-
 fun bigPrimal(nbits, nloops)=
-	_bigPrimal(nbits, nloops, nil);;
+	let bigPower2(nbits*2-1) -> squareMin in
+	let _primalFirstCandidate(nbits, squareMin) -> n in
+	_primalCheckLoop(n, nloops);;

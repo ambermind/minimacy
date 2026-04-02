@@ -73,7 +73,7 @@ fun mkStyle(style)=
 	let listMap(ListStyles, lambda([bit, name])= if bitTest(style, bit) then name) -> lStyles in
 	strListConcat(lStyles);;
 	
-fun mkFontEx(lCodes, family, size, style)=
+fun mkFontFromCodeList(lCodes, family, size, style)=
 	let nativeFontCreate(family, size, style) -> font in
 	if font<>nil then
 	let strFormat("*_*_**.png", family, size, listLength(lCodes), mkStyle(style)) -> fullName in
@@ -95,28 +95,28 @@ fun mkCodeList(i, N)=
 
 fun mkFont(family, size, style, N)=
 	let mkCodeList(0, N) -> lCodes in
-	mkFontEx(lCodes, family, size, style);;
+	mkFontFromCodeList(lCodes, family, size, style);;
 	
-//--------------------------
-const ListFonts= // [family, size, style, Number_of_glyphs]
-	// X11 fonts:
-//["10x20", nil, nil, 256]::
-//["lucidasans-24", nil, nil, 256]::
-	// Windows font:
-//["Arial", 32, nil, 256]::
-["Times New Roman", 40, FONT_ITALIC, 256]::
-//["Vivaldi", 32, nil, 256]::
-nil;;
+////--------------------------
+//const ListFonts= // [family, size, style, Number_of_glyphs]
+//	// X11 fonts:
+////["10x20", nil, nil, 256]::
+////["lucidasans-24", nil, nil, 256]::
+//	// Windows font:
+////["Arial", 32, nil, 256]::
+//["Times New Roman", 40, FONT_ITALIC, 256]::
+////["Vivaldi", 32, nil, 256]::
+//nil;;
 
-fun main()=
-	for [family, size, style, N] in ListFonts do
-		let mkFont(family, size, style, N) -> [bmp, fullName] in 
-		let strFormat("rsc/fonts/*", fullName) -> fontPath in (
-			echoLn strFormat("> save font bitmap as: *", fontPath);
-			save(pngFromBitmap(bmp, false), fontPath);
-			uiStop();
-			uiStart(10, 10, bitmapW(bmp), bitmapH(bmp), UI_NORMAL, fullName);
-			bitmapBlit(uiBuffer(), 0, 0, bmp, 0, 0, nil, nil, nil);
-			uiUpdate();
-		);;
+//fun main()=
+//	for [family, size, style, N] in ListFonts do
+//		let mkFont(family, size, style, N) -> [bmp, fullName] in 
+//		let strFormat("rsc/fonts/*", fullName) -> fontPath in (
+//			echoLn strFormat("> save font bitmap as: *", fontPath);
+//			save(pngFromBitmap(bmp, false), fontPath);
+//			uiStop();
+//			uiStart(10, 10, bitmapW(bmp), bitmapH(bmp), UI_NORMAL, fullName);
+//			bitmapBlit(uiBuffer(), 0, 0, bmp, 0, 0, nil, nil, nil);
+//			uiUpdate();
+//		);;
 	

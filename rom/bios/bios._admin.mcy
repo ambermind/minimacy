@@ -6,22 +6,22 @@
 fun help()=
 	echoLn "Minimacy admin commands";
 	echoLn "------------------------";
-	echoLn "- sys            : system overview (fs, ts, ms, inputs, timers in one command)";
-	echoLn "- ts             : threads status";
-	echoLn "- ms             : memory status";
-	echoLn "- fs             : list of volumes and mounts";
-	echoLn "- inputs         : list of active inputs (sockets, keyboard, ...)";
-	echoLn "- net            : list of network interfaces (only on Linux and baremetal)";
-	echoLn "- timers         : list of pending timers";
-	echoLn "- kill id        : kill a thread based on its id";
-	echoLn "- dir path       : show directory content";
-	echoLn "- reboot         : restart the VM";
-	echoLn "- gc             : force a full gc";
-	echoLn "- pkg            : display the current package";
-	echoLn "- pkgList        : display the list of current compiled packages";
-	echoLn "- pkgByName name : search a package by its name";
-	echoLn "- pkgScope pkg   : display all labels visible from a given package";
-	echoLn "- pkgOverload pkg: display all overloaded labels from a given package";
+	echoLn "- sys()           : system overview (fs, ts, ms, inputs, timers in one command)";
+	echoLn "- ts()            : threads status";
+	echoLn "- ms()            : memory status";
+	echoLn "- fs()            : list of volumes and mounts";
+	echoLn "- inputs()        : list of active inputs (sockets, keyboard, ...)";
+	echoLn "- net()           : list of network interfaces (only on Linux and baremetal)";
+	echoLn "- timers()        : list of pending timers";
+	echoLn "- kill(id)        : kill a thread based on its id";
+	echoLn "- dir(path)       : show directory content";
+	echoLn "- reboot()        : restart the VM";
+	echoLn "- gc()            : force a full gc";
+	echoLn "- pkg()           : display the current package";
+	echoLn "- pkgList()       : display the list of current compiled packages";
+	echoLn "- pkgByName(name) : search a package by its name";
+	echoLn "- pkgScope(pkg)   : display all labels visible from a given package";
+	echoLn "- pkgOverload(pkg): display all overloaded labels from a given package";
 	true;;
 
 fun ms()=
@@ -40,20 +40,20 @@ fun ms()=
 		let listConcat(rows, ["TOTAL USED", totalMem]::["(reserve)", reserve]::["(free)", totalFree]::["(total ram = TOTAL USED+reserve+free)", hostMemory()]::["(largest free block)", largestBlock]::nil) -> rows in
 		for [title, value] in rows do
 			if value<>nil then
-			echoLn strFormat("**  *", strLeftSpacePadding(6, intAbbrev(1024, value)), strLeftSpacePadding(13, strFormat("(*)", value)), title);
+			echoLn strFormat("**  *", strPadWithSpace(6, intShortFormat(1024, value)), strPadWithSpace(13, strFormat("(*)", value)), title);
 		echoLn "";
 		true
 	);;
 fun ts()=
 	echoLn "Threads:";
-	let lambda(n1, i1, state, count, start, caller)=echoLn [strLeftSpacePadding(16, n1), strLeftSpacePadding(8, i1), strLeftSpacePadding(8, state),
-		strLeftSpacePadding(7, count), strLeftSpacePadding(9, start), " ", caller] -> echoFormat in
+	let lambda(n1, i1, state, count, start, caller)=echoLn [strPadWithSpace(16, n1), strPadWithSpace(8, i1), strPadWithSpace(8, state),
+		strPadWithSpace(7, count), strPadWithSpace(9, start), " ", caller] -> echoFormat in
 	(
 		call echoFormat("Name", "ID", "State", "Cycles", "Start", "Origin");
 		call echoFormat("----", "--", "-----", "------", "-----", "------");
 		for th in _threads() do
-			call echoFormat(threadName(th), decFromInt(threadId(th)), stateName(threadState(th)),
-				intAbbrev(1000, threadCycles(th)),
+			call echoFormat(threadName(th), strFromInt(threadId(th)), stateName(threadState(th)),
+				intShortFormat(1000, threadCycles(th)),
 				smallDate(threadT0(th)),
 				threadOrigin(th));
 		echoLn "";
@@ -63,16 +63,16 @@ fun ts()=
 fun inputs()=
 	echoLn "Inputs:";
 	let lambda(type, detail, id, name)= echoLn strFormat("*** *",
-		strLeftSpacePadding(10, type),
-		strLeftSpacePadding(21, detail),
-		strLeftSpacePadding(6, id),
+		strPadWithSpace(10, type),
+		strPadWithSpace(22, detail),
+		strPadWithSpace(6, id),
 		name)
 	-> echoFormat in
 	(
 		call echoFormat("Type", "Detail", "Id", "Thread");
 		call echoFormat("----", "------", "--", "------");
 		for s in _StreamList do call s._showS((lambda(type, detail)=
-			call echoFormat(type, detail, decFromInt(threadId(s._thS)), s._thS._nameT)
+			call echoFormat(type, detail, strFromInt(threadId(s._thS)), s._thS._nameT)
 		));
 		echoLn "";
 		true
@@ -83,24 +83,24 @@ fun net()=		//only for baremetal or root on Unix
 	echoLn "            ----               ---              --            ----            ----            ----";
 	for n in netList() do
 		echoLn [
-			strLeftSpacePadding(16, n.nameI),
-			strLeftSpacePadding(18, strFromMac(n.macI)),
-			strLeftSpacePadding(16, strFromIp(n.ipI)),
-			strLeftSpacePadding(16, strFromIp(n.submaskI)),
-			strLeftSpacePadding(16, strFromIp(n.gatewayI)),
-			strLeftSpacePadding(16, strFromIp(n.dnsI)),
+			strPadWithSpace(16, n.nameI),
+			strPadWithSpace(18, strFromMac(n.macI)),
+			strPadWithSpace(16, strFromIp(n.ipI)),
+			strPadWithSpace(16, strFromIp(n.submaskI)),
+			strPadWithSpace(16, strFromIp(n.gatewayI)),
+			strPadWithSpace(16, strFromIp(n.dnsI)),
 			if netIsActive(n) then "  Active"
 		];
 	true;;
 
 fun timers()=
 	echoLn "Timers:";
-	let lambda(delay, id, name)=echoLn [strLeftSpacePadding(12, delay), strLeftSpacePadding(6, id), " ", name] -> echoFormat in
+	let lambda(delay, id, name)=echoLn [strPadWithSpace(12, delay), strPadWithSpace(6, id), " ", name] -> echoFormat in
 	let _timerList() -> lTimers in
 	(
 		call echoFormat("Wait", "Id", "Thread");
 		call echoFormat("----", "--", "------");
-		for [t, th] in lTimers do call echoFormat(dec3FromInt(",", max(0, t-timeMs())), decFromInt(threadId(th)), th._nameT);
+		for [t, th] in lTimers do call echoFormat(intWithDelimiter(",", max(0, t-timeMs())), strFromInt(threadId(th)), th._nameT);
 		if lTimers==nil then (echoLn "        (no active timer)";nil);
 		echoLn "";
 		true
@@ -111,19 +111,19 @@ fun _diskSize32bits(nbSectors, sectorSize) =
 	else
 	// we complexify the next formula in order to work with 32bits integers, as nbSectors*sectorSize may exceed 2**31:
 	let (nbSectors/(1024*1024))*sectorSize -> sizeMb in
-	if sizeMb==0 then intAbbrev(1024, nbSectors*sectorSize)
-	else intAbbrevExt(1024, (nbSectors/(1024*1024))*sectorSize, "M"::"G"::"T"::"P"::nil);;
+	if sizeMb==0 then intShortFormat(1024, nbSectors*sectorSize)
+	else intShortFormatWithUnits(1024, (nbSectors/(1024*1024))*sectorSize, "M"::"G"::"T"::"P"::nil);;
 
 fun volumes()=
 	echoLn "Volumes:";
-	echoLn "    Volume    Access  SectorSize   NbSectors  TotalSize";
-	echoLn "    ------    ------  ----------   ---------  ---------";
+	echoLn "    Volume    Access  SectorSize     NbSectors  TotalSize";
+	echoLn "    ------    ------  ----------     ---------  ---------";
 	for v in _Volumes do echoLn [
-		strLeftSpacePadding(10, v.nameV),
-		strLeftSpacePadding(10, if v.writableV then "writable" else "readonly"),
-		strLeftSpacePadding(12, if v.sectorSizeV==nil then "-" else strFromInt(v.sectorSizeV)),
-		strLeftSpacePadding(12, if v.nbSectorsV==nil then "-" else strFromInt(v.nbSectorsV)),
-		strLeftSpacePadding(11, _diskSize32bits(v.nbSectorsV, v.sectorSizeV))
+		strPadWithSpace(10, v.nameV),
+		strPadWithSpace(10, if v.writableV then "writable" else "readonly"),
+		strPadWithSpace(12, if v.sectorSizeV==nil then "-" else intWithDelimiter(".", v.sectorSizeV)),
+		strPadWithSpace(14, if v.nbSectorsV==nil then "-" else intWithDelimiter(".", v.nbSectorsV)),
+		strPadWithSpace(11, _diskSize32bits(v.nbSectorsV, v.sectorSizeV))
 	];
 	echoLn "";
 	true;;
@@ -134,9 +134,9 @@ fun partitions()=
 	echoLn "    ------    ------  ----------  ---------";
 	for v in _Volumes do
 		for p in v.partitionsV do echoLn [
-			strLeftSpacePadding(10, v.nameV),
-			strLeftSpacePadding(10, if p.writableP then "writable" else "readonly"),
-			strLeftSpacePadding(12, _diskSize32bits(p.userSectorsP, p.volumeP.sectorSizeV)),
+			strPadWithSpace(10, v.nameV),
+			strPadWithSpace(10, if p.writableP then "writable" else "readonly"),
+			strPadWithSpace(12, _diskSize32bits(p.userSectorsP, p.volumeP.sectorSizeV)),
 			"  ",
 			p.nameP
 		];
@@ -147,22 +147,35 @@ fun mounts()=
 	echoLn "Mounts:";
 	let max(10, listReduce(_Mounts, 0, lambda(mx, m)= max(mx, strLength(m._mountPathM)))) -> mountWidth in
 	(
-		echoLn [" Id    Volume         Partition    Access  ", strLeftSpacePadding(mountWidth, "Mount Path"), "  Partition Path"];
+		echoLn [" Id    Volume         Partition    Access  ", strPadWithSpace(mountWidth, "Mount Path"), "  Partition Path"];
 		echoLn [" --    ------         ---------    ------  ", strCreate(mountWidth, '-'),           "  --------------"];
 
 		for m in _Mounts do
 			echoLn [
-				strLeftSpacePadding(3, decFromInt(m._indexM)),
-				strLeftSpacePadding(10, m._partitionM.volumeP.nameV),
-				strLeftSpacePadding(18, m._partitionM.nameP),
-				strLeftSpacePadding(10, if m._writableM then "writable" else "readonly"),
-				strLeftSpacePadding(2+mountWidth, _strFromPath(m._mountPathM)),
+				strPadWithSpace(3, strFromInt(m._indexM)),
+				strPadWithSpace(10, m._partitionM.volumeP.nameV),
+				strPadWithSpace(18, m._partitionM.nameP),
+				strPadWithSpace(10, if m._writableM then "writable" else "readonly"),
+				strPadWithSpace(2+mountWidth, _strFromPath(m._mountPathM)),
 				"  ",
 				_strFromPath(m._partitionPathM)
 			];
 		echoLn "";
 		true
 	);;
+
+fun serials()=
+	echoLn "Serial ports:";
+	echoLn ["          Id  Name"];
+	echoLn ["          --  ----"];
+	for [id, name] in serialList() do
+		echoLn [
+			strPadWithSpace(12, id),
+			"  ",
+			name
+		];
+	echoLn "";
+	true;;
 
 fun fs()=
 	volumes();
@@ -178,6 +191,7 @@ fun sys()=
 	ts();
 	timers();
 	inputs();
+	serials();
 	true;;
 
 fun kill(id)= 
@@ -186,11 +200,11 @@ fun kill(id)=
 fun dumpCallstack(id)=
 	let _threadById(id) -> th in
 	if th<>nil then
-	let lambda(n1, i1, pkg)=echoLn [strLeftSpacePadding(16, n1), strLeftSpacePadding(8, i1)] -> echoFormat in
+	let lambda(n1, i1, pkg)=echoLn [strPadWithSpace(16, n1), strPadWithSpace(8, i1)] -> echoFormat in
 	(
 		call echoFormat("FUNCTION", "PC", "PKG");
 		for [name, pc, _, pkg] in threadCallstack(th) do 
-			echoLn {strLeftSpacePadding(16, name), strLeftSpacePadding(8, decFromInt(pc)), "  ", pkgName(pkg)};
+			echoLn {strPadWithSpace(16, name), strPadWithSpace(8, strFromInt(pc)), "  ", pkgName(pkg)};
 		true
 	);;
 
@@ -212,11 +226,11 @@ fun mountDir(i, path) =
 	(
 		for p in listConcat(_filesSort(lDirs), _filesSort(lFiles)) do
 		echoLn {
-			strLeftSpacePadding(12, if p._dirFI then "DIRECTORY" else decFromInt(p._sizeFI)),
+			strPadWithSpace(12, if p._dirFI then "DIRECTORY" else strFromInt(p._sizeFI)),
 			" | ",
 			if p._updateFI<>nil then fullDate(p._updateFI) else "          [mounted partition]",
 			" |",
-			strLeftSpacePadding(2, strFromInt(p._mountFI)),
+			strPadWithSpace(2, strFromInt(p._mountFI)),
 			": ",
 			p._nameFI
 		};

@@ -148,11 +148,6 @@ int fun_cursorSize(Thread* th) FUN_RETURN_NIL
 int fun_cursorCreate(Thread* th) FUN_RETURN_NIL
 int fun_cursorShow(Thread* th) FUN_RETURN_NIL
 
-int Java_com_example_Minimacy_log( JNIEnv* env, jobject obj, jstring msg)
-{
-	LOGI("%s",(*UI.env)->GetStringUTFChars(UI.env, msg, NULL));
-	return 0;
-}
 int Java_com_example_Minimacy_eventBinary( JNIEnv* env, jobject obj, int eventID, jbyteArray data)
 {
 	jbyte* bufferPtr = (*env)->GetByteArrayElements(env, data, NULL);
@@ -318,7 +313,7 @@ int fun_bleSerialWrite(Thread* th)
 	jclass ClassNativeActivity = (*UI.env)->GetObjectClass(UI.env, nativeActivity );
 	jmethodID method = (*UI.env)->GetMethodID(UI.env, ClassNativeActivity, "bleSerialWrite", "([B)I" );
 
-	jbyteArray parameter = (*UI.env)->NewByteArray(UI.env, len);
+    jbyteArray parameter = (*UI.env)->NewByteArray(UI.env, len);
 	jbyte *bytes = (*UI.env)->GetByteArrayElements(UI.env, parameter, 0);
 	char* p= STR_START(src)+start;
 	for(int i=0;i<len;i++) bytes[i]=p[i];
@@ -640,8 +635,7 @@ void android_main(struct android_app* app)
 	assetDirCopy(app,"rsc/fonts","rom");
 	assetDirCopy(app,"","programs");
 	assetDirCopy(app,"demo","programs");
-	assetDirCopy(app,"usr","programs");
-	assetDirCopy(app,"test","programs");
+//	assetDirCopy(app,"usr","programs");
 	while (1) {
 		// Read all pending events.
 		int ident;

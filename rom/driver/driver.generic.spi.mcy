@@ -1,0 +1,17 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2022, Sylvain Huet, Ambermind
+// Minimacy (r) System
+
+#ifndef spiInit
+const Spi0=0;;
+const Spi1=1;;
+fun spiInit(a:Int, b, c, d, e)=nil;;
+fun spiSetBaudrate(a, b) = nil;;
+fun spiWriteByte(a, b) =nil;;
+fun spiWrite(a, b)=nil;;
+fun spiWriteRead(a, b)=nil;;
+fun spiRead(a, b, c)=nil;;
+fun spiWriteBytes(a, b)=nil;;
+fun spiWriteReadBytes(a, b)=nil;;
+fun spiReadBytes(a, b, c)=nil;;
+#endif

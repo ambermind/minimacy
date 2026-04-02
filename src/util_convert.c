@@ -56,6 +56,18 @@ const char Unaccented[256]={
 	97,97,97,97,97,97,97,99,101,101,101,101,105,105,105,105,240,110,111,111,111,111,111,247,111,117,117,117,117,121,254,121,
 };
 
+int isText(char* src, LINT len)
+{
+	LINT i;
+	for (i = 0; i < len; i++)
+	{
+		int c = src[i] & 255;
+		if (c >= 32) continue;
+		if (c == 8 || c == 9 || c == 10 || c == 13) continue;
+		return 0;
+	}
+	return 1;
+}
 
 int isU8(char* src, LINT len)
 {

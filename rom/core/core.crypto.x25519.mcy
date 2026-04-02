@@ -58,18 +58,18 @@ fun _decodeScalar(str) =
 	(
 		let bytesGet(bytes, 0) -> b in bytesSet(bytes, 0, (b&0x7f)|0x40);
 		let bytesGet(bytes, 31) -> b in bytesSet(bytes, 31, b&0xf8);
-		bigFromBytes(bytes)		
+		bigDeserializeBytes(bytes)		
 	);;
 
 fun _decodeU(str) = 
 	let _swapStr(str) -> bytes in
 	(
 		let bytesGet(bytes, 0) -> b in bytesSet(bytes, 0, b&127);
-		bigFromBytes(bytes)		
+		bigDeserializeBytes(bytes)		
 	);;
 
 fun _encodeResult(v)=
-	strFromBytes(_swapStr(strFromBig(v, 32)));;
+	strFromBytes(_swapStr(bigSerialize(v, 32)));;
 
 fun x25519(k, u)=
 	let _decodeScalar(k) -> k in
@@ -78,7 +78,7 @@ fun x25519(k, u)=
 
 fun x25519Random()=
 	let bigFromHex("7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffed") -> p in
-	strFromBig(bigMod(bigRand(bigNbits(p), false), p), 32);;
+	bigSerialize(bigMod(bigRand(bigNbits(p), false), p), 32);;
 
 // ECDH
 

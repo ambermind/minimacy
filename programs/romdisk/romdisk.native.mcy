@@ -1,0 +1,67 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2022, Sylvain Huet, Ambermind
+// Minimacy (r) System
+use core.crypto.hash;;
+
+fun _recTable(offset, lSize)=
+	if lSize==nil then 0::nil
+	else offset::_recTable(offset+head(lSize), tail(lSize));;
+	
+fun hexFromInt2(v)= 
+	if v<16 then strConcat("0", hexFromInt(v))
+	else hexFromInt(v);;
+	
+fun _mkTable(sources, lSize) =
+	let listReduce(lSize, 0, lambda(s, v)= s+v) -> dataLen in
+	let listLength(lSize) -> nbEntry in
+	let (nbEntry+2)*4 -> dataOffset in
+	let (dataLen+dataOffset)::_recTable(dataOffset, lSize) -> table in
+	let strBuild(listMap(table, lambda(offset)= strInt32Lsb(offset))) -> data in
+	let strLength(data) -> len in
+	for i=0;i<len do bufferAppend(sources, ["0x", hexFromInt2(strGet(data, i)), ",", if 3==i&3 then "\n "]);;
+		
+fun romdiskFromFiles(files, output)=
+	let bufferCreate() -> sources in
+	let bufferCreate() -> content in
+	let fifoCreate() -> sizes in
+	(
+		for f in files do
+			let strSplit("\t", f)-> path::alias::_ in
+			let load(path) -> data in
+			if data<>nil then 
+			let if alias==nil then path else alias -> alias in (
+				bufferAppend(sources, [
+					"//-------------------- ", alias, "\n",
+					"// ", strLength(data)," bytes\n",
+					"// md5: ", hexFromStr(md5(data)),"\n",
+					"//\n// ",
+						if isText(data) then strJoin("\n// ", strLines(data))
+						else "binary content",
+					"\n\n"
+				]);
+				let strFormat("*\0*",alias, data) -> data in
+				let strLength(data) -> len in
+				let strFromInt(len) -> sLen in (
+					echoLn strFormat("+** bytes: **", strCreate(6-strLength(sLen), 32), sLen, alias, if alias<>path then strFormat(" (source: *)",path));
+					bufferAppend(content, ["// ", alias, "\n "]);
+					for i=0;i<len do bufferAppend(content, [strGet(data, i), ",", if 31==i&31 then "\n "]);
+					bufferAppend(content, "\n");
+					fifoIn(sizes, len)
+				)
+			);
+		bufferAppend(sources, "\nconst char Romdisk0Content[]={\n ");
+		let fifoList(sizes) -> lSize in
+		let listReduce(lSize, 0, lambda(result, size) = result+size+4) -> totalSize in (
+			_mkTable(sources, lSize);
+			bufferAppend(content, "};\n");
+			echoLn strFormat("\nDisk image size: * KB (* bytes)", totalSize/1024, totalSize);
+			echo "saved into: ";
+			let strConcat(strFromBuffer(sources), strFromBuffer(content)) -> src in
+				save(src, echoLn output)
+		);
+	);;
+	
+fun romdiskMake(fileName, output) =
+	romdiskFromFiles(strLines(load(fileName)), output);
+	echoLn "done";;
+

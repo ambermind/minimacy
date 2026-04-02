@@ -4,7 +4,7 @@
 #ifndef _OPCODES_
 #define _OPCODES_
 
-#define OPCODE_NB 126
+#define OPCODE_NB 123
 
 #define OPabort 0
 #define OPabs 1
@@ -120,18 +120,15 @@
 #define OPsub 111
 #define OPsubf 112
 #define OPsum 113
-#define OPswap 114
-#define OPtan 115
-#define OPtanh 116
-#define OPtfc 117
-#define OPtfcb 118
-#define OPtl 119
-#define OPtroff 120
-#define OPtron 121
-#define OPtrue 122
-#define OPtry 123
-#define OPupdt 124
-#define OPupdtb 125
+#define OPtan 114
+#define OPtanh 115
+#define OPtfc 116
+#define OPtfcb 117
+#define OPtl 118
+#define OPtrue 119
+#define OPtry 120
+#define OPupdt 121
+#define OPupdtb 122
 
 void opcodePrint(int msk,LINT i,char* p,LINT ind0);
 void bytecodePrint(int msk,LB* bytecode);

@@ -96,7 +96,7 @@ fun streamInit(s, socket, onSelectRead, fWrite, fClose, fShow)=
 //---------- select
 fun _bestTimeout(current, next)=
 	if next==nil then current
-	else if current==nil then next
+	elif current==nil then next
 	else let next-current -> delta in
 	if delta<0 then next else current;;
 

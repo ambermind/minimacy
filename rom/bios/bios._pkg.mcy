@@ -13,7 +13,7 @@ fun pkgByName(name)=
 
 var _PkgCount=-1;;
 fun pkgCreate(name, importList)=
-	let if name==nil then strFormat("_tmp*_", decFromInt(set _PkgCount=_PkgCount+1)) else name -> name in
+	let if name==nil then strFormat("_tmp*_", strFromInt(set _PkgCount=_PkgCount+1)) else name -> name in
 	_pkgCreate(name, importList);;
 
 fun pkgList()= for p in pkgs() do echoLn {"   ", pkgName(p)};true;;

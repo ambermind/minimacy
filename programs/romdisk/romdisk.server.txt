@@ -1,0 +1,4 @@
+#to comment files, just insert a tab before the path
+	demo/demo.fun.tetris.mcy
+	rsc/fonts/LIGHT8x16.png
+	boot.mcy

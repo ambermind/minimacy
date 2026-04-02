@@ -582,12 +582,13 @@ fun _tcpCreate(incoming, net, remoteAddr, remotePort, localPort)=
 	let _tcpKey(remoteAddr, net.ipI, remotePort, localPort) -> key in
 	if nil == hashmapGet(TcpListener, key) then	// check existing connection
 	let intRand() & 0xffffffff-> seq0 in
+	let strFromIp(remoteAddr) -> remoteAddrClear in
 	let [
 		incomingT=incoming,
-		nameT= strFormat("*:*", remoteAddr, remotePort),
+		nameT= strFormat("*:*", remoteAddrClear, remotePort),
 		netT=net,
 		keyT=key,
-		remoteAddrT=strFromIp(remoteAddr),	// clear text format (xx.xx.xx.xx)
+		remoteAddrT=remoteAddrClear,	// clear text format (xx.xx.xx.xx)
 		_remoteAddrT=remoteAddr,	// binary format (4 bytes)
 		remotePortT=remotePort,
 		localPortT=localPort,

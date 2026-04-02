@@ -16,7 +16,7 @@ fun ipStackOverwriteTcpSrv(fTcpSrv) = set _TcpSrvCreateFunction = fTcpSrv;;
 
 fun strFromMac(mac) = if mac<>nil then strJoin(":", arrayInit(6, lambda(i) = hexFromIntN(2, strGet(mac, i))));;
 fun strFromIp(ip) = strFormat("*.*.*.*", strGet(ip, 0), strGet(ip, 1), strGet(ip, 2), strGet(ip, 3));;
-fun ipFromStr(str) = if !strEmpty(str) then strListConcat(listMap(strSplit(".", str), lambda(val)= strInt8(intFromDec(val))));;
+fun ipFromStr(str) = if !strEmpty(str) then strListConcat(listMap(strSplit(".", str), lambda(val)= strInt8(intFromStr(val))));;
 fun macFromStr(str) = if !strEmpty(str) then strFromHex(strReplace(str, ":", ""));;
 
 //-------------- Bsd TCP server
@@ -42,7 +42,9 @@ fun tcpSrvCreate(addr, port)= call _TcpSrvCreateFunction(addr, port);;
 
 fun tcpSrvOnAccept(tcpSrv, onAccept)=
 	set tcpSrv._thS= _This;
-	set tcpSrv.onAcceptTS= if onAccept<>nil then (lambda(tcp)= void call onAccept(tcp));
+	set tcpSrv.onAcceptTS= if onAccept<>nil then (lambda(tcp)= 
+		void threadStart("tcpIn",lambda()= call onAccept(tcp))
+	);
 	if onAccept<>nil then _streamAddToList(tcpSrv);
 	_socketSetSelectRead(streamSocket(tcpSrv), onAccept<>nil);
 	tcpSrv;;

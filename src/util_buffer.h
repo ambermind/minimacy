@@ -25,6 +25,7 @@ struct Buffer
 int _bufferBiggerFinalize(Buffer* b, LINT newsize);
 Buffer* bufferCreateWithSize(LINT size);
 Buffer* bufferCreate(void);
+Buffer* bufferReset(Buffer* b, LINT size);
 void bufferReinit(Buffer* b);
 void bufferRemove(Buffer* b, int delta);
 void bufferSetWorkerThread(volatile Buffer** pb, volatile Thread** pth);

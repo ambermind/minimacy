@@ -503,6 +503,63 @@ int fun_uiH(Thread* th)
 	FUN_RETURN_INT(UI.h);
 }
 
+#ifdef WITH_X11_BITMAP
+int bitmapForget(LB* user)
+{
+    LBitmap* b = (LBitmap*)user;
+	if (b->bmp) XDestroyImage((XImage*)b->bmp);
+	return 0;
+}
+
+void bitmapAsXImage(LBitmap* d)
+{
+	lchar* newstart;
+	if (d->bmp) return;        // already created ?
+	if (hwindowStartX(NULL)) return;
+
+	// we allocate another block of memory outside the managed memory
+	// because it will be deallocated by the XDestroyImage
+	newstart=malloc(d->w*d->h*4); if (!newstart) return;
+	memcpy(newstart,d->start8,d->w*d->h*4);
+
+	d->bytes=NULL; // we forget the initial buffer
+	d->start8 = newstart;
+	d->next8 = d->w*4;
+	d->start32 = (int*)d->start8;
+	d->next32 = d->next8 >> 2;
+	d->bmp = (void*)XCreateImage(UI.display, UI.visual, UI.depth, ZPixmap, 0, (char*)d->start8, d->w, d->h, 8, 0);
+	d->forget=bitmapForget;
+//	printf("done %llx\n",d->bmp);
+}
+int fun_uiUpdate(Thread* th)
+{
+	int hIsNil= STACK_IS_NIL(th,0);
+	LINT h = STACK_INT(th,0);
+	int wIsNil= STACK_IS_NIL(th,1);
+	LINT w = STACK_INT(th,1);
+	LINT y = STACK_INT(th,2);
+	LINT x = STACK_INT(th,3);
+
+	LBitmap* b = (LBitmap*)STACK_PNT(th, 4);
+	if (!b) return 0;
+//printf("uiUpdate now %llx\n",UI.win);
+	if (UI.win == 0) return 0;
+	if ((b->w != UI.w) || (b->h != UI.h)) return 0;
+
+	if (wIsNil) w= b->w;
+	if (hIsNil) h= b->h;
+
+	if (_clip1D(0, b->w, &x, &w, NULL)) return 0;
+	if (_clip1D(0, b->h, &y, &h, NULL)) return 0;
+
+	bitmapAsXImage(b);
+
+	XPutImage(UI.display,UI.win,UI.paintdc,(XImage*)b->bmp,x,y,x,y,w,h);
+	XFlush(UI.display);
+	return 0;
+}
+#endif
+
 int fun_screenW(Thread* th)
 {
 	if (hwindowStartX(NULL)) FUN_RETURN_NIL;
@@ -654,7 +711,9 @@ typedef struct
 
 Display *_nativeFontDisplay()
 {
+#ifdef WITH_GL
 	if (UI.displayGl) return UI.displayGl;
+#endif
 	return UI.display;
 }
 

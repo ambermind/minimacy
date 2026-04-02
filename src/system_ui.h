@@ -19,6 +19,7 @@
 int fun_uiStart(Thread* th);
 int fun_uiStop(Thread* th);
 int fun_uiResize(Thread* th);
+int fun_uiUpdate(Thread* th);
 int fun_uiW(Thread* th);
 int fun_uiH(Thread* th);
 int fun_uiDrop(Thread* th);

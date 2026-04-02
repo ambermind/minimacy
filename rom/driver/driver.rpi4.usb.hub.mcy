@@ -1,0 +1,112 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2022, Sylvain Huet, Ambermind
+// Minimacy (r) System
+
+// https://wiki.osdev.org/USB_Hubs
+
+use driver.rpi4.usb.xhci;;
+use driver.rpi4.usb;;
+
+//----------------- HUB
+const DESCRIPTOR_HUB= 0x29;;
+
+const HUB_STATUS_OVER_CURRENT= 2;;
+
+const GET_STATUS   = 0;;
+const CLEAR_FEATURE= 1;;
+const SET_FEATURE  = 3;;
+
+const PORT_RESET=4;;
+const PORT_POWER=8;;
+
+const PORT_STATUS_CONNECTION  = 0x01;;
+const PORT_STATUS_ENABLE      = 0x02;;
+const PORT_STATUS_OVER_CURRENT= 0x08;;
+const PORT_STATUS_LOW_SPEED   = 0x200;;
+const PORT_STATUS_HIGH_SPEED  = 0x400;;
+
+fun _hubPortSpeed(portStatus)=
+	if bitTest(portStatus, PORT_STATUS_LOW_SPEED) then PORT_SPEED_LOW
+	elif bitTest(portStatus, PORT_STATUS_HIGH_SPEED) then PORT_SPEED_HIGH
+	else PORT_SPEED_FULL;;
+
+fun _mkRoute(route, port, shift)=
+	if shift<32 then
+	if bitTest(route,15<<shift) then _mkRoute(route, port, shift+4)
+	else route+(port<<shift);;
+
+fun _routeList(route)=
+	if route<>0 then (route&15)::_routeList(route>>4);;
+
+fun _hubRouteName(d)= strJoin("-", _routeList(_mkRoute(d.routeD, d.portD, 0)));;
+
+fun _hubPortPowerOn(d, port)=
+	let controlTransferNoData(d, REQUEST_CLASS | REQUEST_TO_OTHER, SET_FEATURE, PORT_POWER, port) -> data in
+	data<>nil || msgAndReturn(strFormat("cannot power on port *", port), nil);;
+
+fun _hubPortPowerOff(d, port)=
+	let controlTransferNoData(d, REQUEST_CLASS | REQUEST_TO_OTHER, CLEAR_FEATURE, PORT_POWER, port) -> data in
+	data<>nil || msgAndReturn(strFormat("cannot power off port *", port), nil);;
+
+fun _hubPortStatus(d, port)=
+	let controlTransferIn(d, REQUEST_CLASS | REQUEST_TO_OTHER, GET_STATUS, 0, 0, port, 4) -> data in
+	if data==nil then msgAndReturn(strFormat("port * get status failed", port), nil)
+	else strRead32Lsb(data, 0);;
+
+fun _hubPortStart(d, port)=
+	let _hubPortStatus(d, port) -> portStatus in
+	if !bitTest(portStatus, PORT_STATUS_CONNECTION) then return if DEBUG then msgAndReturn(strFormat("no device on port *", port), nil);
+
+	let controlTransferNoData(d, REQUEST_CLASS | REQUEST_TO_OTHER, SET_FEATURE, PORT_RESET, port) -> data in
+	if data==nil then return msgAndReturn("port reset failed", nil);
+
+	sleepMs(100);
+	let _hubPortStatus(d, port) -> portStatus in
+	if !bitTest(portStatus, PORT_STATUS_ENABLE) then return msgAndReturn("port is not enabled", nil)
+	else
+	let _mkRoute(d.routeD, d.portD, 0) -> route in (
+		echoLn strFormat("> USB: device detected on port *-*", _hubRouteName(d), port);
+		if DEBUG then echoLn strFormat("> USB: port * is enabled", port);
+		if bitTest(portStatus, PORT_STATUS_OVER_CURRENT) then return msgAndReturn("port is over current", nil);	// should power off
+		let _hubPortSpeed(portStatus) -> speed in
+		deviceCreate(d, port, route, speed)
+	);
+	true;;
+
+fun hubCreate(d, protocol, interfaceNumber, epDescriptors)=
+	echoLn strFormat("> USB: start hub *", _hubRouteName(d));
+	let controlTransferIn(d, REQUEST_CLASS, GET_DESCRIPTOR, DESCRIPTOR_HUB, 0, 0, 9) -> data in
+	if data==nil then return msgAndReturn("hub descriptor failed", false)
+	else
+	let strRead8(data, 2) -> nbPorts in
+	let strRead8(data, 3) -> hubCharacteristics in
+	let (hubCharacteristics>>5)&3 -> TTThinkTime in
+	let inputContextEnableHubFunction(d, nbPorts, TTThinkTime) -> inputContext in
+	let cmdOnSlot(d.slotD, TRB_CMD_EVALUATE_CONTEXT, inputContext) ->result in
+	if result==nil then return msgAndReturn("hub enable error", nil)
+	else
+	let head(epDescriptors) -> epDescriptor in	// only one endpoint expected
+	let epStart(d, epDescriptor) -> ep in
+	if ep<>nil then (
+		for port=1;port<=nbPorts do _hubPortPowerOn(d, port);
+		echoLn strFormat("> USB: wait for hub powered up (* ports)", nbPorts);
+		sleepMs(500);
+		for port=1;port<=nbPorts do _hubPortStart(d, port);
+
+		let _hubPortStatus(d, 0) -> hubStatus in
+		if bitTest(hubStatus, HUB_STATUS_OVER_CURRENT) then (
+			for port=1;port<=nbPorts do _hubPortPowerOff(d, port);
+			return msgAndReturn("over-current detected", nil);
+		);
+
+		for port=1;port<=nbPorts do 
+			let _hubPortStatus(d, port) -> portStatus in
+			if bitTest(portStatus, PORT_STATUS_OVER_CURRENT) then (
+				_hubPortPowerOff(d, port);
+				msgAndReturn("over-current detected on hub port *", nil)
+			);
+		echoLn strFormat("> USB: done with hub *", _hubRouteName(d));
+		true
+	);;
+
+fun _init()= usbRegister("int-9-0-0", #hubCreate);;

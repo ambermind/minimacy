@@ -1,4 +1,4 @@
-#include"../../src/minimacy.h"
+#include"../src/minimacy.h"
 #include"resource.h"
 #ifdef ON_WINDOWS
 extern LPCTSTR IDI_ICON;

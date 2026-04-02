@@ -349,7 +349,7 @@ int name(Thread* th) \
 	LB* src=STACK_PNT(th,0);	\
 	lglProgram* p=(lglProgram*)STACK_PNT(th,1);	\
 	if ((!src)||(!p)) FUN_RETURN_NIL;	\
-	FUN_RETURN_INT(GLdefault(fun(p->program,STR_START(src)),-1));	\
+	FUN_RETURN_INT((LINT)GLdefault(fun(p->program,STR_START(src)),-1));	\
 }
 
 #define GLIIFloats(name,fun)	\

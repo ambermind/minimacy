@@ -1,0 +1,109 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2022, Sylvain Huet, Ambermind
+// Minimacy (r) System
+
+// to be used with: https://letmeknow.fr/fr/modules-d-extensions/2432-ecran-oled-i2c-128-x-64-pixel-096-pouce-652733145321.html
+
+export ssd1306Init(i2cPort, i2cSda, i2cScl);;
+export ssd1306Erase(oled, val);;
+export ssd1306Blit(oled, bmp, background);;
+export ssd1306BlitRaw(oled, data);;
+export ssd1306SetLock(lock);;
+
+use driver.generic.i2c;;
+
+struct Oled=[i2cO];;
+var I2cLock=lockCreate();;
+
+const I2C_ADDR = 0x3c;;
+
+const SSD1306_CONTRAST = 0x81;;
+const SSD1306_DISPLAYALL_ON_RESUME = 0xA4;;
+const SSD1306_DISPLAYALL_ON = 0xA5;;
+const SSD1306_INVERTED_OFF = 0xA6;;
+const SSD1306_INVERTED_ON = 0xA7;;
+const SSD1306_DISPLAY_OFF = 0xAE;;
+const SSD1306_DISPLAY_ON = 0xAF;;
+const SSD1306_DISPLAYOFFSET = 0xD3;;
+const SSD1306_COMPINS = 0xDA;;
+const SSD1306_VCOMDETECT = 0xDB;;
+const SSD1306_DISPLAYCLOCKDIV = 0xD5;;
+const SSD1306_PRECHARGE = 0xD9;;
+const SSD1306_MULTIPLEX = 0xA8;;
+const SSD1306_LOWCOLUMN = 0x00;;
+const SSD1306_HIGHCOLUMN = 0x10;;
+const SSD1306_STARTLINE = 0x40;;
+const SSD1306_MEMORYMODE = 0x20;;
+const SSD1306_MEMORYMODE_HORZONTAL = 0x00;;
+const SSD1306_MEMORYMODE_VERTICAL = 0x01;;
+const SSD1306_MEMORYMODE_PAGE = 0x10;;
+const SSD1306_COLUMNADDR = 0x21;;
+const SSD1306_PAGEADDR = 0x22;;
+const SSD1306_COM_REMAP_OFF = 0xC0;;
+const SSD1306_COM_REMAP_ON = 0xC8;;
+const SSD1306_CLUMN_REMAP_OFF = 0xA0;;
+const SSD1306_CLUMN_REMAP_ON = 0xA1;;
+const SSD1306_CHARGEPUMP = 0x8D;;
+const SSD1306_EXTERNALVCC = 0x1;;
+const SSD1306_SWITCHCAPVCC = 0x2;;
+const SSD1306_BLIT_INIT = SSD1306_PAGEADDR::0x00::0x07::SSD1306_COLUMNADDR::0x00::0x7f::nil;;
+
+var BlitCmdBuffer;;
+
+fun ssd1306SetLock(lock) = set I2cLock=lock;;
+
+fun ssd1306WriteCmds(i2cPort, cmds)=
+	for cmd in cmds do i2cWrite(i2cPort, I2C_ADDR, strConcat("\0", strInt8(cmd)));;
+
+fun ssd1306Erase(oled, val)=
+	let bytesCreate((128*64/8) + 1, val) -> bytes in
+	lockSync(I2cLock, (lambda ()=
+		bytesSet(bytes, 0, SSD1306_STARTLINE);
+		ssd1306WriteCmds(oled.i2cO, SSD1306_BLIT_INIT);
+		i2cWriteBytes(oled.i2cO, I2C_ADDR, bytes)
+	));;
+
+fun ssd1306BlitRaw(oled, data)=
+	if BlitCmdBuffer==nil then set BlitCmdBuffer=bytesCreate((128*64/8) + 1, 0);
+	bytesSet(BlitCmdBuffer, 0, SSD1306_STARTLINE);
+	bytesCopy(BlitCmdBuffer, 1, data, 0, nil);
+	lockSync(I2cLock, (lambda ()=
+		ssd1306WriteCmds(oled.i2cO, SSD1306_BLIT_INIT);
+		i2cWriteBytes(oled.i2cO, I2C_ADDR, BlitCmdBuffer)
+	));;
+
+fun ssd1306Blit(oled, bmp, background)=
+	if BlitCmdBuffer==nil then set BlitCmdBuffer=bytesCreate((128*64/8) + 1, 0);
+	bytesSet(BlitCmdBuffer, 0, SSD1306_STARTLINE);
+	bitmapExportMonoVerticalBytes(bmp, BlitCmdBuffer, 1, background);
+	lockSync(I2cLock, (lambda ()=
+		ssd1306WriteCmds(oled.i2cO, SSD1306_BLIT_INIT);
+		i2cWriteBytes(oled.i2cO, I2C_ADDR, BlitCmdBuffer)
+	));;
+
+fun ssd1306Init(i2cPort, i2cSda, i2cScl) =
+	lockSync(I2cLock, (lambda ()=
+		i2cInit(i2cPort, 1000000, i2cSda, i2cScl);
+		ssd1306WriteCmds(i2cPort,
+			SSD1306_DISPLAY_OFF::
+			SSD1306_LOWCOLUMN::
+			SSD1306_HIGHCOLUMN::
+			SSD1306_STARTLINE::
+			SSD1306_MEMORYMODE::
+			SSD1306_MEMORYMODE_HORZONTAL::
+			SSD1306_CONTRAST::0xff::
+			SSD1306_INVERTED_OFF::
+			SSD1306_MULTIPLEX::0x3f::
+			SSD1306_DISPLAYOFFSET::0x00::
+			SSD1306_DISPLAYCLOCKDIV::0x80::
+			SSD1306_PRECHARGE::0x22::
+			SSD1306_COMPINS::0x12::
+			SSD1306_VCOMDETECT::0x40::
+			SSD1306_CHARGEPUMP::0x14::
+	//		SSD1306_CLUMN_REMAP_OFF:SSD1306_COM_REMAP_OFF:		// bottom-right near GND pin
+			SSD1306_CLUMN_REMAP_ON::SSD1306_COM_REMAP_ON::	// top-left near GND pin
+			SSD1306_DISPLAYALL_ON_RESUME::
+			SSD1306_DISPLAY_ON::
+			nil);
+		[i2cO=i2cPort]
+	));;

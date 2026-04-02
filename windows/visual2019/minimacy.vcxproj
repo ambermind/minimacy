@@ -90,7 +90,10 @@
     <ClCompile Include="..\..\src\vm_term.c" />
     <ClCompile Include="..\..\src\vm_thread.c" />
     <ClCompile Include="..\..\src\vm_types.c" />
-    <ClCompile Include="wincmd.c" />
+    <ClCompile Include="..\ble.c" />
+    <ClCompile Include="..\ble_c.cpp" />
+    <ClCompile Include="..\ble_cpp.cpp" />
+    <ClCompile Include="..\wincmd.c" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\..\src\compiler.h" />
@@ -133,6 +136,9 @@
     <ClInclude Include="..\..\src\vm_term.h" />
     <ClInclude Include="..\..\src\vm_thread.h" />
     <ClInclude Include="..\..\src\vm_types.h" />
+    <ClInclude Include="..\ble_c.h" />
+    <ClInclude Include="..\ble_cpp.hpp" />
+    <ClInclude Include="..\resource.h" />
     <ClInclude Include="resource.h" />
   </ItemGroup>
   <ItemGroup>
@@ -325,11 +331,12 @@
       <ConformanceMode>true</ConformanceMode>
       <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
       <DisableSpecificWarnings>4996;4090</DisableSpecificWarnings>
+      <LanguageStandard>stdcpp17</LanguageStandard>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalDependencies>kernel32.lib;user32.lib;wsock32.lib;opengl32.lib;glu32.lib;winmm.lib;SetupAPI.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>kernel32.lib;user32.lib;wsock32.lib;opengl32.lib;glu32.lib;winmm.lib;SetupAPI.lib;runtimeobject.lib; ole32.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <ProgramDatabaseFile>$(SolutionDir)build\$(Platform)\$(Configuration)\$(TargetName).pdb</ProgramDatabaseFile>
     </Link>
   </ItemDefinitionGroup>
@@ -343,13 +350,14 @@
       <ConformanceMode>true</ConformanceMode>
       <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
       <DisableSpecificWarnings>4996;4090</DisableSpecificWarnings>
+      <LanguageStandard>stdcpp17</LanguageStandard>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalDependencies>kernel32.lib;user32.lib;wsock32.lib;opengl32.lib;glu32.lib;winmm.lib;SetupAPI.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>kernel32.lib;user32.lib;wsock32.lib;opengl32.lib;glu32.lib;winmm.lib;SetupAPI.lib;runtimeobject.lib; ole32.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <ProgramDatabaseFile>$(SolutionDir)build\$(Platform)\$(Configuration)\$(TargetName).pdb</ProgramDatabaseFile>
     </Link>
   </ItemDefinitionGroup>
@@ -361,11 +369,12 @@
       <ConformanceMode>true</ConformanceMode>
       <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
       <DisableSpecificWarnings>4996;4090</DisableSpecificWarnings>
+      <LanguageStandard>stdcpp17</LanguageStandard>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalDependencies>kernel32.lib;user32.lib;wsock32.lib;opengl32.lib;glu32.lib;winmm.lib;SetupAPI.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>kernel32.lib;user32.lib;wsock32.lib;opengl32.lib;glu32.lib;winmm.lib;SetupAPI.lib;runtimeobject.lib; ole32.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <ProgramDatabaseFile>$(SolutionDir)build\$(Platform)\$(Configuration)\$(TargetName).pdb</ProgramDatabaseFile>
     </Link>
   </ItemDefinitionGroup>
@@ -379,13 +388,14 @@
       <ConformanceMode>true</ConformanceMode>
       <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
       <DisableSpecificWarnings>4996;4090</DisableSpecificWarnings>
+      <LanguageStandard>stdcpp17</LanguageStandard>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalDependencies>kernel32.lib;user32.lib;wsock32.lib;opengl32.lib;glu32.lib;winmm.lib;SetupAPI.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>kernel32.lib;user32.lib;wsock32.lib;opengl32.lib;glu32.lib;winmm.lib;SetupAPI.lib;runtimeobject.lib; ole32.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <ProgramDatabaseFile>$(SolutionDir)build\$(Platform)\$(Configuration)\$(TargetName).pdb</ProgramDatabaseFile>
     </Link>
   </ItemDefinitionGroup>

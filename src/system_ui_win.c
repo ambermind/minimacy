@@ -631,24 +631,24 @@ int fun_uiStop(Thread* th)
 int fun_uiW(Thread* th)
 {
 	if (UI.win == 0) FUN_RETURN_NIL;
-	FUN_RETURN_INT(UI.w);
+	FUN_RETURN_INT((LINT)UI.w);
 }
 int fun_uiH(Thread* th)
 {
 	if (UI.win == 0) FUN_RETURN_NIL;
-	FUN_RETURN_INT(UI.h);
+	FUN_RETURN_INT((LINT)UI.h);
 }
 int fun_screenW(Thread* th)
 {
 	RECT r;
 	GetWindowRect(GetDesktopWindow(), &r);
-	FUN_RETURN_INT(r.right - r.left);
+	FUN_RETURN_INT((LINT)(r.right - r.left));
 }
 int fun_screenH(Thread* th)
 {
 	RECT r;
 	GetWindowRect(GetDesktopWindow(), &r);
-	FUN_RETURN_INT(r.bottom - r.top);
+	FUN_RETURN_INT((LINT)(r.bottom - r.top));
 }
 
 int fun_uiSetTitle(Thread* th)
@@ -661,7 +661,7 @@ int fun_uiSetTitle(Thread* th)
 
 int fun_keyboardState(Thread* th)
 {
-	int k = 0;
+	LINT k = 0;
 	if (GetKeyState(VK_SHIFT) < 0) k += KeyMask_Shift;
 	if (GetKeyState(VK_CONTROL) < 0) k += KeyMask_Control;
 	if (GetKeyState(VK_MENU) < 0) k += KeyMask_Alt;
@@ -769,8 +769,8 @@ int _cursorForget(LB* p)
 
 int fun_cursorSize(Thread* th)
 {
-	FUN_PUSH_INT(GetSystemMetrics(SM_CXCURSOR));
-	FUN_PUSH_INT(GetSystemMetrics(SM_CYCURSOR));
+	FUN_PUSH_INT((LINT)GetSystemMetrics(SM_CXCURSOR));
+	FUN_PUSH_INT((LINT)GetSystemMetrics(SM_CYCURSOR));
 	FUN_MAKE_ARRAY( 2, DBG_TUPLE);
 	return 0;
 }
@@ -894,7 +894,7 @@ int fun_nativeFontH(Thread* th)
 	SelectFont(DC, f->hfont);
 	GetTextMetrics(DC, &tm);
 	ReleaseDC(NULL, DC);
-	FUN_RETURN_INT(tm.tmHeight);
+	FUN_RETURN_INT((LINT)tm.tmHeight);
 }
 
 int fun_nativeFontBaseline(Thread* th)
@@ -909,7 +909,7 @@ int fun_nativeFontBaseline(Thread* th)
 	SelectFont(DC, f->hfont);
 	GetTextMetrics(DC, &tm);
 	ReleaseDC(NULL, DC);
-	FUN_RETURN_INT(tm.tmDescent);
+	FUN_RETURN_INT((LINT)tm.tmDescent);
 }
 
 int fun_nativeFontW(Thread* th)
@@ -928,7 +928,7 @@ int fun_nativeFontW(Thread* th)
 	FUN_RETURN_INT(size);
 }
 
-void bitmapRequireDib(LBitmap* d)
+void bitmapAsDib(LBitmap* d)
 {
 	lchar* newstart;
 	int newnextline, j;
@@ -982,7 +982,7 @@ int fun_nativeFontDraw(Thread* th)
 	LBitmap* b=(LBitmap*)STACK_PNT(th, 4);
 	if ((!f) || (!b)) FUN_RETURN_NIL;
 	
-	bitmapRequireDib(b);
+	bitmapAsDib(b);
 	dcb = CreateCompatibleDC(NULL);
 	SelectObject(dcb, b->bmp);
 	SetBkMode(dcb, TRANSPARENT);

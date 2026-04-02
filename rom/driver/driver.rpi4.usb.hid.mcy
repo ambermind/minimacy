@@ -1,0 +1,77 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2022, Sylvain Huet, Ambermind
+// Minimacy (r) System
+
+use driver.rpi4.usb;;
+
+//------------- HID COMMON
+const HID_USAGE_PAGE    = 0x04;;
+const HID_USAGE         = 0x08;;
+const HID_COLLECTION    = 0xA0;;
+const HID_END_COLLECTION= 0xC0;;
+const HID_REPORT_COUNT  = 0x94;;
+const HID_REPORT_SIZE   = 0x74;;
+const HID_INPUT         = 0x80;;
+const HID_REPORT_ID     = 0x84;;
+
+const HID_USAGE_PAGE_GENERIC_DESKTOP= 0x01;;
+const HID_USAGE_PAGE_BUTTONS        = 0x09;;
+
+const HID_USAGE_POINTER= 0x01;;
+const HID_USAGE_MOUSE  = 0x02;;
+const HID_USAGE_X      = 0x30;;
+const HID_USAGE_Y      = 0x31;;
+const HID_USAGE_Z      = 0x32;;
+const HID_USAGE_WHEEL  = 0x38;;
+
+const HID_COLLECTION_APPLICATION= 0x01;;
+
+const _SET_PROTOCOL= 0x0B;;
+
+const _BOOT_PROTOCOL  = 0x00;;
+const _REPORT_PROTOCOL= 0x01;;
+
+fun hidReportExtract(data, i)=
+	if i<strLength(data) then
+	let strGet(data, i) -> header in
+	let header&3 -> len in
+	let match len with
+		1 -> strRead8(data, i+1),
+		2 -> strRead16Lsb(data, i+1),
+		3 -> strRead32Lsb(data, i+1)
+	-> arg in
+	let i+1+if len==3 then 4 else len -> iNext in
+	[header&0xfc, arg]::hidReportExtract(data, iNext);;
+
+fun _hidReportCut(lItems, collectionCount)=
+	if lItems<>nil then
+	let head(lItems) -> [h, _] in
+	if h<>HID_END_COLLECTION || collectionCount>0 then
+	let if h==HID_END_COLLECTION then -1 elif h==HID_COLLECTION then 1 else 0 -> deltaCount in
+	head(lItems)::_hidReportCut(tail(lItems), collectionCount+deltaCount);;
+
+fun hidReportFind(lItems, usagePage, usage)=
+	if lItems<>nil then
+	let lItems->[h1, arg1]::[h2, arg2]::[h3, arg3]::next in
+	if 
+		h1==HID_USAGE_PAGE && arg1==usagePage &&
+		h2==HID_USAGE && arg2==usage &&
+		h3==HID_COLLECTION && arg3==HID_COLLECTION_APPLICATION
+	then _hidReportCut(next, 0)
+	else hidReportFind(tail(lItems), usagePage, usage);;
+
+fun hidGetReport(d, interfaceNumber, hidDescriptor)=
+	let strRead8(hidDescriptor, 6) -> descriptorType in
+	let strRead16Lsb(hidDescriptor, 7) -> descriptorLen in
+	let controlTransferIn(d, REQUEST_TO_INTERFACE, GET_DESCRIPTOR, descriptorType, 0, interfaceNumber, descriptorLen) -> data in
+	if data<>nil then (
+		if DEBUG_DESCRIPTOR then (echo "> USB: hid report: "; echoLn hexFromStr(data));
+		data
+	);;
+
+fun hidEpStart(d, protocol, interfaceNumber, epDescriptor)=
+	let epStart(d, epDescriptor) -> ep in
+	if ep<>nil then
+	let if protocol==2 then _REPORT_PROTOCOL else _BOOT_PROTOCOL -> protocol in
+	let controlTransferNoData(d, REQUEST_CLASS | REQUEST_TO_INTERFACE, _SET_PROTOCOL, protocol, interfaceNumber) -> data in
+	if data<>nil then ep;;

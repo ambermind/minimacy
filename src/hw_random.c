@@ -6,6 +6,7 @@
 #ifdef USE_RANDOM_C
 void hwRandomInit(void)
 {
+	pseudoRandomInit();
 }
 void hwRandomBytes(char* dst, LINT len)
 {
@@ -22,13 +23,17 @@ FILE* fCrypt = 0;	// this should be deallocated before closing the application
 void hwRandomInit(void)
 {
 	if (!fCrypt) fCrypt = fopen("/dev/urandom", "r");
-	if (!fCrypt) pseudoRandomInit();
+	pseudoRandomInit();
 }
 
 void hwRandomBytes(char* dst, LINT len)
 {
 	if (fCrypt) {
-		len-=fread(dst, len, 1, fCrypt);
+		int read=fread(dst, 1, len, fCrypt);
+		if (read>0) {
+			dst+=read;
+			len-=read;
+		}
 		if (len==0) return;
 	}
 	pseudoRandomBytes(dst, len);
@@ -45,7 +50,7 @@ HCRYPTPROV hCryptProv = (HCRYPTPROV)NULL;
 void hwRandomInit(void)
 {
 	if (!hCryptProv) CryptAcquireContext(&hCryptProv, NULL, NULL, PROV_RSA_FULL, 0);
-	if (!hCryptProv) pseudoRandomInit();
+	pseudoRandomInit();
 }
 void hwRandomBytes(char* dst, LINT len)
 {

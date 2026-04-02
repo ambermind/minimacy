@@ -78,7 +78,7 @@ int fun_strCmp(Thread* th)
 	}
 	sza=STR_LENGTH(a);
 	szb=STR_LENGTH(b);
-	FUN_RETURN_INT(memcmp(STR_START(a),STR_START(b),(sza>szb)?sza:szb));
+	FUN_RETURN_INT((LINT)memcmp(STR_START(a),STR_START(b),(sza>szb)?sza:szb));
 }
 
 int fun_strBuild(Thread* th)

@@ -236,9 +236,6 @@
     <ClCompile Include="..\..\src\vm_types.c">
       <Filter>Source Files\src</Filter>
     </ClCompile>
-    <ClCompile Include="wincmd.c">
-      <Filter>Source Files</Filter>
-    </ClCompile>
     <ClCompile Include="..\..\src\system_serial.c">
       <Filter>Source Files\src</Filter>
     </ClCompile>
@@ -247,6 +244,18 @@
     </ClCompile>
     <ClCompile Include="..\..\src\crypto_hash.c">
       <Filter>Source Files\src</Filter>
+    </ClCompile>
+    <ClCompile Include="..\wincmd.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="..\ble.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="..\ble_c.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="..\ble_cpp.cpp">
+      <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
@@ -372,6 +381,15 @@
     </ClInclude>
     <ClInclude Include="..\..\src\crypto_hash.h">
       <Filter>Source Files\src</Filter>
+    </ClInclude>
+    <ClInclude Include="..\ble_c.h">
+      <Filter>Source Files</Filter>
+    </ClInclude>
+    <ClInclude Include="..\ble_cpp.hpp">
+      <Filter>Source Files</Filter>
+    </ClInclude>
+    <ClInclude Include="..\resource.h">
+      <Filter>Source Files</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>

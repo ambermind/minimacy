@@ -67,12 +67,11 @@ int cIsinf(double p);
 int cAbs(int p);
 #endif
 
-#ifdef USE_TIME_ANSI
-#ifdef WIN32
+#ifdef USE_TIME_WIN
 #include<time.h>
-#else
-#include<sys/time.h>
 #endif
+#ifdef USE_TIME_ANSI
+#include<sys/time.h>
 #endif
 
 #ifdef USE_STR_ANSI

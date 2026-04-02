@@ -1,0 +1,356 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2022, Sylvain Huet, Ambermind
+// Minimacy (r) System
+
+export UsbLock;;
+export DMA_BASE_HI, ENPOINT_MAX_COUNT;;
+export xhciInit();;
+export cmdEnableSlot();;
+export cmdOnSlot(slot, control, inputContext);;
+export transferSetFunction(slot, epId, len, f);;
+export transferWait(slot, epId, len);;
+
+export sharedMemDump(start, offset, len);;
+export sharedMemAllocate(size);;
+export sharedMemSet32(addr, offset, value);;
+export sharedMemSet16(addr, offset, value);;
+
+export ringTrb(r);;
+export ringCreate(n, forEvents);;
+export ringEnqueue(r, paramH, paramL, status, control);;
+export dcbaaSetAddr(slot, addr);;
+export dcbaaDump();;
+export portCheck(port);;
+export portSpeed(port);;
+
+use driver.rpi4.usb.pcie;;
+
+const DEBUG_LOW=false;;
+const DEBUG=false;;
+//const DEBUG=true;;
+//----------------- XHCI
+const XHCI_BASE_HI= 0x06;;	// ARM_XHCI_BASE    = 0x6_0000_0000
+const DMA_BASE_HI = 0x04;;	// MEM_DMA_PCIE_BASE= 0x4_0000_0000;;
+
+const XHCI_PAGE_SIZE= 4096;;
+
+const OP_USBCMD  = 0x20;;
+	const USBCMD_RUN_STOP= 0x01;;
+	const USBCMD_HCRST   = 0x02;;
+	const USBCMD_INTE    = 0x04;;
+const OP_CRCR    = 0x38;;
+const OP_DCBAAP  = 0x50;;
+const OP_CONFIG  = 0x58;;
+	const CONFIG_MAX_SLOTS_EN_MASK = 0xFF;;
+	const CONFIG_MAX_SLOTS         = 32;;
+
+const DB_BASE     = 0x100;;	// DB=DoorBell
+const DB_HOST_CONTROLLER = 0;;
+	const HOST_CONTROLLER_VALUE = 0;;
+
+const IR0_ERSTSZ  = 0x228;;
+const IR0_ERSTBA  = 0x230;;
+
+const PORTS_PORT_SIZE = 4 * 4;;
+const PORTS_PORTSC= 0x420;;
+	const PORTSC_PED             = 0x0002;;
+	const PORTSC_PR              = 0x0010;;
+	const PORTSC_PLS_MASK        = 0x01E0;;
+	const PORTSC_PORT_SPEED_MASK = 0x3C00;;
+	const PORTSC_PORT_SPEED_SHIFT= 10;;
+
+const EVENT_TRB_CONTROL_SLOTID_SHIFT = 24;;
+const EVENT_TRB_STATUS_COMPLETION_CODE_SHIFT = 24;;
+const TRANSFER_EVENT_TRB_CONTROL_ENDPOINTID_MASK  = 0x1F0000;;
+const TRANSFER_EVENT_TRB_CONTROL_ENDPOINTID_SHIFT = 16;;
+const TRANSFER_EVENT_TRB_STATUS_TRB_TRANSFER_LENGTH_MASK = 0xFFFFFF;;
+const PORT_STATUS_EVENT_TRB_PARAMETER1_PORTID_SHIFT = 24;;
+
+const TRB_COMPLETION_CODE_SHORT_PACKET = 13;;
+const TRB_COMPLETION_CODE_SUCCESS = 1;;
+const TRB_CONTROL_C = 0x01;;
+const TRB_CONTROL_TC= 0x02;;
+
+const TRB_CONTROL_TRB_TYPE_MASK = 0xFC00;;
+const TRB_CONTROL_TRB_TYPE_SHIFT= 10;;
+
+const TRB_LINK                    = 6<<10;;
+const TRB_EVENT_TRANSFER          = 32<<10;;
+const TRB_EVENT_CMD_COMPLETION    = 33<<10;;
+const TRB_EVENT_PORT_STATUS_CHANGE= 34<<10;;
+
+const TRB_CMD_ENABLE_SLOT       = 9<<10;;
+
+const TRB_SLOTID_SHIFT=24;;
+
+const SCRATCHPAD_BUFFERS_COUNT= 31;;
+const SCRATCHPAD_BUFFERS_SIZE = XHCI_PAGE_SIZE;;
+const EVENT_RING_SIZE= 256;;
+const CMD_RING_SIZE	 = 64;;
+
+// ring segment structure
+const RING_SEGMENT_LENGTH=16;;
+const RingSegmentBase=0;;
+const RingSegmentSize=8;;
+
+// TRB structure (Transfer Request Block)
+const TRB_LENGTH=16;;
+const TRBparameter=0;;
+const TRBstatus=8;;
+const TRBcontrol=12;;
+
+// mbox
+const CH_PROP=8;;
+const TAG_NOTIFY_XHCI_RESET	=0x00030058;;
+
+const ENPOINT_MAX_COUNT = 31;;
+const XHCI_TIMEOUT= 2000;;
+
+struct Ring=[trbR, nR, iR, cycleStateR ];;
+
+const UsbLock=lockCreate();;
+
+var DCBAA;;
+
+var EventRing;;
+var CmdRing;;
+var CmdCurrentTrb;;
+var CmdCurrentJoin;;
+
+var ScratchpadBuffers;;
+var ScratchpadBuffersArray;;
+
+var WatcherThread;;
+var Watcher;;
+
+var TransferLen=arrayCreate(CONFIG_MAX_SLOTS, nil);;
+var TransferFunctions=arrayCreate(CONFIG_MAX_SLOTS, nil);;
+
+fun msgAndReturn(msg, result)= echo "> USB: "; echoLn msg; result;;
+
+fun xhciRread32(offset)= read32X(XHCI_BASE_HI, offset);;
+fun xhciWrite32(offset, val)= write32X(XHCI_BASE_HI, offset, val);;
+fun xhciClr32(addr, mask) = xhciWrite32(addr, xhciRread32(addr)&(~mask));;
+fun xhciSet32(addr, mask) = xhciWrite32(addr, xhciRread32(addr)|mask);;
+
+fun xhciWriteAddr(offset, valL)= xhciWrite32(offset, valL); xhciWrite32(offset+4, DMA_BASE_HI);;
+
+fun slotDoorbell(slot)=DB_BASE + slot*4;;
+fun portAddr(port)=PORTS_PORTSC+(port-1)*PORTS_PORT_SIZE;;
+
+fun sharedMemAllocate(size) = sharedMemAllocateBoundaries(size, 64, XHCI_PAGE_SIZE);;
+fun sharedMemSet32(addr, offset, value)= sharedMemWrite32(addr, offset, sharedMemRead32(addr, offset)|value);;
+fun sharedMemSet16(addr, offset, value)= sharedMemWrite16(addr, offset, sharedMemRead16(addr, offset)|value);;
+
+fun sharedMemDump(start, offset, len) =
+	echoLn strFormat("dump from *", hexFromInt(start+offset));
+	hexDump sharedMemExport(start+offset, len);;
+
+fun dcbaaDump() = sharedMemDump(DCBAA, 0, (CONFIG_MAX_SLOTS + 1)*8);;
+fun dcbaaSetAddr(slot, addr)=
+	sharedMemWrite32(DCBAA, slot*8, addr);
+	sharedMemWrite32(DCBAA, slot*8+4, DMA_BASE_HI);;
+
+fun trbCommand(control) = (control & TRB_CONTROL_TRB_TYPE_MASK)>> TRB_CONTROL_TRB_TYPE_SHIFT;;
+fun trbCurrent(r) = r.trbR + r.iR*TRB_LENGTH;;
+fun ringTrb(r) = r.trbR;;
+
+fun ringCreate(n, forEvents)=
+	if DEBUG_LOW then echoLn strFormat("ringCreate *", n);
+	let sharedMemAllocate(n*TRB_LENGTH) -> trb in (
+		if (!forEvents) then
+			let (n-1)*TRB_LENGTH -> last in (
+				sharedMemWrite32(trb, last+TRBparameter, trb);
+				sharedMemWrite32(trb, last+TRBparameter+4, DMA_BASE_HI);
+				sharedMemWrite32(trb, last+TRBstatus, 0);
+				sharedMemWrite32(trb, last+TRBcontrol, TRB_LINK | TRB_CONTROL_TC);
+				if DEBUG_LOW then sharedMemDump(trb, last, TRB_LENGTH)
+			);
+		[trbR=trb, nR=n, iR=0, cycleStateR=TRB_CONTROL_C]
+	);;
+
+fun ringEnqueue(r, paramH, paramL, status, control)=
+	let trbCurrent(r) -> trb in
+	let sharedMemRead32(trb, TRBcontrol) -> ctrl in
+	if (ctrl&TRB_CONTROL_C)<>r.cycleStateR then (	// nil when ring is full
+		sharedMemWrite32(trb, TRBparameter, paramL);
+		sharedMemWrite32(trb, TRBparameter+4, paramH);
+		sharedMemWrite32(trb, TRBstatus, status);
+		sharedMemWrite32(trb, TRBcontrol, control|r.cycleStateR);
+		if DEBUG_LOW then sharedMemDump(trb, 0, TRB_LENGTH);
+		set r.iR=r.iR+1;
+		if r.iR>=r.nR-1 then
+			let sharedMemRead32(trb+TRB_LENGTH, TRBcontrol) -> controlLast in (
+			sharedMemWrite32(trb+TRB_LENGTH, TRBcontrol, controlLast^TRB_CONTROL_C);
+			if bitTest(controlLast, TRB_CONTROL_TC) then set r.cycleStateR= r.cycleStateR^TRB_CONTROL_C;
+			set r.iR=0
+		);
+		trb
+	);;
+
+fun xhciInit()=
+	if !pcieInit() then return msgAndReturn("cannot setup pcie", false);
+	if mbox(CH_PROP, {TAG_NOTIFY_XHCI_RESET, 4, 4, 0x100000}, 8)==nil then return msgAndReturn("cannot reset xhci", false);
+	if !pcieEnable() then return msgAndReturn("cannot enable pcie", false);
+
+	sleepMs(200);
+	xhciSet32(OP_USBCMD, USBCMD_HCRST);
+	sleepMs(100);
+
+	set EventRing=ringCreate(EVENT_RING_SIZE, true);
+	let sharedMemAllocate(RING_SEGMENT_LENGTH) -> ERST in (
+		sharedMemWrite32(ERST, RingSegmentBase, EventRing.trbR);
+		sharedMemWrite32(ERST, RingSegmentBase+4, DMA_BASE_HI);
+		sharedMemWrite32(ERST, RingSegmentSize, EVENT_RING_SIZE);
+		if DEBUG_LOW then sharedMemDump(ERST, 0, RING_SEGMENT_LENGTH);
+
+		xhciWrite32(IR0_ERSTSZ, 1);
+		xhciWriteAddr(IR0_ERSTBA, ERST);
+	);
+	
+	set CmdRing=ringCreate(CMD_RING_SIZE, false);
+	xhciWriteAddr(OP_CRCR, CmdRing.trbR | TRB_CONTROL_C);
+
+	set ScratchpadBuffers = sharedMemAllocateAlign(SCRATCHPAD_BUFFERS_SIZE*SCRATCHPAD_BUFFERS_COUNT, XHCI_PAGE_SIZE);
+	set ScratchpadBuffersArray = sharedMemAllocate(SCRATCHPAD_BUFFERS_COUNT*8);
+
+	for i=0; i<SCRATCHPAD_BUFFERS_COUNT do (
+		sharedMemWrite32(ScratchpadBuffersArray, i*8, ScratchpadBuffers+ SCRATCHPAD_BUFFERS_SIZE*i);
+		sharedMemWrite32(ScratchpadBuffersArray, i*8+4, DMA_BASE_HI);
+	);
+	if DEBUG_LOW then sharedMemDump(ScratchpadBuffersArray, 0, SCRATCHPAD_BUFFERS_COUNT*8);
+
+	xhciClr32(OP_CONFIG, CONFIG_MAX_SLOTS_EN_MASK);
+	xhciSet32(OP_CONFIG, CONFIG_MAX_SLOTS);
+	set DCBAA= sharedMemAllocate((CONFIG_MAX_SLOTS + 1)*8);
+	dcbaaSetAddr(0, ScratchpadBuffersArray);
+	if DEBUG_LOW then dcbaaDump();
+	xhciWriteAddr(OP_DCBAAP, DCBAA);
+
+	xhciSet32(OP_USBCMD, USBCMD_INTE);
+	xhciSet32(OP_USBCMD, USBCMD_RUN_STOP);
+
+// reset port 1
+	xhciClr32(portAddr(1), PORTSC_PED);
+	xhciSet32(portAddr(1), PORTSC_PR);
+
+	threadStart("usb", #usbStartWatcher);
+
+	true;;
+
+fun portCheck(port)=
+	let if port==1 then PORTSC_PR else PORTSC_PLS_MASK -> bitToCheck in
+	!bitTest(xhciRread32(portAddr(port)), bitToCheck);;	// bit is 0 -> success
+
+fun portSpeed(port)=
+	(xhciRread32(portAddr(port)) & PORTSC_PORT_SPEED_MASK) >> PORTSC_PORT_SPEED_SHIFT;;
+
+fun xhciSetTimeout(join)=	// we post a timeout function from the caller thread to the watcher thread
+	onTimeoutOnThread(XHCI_TIMEOUT, WatcherThread, lambda()=joinSend(join, nil));;
+
+fun _cmdExec(control, paramH, paramL)=
+	if DEBUG then echoLn strFormat("Command *", trbCommand(control));
+	let ringEnqueue(CmdRing, paramH, paramL, 0, control) -> trb in
+	if trb<>nil then (
+		if DEBUG_LOW then echoLn strFormat(">trb *", hexFromInt(trb));
+		xhciWrite32(slotDoorbell(DB_HOST_CONTROLLER), HOST_CONTROLLER_VALUE);
+		set CmdCurrentTrb=trb;
+		set CmdCurrentJoin=joinCreate();
+		xhciSetTimeout(CmdCurrentJoin);
+		joinWait(CmdCurrentJoin)
+	);;
+
+fun cmdEnableSlot()= lockSync(UsbLock, lambda()=
+	let _cmdExec(TRB_CMD_ENABLE_SLOT, 0, 0) -> slot in
+	if slot<>nil then (
+		set TransferLen[slot]=arrayCreate(ENPOINT_MAX_COUNT+1, nil);
+		set TransferFunctions[slot]=arrayCreate(ENPOINT_MAX_COUNT+1, nil);
+		slot
+	)
+);;
+
+fun cmdOnSlot(slot, control, inputContext)= lockSync(UsbLock, lambda()=
+	_cmdExec(control|(slot<<TRB_SLOTID_SHIFT), DMA_BASE_HI, inputContext)
+);;
+
+fun cmdCompleteEvent(slot, trb, code)=
+	if DEBUG_LOW then echoLn strFormat("<trb *", hexFromInt(trb));
+	if trb==CmdCurrentTrb then
+	let sharedMemRead32(trb, TRBcontrol) -> control in (
+		if DEBUG then echoLn strFormat("Command * completed with * (slot *)", trbCommand(control), code, slot);
+		set CmdCurrentTrb=nil;
+		let if code==TRB_COMPLETION_CODE_SUCCESS then slot -> slot in
+		joinSend(CmdCurrentJoin, slot)
+	);;
+
+fun portStatusEvent(port)=
+	let xhciRread32(portAddr(port)) -> portSC in (
+		if DEBUG_LOW then echoLn strFormat("Port * status is 0x*", port, hexFromInt(portSC));
+		xhciWrite32(portAddr(port), portSC & ~PORTSC_PED)
+	);;
+
+fun transferSetFunction(slot, epId, len, f)=
+	dataSyncBarrier();
+	xhciWrite32(slotDoorbell(slot), epId);
+	set TransferLen[slot][epId]=len;
+	set TransferFunctions[slot][epId]=f;
+	nil;;
+
+fun transferWait(slot, epId, len)=
+	let joinCreate() -> join in (
+		xhciSetTimeout(join);
+		transferSetFunction(slot, epId, len, lambda(len)= joinSend(join, len));
+		joinWait(join)
+	);;
+
+fun transferEvent(slot, epId, code, extraLen)=	// extraLen is usually 0
+	if DEBUG then echoLn strFormat("transferEvent slot=* epId=* code=* extraLen=*", slot, epId, code, extraLen);
+	dataMemBarrier();
+	let if code==TRB_COMPLETION_CODE_SUCCESS || code==TRB_COMPLETION_CODE_SHORT_PACKET then TransferLen[slot][epId]-extraLen else -1 -> len in
+	let TransferFunctions[slot][epId] -> f in
+	(
+		set TransferFunctions[slot][epId]=nil;
+		call f(len)
+	);;
+
+fun watcherUpdateAddr()=
+	let trbCurrent(EventRing) -> trb in
+	watcherUpdate(Watcher, trb+TRBcontrol, TRB_CONTROL_C, ~EventRing.cycleStateR);;
+
+fun usbProcessEvents()=
+	if DEBUG_LOW then echoLn strFormat("check event * cycle *", EventRing.iR, EventRing.cycleStateR);
+	let trbCurrent(EventRing) -> trb in
+	let sharedMemRead32(trb, TRBcontrol) -> ctrl in
+	if (ctrl&TRB_CONTROL_C)==EventRing.cycleStateR then
+	let ctrl&TRB_CONTROL_TRB_TYPE_MASK -> trbType in (
+		if DEBUG_LOW then sharedMemDump(trb, 0, TRB_LENGTH);
+		match trbType with
+			TRB_EVENT_TRANSFER -> transferEvent(	// code, slot, epId, extraLen
+				sharedMemRead32(trb, TRBcontrol) >> EVENT_TRB_CONTROL_SLOTID_SHIFT,
+				(sharedMemRead32(trb, TRBcontrol) & TRANSFER_EVENT_TRB_CONTROL_ENDPOINTID_MASK) >> TRANSFER_EVENT_TRB_CONTROL_ENDPOINTID_SHIFT,
+				sharedMemRead32(trb, TRBstatus) >> EVENT_TRB_STATUS_COMPLETION_CODE_SHIFT,
+				sharedMemRead32(trb, TRBstatus) & TRANSFER_EVENT_TRB_STATUS_TRB_TRANSFER_LENGTH_MASK
+			),
+			TRB_EVENT_PORT_STATUS_CHANGE -> portStatusEvent(
+				sharedMemRead32(trb, TRBparameter) >> PORT_STATUS_EVENT_TRB_PARAMETER1_PORTID_SHIFT
+			),
+			TRB_EVENT_CMD_COMPLETION -> cmdCompleteEvent(	// slot, trb, code
+				sharedMemRead32(trb, TRBcontrol) >> EVENT_TRB_CONTROL_SLOTID_SHIFT,
+				sharedMemRead32(trb, TRBparameter),
+				sharedMemRead32(trb, TRBstatus) >> EVENT_TRB_STATUS_COMPLETION_CODE_SHIFT,
+			),
+			_ -> void if DEBUG_LOW then echoLn strFormat("Unsupported type *", trbType);
+		set EventRing.iR=EventRing.iR+1;
+		if EventRing.iR>=EVENT_RING_SIZE then (
+			set EventRing.iR=0;
+			set EventRing.cycleStateR= EventRing.cycleStateR^TRB_CONTROL_C
+		);
+		watcherUpdateAddr();
+		usbProcessEvents()
+	);;
+
+fun usbStartWatcher()=
+	set Watcher= watcherOpen("usb");
+	set WatcherThread = thisThread();
+	watcherUpdateAddr();
+	watcherOnEvent(Watcher, #usbProcessEvents);;
