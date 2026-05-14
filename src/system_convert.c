@@ -79,7 +79,7 @@ int fun_urlFromStr(Thread* th)
 	src = STR_START(a);
 	finalsize = 0;
 	spaces = 0;
-	for (i = 0; i < STR_LENGTH(a); i++) if (!isLetterOrNumber(src[i]))
+	for (i = 0; i < STR_LENGTH(a); i++) if (!isUriChar(src[i]))
 	{
 		if (src[i] == ' ') spaces++;
 		else finalsize++;
@@ -90,7 +90,7 @@ int fun_urlFromStr(Thread* th)
 
 	dst = STR_START(STACK_PNT(th, 0));
 	for (i = 0; i < STR_LENGTH(a); i++) if (src[i] == ' ') *(dst++) = '+';
-	else if (isLetterOrNumber(src[i])) *(dst++) = src[i];
+	else if (isUriChar(src[i])) *(dst++) = src[i];
 	else
 	{
 		*dst++ = '%';

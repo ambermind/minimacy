@@ -10,11 +10,12 @@ export sdSectorSize(sd);;
 export sdRead(sd, sector, nbSectors);;
 export sdWrite(sd, sector, data);;
 export sdSetLock(lock);;
+export sdDetect(sd);;
 
 use driver.generic.spi;;
 use driver.generic.gpio;;
 
-const DEBUG=true;;
+const DEBUG=false;;
 
 struct SdSpi=[spiPortS, csS, sectorSizeS, nbSectorsS, highCapacityS];;
 
@@ -75,20 +76,20 @@ var SdLock=lockCreate();;
 fun sdSetLock(lock) = set SdLock=lock;;
 
 fun readyWait(sd) =
-	for i=0;i<SD_COMMAND_TIMEOUT do
+	let timeMs() -> t0 in
+	while (timeMs()-t0)<SD_COMMAND_TIMEOUT do
 		let spiWriteByte(sd.spiPortS, TOKEN_DUMMY) -> result in
-		if result<>0 then return true
-		else void sleepMs(1);
+		if result<>0 then return true;
 	if DEBUG then echoLn "> SD: readyWait failed";
-	nil;;
+	false;;
 
 fun tokenWait(sd, token) =
-	for i=0;i<SD_COMMAND_TIMEOUT do
+	let timeMs() -> t0 in
+	while (timeMs()-t0)<SD_COMMAND_TIMEOUT do
 		let spiWriteByte(sd.spiPortS, TOKEN_DUMMY) -> result in
-		if result==token then return true
-		else void sleepMs(1);
+		if result==token then return true;
 	if DEBUG then echoLn "> SD: tokenWait failed";
-	nil;;
+	false;;
 
 fun singleCmdFinalize(sd, i)=
 	let spiWriteByte(sd.spiPortS, TOKEN_DUMMY) -> val in
@@ -116,8 +117,7 @@ fun sdCmd(sd, cmd, arg, isAcmd)=
 fun cmdWait(sd, cmd, arg, isAcmd) =
 	for i=0;i<SD_COMMAND_TIMEOUT do
 		let sdCmd(sd, cmd, arg, isAcmd) -> result in
-		if !bitTest(R1_IDLE_STATE, result) then return result
-		else void sleepMs(1);
+		if !bitTest(R1_IDLE_STATE, result) then return result;
 	if DEBUG then echoLn "> SD: cmdWait failed";
 	nil;;
 
@@ -177,9 +177,8 @@ fun reset(sd)=
 	for i=0;i<20 do spiWriteByte(sd.spiPortS, TOKEN_DUMMY);
 	true;;
 
-
 fun sdInit(spiPort, spiClk, spiMosi, spiMiso, spiCs)=
-	lockSync(SdLock, (lambda ()=
+	lockSync(SdLock, lambda ()=
 		if DEBUG then echoLn "> SD: sdInit";
 		spiInit(spiPort, SPI_LOW_FREQ, spiClk, spiMosi, spiMiso);
 		gpioPut(true, gpioSetDir(true, gpioInit(spiCs)));
@@ -198,19 +197,19 @@ fun sdInit(spiPort, spiClk, spiMosi, spiMiso, spiCs)=
 			gpioPut(true, spiCs);
 			sd
 		)
-	));;
+	);;
 
 fun sdSectorSize(sd) = sd.sectorSizeS;;
 fun sdNbSectors(sd) = sd.nbSectorsS;;
 
 fun spiInside(sd, f) =
-	lockSync(SdLock, (lambda ()=
+	lockSync(SdLock, lambda ()=
 		gpioPut(false, sd.csS);
 		let call f ()-> result in (
 			gpioPut(true, sd.csS);
 			result
 		)
-	));;
+	);;
 
 fun _sdReadSector(sd, start) =
 //if DEBUG then echoLn strFormat( "_sdReadSector *", hexFromInt (start));
@@ -227,8 +226,7 @@ fun _sdReadLoop(sd, start, nbSectors, i)=
 	if data<>nil then data::_sdReadLoop(sd, start, nbSectors, i+1);;
 
 fun sdRead(sd, sector, nbSectors)= 
-//if DEBUG then echoLn strFormat("sdRead * *",hexFromInt (sector), nbSectors);
-//let timeMs -> t in
+//	if DEBUG then echoLn strFormat("sdRead * *",hexFromInt (sector), nbSectors);
 	if nbSectors>=1 then
 	let if sd.highCapacityS then sector else sector*sd.sectorSizeS -> start in
 	spiInside(sd, lambda ()=
@@ -238,7 +236,6 @@ fun sdRead(sd, sector, nbSectors)=
 		else 
 		let _sdReadLoop(sd, start, nbSectors, 0) -> lst in
 		let sdCmd(sd, CMD12_STOP_TRANSMISSION, 0, false) -> _ in
-//		let echoLn timeMs-t -> _ in
 		bytesBuild(lst)		
 	);;
 
@@ -246,18 +243,16 @@ fun _sdWriteSector(sd, token, data, offset)=
 	spiWriteByte(sd.spiPortS, token);
 	spiWriteBytes(sd.spiPortS, bytesSlice(data, offset, 512));
 	spiWrite(sd.spiPortS, "\$ff\$ff");	// crc16 disabled
-	let SPI_DATA_RESPONSE_MASK&spiWriteByte(sd.spiPortS, TOKEN_DUMMY) -> result in (
-		readyWait(sd);
-		result==SPI_DATA_ACCEPTED
-	);;
+	let SPI_DATA_RESPONSE_MASK&spiWriteByte(sd.spiPortS, TOKEN_DUMMY) -> result in
+	if readyWait(sd) then
+	result==SPI_DATA_ACCEPTED;;
 
 fun sdWrite(sd, sector, data)= 
 	let bytesLength(data)>>9 -> nbSectors in
-//let echoLn strFormat "sdWrite * *" (hexFromInt sector) nbSectors -> _ in
-//let timeMs -> t in
+	let if DEBUG then echoLn strFormat("sdWrite * *", hexFromInt(sector), nbSectors) -> _ in
+//	let if DEBUG then hexDumpBytes(data) -> _ in
 	if (nbSectors>=1) && !bitTest(bytesLength(data), 511) then
 	let if sd.highCapacityS then sector else sector*sd.sectorSizeS -> start in
-//let 
 	spiInside(sd, lambda ()= 
 		if nbSectors==1 then (
 			if 0==sdCmd(sd, CMD24_WRITE_BLOCK, start, false) then
@@ -281,4 +276,6 @@ fun sdWrite(sd, sector, data)=
 			)
 		)
 	);;
-//-> data in _firstArg data (echoLn timeMs-t);;
+
+fun sdDetect(sd)=
+	spiInside(sd, lambda()= nil<>sdCmd(sd, CMD0_GO_IDLE_STATE, 0x0, false));;

@@ -1,0 +1,421 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2022, Sylvain Huet, Ambermind
+// Minimacy (r) System
+
+export sftpServerStart(serverKey, serverKeyPassword, localIp, localPort, options, fAuth);;
+export sftpServerOnNotify(h, f);;
+export sftpServerOnDir(h, f);;
+export sftpServerOnGet(h, f);;
+export sftpServerOnPut(h, f);;
+export SFTP_OPTION_SFTP, SFTP_OPTION_SCP_GET, SFTP_OPTION_SCP_PUT;;
+
+use core.net.ssh;;
+use core.net.ssh.sftp.common;;
+use core.crypto.key;;
+
+const SSH_DEBUG=false;;
+
+const SFTP_OPTION_SFTP   = 1;;
+const SFTP_OPTION_SCP_GET= 2;;
+const SFTP_OPTION_SCP_PUT= 4;;
+
+struct SSHsftpServer= SSH + [channelS, modeS, stageS, pendingDataS, handleS, tmpGetS, tmpPutListS, tmpPathS,
+	optionsS,
+	fNotifyS, fDirS, fGetS, fPutS];;
+
+sum SftpMode = idleMode, sftpMode, scpPutMode, scpGetMode;;
+sum SftpStage = 
+	sftpIdleStage, sftpDirStage, sftpGetStage, sftpPutStage,
+	scpGetFirstAckStage, scpGetSecondAckStage, scpGetThirdAckStage,
+	scpPutDetailStage, scpPutDataStage;;
+
+fun sftpServerNotify(h, code, data)=
+	if SSH_DEBUG then echoLn strFormat("sftp< NotifyEvent code *", code);
+	call h.fNotifyS(code, data);;
+
+fun _parseMsg(data, i)=
+	let strRead32Msb(data, i) -> len in
+	strSlice(data, i+4, len);;
+
+fun _sftpRealPath(path)=	// path from sftp client, returns always an absolute path starting with / or nil
+	if path=="." then "/"
+	else
+	let cleanPath(path) -> path in
+	if strStartsWith(path, "/") then path;;
+
+fun sftpSendStatus(h, reqId, code, msg)=
+	if SSH_DEBUG then echoLn strFormat("sftp< Send Status code *, *", code, msg);
+	sshSendChannelData(h.channelS, sshMsgStr(strBuild([strInt8(SSH_FXP_STATUS), 
+		sshMsgInt(reqId),
+		sshMsgInt(code),
+		sshMsgStr(msg),
+		sshMsgStr("")
+	])));;
+
+fun sftpSendHandle(h, reqId)=
+	set h.handleS=h.handleS+1;
+	sshSendChannelData(h.channelS, sshMsgStr(strBuild([strInt8(SSH_FXP_HANDLE), 
+		sshMsgInt(reqId),
+		sshMsgStr(strInt32Msb(h.handleS))
+	])));;
+
+fun sftpParseInit(h, data)=
+	let strRead32Msb(data, 1) -> version in (
+		if SSH_DEBUG then echoLn strFormat("sftp< Init *", version);
+		let strSplit(",", "posix-rename@openssh.com,1,statvfs@openssh.com,2,fstatvfs@openssh.com,2,hardlink@openssh.com,1,fsync@openssh.com,1,lsetstat@openssh.com,1") -> options in
+		let listMap(options, lambda(val)=sshMsgStr(val)) -> options in
+		sshSendChannelData(h.channelS, sshMsgStr(strBuild([strInt8(SSH_FXP_VERSION), sshMsgInt(SFTP_VERSION), options])))
+	);;
+
+fun sftpParseRealPath(h, data)=
+	let strRead32Msb(data, 1) -> reqId in
+	let _parseMsg(data, 5) -> path in (
+		if SSH_DEBUG then echoLn strFormat("sftp< RealPath * '*'", reqId, path);
+		let _sftpRealPath(path) -> short in
+		if short==nil then sftpSendStatus(h, reqId, SSH_FX_PERMISSION_DENIED, "Permission denied")
+		else 
+		let short -> long in
+		let strBuild([strInt32Msb(strLength(short)), short, strInt32Msb(strLength(long)), long, strInt32Msb(0)]) -> msg in
+		sshSendChannelData(h.channelS, sshMsgStr(strBuild([strInt8(SSH_FXP_NAME), 
+			sshMsgInt(reqId),
+			sshMsgInt(1),	// count
+			msg
+		])))
+	);;
+
+fun sftpParseStat(h, data)=
+	let strRead32Msb(data, 1) -> reqId in
+	let _parseMsg(data, 5) -> path in (
+		if SSH_DEBUG then echoLn strFormat("sftp< Stat * '*'", reqId, path);
+		let _sftpRealPath(path) -> path in
+		let parentDir(path) -> parent in
+		if path==nil || parent==nil then sftpSendStatus(h, reqId, SSH_FX_PERMISSION_DENIED, "Permission denied")
+		else 
+		let call h.fDirS(parent) -> lFiles in
+		let listFind(lFiles, lambda(f) = path==fileInfoName(f)) -> f in
+		if f==nil then sftpSendStatus(h, reqId, SSH_FX_NO_SUCH_FILE, "File not found")
+		else sshSendChannelData(h.channelS, sshMsgStr(strBuild([strInt8(SSH_FXP_ATTRS), 
+			sshMsgInt(reqId),
+			mkAttr(f)
+		])));
+	);;
+
+fun removePath(fileName)=
+	let strPosRev(fileName, "/", nil) -> i in
+	if i==nil then fileName
+	else strTail(fileName, i+1);;
+
+fun mkAttr(f)= [
+	strInt32Msb(SSH_FILEXFER_ATTR_SIZE| SSH_FILEXFER_ATTR_PERMISSIONS | SSH_FILEXFER_ATTR_ACMODTIME),
+	strInt32Msb(0),			
+	strInt32Msb(if fileInfoIsDir(f) then 4096 else fileInfoSize(f)),				
+	strInt32Msb(if fileInfoIsDir(f) then 0x481ed else 0x881a4),
+	strInt32Msb(fileInfoUpdate(f)),
+	strInt32Msb(fileInfoUpdate(f))
+];;
+
+fun sftpParseOpenDir(h, data)=
+	let strRead32Msb(data, 1) -> reqId in
+	let _parseMsg(data, 5) -> path in (
+		if SSH_DEBUG then echoLn strFormat("sftp< OpenDir * '*'", reqId, path);
+		let _sftpRealPath(path) -> path in
+		if path==nil then sftpSendStatus(h, reqId, SSH_FX_PERMISSION_DENIED, "Permission denied")
+		else 
+		let call h.fDirS(path) -> lFiles in 
+		let date(time()) -> [y0, _, _, _, _, _, _] in
+		let listMap(lFiles, lambda(f)=
+			let if fileInfoIsDir(f) then strLeft(fileInfoName(f), -1) else fileInfoName(f) -> fileName in
+			let removePath(fileName) -> fileName in
+			let date(fileInfoUpdate(f)) -> [y, month, d, w, h, m, s] in
+			let if y==y0 then strFormat("* * *:*", Months[month-1], intPad(2, d), intPad0(2, h), intPad0(2, m))
+				else strFormat("* *  *", Months[month-1], intPad(2, d), y)
+			-> t in
+			let strFormat("* * * * * *",
+				if fileInfoIsDir(f) then "drwxrwxrwx 2" else "-rw-rw-rw- 1",
+				strPadWithSpace(8, "nobody"),
+				strPadWithSpace(8, "nobody"),
+				strPadWithSpace(10, strFromInt(if fileInfoIsDir(f) then 4096 else fileInfoSize(f))),
+				t,
+				fileName
+			) -> long in
+			strBuild([
+				sshMsgStr(fileName),
+				sshMsgStr(long),
+				mkAttr(f)
+			])
+		) -> lEntries in
+		set h.tmpGetS=strBuild([
+			sshMsgInt(listLength(lEntries)),
+			lEntries
+		]);
+		sftpSendHandle(h, reqId);
+		set h.stageS=sftpDirStage;
+	);;
+
+fun sftpParseReadDir(h, data)=
+	let strRead32Msb(data, 1) -> reqId in
+	let _parseMsg(data, 5) -> handle in (
+		if SSH_DEBUG then echoLn strFormat("sftp< ReadDir * '*'", reqId, hexFromStr(handle));
+		void if h.tmpGetS<>nil then (
+			sshSendChannelData(h.channelS, sshMsgStr(strBuild([strInt8(SSH_FXP_NAME), 
+				sshMsgInt(reqId),
+				h.tmpGetS
+			])));
+			set h.tmpGetS=nil
+		)
+		else sftpSendStatus(h, reqId, SSH_FX_EOF, "End of file")
+	);;
+
+fun sftpParseClose(h, data)=
+	let strRead32Msb(data, 1) -> reqId in
+	let _parseMsg(data, 5) -> handle in	(
+		if SSH_DEBUG then echoLn strFormat("sftp< Close * '*'", reqId, hexFromStr(handle));
+		void if h.stageS<>sftpPutStage then sftpSendStatus(h, reqId, SSH_FX_OK, "")
+		else
+			let strBuild(listReverse(h.tmpPutListS)) -> data in (
+				set h.tmpPutListS=nil;
+				if !call h.fPutS(h.tmpPathS, data) then sftpSendStatus(h, reqId, SSH_FX_PERMISSION_DENIED, "Permission denied")
+				else sftpSendStatus(h, reqId, SSH_FX_OK, "");
+				set h.tmpPathS=nil;
+			);
+		set h.stageS=sftpIdleStage
+	);;
+
+fun sftpParseOpen(h, data)=
+	let strRead32Msb(data, 1) -> reqId in
+	let _parseMsg(data, 5) -> path in
+	let 5+4+strLength(path) -> i in
+	let strRead32Msb(data, i) -> action in
+	let strRead32Msb(data, i+4) -> attr in (
+		if SSH_DEBUG then echoLn strFormat("sftp< Open * '*' action:* attr:*", reqId, path, hexFromInt(action), hexFromInt(attr));
+		let _sftpRealPath(path) -> path in
+		if path==nil then sftpSendStatus(h, reqId, SSH_FX_PERMISSION_DENIED, "Permission denied")
+		else 
+		void if action==SSH_FXF_READ then (
+			let call h.fGetS(path) -> content in
+			void if content==nil then sftpSendStatus(h, reqId, SSH_FX_NO_SUCH_FILE, "File not found")
+			else (
+				set h.tmpGetS=content;
+				sftpSendHandle(h, reqId);
+				set h.stageS=sftpGetStage;
+			)
+		)
+		elif bitTest(action, SSH_FXF_WRITE) then (
+			void if h.fPutS==nil then sftpSendStatus(h, reqId, SSH_FX_PERMISSION_DENIED, "Permission denied")
+			else (
+				set h.tmpPutListS=nil;
+				set h.tmpPathS=path;
+				sftpSendHandle(h, reqId);
+				set h.stageS=sftpPutStage;
+			)
+		)
+	);;
+
+fun sftpParseRead(h, data)=
+	let strRead32Msb(data, 1) -> reqId in
+	let _parseMsg(data, 5) -> handle in
+	let 5+4+strLength(handle) -> i in
+	let strRead32Msb(data, i) -> offsetH in
+	let strRead32Msb(data, i+4) -> offsetL in
+	let strRead32Msb(data, i+8) -> len in (
+		if SSH_DEBUG then echoLn strFormat("sftp< Read * '*' from:* len:*", reqId, hexFromStr(handle), offsetL, len);
+		void if offsetL<strLength(h.tmpGetS) then
+			sshSendChannelData(h.channelS, sshMsgStr(strBuild([strInt8(SSH_FXP_DATA), 
+				sshMsgInt(reqId),
+				sshMsgStr(strSlice(h.tmpGetS, offsetL, len))
+			])))
+		else (
+			set h.tmpGetS=nil;
+			sftpSendStatus(h, reqId, SSH_FX_EOF, "End of file");
+		)
+	);;
+
+fun sftpParseWrite(h, data)=
+	let strRead32Msb(data, 1) -> reqId in
+	let _parseMsg(data, 5) -> handle in
+	let 5+4+strLength(handle) -> i in
+	let strRead32Msb(data, i) -> offsetH in
+	let strRead32Msb(data, i+4) -> offsetL in
+	let _parseMsg(data, i+8) -> msg in (
+		if SSH_DEBUG then echoLn strFormat("sftp< Write * '*' from:* len:*", reqId, hexFromStr(handle), offsetL, strLength(msg));
+		set h.tmpPutListS=msg::h.tmpPutListS;
+		sftpSendStatus(h, reqId, SSH_FX_OK, "")
+	);;
+
+fun sftpParseFSetStat(h, data)=
+	let strRead32Msb(data, 1) -> reqId in
+	let _parseMsg(data, 5) -> handle in (
+		if SSH_DEBUG then echoLn strFormat("sftp< FSetStat * '*'", reqId, hexFromStr(handle));
+		sftpSendStatus(h, reqId, SSH_FX_OK, "")
+	);;
+
+fun _sftpParseChannelData(h, data)=
+	let strGet(data, 0) -> code in
+	match h.stageS with
+	sftpIdleStage -> (
+		void match code with
+				SSH_FXP_INIT -> sftpParseInit(h, data),
+				SSH_FXP_REALPATH -> sftpParseRealPath(h, data),
+				SSH_FXP_OPENDIR -> sftpParseOpenDir(h, data),
+				SSH_FXP_OPEN -> sftpParseOpen(h, data),
+				SSH_FXP_STAT -> sftpParseStat(h, data),
+				SSH_FXP_LSTAT -> sftpParseStat(h, data),
+				_ -> if SSH_DEBUG then echoLn strFormat("sftp< Unexpected code *", code)
+	),
+	sftpDirStage -> (
+		void match code with
+			SSH_FXP_READDIR -> sftpParseReadDir(h, data),
+			SSH_FXP_CLOSE -> sftpParseClose(h, data),
+			_ -> if SSH_DEBUG then echoLn strFormat("sftp< Unexpected code *", code)
+	),
+	sftpGetStage -> (
+		void match code with
+			SSH_FXP_READ -> sftpParseRead(h, data),
+			SSH_FXP_CLOSE -> sftpParseClose(h, data),
+			_ -> if SSH_DEBUG then echoLn strFormat("sftp< Unexpected code *", code)
+	),
+	sftpPutStage -> (
+		void match code with
+			SSH_FXP_FSETSTAT -> sftpParseFSetStat(h, data),
+			SSH_FXP_WRITE -> sftpParseWrite(h, data),
+			SSH_FXP_CLOSE -> sftpParseClose(h, data),
+			_ -> if SSH_DEBUG then echoLn strFormat("sftp< Unexpected code *", code)
+	);;
+
+fun _sftpProcessFrames(h)=
+	let strRead32Msb(h.pendingDataS, 0) -> frameSize in
+	if (frameSize+4)<= strLength(h.pendingDataS) then
+	let strSlice(h.pendingDataS, 4, frameSize) -> data in
+	(
+		set h.pendingDataS=strSlice(h.pendingDataS, 4+frameSize, nil);
+		_sftpParseChannelData(h, data);
+		_sftpProcessFrames(h)
+	);;
+
+fun _scpClose(h, data)=
+	if data<>nil then sshSendChannelData(h.channelS, data);
+	sshSendChannelRequest(h.channelS, "exit-status", false, sshMsgInt(0));
+	sshSendChannelMsg(h.channelS, SSH2_MSG_CHANNEL_CLOSE, nil);
+	set h.modeS=idleMode;;
+
+fun  _scpHandleGet(h, data)=
+	if SSH_DEBUG then echoLn "sftp< scp handle";
+	if data<>"\0" then _scpClose(h, "\2Broken connection\n")
+	else 
+	void match h.stageS with
+		scpGetFirstAckStage -> (
+			void if h.tmpGetS==nil then _scpClose(h, "\1File not found\n")
+			else (
+				sshSendChannelData(h.channelS, strFormat("C0644 * *\n", strLength(h.tmpGetS), removePath(h.tmpPathS)));
+				set h.stageS= scpGetSecondAckStage
+			)
+		),
+		scpGetSecondAckStage -> (
+			sshSendChannelData(h.channelS, h.tmpGetS);
+			sshSendChannelData(h.channelS, "\0");
+			set h.tmpGetS=nil;
+			set h.stageS= scpGetThirdAckStage
+		),
+		scpGetThirdAckStage -> _scpClose(h, nil);;
+
+fun _scpHandlePut(h, data)=
+	void match h.stageS with
+	scpPutDetailStage -> 
+		void if !strStartsWith(data, "C") then _scpClose(h, "\2Broken connectionx\n")
+		else (
+			set h.tmpPutListS=nil;
+			sshSendChannelData(h.channelS, "\0");
+			set h.stageS=scpPutDataStage
+		),
+	scpPutDataStage ->
+		void if data!="\0" then set h.tmpPutListS=data::h.tmpPutListS
+		else
+		let strBuild(listReverse(h.tmpPutListS)) -> data in (
+			set h.tmpPutListS=nil;
+			sshSendChannelData(h.channelS, "\0");
+			if !call h.fPutS(h.tmpPathS, data) then _scpClose(h, "\2Broken connectionx\n")
+			else _scpClose(h, nil)
+		);;
+
+fun _sftpParseChannelRequest(h, type, wantReply, data)=
+	if SSH_DEBUG then echoLn strFormat("sftp< ChannelRequest * reply:* data:*", type, wantReply, sourceFromStr(data));
+	void match type with
+		"subsystem" ->
+			let sshParseVals(data, 0, 1) -> cmd::_ in
+			if cmd=="sftp" && bitTest(h.optionsS, SFTP_OPTION_SFTP) then (
+				sshSendChannelSuccess(h.channelS);
+				sshNotifyEvent(h, SSH_READY, nil);
+				set h.modeS=sftpMode;
+				set h.stageS=sftpIdleStage
+			),
+		"exec" ->
+			let sshParseVals(data, 0, 1) -> cmd::_ in
+			void if strStartsWith(cmd, "scp -f ") && bitTest(h.optionsS, SFTP_OPTION_SCP_GET) then 
+			let strTail(cmd, 7) -> path in
+			let _sftpRealPath(path) -> path in (
+				set h.tmpPathS=path;
+				set h.tmpGetS=call h.fGetS(path);
+				set h.modeS=scpGetMode;
+				set h.stageS=scpGetFirstAckStage;
+				sshSendChannelSuccess(h.channelS)
+			)
+			elif strStartsWith(cmd, "scp -t ") && bitTest(h.optionsS, SFTP_OPTION_SCP_PUT) then 
+			let strTail(cmd, 7) -> path in (
+				set h.tmpPathS= path;
+				set h.tmpGetS=nil;
+				set h.modeS=scpPutMode;
+				set h.stageS=scpPutDetailStage;
+				sshSendChannelSuccess(h.channelS);
+				sshSendChannelData(h.channelS, "\0");
+			),
+		_ -> sshSendChannelFailure(h.channelS);;
+
+fun _sftpStart(h)=
+	sshOnNewChannel(h, (lambda(c)=
+		if SSH_DEBUG then echoLn "sftp< NewChannel";
+		if h.channelS==nil then (
+			set h.channelS=c;
+			sshOnChannelRequest(c, lambda(type, wantReply, args) = _sftpParseChannelRequest(h, type, wantReply, args));
+			sshOnChannelEvent(c, lambda(code, data)= 
+				void if code==SSH_DATA then (
+					void match h.modeS with
+					scpGetMode -> _scpHandleGet(h, data),
+					scpPutMode -> _scpHandlePut(h, data),
+					sftpMode -> (
+						set h.pendingDataS=strConcat(h.pendingDataS, data);
+						_sftpProcessFrames(h)
+					)
+				)
+				elif code==SSH_CHANNEL_EOF then (
+					sshSendChannelRequest(h.channelS, "exit-status", false, sshMsgInt(0));
+					sshSendChannelMsg(h.channelS, SSH2_MSG_CHANNEL_CLOSE, nil)
+				)
+				else sftpServerNotify(h, code, data)
+			);
+			sshSendChannelOpenConfirmation(c)
+		)
+	));;
+
+fun sftpServerStart(serverKey, serverKeyPassword, localIp, localPort, options, fAuth)= 
+	let keyFromPEM(serverKey, serverKeyPassword) -> serverKey in
+	let tcpSrvCreate(localIp, localPort) -> tcpSrv in
+	if tcpSrv==nil then void (if SSH_DEBUG then echoLn strFormat("sftp< UNABLE TO START TCP SERVER ON *:*", localIp, localPort))
+	else (
+		if SSH_DEBUG then echoLn strFormat("sftp< SERVER STARTED ON PORT *:*", localIp, localPort);
+		tcpSrvOnAccept(tcpSrv, lambda(tcp)= 
+			let [optionsS=options, modeS=idleMode, handleS=0] -> h in
+			sshAccept(h, serverKey, tcp, 
+				lambda(authMode, login, authData) = call fAuth(h, authMode, login, authData),
+				lambda(code, data)=
+					if SSH_DEBUG then echoLn strFormat("sftp< Notified with code *", code);
+					if code==SSH_OK then void _sftpStart(h)
+					else sftpServerNotify(h, code, data);
+			)
+		);
+		tcpSrv
+	);;
+
+fun sftpServerOnNotify(h, f)= set h.fNotifyS=(lambda(code, data) = call f(code, data);0);;
+fun sftpServerOnDir(h, f)= set h.fDirS=f;;
+fun sftpServerOnGet(h, f)= set h.fGetS=f;;
+fun sftpServerOnPut(h, f)= set h.fPutS=f;;

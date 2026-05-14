@@ -5,6 +5,7 @@
 use core.net.dns;;
 
 const DEBUG=false;;
+const DEBUG_LOW=false;;
 
 const MAC_BROADCAST="\$ff\$ff\$ff\$ff\$ff\$ff";;
 const MAC_EMPTY="\0\0\0\0\0\0";;
@@ -73,7 +74,7 @@ fun ethSendFrame(net, macDest, protocol, msg)=
 	let if strLength(frame)<60 then strCreate(60-strLength(frame), 0) -> padding in
 	(
 		if DEBUG then echoTime strFormat(">ETH */* *", strFromMac(macDest), hexFromStr(protocol), strLength(frame));
-		if DEBUG then hexDump frame;
+		if DEBUG_LOW then hexDump frame;
 		let streamWrite(net, strConcat(frame, padding), 0) -> result in
 		if DEBUG then echoTime strFormat(">ETH *", result)
 		
@@ -236,7 +237,7 @@ fun udpHandle(net, remoteAddr, localAddr, msg)=
 	let strRead16Msb(msg, 2) -> localPort in
 	let strFromIp(remoteAddr) -> remoteAddr in (
 		if DEBUG then echoTime strFormat("<UDP *:* -> :* *", remoteAddr, remotePort, localPort, strLength(msg)-8);
-		if DEBUG then hexDump msg;
+		if DEBUG_LOW then hexDump msg;
 		if localPort==68 then void call net.dhcpI(strSlice(msg, 8, nil), remoteAddr, remotePort)
 		else
 		let _ipSrv(UdpListener, localAddr, localPort) -> udp in
@@ -523,7 +524,7 @@ fun _tcpSendWithRetry(t, seq, flag, data, nbRetry)=
 		void onTimeout(1000, (lambda ()= _tcpSendWithRetry(t, seq, flag, data, nbRetry-1)));
 	)
 	else (
-		echoTime ">>>>>>>>TIMEOUT";
+		if DEBUG then echoTime ">>>>>>>>TIMEOUT";
 		_tcpStopRetries(t);
 		if t.stateT<>eolTcp then _tcpEol(t);
 	);;
@@ -773,18 +774,21 @@ fun _tcpHandle(t, msg)=
 	let strRead16Msb(msg, 14) -> window in
 	let strSlice(msg, offset, nil) -> data in
 	(
-		if DEBUG then echoLn strFormat("state = *", t.stateT);
+		if DEBUG_LOW then echoLn strFormat("state = *", t.stateT);
 		set t.windowT= min(TCP_WINDOW_MAX_LEN, window);
 		if bitTest(flag, TCP_SYN) then (
 			set t.peer0T=set t.peerT=seqPeer;
 			if t.ackT==0 then set t.ackT=ack
 		);
 		if DEBUG then echoTime strFormat("<TCP * * ack=* seq=* len=* (w=*)", tcpFlagName(flag), _tcpRoute(t), (ack-t.seq0T)&0xffffffff, (seqPeer-t.peer0T)&0xffffffff, strLength(data), window);
-		if bitTest(flag, TCP_ACK) && _seqIsBefore(t.ackT, ack) then set t.ackT=ack;
+		if bitTest(flag, TCP_ACK) && _seqIsBefore(t.ackT, ack) then (
+			set t.ackT=ack;
+			streamSetWritable(t, true)
+		);
 		if t.peerT==seqPeer then (	// we process only the next expected packet
 			set t.peerT=_seqNext(t.peerT, flag, data);
 			_tcpHandleStateMachine(t, flag, data);
-			if DEBUG then echoLn strFormat("-> *", t.stateT);
+			if DEBUG_LOW then echoLn strFormat("-> *", t.stateT);
 		)
 		else	// we acknowledge past packets (the peer did not receive the ack)
 		if _seqIsBefore(seqPeer, t.peerT) then
@@ -831,7 +835,7 @@ lockSync(TcpLock, lambda ()=
 	let strRead16Msb(msg, 0) -> remotePort in
 	let strRead16Msb(msg, 2) -> localPort in
 	let strRead8(msg, 13) -> flag in
-	if flag==TCP_SYN then void _tcpHandleSyn(net, remoteAddr, localAddr, remotePort, localPort, flag, msg)
+	if bitTest(flag, TCP_SYN) then void _tcpHandleSyn(net, remoteAddr, localAddr, remotePort, localPort, flag, msg)
 	else
 	let _tcpKey(remoteAddr, localAddr, remotePort, localPort) -> key in
 	let hashmapGet(TcpListener, key) -> t in

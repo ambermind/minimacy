@@ -153,7 +153,7 @@ fun __makeMainBlock(name83, attr, t)=
 		strInt32Lsb(fatTime),
 		strInt16Lsb(fatTime>>16),
 		"\0\0",	// start cluster (bits 32-63)
-		strInt32Lsb(t),
+		strInt32Lsb(fatTime),
 		"\0\0",	// start cluster (bits 0-31)
 		"\0\0\0\0"	// length
 	]);;
@@ -776,6 +776,21 @@ fun _volumeGetHardPartitions(volume)=
 		else result
 	);;
 
+fun _partitionUsedSectors(p)=
+	let 32 -> SectorByStep in
+	let 0 -> used in (
+		//echoLn strFormat("partitionUsedSectors *",p.sectorsPerFatP);
+		let bytesCreate(512*SectorByStep, 0) -> empty in
+		for i=0;i<p.sectorsPerFatP;i+SectorByStep do (
+			let lockSync(p.lockP, lambda()= call p.fReadP(p.reservedSectorsP+i, min(SectorByStep, p.sectorsPerFatP-i))) -> fatSlice in
+			if fatSlice<>empty then
+			for j=0;j<bytesLength(fatSlice); j+4 do if 0<>bytesRead32Lsb(fatSlice, j) then set used=used+p.sectorsPerClusterP;
+			threadResign()	// let other threads use the disk
+		);
+		min(used, p.dataSectorsP)
+	);;
+
+
 fun _mkPartition(volume, p, writable) = 
 [
 	volumeP= volume,
@@ -801,7 +816,8 @@ fun _mkPartition(volume, p, writable) =
 		let _partitionLocate(p, path) -> d in
 		if d<>nil then _deleteFile(p, d)
 	),
-	userSectorsP= p.dataSectorsP
+	userSectorsP= p.dataSectorsP,
+	computeUsedSectorsP= lambda()= _partitionUsedSectors(p)
 ];;
 
 fun volumeFindPartitions(volume, writable)=

@@ -219,7 +219,7 @@ fun epCreate(dev, id, type, len)=
 fun epEnqueue(ep, control, status, paramH, paramL)=
 	nil<>ringEnqueue(ep.ringE, paramH, paramL, status, control);;
 
-fun epStart(d, epDescriptor)=
+fun epStart(d, epDescriptor, len)=
 	let strGet(epDescriptor, 2) -> addr in
 	let strGet(epDescriptor, 3) -> attributes in
 	let strRead16Lsb(epDescriptor, 4)&0x7ff -> maxPacketSize in
@@ -227,7 +227,7 @@ fun epStart(d, epDescriptor)=
 	let attributes & 0x03 -> type in
 	let (addr&0xf)*2 + if bitTest(addr, 0x80) then 1 -> id in
 	let type | (if type == 0 || bitTest(addr, 0x80) then 4) -> type in
-	let set d.epsD[id-1]=epCreate(d, id, type, nil) -> ep in
+	let set d.epsD[id-1]=epCreate(d, id, type, len) -> ep in
 	let inputContextConfigureEndpoint(d, id, type, maxPacketSize, brutInterval)-> inputContext in
 	let cmdOnSlot(d.slotD, TRB_CMD_CONFIGURE_ENDPOINT, inputContext) -> result in
 	if result==nil then return msgAndReturn("endpoint enable error", nil)

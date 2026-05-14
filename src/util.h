@@ -11,6 +11,7 @@ int isNumber(int c);
 int isHexchar(int c);
 int isBinchar(int c);
 int isLetterOrNumber(int c);
+int isUriChar(int c);
 
 int isLabel(char* src);
 int isAlphanum(char* src);

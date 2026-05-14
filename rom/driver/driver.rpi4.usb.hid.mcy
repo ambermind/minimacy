@@ -70,7 +70,7 @@ fun hidGetReport(d, interfaceNumber, hidDescriptor)=
 	);;
 
 fun hidEpStart(d, protocol, interfaceNumber, epDescriptor)=
-	let epStart(d, epDescriptor) -> ep in
+	let epStart(d, epDescriptor, nil) -> ep in
 	if ep<>nil then
 	let if protocol==2 then _REPORT_PROTOCOL else _BOOT_PROTOCOL -> protocol in
 	let controlTransferNoData(d, REQUEST_CLASS | REQUEST_TO_INTERFACE, _SET_PROTOCOL, protocol, interfaceNumber) -> data in

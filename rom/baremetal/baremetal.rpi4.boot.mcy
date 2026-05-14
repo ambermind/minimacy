@@ -16,8 +16,9 @@ use driver.rpi4.usb.storage;;
 fun main()=
 	pi4UsbInit();
 	pi4EthInit();
-	pi4SdInit();
-
+	
+	if !pi4SdInit() then void echoLn "> EMMC: init error"
+	else
 	let volumeCreate(sdVolume, nil, true, #pi4SdRead, #pi4SdWrite, pi4SdNbSectors(), pi4SdSectorSize()) -> volume in
 	let volumeMount(volume, "", "/") -> mounts in
 	//if false then

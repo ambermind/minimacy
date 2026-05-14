@@ -27,8 +27,12 @@ fun romdiskFromFiles(files, output)=
 	(
 		for f in files do
 			let strSplit("\t", f)-> path::alias::_ in
+			if !strEmpty(path) then
 			let load(path) -> data in
-			if data<>nil then 
+			void if data==nil then (
+				if !strStartsWith(path, " ") then echoLn strFormat("===NOT FOUND: '*'", path);
+			)
+			else
 			let if alias==nil then path else alias -> alias in (
 				bufferAppend(sources, [
 					"//-------------------- ", alias, "\n",

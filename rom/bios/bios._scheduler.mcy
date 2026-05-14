@@ -25,11 +25,11 @@ fun _schedulerLoop()=
 			set _This._cyclesT=_threadCount(_This._threadT);
 			set _This=th;
 			_echoEnable(_This._echoEnableT);
-			void match _threadRun(th._threadT, _MAX_THREAD_EXEC) with
+			void match _threadRun(th._threadT, MAX_THREAD_EXEC) with
 				EXEC_IDLE -> set th._stateT=_THREAD_IDLE,
 				EXEC_PREEMPTION -> _scheduleThread(th),
 				EXEC_WAIT -> set th._stateT= _THREAD_WAIT,
-				EXEC_EXIT -> threadStop(th),
+				EXEC_EXIT -> (threadStop(th); set _HardStop=true),
 				EXEC_OM -> (echoLn "> Thread is out of memory"; threadStop(th); set th=nil; gcCompact());
 			_threadsCheckPendingTasks(th);
 
@@ -46,7 +46,8 @@ fun _schedulerStart()=
 		_schedulerLoop();
 		// we need to check any pending oblivion callback
 		// for this we remove every reference, and fire up to 3 gc
-		set _HardStop= set _NiceStop=false;
+		if _HardStop then return nil;
+		set _NiceStop=false;
 		fifoList(_RunList);	// this clear the fifo
 		set _TimerList=nil;
 		set _UiThread=nil;

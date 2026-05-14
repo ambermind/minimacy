@@ -21,6 +21,8 @@ const DEBUG=false;;
 struct MassStorage=[deviceM, inM, outM, tagM, nbSectorsM, sectorSizeM, readyM, lockM];;
 var UsbStorageList;;
 
+const MAX_SECTORS_PER_OPERATION=32;;
+
 fun _massStorageCommand(m, cmd, dataLen, dataToSend)=
 	if DEBUG then echoLn strFormat("_massStorageCommand * * *", hexFromStr(cmd), dataLen, strLength(dataToSend));
 	lockSync(m.lockM, lambda()=
@@ -71,8 +73,8 @@ fun massStorageCreate(d, protocol, interfaceNumber, epDescriptors)=
 		for epDescriptor in epDescriptors do (
 			if DEBUG then hexDump epDescriptor;
 			if (strGet(epDescriptor, 3) & 0x3f) == 0x02 then
-			if bitTest(0x80, strGet(epDescriptor, 2)) then set m.inM=epStart(d, epDescriptor)
-			else set m.outM=epStart(d, epDescriptor);
+			if bitTest(0x80, strGet(epDescriptor, 2)) then set m.inM=epStart(d, epDescriptor, 512*MAX_SECTORS_PER_OPERATION)
+			else set m.outM=epStart(d, epDescriptor, 512*MAX_SECTORS_PER_OPERATION);
 		);
 		if m.inM<>nil && m.outM<>nil then
 		let "\$12\0\0\0\$24\0" -> cmd in	// SCSI Inquiry
@@ -94,8 +96,9 @@ fun massStorageCreate(d, protocol, interfaceNumber, epDescriptors)=
 
 fun _usbStorageReadLoop(m, sector, nb)=
 	if nb>0 then
-	let strFormat("\$28\0*\0*\0", strInt32Msb(sector), strInt16Msb(1)) -> cmd in
-	_massStorageCommand(m, cmd, 512, nil)::_usbStorageReadLoop(m, sector+1, nb-1);;
+	let min(MAX_SECTORS_PER_OPERATION, nb) -> toRead in
+	let strFormat("\$28\0*\0*\0", strInt32Msb(sector), strInt16Msb(toRead)) -> cmd in
+	_massStorageCommand(m, cmd, 512*toRead, nil)::_usbStorageReadLoop(m, sector+toRead, nb-toRead);;
 
 fun usbStorageReadSector(m, sector, nb)=
 	if DEBUG then echoLn strFormat(">>>>massReadSector * x*", sector, nb);
@@ -107,9 +110,10 @@ fun usbStorageWriteSector(m, sector, data)=
 	if m.readyM then
 	let bytesLength(data)>>9 -> nbSectors in
 	if (nbSectors>=1) && !bitTest(bytesLength(data), 511) then (
-		for i=0;i<nbSectors do
-			let strFormat("*\$08*\0*\0", "\$2a", strInt32Msb(sector+i), strInt16Msb(1)) -> cmd in
-			let bytesSliceOfStr(data, i*512, 512) -> sectorData in
+		for i=0;i<nbSectors;i+MAX_SECTORS_PER_OPERATION do
+			let min(MAX_SECTORS_PER_OPERATION, nbSectors-i) -> toWrite in
+			let strFormat("*\$08*\0*\0", "\$2a", strInt32Msb(sector+i), strInt16Msb(toWrite)) -> cmd in
+			let bytesSliceOfStr(data, i*512, toWrite*512) -> sectorData in
 			_massStorageCommand(m, cmd, nil, sectorData);
 		512*nbSectors;
 	);;

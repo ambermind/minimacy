@@ -1,6 +1,5 @@
 #----------------------DO NOT TOUCH BELOW
-export CC= gcc
-export AR= ar
+CC:= gcc -arch arm64 -arch x86_64
 CCL=$(CC)
 
 ROOT:= ../..

@@ -4,7 +4,7 @@
 #ifndef _MINIMACY_
 #define _MINIMACY_
 
-#define VERSION_MINIMACY "2.1.0"
+#define VERSION_MINIMACY "2.1.1"
 //#undef ON_WINDOWS
 //#define ON_NOTHING
 
@@ -19,7 +19,7 @@
 #define WITH_GL
 #define WITH_AUDIO
 //#define WITH_DECODE_MP3
-//#define WITH_SERIAL_BLE	// uncomment also #define ENABLE_BLE in windows/ble_c.h
+#define WITH_SERIAL_BLE	// uncomment also #define ENABLE_BLE in windows/ble_c.h
 #define WITH_NATIVE_FONT
 #define GROUP_COMMON_ANSI
 #define USE_CONSOLE_OUT_ANSI

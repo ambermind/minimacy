@@ -214,12 +214,13 @@ fun pi4SdInit ()=
 	if !_waitForOpCond(30) then return false;
 	if nil==sendCmd(CMD_ALL_SEND_CID, 0) then return false;
 	set CID = _read128Response();
+	if DEBUG then ( echoLn "CID"; hexDump CID);
 	set RelativeCardAddress=sendCmd(CMD_SEND_REL_ADDR, 0) & REL_ADDR_MASK;
 	if DEBUG then echoLn strFormat("> RelativeCardAddress=*", hexFromInt(RelativeCardAddress));
-	if RelativeCardAddress <= 0 then return false;
 
 	if nil==sendCmd(CMD_SEND_CSD, RelativeCardAddress) then return false;
 	set CSD = _read128Response();
+	if DEBUG then ( echoLn "CSD"; hexDump CSD);
 // for unknown reason, there is a 8bits shift
 // we can read 120 bits LSB from EMMC_RESP0, the 8 initial bits (1 reserved bit and 7 crc bits) are skipped
 // the first 8 bits of (read32 EMMC_RESP0) are bits 15:8
@@ -249,8 +250,6 @@ fun pi4SdInit ()=
 		set SectorSize = sectorSize;
 		set NbSectors = nbSectors;
 		echoLn strFormat("> EMMC: version *, * sectors (* bytes per sector)", csd_version, intWithDelimiter(".", nbSectors), sectorSize);
-//		hexDump CID;
-//		hexDump CSD;
 		true
 	);;
 
@@ -262,7 +261,7 @@ fun _storageReadLoop(buffer, start, lba, num)=
 	);;
 
 fun _pi4SdRead(buffer, start, lba, num)=
-	//	if DEBUG then echoLn strFormat("> pi4SdRead * * *", start, lba, num);
+	if DEBUG then echoLn strFormat("> pi4SdRead * * *", start, lba, num);
 	if num>=1 then
 	if bytesLength(buffer)>= start+num*512 then
 	if waitForStatus(commonTimeout(), STATUS_DAT_INHIBIT) then (

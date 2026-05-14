@@ -33,7 +33,6 @@ core/core.crypto.asn1.mcy
 core/core.crypto.block.mcy
 core/core.crypto.cer.mcy
 core/core.crypto.cer.maker.mcy
-core/core.crypto.curve25519.mcy
 core/core.crypto.des.mcy
 core/core.crypto.ec.mcy
 core/core.crypto.ed25519.mcy
@@ -60,6 +59,8 @@ core/core.net.mysql.mcy
 core/core.net.ntp.mcy
 core/core.net.ssh.mcy
 core/core.net.ssh.sftp.mcy
+core/core.net.ssh.sftp.srv.mcy
+core/core.net.ssh.sftp.common.mcy
 core/core.net.ssh.shell.mcy
 core/core.net.ssh.shell.srv.mcy
 core/core.net.tls.mcy
@@ -103,6 +104,5 @@ driver/driver.rpi4.usb.hid.mcy
 driver/driver.rpi4.usb.keyboard.mcy
 driver/driver.rpi4.usb.mouse.mcy
 driver/driver.rpi4.usb.storage.mcy
-driver/driver.rpi5.gpio.mcy
 
-boot.mcy
+boot_release.mcy	boot.mcy

@@ -14,7 +14,7 @@ const TAG_GET_MAC=0x10003;;
 
 fun getMacAddress ()=
 	let mbox(CH_PROP, {TAG_GET_MAC, 8, 0, 0, 0}, 8) -> result in
-	strConcat(strInt16Msb(result[6]), strInt32Msb(result[5]));;
+	strConcat(strInt32Lsb(result[5]),strInt16Lsb(result[6]));;
 
 // Register block offsets
 const BASE_SYS     = BASE_BCM54213+0x0000;;
@@ -45,6 +45,7 @@ const UMAC_CMD          = BASE_UMAC+0x008;;
 	const CMD_RX_EN          = 0x02;;
 	const CMD_SPEED_10       = 0x00;;
 	const CMD_SPEED_100      = 0x04;;
+	const CMD_SPEED_1000     = 0x08;;
 	const CMD_SPEED_MASK     = 0x0c;;
 	const CMD_PROMISC        = 0x10;;
 	const CMD_RX_PAUSE_IGNORE= 0x100;;
@@ -66,6 +67,9 @@ const UMAC_MDIO_CMD     = BASE_UMAC+0x614;;
 			const BMSR_LSTATUS = 0x0004;;
 		const MII_REG_ADVERTISE= 0x04;;
 		const MII_REG_LPA      = 0x05;;
+		const MII_REG_CTRL1000 = 0x09;;
+		const MII_REG_STAT1000 = 0x0A;;
+
 
 const UMAC_MDF_CTRL     = BASE_UMAC+0x650;;
 	const MDF_MC_HIGHEST= 0x10000;;
@@ -87,6 +91,10 @@ const LPA_10FULL   = 0x0040;;
 const LPA_100HALF  = 0x0080;;
 const LPA_100FULL  = 0x0100;;
 const LPA_PAUSE_CAP= 0x0400;;
+
+const LPA_1000HALF = 0x0400;;
+const LPA_1000FULL = 0x0800;;
+
 
 // HFB: hardware filtering block
 const HFB_CTRL             = BASE_HFB_REG+0x00;;
@@ -162,6 +170,7 @@ const RDMA_REG_CTRL          = BASE_RDMA_REGS+0x04;;
 const TDMA_REG_SCB_BURST_SIZE= BASE_TDMA_REGS+0x0c;;
 const RDMA_REG_SCB_BURST_SIZE= BASE_RDMA_REGS+0x0c;;
 	const MAX_BURST_SIZE= 8;;
+const RDMA_REG_INDEX2RING_0  = BASE_RDMA_REGS+0x70;;
 
 // Rx Specific Dma descriptor bits
 const DMA_RX_LG       = 0x0010;;
@@ -177,6 +186,8 @@ const MTU_MAX= 0x600;;
 const DMA_BUFFER_SIZE= 2048;;
 const DMA_BUFFERS_SIZE= DMA_BUFFER_SIZE*DMA_DESC_COUNT;;
 
+const Lock=lockCreate();;
+
 // we can use global variables as there is only one ethernet port on the PI4.
 var MAC;;
 var TxBuffers;;
@@ -184,38 +195,53 @@ var RxBuffers;;
 var ReadIndex=0;;
 var WriteIndex=0;;
 
+//use bios as BIOS;;
+
+//fun write32(addr, val)= 
+//	if DEBUG then echoTime strFormat("Write *: *", hexFromInt(addr), hexFromInt(val));
+//	BIOS.write32(addr, val);;
+//fun read32(addr)= let BIOS.read32(addr) -> val in (
+//		if DEBUG then echoTime strFormat("Read\t\t\t\t\t*: *", hexFromInt(addr), hexFromInt(val));
+//		val
+//	);;
+
 fun clr32(addr, mask) = write32(addr, read32(addr)&(~mask));;
 fun set32(addr, mask) = write32(addr, read32(addr)|mask);;
 
-fun umacInit()=
+fun umacReset()=
 	write32(SYS_RBUF_FLUSH_CTRL, 0);
 	sleepMs(1); 
 	write32(UMAC_CMD, 0);
 	write32(UMAC_CMD, CMD_SW_RESET | CMD_LCL_LOOP_EN);
 	sleepMs(1); 
-	write32(UMAC_CMD, 0);
+	write32(UMAC_CMD, 0);;
+
+fun umacInit()=
+	umacReset();
 
 	set32(SYS_RBUF_FLUSH_CTRL, 2);
 	sleepMs(1); 
 	clr32(SYS_RBUF_FLUSH_CTRL, 2);
 	sleepMs(1); 
 
+	umacReset();
+
 	write32(UMAC_MIB_CTRL, MIB_RESET_RX | MIB_RESET_TX | MIB_RESET_RUNT);
 	write32(UMAC_MIB_CTRL, 0);
 	write32(UMAC_MAX_FRAME_LEN, MTU_MAX);
-	write32(UMAC_MAC0, strRead32Msb(MAC, 0));
-	write32(UMAC_MAC1, strRead16Msb(MAC, 4));
-
 	set32(RBUF_CTRL, RBUF_CTRL_ALIGN_2B);
 	write32(RBUF_TBUF_SIZE_CTRL, 1);
-	true;;
 
-fun interruptDisable()=
 	// Mask all interrupts
 	write32(INTRL2_0_CPU_MASK_SET, 0xFFFFFFFF);
 	write32(INTRL2_0_CPU_CLEAR, 0xFFFFFFFF);
 	write32(INTRL2_1_CPU_MASK_SET, 0xFFFFFFFF);
-	write32(INTRL2_1_CPU_CLEAR, 0xFFFFFFFF);;
+	write32(INTRL2_1_CPU_CLEAR, 0xFFFFFFFF);
+
+	read32(UMAC_CMD);
+	write32(UMAC_MAC0, strRead32Msb(MAC, 0));
+	write32(UMAC_MAC1, strRead16Msb(MAC, 4));
+	true;;
 
 fun dmaSetBufferAddr(buffer, base)=
 	for i=0;i<DMA_DESC_COUNT do 
@@ -227,6 +253,7 @@ fun dmaSetBufferAddr(buffer, base)=
 
 fun init_rdma()=
 	write32(RDMA_REG_SCB_BURST_SIZE, MAX_BURST_SIZE);
+	write32(RDMA_REG_CTRL, 0);
 	dmaSetBufferAddr(RxBuffers, BASE_RDMA);
 
 	write32(RDMA_RING_PROD_INDEX, 0);
@@ -239,17 +266,19 @@ fun init_rdma()=
 	write32(RDMA_RING_WRITE_PTR, 0);
 	write32(RDMA_RING_END_ADDR, DMA_DESC_COUNT*3 - 1);
 
-	write32(RDMA_REG_RING_CFG, 1<<RING_INDEX);;
+	write32(RDMA_REG_RING_CFG, 1<<RING_INDEX);
+	write32(RDMA_REG_CTRL, 2<<RING_INDEX);;
 
 
 fun init_tdma()=
 	write32(TDMA_REG_SCB_BURST_SIZE, MAX_BURST_SIZE);
+	write32(TDMA_REG_CTRL, 0);
 	dmaSetBufferAddr(TxBuffers, BASE_TDMA);
 
 	write32(TDMA_RING_PROD_INDEX, 0);
 	write32(TDMA_RING_CONS_INDEX, 0);
-	write32(TDMA_RING_MBUF_DONE_THRESH, 1);
-	write32(TDMA_RING_FLOW_PERIOD, MTU_MAX);
+	write32(TDMA_RING_MBUF_DONE_THRESH, 10);
+	write32(TDMA_RING_FLOW_PERIOD, 0);
 	write32(TDMA_RING_BUF_SIZE, (DMA_DESC_COUNT << 16) | DMA_BUFFER_SIZE);
 
 	write32(TDMA_RING_START_ADDR, 0);
@@ -257,7 +286,8 @@ fun init_tdma()=
 	write32(TDMA_RING_WRITE_PTR, 0);
 	write32(TDMA_RING_END_ADDR, DMA_DESC_COUNT*3 - 1);
 
-	write32(TDMA_REG_RING_CFG, 1<<RING_INDEX);;
+	write32(TDMA_REG_RING_CFG, 1<<RING_INDEX);
+	write32(TDMA_REG_CTRL, 2<<RING_INDEX);;
 
 fun dmaInit()=
 	write32(TDMA_REG_CTRL, 0);
@@ -282,6 +312,7 @@ fun hfbInit()=
 	write32(HFB_CTRL, 0);
 	write32(HFB_FLT_ENABLE_V3PLUS, 0);
 	write32(HFB_FLT_ENABLE_V3PLUS+4, 0);
+	for i=0; i<8 do write32(RDMA_REG_INDEX2RING_0+i*4, 0);
 	for i=0; i < HFB_FILTER_CNT; i+4 do write32(HFB_FLT_LEN_V3PLUS+i, 0);
 	for i=0; i < HFB_FILTER_CNT*HFB_FILTER_SIZE do write32(BASE_HFB+i*4, 0);
 	true;;
@@ -297,13 +328,22 @@ fun mdio_reg_read(reg)=
 fun phyReadConfig()=
 	let mdio_reg_read(MII_REG_BMSR) -> bmsr in
 	if bitTest(bmsr, BMSR_LSTATUS) then	// check connected ethernet
+
+	let mdio_reg_read(MII_REG_STAT1000) -> stat1000 in
+	if stat1000!=nil then
+	let mdio_reg_read(MII_REG_CTRL1000) -> ctrl1000 in
+	if ctrl1000!=nil then
+	let stat1000 & (ctrl1000<<2) -> common_adv_gigabit in
+
 	let mdio_reg_read(MII_REG_LPA) -> lpa in
 	if lpa!=nil then
 	let mdio_reg_read(MII_REG_ADVERTISE) -> adv in
 	if adv!=nil then
 	let lpa & adv -> common_adv in
 	let
-		if bitTest(common_adv, LPA_100FULL) then [CMD_SPEED_100, false]
+		if bitTest(common_adv_gigabit, LPA_1000FULL) then [CMD_SPEED_1000, false]
+		elif bitTest(common_adv_gigabit, LPA_1000HALF) then [CMD_SPEED_1000, true]
+		elif bitTest(common_adv, LPA_100FULL) then [CMD_SPEED_100, false]
 		elif bitTest(common_adv, LPA_100HALF) then [CMD_SPEED_100, true]
 		elif bitTest(common_adv, LPA_10FULL) then [CMD_SPEED_10, false]
 		elif bitTest(common_adv, LPA_10HALF) then [CMD_SPEED_100, true]
@@ -330,7 +370,7 @@ fun miiInit()=
 		write32(SYS_PORT_CTRL, PORT_MODE_EXT_GPHY);
 		set32(EXT_RGMII_OOB_CTRL, RGMII_MODE_EN| RGMII_MODE_DIS);
 		echoLn strFormat("> Eth: connected * *",
-			if speed==CMD_SPEED_100 then "100BASE-TX" else "10BASE-TX",
+			if speed==CMD_SPEED_1000 then "1000BASE-TX" elif speed==CMD_SPEED_100 then "100BASE-TX" else "10BASE-TX",
 			if halfDuplex then "Half-duplex" else "Full-duplex"
 		);
 		true
@@ -344,7 +384,6 @@ fun umacAddMacFilter(i, addr)=
 fun _pi4EthInit()=
 	set MAC=getMacAddress();
 	umacInit();
-	interruptDisable();
 	dmaInit();
 	hfbInit();
 	if !miiInit() then return false;
@@ -367,6 +406,7 @@ fun pi4EthReceive()=
 	let counts&0xFFFF -> index in
 	let (index-ReadIndex)&0xFFFF -> framesToRead in
 	if framesToRead>0 then
+//	let echo "R";echo ReadIndex; echo ":";echoLn timeMs() -> _ in
 	let ReadIndex%DMA_DESC_COUNT-> blockIndex in
 	let BASE_RDMA + blockIndex*DMA_DESC_SIZE -> dmaBlockAddr in 
 	let read32(dmaBlockAddr + DMA_DESC_LENGTH_STATUS) -> lengthStatus in
@@ -389,10 +429,12 @@ fun pi4EthTransmit(eth, frame)=
 	let counts&0xFFFF -> index in
 	let (WriteIndex-index)&0xFFFF -> framesToSend in
 	if framesToSend>= DMA_DESC_COUNT-2 then (
+		if DEBUG then echoLn "> Eth: Send full";
 		watcherOutUpdateAddr(eth, counts, true);
 		0
 	)
 	else
+//	let echo "T"; echo WriteIndex; echo ":";echoLn timeMs() -> _ in
 	let strLength(frame) -> resultIfSucceed in
 	let if strLength(frame)<ETH_MIN_LENGTH then strConcat(frame, strCreate(ETH_MIN_LENGTH-strLength(frame), 0)) else frame -> frame in	// padding with zeros
 	let WriteIndex%DMA_DESC_COUNT-> blockIndex in
@@ -417,10 +459,11 @@ fun watcherOutUpdateAddr(watcher, value, enable) =
 fun watcherInUpdateAddr(watcher) =
 	watcherUpdate(watcher, RDMA_RING_PROD_INDEX, 0xFFFF, ReadIndex);;
 
-fun _ethFeed(eth)=
+fun _ethFeed(eth)= lockSync(Lock, lambda()=
 	let pi4EthReceive() -> frame in
 	if frame<>nil then fifoIn(eth.framesE, frame);
-	streamSetReadable(eth, fifoCount(eth.framesE)>0);;
+	streamSetReadable(eth, fifoCount(eth.framesE)>0)
+);;
 
 fun _netActivate(eth)=
 	streamInit(eth, nil,	// initialize stream
@@ -430,7 +473,7 @@ fun _netActivate(eth)=
 				streamReadEvent(eth, data)
 			)
 		,
-		lambda(data, start) = pi4EthTransmit(eth, data),	// write
+		lambda(data, start) = lockSync(Lock, lambda()=pi4EthTransmit(eth, data)),	// write
 		lambda()= streamCommonClose(eth),	// close
 		lambda(fEcho)=	call fEcho("ethernet", eth.nameI)	// show
 	);

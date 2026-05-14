@@ -1,0 +1,167 @@
+use driver.generic.display;;
+
+const W=128;;
+const H=64;;
+const BG_COLOR=0;;
+const COLOR=0x4080ff;;
+const USER_LEN=W/8;;
+const USER_Y=H-4;;
+const USER_SPEED=3;;
+
+const BRICK_N=11;;
+const BRICK_L=10;;
+const BRICK_m=1;;
+const BRICK_M=4;;
+const BRICK_H=3;;
+const BRICK_LINES=6;;
+const BRICK_Y=8;;
+const BRICK_LL=BRICK_L+BRICK_m;;
+const BRICK_HH=BRICK_H+BRICK_m;;
+
+
+
+var Bmp;;
+var BallX;;
+var BallY;;
+var VXDOUBLE;;
+var VY;;
+var UserX;;
+var Dir;;	
+var BrickCount;;
+var Stage;;
+
+fun brickDraw(i, j, show)=
+	bitmapFillRectangle(Bmp, BRICK_M+i*BRICK_LL, BRICK_Y+j*BRICK_HH, BRICK_L, BRICK_H, if show then COLOR else BG_COLOR, nil);;
+
+fun brickState(i, j)= COLOR==bitmapGet(Bmp, BRICK_M+i*BRICK_LL, BRICK_Y+j*BRICK_HH);;
+	
+fun ballDraw(show) =
+	bitmapPlot(Bmp, BallX, BallY, if show then COLOR else BG_COLOR, nil);;
+	
+fun userDraw(show) = 
+	bitmapLine(Bmp, UserX, USER_Y, UserX+USER_LEN, USER_Y, if show then COLOR else BG_COLOR, nil);;
+	
+const VX_AFTER_BOUNCE={ -4, -3, -2, -1, 1, 2, 3, 4};;
+
+fun ballSetVx(x) =
+	let x-UserX -> dx in 
+	if dx>=0 && dx<USER_LEN then
+	let dx*8/USER_LEN -> portion in
+	set VXDOUBLE= VX_AFTER_BOUNCE[portion];;
+
+fun ballInit ()=
+	set BallX= UserX+ (intRand()&255)*USER_LEN/256;
+	set BallY= USER_Y-2;
+	ballSetVx(BallX);
+	set VY=-1;
+	ballDraw(true);;
+	
+fun gameInit(bmp) =
+	set Bmp=bmp;
+	bitmapErase(Bmp, BG_COLOR);
+	bitmapLine(Bmp, 0, H-1, 0, 0, COLOR, nil);
+	bitmapLine(Bmp, 0, 0, W-1, 0, COLOR, nil);
+	bitmapLine(Bmp, W-1, 0, W-1, H-1, COLOR, nil);
+	for j=0;j<BRICK_LINES do
+	for i=0;i<BRICK_N do
+		brickDraw(i, j, true);
+	set BrickCount=BRICK_LINES*BRICK_N;
+	set UserX=W/2;
+	set Dir=0;
+	userDraw(true);
+	ballInit();
+	set Stage=waitS 39;
+	nil;;
+	
+fun brickByX(x) =
+	if x>=BRICK_M then
+	let (x-BRICK_M)/BRICK_LL -> i in
+	if i<BRICK_N then i;;
+
+fun brickByY(y) =
+	if y>=BRICK_Y then
+	let (y-BRICK_Y)/BRICK_HH -> j in
+	if j<BRICK_LINES then j;;
+	
+fun brickCheckPoint(x, y)=
+	let brickByX(x) -> i in
+	let brickByY(y) -> j in
+	if i<>nil && j<>nil then brickState(i, j)
+	else COLOR==bitmapGet(Bmp, x, y);;
+	
+sum Stages = playS, waitS count;;	
+	
+fun ballMoveX ()=
+	if (!bitTest(VXDOUBLE, 1))||(!bitTest(BallY, 1)) then VXDOUBLE>>1
+	else (VXDOUBLE+1)>>1;;
+	
+fun stagePlay ()=
+	if Dir<>0 then (
+		userDraw(false);
+		set UserX= min(W-USER_LEN-2, max(1, (UserX+Dir)));
+		userDraw(true)
+	);
+	ballDraw(false);
+	let max(0, min(W-1, BallX+ballMoveX())) ->x in
+	let BallY+VY ->y in
+	let brickCheckPoint(x, y) -> hit in
+	let brickCheckPoint(BallX, y) -> hitX in
+	let brickCheckPoint(x, BallY) -> hitY in
+	if hit then (
+		if hitY || !hitX then set VXDOUBLE=-VXDOUBLE;
+		if hitX || !hitY then set VY=-VY;
+		let brickByX(x) -> i in
+		let brickByY(y) -> j in
+		if i<>nil && j<>nil then (
+			brickDraw(i, j, false);
+			set BrickCount=BrickCount-1
+		);
+		if y==USER_Y then ballSetVx(x);
+		nil
+	)
+	else (
+		set BallX = x;
+		set BallY = y;
+	);
+	ballDraw(true);
+	if BrickCount<=0 then gameInit(Bmp);
+	if BallY>=H then (
+		bitmapFill(Bmp, COLOR^BG_COLOR, BLEND_XOR);
+		set Stage=waitS 50
+	);;
+
+fun stageWait(count)=
+	if count==40 then (
+		bitmapFill(Bmp, COLOR^BG_COLOR, BLEND_XOR);
+		ballInit();
+	);
+	if count>0 then set Stage=waitS count-1
+	else set Stage=playS;;
+
+fun gameLoop ()=
+	match Stage with
+		playS -> void stagePlay(),
+		waitS count -> void stageWait(count);;
+
+fun userSetDir(dir) = set Dir=dir;;
+
+
+fun loop ()=
+	let timeMs() -> t0 in (
+		gameLoop();
+		uiUpdate();
+		onTimeout(max(0, 20-(timeMs()-t0)), #loop)
+	);;
+	
+fun main()=
+	uiStart(10, 10, W, H, nil, "Wall");
+	uiOnKeyDown((lambda(key)=
+		if key==Key_Left then userSetDir(-USER_SPEED);
+		if key==Key_Right then userSetDir(USER_SPEED);
+	));
+	uiOnKeyUp((lambda(key)= userSetDir(0)));
+	
+	gameInit(uiBuffer());
+	uiUpdate();
+	loop();
+	echoLn "done";;

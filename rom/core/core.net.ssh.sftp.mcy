@@ -4,59 +4,8 @@
 
 
 use core.net.ssh;;
-
-const SFTP_VERSION = 3;;
-
-const SSH_FXP_INIT          =1;;
-const SSH_FXP_VERSION       =2;;
-const SSH_FXP_OPEN          =3;;
-const SSH_FXP_CLOSE         =4;;
-const SSH_FXP_READ          =5;;
-const SSH_FXP_WRITE         =6;;
-const SSH_FXP_LSTAT         =7;;
-const SSH_FXP_FSTAT         =8;;
-const SSH_FXP_SETSTAT       =9;;
-const SSH_FXP_FSETSTAT      =10;;
-const SSH_FXP_OPENDIR       =11;;
-const SSH_FXP_READDIR       =12;;
-const SSH_FXP_REMOVE        =13;;
-const SSH_FXP_MKDIR         =14;;
-const SSH_FXP_RMDIR         =15;;
-const SSH_FXP_REALPATH      =16;;
-const SSH_FXP_STAT          =17;;
-const SSH_FXP_RENAME        =18;;
-const SSH_FXP_READLINK      =19;;
-const SSH_FXP_SYMLINK       =20;;
-const SSH_FXP_STATUS        =101;;
-const SSH_FXP_HANDLE        =102;;
-const SSH_FXP_DATA          =103;;
-const SSH_FXP_NAME          =104;;
-const SSH_FXP_ATTRS         =105;;
-const SSH_FXP_EXTENDED      =200;;
-const SSH_FXP_EXTENDED_REPLY=201;;
-
-const SSH_FX_OK               =0;;
-const SSH_FX_EOF              =1;;
-const SSH_FX_NO_SUCH_FILE     =2;;
-const SSH_FX_PERMISSION_DENIED=3;;
-const SSH_FX_FAILURE          =4;;
-const SSH_FX_BAD_MESSAGE      =5;;
-const SSH_FX_NO_CONNECTION    =6;;
-const SSH_FX_CONNECTION_LOST  =7;;
-const SSH_FX_OP_UNSUPPORTED   =8;;
-
-const SSH_FXF_READ  =0x00000001;;
-const SSH_FXF_WRITE =0x00000002;;
-const SSH_FXF_APPEND=0x00000004;;
-const SSH_FXF_CREAT =0x00000008;;
-const SSH_FXF_TRUNC =0x00000010;;
-const SSH_FXF_EXCL  =0x00000020;;
-
-const SSH_FILEXFER_ATTR_SIZE       =0x00000001;;
-const SSH_FILEXFER_ATTR_UIDGID     =0x00000002;;
-const SSH_FILEXFER_ATTR_PERMISSIONS=0x00000004;;
-const SSH_FILEXFER_ATTR_ACMODTIME  =0x00000008;;
-const SSH_FILEXFER_ATTR_EXTENDED   =0x80000000;;
+use core.net.ssh.sftp.common;;
+const SSH_DEBUG=true;;
 
 // permission bits
 const _S_IFIFO	=0x1000;; // FIFO
@@ -176,7 +125,7 @@ fun sftpSend(h, code, data, cb)=
 	nil;;
 
 fun sftpParseVersion(h, data)=
-	if SSH_DEBUG then echoLn "sftpParseVersion";
+	if SSH_DEBUG then echoLn "sftp> Version";
 	let strRead32Msb(data, 1) -> version in
 	let _sftpParseExtended(data, 5, 100) -> [i, options] in
 	(
@@ -194,14 +143,14 @@ fun sftpParseVersion(h, data)=
 	);;
 
 fun sftpParseName(h, data)=
-	if SSH_DEBUG then echoLn "sftpParseName";
+	if SSH_DEBUG then echoLn "sftp> Name";
 	let strRead32Msb(data, 1) -> id in
 	let strRead32Msb(data, 5) -> count in
 	let _sftpParseName(data, 9, count) -> listNames in
 	call _getAndClearCb(h)(fileListS listNames);;
 
 fun sftpParseAttrs(h, data)=
-	if SSH_DEBUG then echoLn "sftpParseAttrs";
+	if SSH_DEBUG then echoLn "sftp> Attrs";
 	let strRead32Msb(data, 1) -> id in
 	let [SftpFile] -> attrs in
 	(
@@ -210,20 +159,20 @@ fun sftpParseAttrs(h, data)=
 	);;
 
 fun sftpParseHandle(h, data)=
-	if SSH_DEBUG then echoLn "sftpParseHandle";
+	if SSH_DEBUG then echoLn "sftp> Handle";
 	let strRead32Msb(data, 1) -> id in
 	let sshParseVals(data, 5, 1) -> (handle::_) in
 	call _getAndClearCb(h)(handleS handle);;
 
 fun sftpParseStatus(h, data)=
-	if SSH_DEBUG then echoLn "sftpParseStatus";
+	if SSH_DEBUG then echoLn "sftp> Status";
 	let strRead32Msb(data, 1) -> id in
 	let strRead32Msb(data, 5) -> code in
 	let sshParseVals(data, 9, 2) -> (message::lang::_) in
 	call _getAndClearCb(h)(if code==SSH_FX_OK then okS else errorS code message);;
 
 fun sftpParseData(h, data)=
-	if SSH_DEBUG then echoLn "sftpParseData";
+	if SSH_DEBUG then echoLn "sftp> Data";
 	let strRead32Msb(data, 1) -> id in
 	let sshParseVals(data, 5, 1) -> (content::_) in
 	call _getAndClearCb(h)(fileContentS content);;
@@ -255,7 +204,6 @@ fun sftpOpenSubsystem(h) =
 	sshOnChannelEvent(h.channelS, lambda(code, data)=
 		if code==SSH_OK then 
 			sshSendChannelData(h.channelS, sshMsgStr(strBuild([strInt8(SSH_FXP_INIT), sshMsgInt(SFTP_VERSION)])))
-		
 		else if code==SSH_DATA then (
 			set h.pendingDataSF=strConcat(h.pendingDataSF, data);
 			_sftpProcessFrames(h)

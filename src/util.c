@@ -41,6 +41,16 @@ int isLetterOrNumber(int c)
 	return 0;
 }
 
+// is letter, number or - _ . ! ~ * ' ( )
+int isUriChar(int c)
+{
+	if ((c >= 'A') && (c <= 'Z')) return 1;
+	if ((c >= 'a') && (c <= 'z')) return 1;
+	if ((c >= '0') && (c <= '9')) return 1;
+	if ((c == '-') || (c == '_') || (c == '.') || (c == '!') || (c == '~') || (c == '*') || (c == '(') || (c == ')') || (c==0x27)) return 1;	// 0x27= simple quote
+	return 0;
+}
+
 // check if a word is a label (one letter followed by letters or numbers)
 int isLabel(char* src)
 {

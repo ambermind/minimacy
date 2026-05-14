@@ -62,6 +62,8 @@ core/core.net.mime.mcy
 core/core.net.ntp.mcy
 core/core.net.ssh.mcy
 core/core.net.ssh.sftp.mcy
+core/core.net.ssh.sftp.srv.mcy
+core/core.net.ssh.sftp.common.mcy
 core/core.net.ssh.shell.mcy
 core/core.net.ssh.shell.srv.mcy
 core/core.net.tls.mcy
@@ -78,4 +80,4 @@ core/core.util.regexp.mcy
 core/core.util.xml.mcy
 core/core.util.zip.mcy
 
-boot.mcy
+boot_release.mcy	boot.mcy

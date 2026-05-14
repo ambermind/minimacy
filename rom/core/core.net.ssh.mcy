@@ -1233,3 +1233,5 @@ fun sshAccept(h, serverKey, tcp, fCheckAuth, fNotify)=
 
 fun sshClose(h)=
 	sshTcpClose(h);;
+
+fun sshStream(h) = h.tcpS;;

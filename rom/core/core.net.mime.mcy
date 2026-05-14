@@ -49,4 +49,4 @@ nil);;
 
 fun mimeFromFilename(file)=
 	let strPosRev(file, ".", nil) -> i in
-	if i<>nil then hashmapGet(_MimeFromExt, strSlice(file, i+1, nil));;
+	if i<>nil then hashmapGet(_MimeFromExt, strLowercase(strSlice(file, i+1, nil)));;

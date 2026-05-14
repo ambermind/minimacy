@@ -86,7 +86,7 @@ fun hubCreate(d, protocol, interfaceNumber, epDescriptors)=
 	if result==nil then return msgAndReturn("hub enable error", nil)
 	else
 	let head(epDescriptors) -> epDescriptor in	// only one endpoint expected
-	let epStart(d, epDescriptor) -> ep in
+	let epStart(d, epDescriptor, nil) -> ep in
 	if ep<>nil then (
 		for port=1;port<=nbPorts do _hubPortPowerOn(d, port);
 		echoLn strFormat("> USB: wait for hub powered up (* ports)", nbPorts);

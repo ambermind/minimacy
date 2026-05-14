@@ -9,14 +9,15 @@ use core.storage.format;;
 extend VolumeType with ramVolume;;
 
 fun storageRamRead(ram, sector, nbSectors)= 
-//	echoLn strFormat( "======read * sectors from * (*)", nbSectors, start, hexFromInt(start*SECTOR_SIZE));
+//	echoLn strFormat( "======read * sectors from * (*)", nbSectors, sector, hexFromInt(sector*SECTOR_SIZE));
 	let nbSectors*SECTOR_SIZE -> len in
 	let sector*SECTOR_SIZE -> start in
 	if sector>=0 && (start+len)<=bytesLength(ram) then
 	bytesSlice(ram, start, len);;
 
 fun storageRamWrite(ram, sector, data)= 
-//	echoLn strFormat ("======read * sectors from * (*)", nbSectors, start, hexFromInt(start*SECTOR_SIZE));
+//	echoLn strFormat ("======write * sectors from * (*)", bytesLength(data)/512, sector, hexFromInt(sector*SECTOR_SIZE));
+//	hexDumpBytes(data);
 	let bytesLength(data) -> len in
 	if sector>=0 && (sector*SECTOR_SIZE+len)<=bytesLength(ram) then (
 		bytesCopyBytes(ram, sector*SECTOR_SIZE, data, 0, nil);

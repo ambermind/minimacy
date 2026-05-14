@@ -3,7 +3,7 @@
 // Minimacy (r) System
 #pragma once
 #include <stdint.h>
-//#define ENABLE_BLE	// uncomment also #define WITH_SERIAL_BLE in src/minimacy.h
+#define ENABLE_BLE	// uncomment also #define WITH_SERIAL_BLE in src/minimacy.h
 
 #ifdef __cplusplus
 extern "C" {

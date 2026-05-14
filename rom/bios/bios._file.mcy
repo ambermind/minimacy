@@ -18,7 +18,8 @@ struct Partition=[
 	openP,
 	diskListP,
 	fileDeleteP,
-	userSectorsP
+	userSectorsP,
+	computeUsedSectorsP:(fun -> Int)
 //	dirDeleteP
 ];;
 
@@ -65,6 +66,8 @@ fun volumeAddPartition(volume, partition) =
 // Partitions
 fun partitionList(volume)=volume.partitionsV;;
 fun partitionName(partition)=partition.nameP;;
+fun partitionUserSectors(partition)=partition.userSectorsP;;
+fun partitionComputeUsedSectors(partition)= call partition.computeUsedSectorsP();;
 
 fun _mkAnsiPartition(volume, name, writable)=
 	let writable&&volume.writableV -> writable in
@@ -222,43 +225,30 @@ struct FileInfo=[_dirFI, _nameFI, _sizeFI, _updateFI, _mountFI];;
 fun mkFileInfo(mount, dir, name, size, update)=
 	[_dirFI=dir, _nameFI=name, _sizeFI=size, _updateFI=update, _mountFI=mount];;
 
-fun _absoluteDir(a)= ('/'==strGet(a, 0))||(':'==strGet(a, 1));;
+fun _absoluteDir(a)=
+	let strCharPos(a, '/', 0) -> i in
+	i==0 || (i>0 && strGet(a, i-1)==':');;
 
-fun _cleanHome(path)=
-	let strPos(path, "/~/", 0) -> i in
-	if i==nil then path
-	else _cleanHome(strConcat(userDir, strSlice(path, i+3, nil)));;
-	
-fun _clean2points(path)=
-	let strPos(path, "/../", 0) -> i in
-	if i==nil then path
-	else let strCharPosRev(path, '/', i-1) -> j in
-	if j<>nil then
-	let strConcat(strLeft(path, j), strSlice(path, i+3, nil)) -> path in
-	_clean2points(path);;
-
-fun _clean1point(path)=
-	let strPos(path, "/./", 0) -> i in
-	if i==nil then path
-	else _clean1point(strConcat(strLeft(path, i), strSlice(path, i+2, nil)));;
-
-fun _cleanRoot(path)=
-	let strPos(path, "//", 0) -> i in
-	if i==nil then path
-	else _cleanRoot(strSlice(path, i+1, nil));;
+fun _cleanPath(l, result)=
+	if l==nil then ""::result
+	else
+	match head(l) with
+	"." -> _cleanPath(tail(l), result),
+	""  -> _cleanPath(tail(l), if tail(l)==nil then result else "/"::nil),
+	"~" -> _cleanPath(tail(l), userDir::nil),
+	".."-> _cleanPath(tail(l), if result==nil || head(result)=="../" then "../"::result else tail(tail(result))),
+	_   -> if !strStartsWith(head(l), "~") then _cleanPath(tail(l), (if tail(l)<>nil then "/")::head(l)::result);;
 
 fun cleanPath(path)=
-	let _clean2points(path) -> path in
-	let _clean1point(path) -> path in
-	let _cleanHome(path) -> path in
-	let _cleanRoot(path) -> path in
-	path;;
-
+	let _cleanPath(strSplit("/", path), nil) -> reverse in
+	strListConcat(listReverse(reverse));;
+		
 fun parentDir(f)=
-	if nil==strPos(f, "/", 0) then ""
-	else let strPosRev(f, "/", strLength(f)-2) -> i in
-	if i<>nil then strConcat(strLeft(f, i), "/")
-	else "/";;
+	if !strEmpty(f) then
+	if f=="/" || strPos(f, "/", 0)==nil then ""
+	else let strPosRev(f, "/", -2) -> i in
+	if i<>nil then strLeft(f, i+1)
+	else "";;
 
 //----------- DIR
 fun _filesSort(lFiles) = quicksort(lFiles, lambda(a, b)= strCmp(a._nameFI, b._nameFI)<0);;
