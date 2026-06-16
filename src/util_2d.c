@@ -750,41 +750,7 @@ void dct88(LB* array)
 			ARRAY_SET_FLOAT(array, i + j * 8, val);
 		}
 }
-void _bitmapExportMono(LBitmap* b, int background, char* dst, LINT len)
-{
-	LINT i, j;
-	LINT wReal = b->w >> 3;
-	int* p0 = b->start32;
-	lchar* q0 = (lchar*)dst;
-	if (b->w & 7) return;	//	bitmap width must be multiple of 8
-	if (wReal * b->h > len) return;
-	for (j = 0; j < b->h; j++)
-	{
-		int* p = p0;
-		for (i = 0; i < b->w; i++)
-			if ((*(p++)) != background) q0[i >> 3] |= 1 << (7 - (i & 7));
-			else q0[i >> 3] &= ~(1 << (7 - (i & 7)));
-		p0 += b->next32;
-		q0 += wReal;
-	}
-}
-void _bitmapImportMono(LBitmap* b, int color, int background, char* src, LINT len)
-{
-	LINT i, j;
-	LINT wReal = b->w >> 3;
-	int* p0 = b->start32;
-	lchar* q0 = (lchar*)src;
-	if (b->w & 7) return;	//	bitmap width must be multiple of 8
-	if (wReal * b->h > len) return;
-	for (j = 0; j < b->h; j++)
-	{
-		int* p = p0;
-		for (i = 0; i < b->w; i++)
-			*(p++) = (q0[i >> 3] & (1 << (7 - (i & 7)))) ? color : background;
-		p0 += b->next32;
-		q0 += wReal;
-	}
-}
+
 void _bitmapExportMonoVertical(LBitmap* b, int background, char* dst, LINT len)
 {
 	LINT i, j;
@@ -803,19 +769,20 @@ void _bitmapExportMonoVertical(LBitmap* b, int background, char* dst, LINT len)
 	}
 }
 
-void _bitmapImportMonoVertical(LBitmap* b, int color, int background, char* src, LINT len)
+void _bitmapExport565(LBitmap* b, char* dst, LINT len)
 {
 	LINT i, j;
 	int* p0 = b->start32;
-	if (b->h & 7) return;	//	bitmap height must be multiple of 8
-	if ((b->h >> 3) * b->w > len) return;
+	short* q0 = (short*)dst;
+	if (b->w * b->h * 2 > len) return;
 	for (j = 0; j < b->h; j++)
 	{
 		int* p = p0;
-		lchar mask=1 << (j & 7);
-		lchar* q = ((lchar*)src) + (j >> 3) * b->w;
-		for (i = 0; i < b->w; i++)
-			*(p++)=(q[i]&mask)?color:background;
+		for (i = 0; i < b->w; i++) {
+			int color = *(p++);
+			color = ((color & 0xf80000) >> 16) | ((color & 0xe000) >> 13) | ((color & 0x1c00) <<3) | ((color & 0xf8) <<5);
+			*(q0++) = color;
+		}
 		p0 += b->next32;
 	}
 }

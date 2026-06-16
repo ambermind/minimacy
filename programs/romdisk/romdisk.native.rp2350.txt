@@ -17,7 +17,6 @@ bios/bios._util.mcy
 bios/bios._worker.mcy
 
 
-baremetal/baremetal.rp2350.boot.mcy
 baremetal/baremetal.mm2350.boot.mcy
 baremetal/baremetal.mm2350.admin.mcy
 driver/driver.generic.flash.mcy
@@ -25,7 +24,6 @@ driver/driver.generic.gpio.mcy
 driver/driver.generic.i2c.mcy
 driver/driver.generic.spi.mcy
 driver/driver.generic.display.mcy
-driver/driver.generic.i2c.bmp280.sensor.mcy
 driver/driver.generic.i2c.mcp7940n.rtc.mcy
 driver/driver.generic.i2c.ssd1306.oled.mcy
 driver/driver.generic.spi.sdcard.storage.mcy

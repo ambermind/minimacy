@@ -506,7 +506,7 @@ BOOL DeclareWindow(HINSTANCE this_inst)
 }
 
 
-WORKER_START _uiStart(volatile Thread* th)
+WORKER_START _uiStart(Worker* w)
 {
 	int xIsNil, yIsNil;
 	LINT y, x;
@@ -514,6 +514,7 @@ WORKER_START _uiStart(volatile Thread* th)
 	char* name;
 	RECT r;
 	int typeStyle;
+	Thread* th = workerThread(w);
 
 	LB* p = STACK_PNT(th, 0);
 	LINT type = STACK_INT(th, 1);
@@ -566,7 +567,7 @@ WORKER_START _uiStart(volatile Thread* th)
 //	uiRegisterTouchWindow(th, UI.win);
 	ShowWindow(UI.win, SW_SHOW);
 	UpdateWindow(UI.win);
-	workerDonePnt(th, MM._true);
+	workerDoneBool(w, 1);
 	hostLoop();
 #ifdef WITH_GL
 //	_windowReleaseGL();

@@ -37,9 +37,6 @@ void _bitmapFromYCrCb(LBitmap* b);
 void _bitmapToYCrCb(LBitmap* b);
 void idct88(LB* array);
 void dct88(LB* array);
-void _bitmapExportMono(LBitmap* b, int background, char* dst, LINT len);
-void _bitmapImportMono(LBitmap* b, int color, int background, char* src, LINT len);
 void _bitmapExportMonoVertical(LBitmap* b, int background, char* dst, LINT len);
-void _bitmapImportMonoVertical(LBitmap* b, int color, int background, char* src, LINT len);
-
+void _bitmapExport565(LBitmap* b, char* dst, LINT len);
 #endif

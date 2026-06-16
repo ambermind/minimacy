@@ -182,8 +182,8 @@ fun _wsReceiveReply(h, data)=
 fun _wsConnect(h)=
 	set h.tcpH=tcpOpen(h.ipH, h.portH);
 	set h.ttH= match h.tlsH with
-		12 -> Stream<tls12.tlsStartClient(h.tcpH, h.serverH),
-		13 -> Stream<tls13.tlsStartClient(h.tcpH, h.serverH),
+		12 -> Stream<tls12.tlsStartClient(Stream<h.tcpH, h.serverH),
+		13 -> Stream<tls13.tlsStartClient(Stream<h.tcpH, h.serverH),
 		_ -> Stream<h.tcpH;
 
 	set h.keyH=_wsHashSecret(strRand(32));

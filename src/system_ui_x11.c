@@ -408,21 +408,22 @@ void _uiApplyHints(LINT w, LINT h)
 	UI.w=w; UI.h=h;
 }
 
-WORKER_START _uiStart(volatile Thread* th)
+WORKER_START _uiStart(Worker *w)
 {
 	int xIsNil, yIsNil;
 	LINT x, y;
 	int typeStyle;
 	char* name;
+	Thread* th = workerThread(w);
 
 	LB* p = STACK_PNT(th, 0);
 	LINT type = STACK_INT(th, 1);
-	LINT h=STACK_INT(th,2);
-	LINT w=STACK_INT(th,3);
+	LINT height=STACK_INT(th,2);
+	LINT width=STACK_INT(th,3);
 	y = STACK_INT(th, 4);
 	x = STACK_INT(th, 5);
 
-	if (hwindowStartX(NULL)) workerDoneNil(th);
+	if (hwindowStartX(NULL)) return workerDoneNil(w);
 
 	if (!p) name = "Minimacy";
 	else name = STR_START(p);
@@ -432,19 +433,19 @@ WORKER_START _uiStart(volatile Thread* th)
 
 	if (typeStyle == UI_FULLSCREEN) {
 		x = y = 0;
-		w=DisplayWidth(UI.display,UI.screen);
-		h=DisplayHeight(UI.display,UI.screen);
-//		PRINTF(LOG_DEV,"size type %lld : %lld, %lld\n",type,w,h);
+		width=DisplayWidth(UI.display,UI.screen);
+		height=DisplayHeight(UI.display,UI.screen);
+//		PRINTF(LOG_DEV,"size type %lld : %lld, %lld\n",type,width,height);
 	}
 	UI.win=XCreateSimpleWindow(UI.display, RootWindow(UI.display,UI.screen),
-			x,y,w,h,0,WhitePixel(UI.display,UI.screen),
+			x,y,width,height,0,WhitePixel(UI.display,UI.screen),
 			BlackPixel(UI.display,UI.screen));
 	XSetStandardProperties(UI.display, UI.win, name,name,0,NULL,0,NULL);
 	#ifdef WITH_GL
 		_windowInitGL();
 	#endif
 
-	_uiApplyHints(w,h);
+	_uiApplyHints(width,height);
 
 	XSetWMProtocols(UI.display,UI.win, &UI.wmDeleteWindow, 1);
 	XChangeProperty(UI.display,UI.win, UI.XdndAware, XA_ATOM, 32, PropModeReplace, (unsigned char*)&UI.dndversion, 1);
@@ -455,7 +456,7 @@ WORKER_START _uiStart(volatile Thread* th)
 	XMapWindow(UI.display,UI.win);
 	XFlush(UI.display);
 
-	workerDonePnt(th, MM._true);
+	workerDoneBool(w, 1);
 	hostLoop();
 	return WORKER_RETURN;
 }

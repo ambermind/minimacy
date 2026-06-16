@@ -306,13 +306,12 @@ lockSync(_LockIp, lambda()=
 		_fifoU=fifoCreate(),
 		localAddrU=localAddr,
 		localPortU=localPort,
-		nameU= strFormat("*:*", localAddr, localPort),
 		remoteAddrU=remoteAddr,
 		remotePortU=remotePort
 	] -> udp in (
 		hashmapSet(UdpListener, key, udp);
-		streamInit(udp, nil,
-			lambda ()=	// onSelectRead
+		streamInit(udp, nil, "UDP", strFormat("*:*", localAddr, localPort),
+			lambda()=	// onSelectRead
 				if fifoCount(udp._fifoU)>=1 then
 				let fifoOut(udp._fifoU) -> [data, ip, port] in
 				if port<>nil then (
@@ -323,8 +322,10 @@ lockSync(_LockIp, lambda()=
 				)
 			,
 			lambda(data, start) = _udpSend(udp, strTail(data, start)),	// write
-			(lambda ()= hashmapSet(UdpListener, key, nil); streamCommonClose(udp)),	// close
-			(lambda(fEcho)= call fEcho("UDP", udp.nameU)));	// show
+			lambda()=	// close
+				hashmapSet(UdpListener, key, nil);
+				streamCommonClose(udp)
+		);
 		streamSetWritable(udp, true);
 		Udp<udp
 	));;
@@ -586,7 +587,6 @@ fun _tcpCreate(incoming, net, remoteAddr, remotePort, localPort)=
 	let strFromIp(remoteAddr) -> remoteAddrClear in
 	let [
 		incomingT=incoming,
-		nameT= strFormat("*:*", remoteAddrClear, remotePort),
 		netT=net,
 		keyT=key,
 		remoteAddrT=remoteAddrClear,	// clear text format (xx.xx.xx.xx)
@@ -602,16 +602,16 @@ fun _tcpCreate(incoming, net, remoteAddr, remotePort, localPort)=
 		lockT=lockCreate()
 	] -> t in (
 		hashmapSet(TcpListener, key, t);
-		streamInit(t, nil,
-			(lambda ()=	// onSelectRead
+		streamInit(t, nil, if t.incomingT then "TCPin" else "TCPout", strFormat("*:*", remoteAddrClear, remotePort),
+			lambda()=	// onSelectRead
 				if fifoCount(t.fifoRxT)>=1 then
 					let fifoOut(t.fifoRxT) -> data in streamReadEvent(t, data);
 					streamSetReadable(t, 0<fifoCount(t.fifoRxT));
-				void _tcpCheckEol(t);
-			),
+				void _tcpCheckEol(t)
+			,
 			lambda(data, start) = _tcpWrite(t, data, start),	// write
-			lambda ()= _tcpClose(t),	// close
-			(lambda(fEcho)= call fEcho(if t.incomingT then "TCPin" else "TCPout", t.nameT)));	// show
+			lambda()= _tcpClose(t)	// close
+		);
 		t
 	);;
 
@@ -620,29 +620,35 @@ fun _tcpLoopbackCreate(remoteAddr, remotePort, localPort, incoming) = [
 		remoteAddrT=strFromIp(remoteAddr),
 		remotePortT=remotePort,
 		incomingT=incoming,
-		nameT= strFormat("lo:*->*", localPort, remotePort)
 	];;
 
-fun _tcpLoopbackInit(lo, peer)=
-	streamInit(lo, nil,
-		lambda ()=	// onSelectRead
+fun _tcpLoopbackInit(lo, peer, remotePort, localPort)=
+	streamInit(lo, nil, if lo.incomingT then "TCPin" else "TCPout", strFormat("lo:*->*", localPort, remotePort), 
+		lambda()=	// onSelectRead
 			let fifoOut(lo.fifoLO) -> data in (
 				streamReadEvent(lo, data);
 				if data==nil then streamClose(lo);
 				void streamSetReadable(lo, 0<fifoCount(lo.fifoLO))					
 			)
 		,
-		(lambda(data, start) = echoLn "LoWrite"; fifoIn(peer.fifoLO, strTail(data, start)); streamSetReadable(peer, true); strLength(data)),	// write
-		(lambda ()= fifoIn(peer.fifoLO, nil); streamSetReadable(peer, true); streamCommonClose(lo)),	// close
-		lambda(fEcho)= call fEcho(if lo.incomingT then "TCPin" else "TCPout", lo.nameT));;	// show
+		lambda(data, start)=	// write
+			fifoIn(peer.fifoLO, strTail(data, start));
+			streamSetReadable(peer, true);
+			strLength(data)
+		,
+		lambda()=	// close
+			fifoIn(peer.fifoLO, nil);
+			streamSetReadable(peer, true);
+			streamCommonClose(lo)
+	);;
 
 fun _tcpLoopback(net, remoteAddr, remotePort, localPort)=
 	let _ipSrv(TcpSrvListener, remoteAddr, remotePort) -> srv in
 	if srv<>nil then
 	let _tcpLoopbackCreate(net.ipI, remotePort, localPort, false) -> cliLo in
 	let _tcpLoopbackCreate(net.ipI, localPort, remotePort, true) -> srvLo in (
-		_tcpLoopbackInit(cliLo, srvLo);
-		_tcpLoopbackInit(srvLo, cliLo);
+		_tcpLoopbackInit(cliLo, srvLo, remotePort, localPort);
+		_tcpLoopbackInit(srvLo, cliLo, localPort, remotePort);
 		fifoIn(srv.fifoS, Tcp<srvLo);
 		streamSetReadable(srv, true);
 		streamSetWritable(cliLo, true);
@@ -673,26 +679,24 @@ lockSync(TcpLock, lambda ()=
 	let _ipSrvKey(ipFromStr(addr), port) -> key in
 	if nil == hashmapGet(TcpSrvListener, key) then	// check existing connection
 	let [
-		nameTS=strFormat("*:*", addr, port),
 		keyS=key,
 		fifoS=fifoCreate()
 	] -> tcpSrv in (
 		hashmapSet(TcpSrvListener, key, tcpSrv);
-		streamInit(tcpSrv, nil,
-			(lambda ()=	// onSelectRead
+		streamInit(tcpSrv, nil, "TCPsrv", strFormat("*:*", addr, port),
+			lambda()=	// onSelectRead
 				if fifoCount(tcpSrv.fifoS)>=1 then
 					let fifoOut(tcpSrv.fifoS) -> tcp in
 					if tcp<>nil then
-					call tcpSrv.onAcceptTS(tcp);
+					streamAcceptEvent(tcpSrv, Stream<tcp);
 				void streamSetReadable(tcpSrv, 0<fifoCount(tcpSrv.fifoS))
-			),
+			,
 			nil,	// write
-			(lambda ()= 	// close
+			lambda()= 	// close
 				hashmapSet(TcpSrvListener, key, nil);
 				// should we also close all the tcp streams issued from this server?
 				streamCommonClose(tcpSrv)
-			),
-			(lambda(fEcho)= call fEcho("TCPsrv", tcpSrv.nameTS)));	// show
+		);
 		TcpSrv<tcpSrv
 	));;
 

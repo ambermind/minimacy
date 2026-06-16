@@ -76,7 +76,10 @@ fun _mkAnsiPartition(volume, name, writable)=
 		volumeP=volume,
 		writableP=writable,
 		openP=_mkAnsiOpen(writable),
-		diskListP= (lambda(output, path)= _workerEnter(); _ansiDiskList(output, path)),
+		diskListP= (lambda(output, path)=
+			let workerGet() -> wId in
+			_ansiDiskList(output, path, wId)
+		),
 		fileDeleteP=#_ansiFileDelete
 	]);;
 
@@ -181,31 +184,25 @@ fun fileFromContent(content)=
 fun _mkAnsiFileWrite(file) = lambda(seek, src, start, len) =
 	if len==0 then 0
 	elif !(len<0) then
-	(
-		_workerEnter();
-		_ansiFileWrite(file, seek, src, start, len)
-	)
-;;	
+	let workerGet() -> wId in
+	_ansiFileWrite(file, seek, src, start, len, wId);;	
 
 fun _mkAnsiFileRead(file) = lambda(seek, len) =
 	if len==0 then ""
 	elif !(len<0) then
 	let bytesCreate(len, 0) -> buffer in
-	(
-		_workerEnter(); 
-		let _ansiFileRead(file, seek, buffer, 0, len) -> len2 in
-		strLeftBytes(buffer, len2)
-	)
-;;
+	let workerGet() -> wId in
+	let _ansiFileRead(file, seek, buffer, 0, len, wId) -> len2 in
+	strLeftBytes(buffer, len2);;
 
 fun _mkAnsiOpen(writable)=
 	lambda(path, mode) =
 		if mode==FILE_READ_ONLY || writable then 
-		let (_workerEnter(); _ansiFileOpen(path, mode)) -> f in
+		let _ansiFileOpen(path, mode) -> f in
 		if f<>nil then [
-			sizeF= (lambda ()= _workerEnter(); _ansiFileSize(f)),
+			sizeF= lambda ()= _ansiFileSize(f),
 			tellF= lambda ()= _ansiFileTell(f),
-			closeF= (lambda ()= _workerEnter(); _ansiFileClose(f)),
+			closeF= lambda ()= _ansiFileClose(f),
 			writeF= if writable then _mkAnsiFileWrite(f),
 			readF= _mkAnsiFileRead(f)
 		];;

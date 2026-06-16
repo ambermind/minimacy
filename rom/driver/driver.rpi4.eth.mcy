@@ -466,7 +466,7 @@ fun _ethFeed(eth)= lockSync(Lock, lambda()=
 );;
 
 fun _netActivate(eth)=
-	streamInit(eth, nil,	// initialize stream
+	streamInit(eth, nil, "ethernet", eth.nameI,	// initialize stream
 		lambda()=	// onSelectRead
 			let fifoOut(eth.framesE) -> data in (
 				_ethFeed(eth);
@@ -474,8 +474,7 @@ fun _netActivate(eth)=
 			)
 		,
 		lambda(data, start) = lockSync(Lock, lambda()=pi4EthTransmit(eth, data)),	// write
-		lambda()= streamCommonClose(eth),	// close
-		lambda(fEcho)=	call fEcho("ethernet", eth.nameI)	// show
+		lambda()= streamCommonClose(eth)	// close
 	);
 	let watcherOpen("ethIn") -> watcher in (	// watcher on incoming frames
 		watcherInUpdateAddr(watcher);

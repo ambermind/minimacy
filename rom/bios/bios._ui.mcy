@@ -234,9 +234,9 @@ fun _uiStartDefault(x, y, w, h, flag, name)=
 	set _DstW= set _DstH=nil;
 	set _Mxx= set _Myy = 1.;
 	set _Mx= set _My = 0.;
-	_workerEnter();
 	set _UiFullGL = bitTest(flag, UI_GL);
-	if _uiStart(x, y, w, h, flag|UI_GL, name) then
+	let workerGet() -> wId in
+	if _uiStart(x, y, w, h, flag|UI_GL, name, wId) then
 	(
 		_glMakeContext();
 		if !_UiFullGL then (
@@ -362,8 +362,8 @@ fun _uiStartDefault(x, y, w, h, flag, name)=
 		echoLn "> This Minimacy VM doesn't support openGL";
 		return nil
 	);
-	_workerEnter();
-	if _uiStart(x, y, w, h, flag, name) then
+	let workerGet() -> wId in
+	if _uiStart(x, y, w, h, flag, name, wId) then
 	(
 		_backBufferResize(w, h);
 		true

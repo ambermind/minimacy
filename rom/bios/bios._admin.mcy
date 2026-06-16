@@ -62,18 +62,16 @@ fun ts()=
 
 fun inputs()=
 	echoLn "Inputs:";
-	let lambda(type, detail, id, name)= echoLn strFormat("*** *",
+	let lambda(type, detail, name)= echoLn strFormat("** *",
 		strPadWithSpace(10, type),
 		strPadWithSpace(22, detail),
-		strPadWithSpace(6, id),
 		name)
 	-> echoFormat in
 	(
-		call echoFormat("Type", "Detail", "Id", "Thread");
-		call echoFormat("----", "------", "--", "------");
-		for s in _StreamList do call s._showS((lambda(type, detail)=
-			call echoFormat(type, detail, strFromInt(threadId(s._thS)), s._thS._nameT)
-		));
+		call echoFormat("Type", "Detail", "Thread");
+		call echoFormat("----", "------", "------");
+		for s in _StreamList do
+			call echoFormat(streamType(s), streamDetail(s), strFormat("*: *",threadId(s._thS), s._thS._nameT));
 		echoLn "";
 		true
 	);;

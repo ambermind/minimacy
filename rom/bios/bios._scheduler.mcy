@@ -51,7 +51,6 @@ fun _schedulerStart()=
 		fifoList(_RunList);	// this clear the fifo
 		set _TimerList=nil;
 		set _UiThread=nil;
-		set _WorkerList=nil;
 		set _StreamList = _InternalPipe::nil;
 		pkgForgetAll();
 		gcCompact();	// may activate some oblivion callback

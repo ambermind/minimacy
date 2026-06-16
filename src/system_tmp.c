@@ -21,7 +21,7 @@ WORKER_START _mp3Decode(volatile Thread* th)
 
 	LB* src = STACK_PNT(th, 0);
 	Buffer* out = (Buffer*)STACK_PNT(th, 1);
-	if ((!src) || (!out)) return workerDonePnt(th, MM._false);
+	if ((!src) || (!out)) return workerDoneNil(th);
 	bufferSetWorkerThread(&out, &th);
 	input_buf = STR_START(src);
 	buf_size = (int)STR_LENGTH(src);
@@ -39,7 +39,7 @@ WORKER_START _mp3Decode(volatile Thread* th)
 		}
 	} while (samples || info.frame_bytes);
 	bufferUnsetWorkerThread(&out, &th);
-	return workerDonePnt(th, MM._true);
+	return workerDoneBool(th, 1);
 }
 
 int fun_mp3Decode(Thread* th) { return workerStart(th, 2, _mp3Decode); }

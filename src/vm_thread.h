@@ -6,29 +6,6 @@
 
 extern LINT ThreadCounter;
 
-#define WORKER_READY 0
-#define WORKER_RUN 1
-#define WORKER_DONE 2
-#define WORKER_ALLOC_EXT 3
-#define WORKER_BIGGER_BUFFER 4
-
-
-typedef struct {
-	volatile LINT state;
-	LINT sp;
-	LINT allocSize;
-	LINT w;
-	LINT h;
-	MSEM* sem;
-	Buffer* buffer;
-	LW result;
-	int type;
-	int OM;
-	LW dbg;
-	FORGET forget;
-	MARK mark;
-} Worker;
-
 struct Thread
 {
 	LB header;
@@ -43,11 +20,7 @@ struct Thread
 	LB* fun;
 	LINT forceOpcode;
 
-	volatile Thread** link;
-
 	Thread* listNext;
-
-	Worker worker;
 
 	LB* user;
 	LB* error;
@@ -167,7 +140,7 @@ int systemThreadInit(Pkg *system);
 	if ((start < 0) || (len < 0)) abort;
 
 #define FUN_SUBSTR(src,start,len,lenIsNil,srcLen) _COMMON_SUBSTR(src,start,len,lenIsNil,srcLen,FUN_RETURN_NIL)
-#define WORKER_SUBSTR(src,start,len,lenIsNil,srcLen) _COMMON_SUBSTR(src,start,len,lenIsNil,srcLen,return workerDoneNil(th))
+#define WORKER_SUBSTR(src,start,len,lenIsNil,srcLen) _COMMON_SUBSTR(src,start,len,lenIsNil,srcLen,return workerDoneNil(w))
 
 #define FUN_CHECK_CONTAINS(p,start,len,srcLen) \
 	if (!p) FUN_RETURN_NIL;	\

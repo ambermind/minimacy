@@ -274,50 +274,6 @@ int fun_dct88(Thread* th)
 	if (ARRAY_LENGTH(array) == 64) dct88(array);
 	return 0;
 }
-int fun_bitmapExportMono(Thread* th)
-{
-	LB* output;
-	LINT len;
-	LINT background = STACK_PULL_INT(th);
-	LBitmap* b = (LBitmap*)STACK_PNT(th, 0);
-	if ((!b) || (b->w & 7)) FUN_RETURN_NIL;
-	len = (b->w >> 3) * b->h;
-	output = memoryAllocStr(NULL, len); if (!output) return EXEC_OM;
-	_bitmapExportMono(b, (int)background, STR_START(output), len);
-	FUN_RETURN_PNT(output);
-}
-int fun_bitmapExportMonoBytes(Thread* th)
-{
-	LINT background = STACK_PULL_INT(th);
-	LINT offset = STACK_PULL_INT(th);
-	LB* output = STACK_PULL_PNT(th);
-	LBitmap* b = (LBitmap*)STACK_PNT(th, 0);
-	if ((!b) || (b->w & 7) || (offset < 0)) FUN_RETURN_NIL;
-	_bitmapExportMono(b, (int)background, STR_START(output) + offset, STR_LENGTH(output) - offset);
-	FUN_RETURN_PNT(output);
-}
-int fun_bitmapImportMono(Thread* th)
-{
-	LINT background = STACK_PULL_INT(th);
-	LINT color = STACK_PULL_INT(th);
-	LB* src = STACK_PULL_PNT(th);
-	LBitmap* b = (LBitmap*)STACK_PNT(th, 0);
-	if ((!b) || (!src)) return 0;
-	_bitmapImportMono(b, (int)color, (int)background, STR_START(src), STR_LENGTH(src));
-	return 0;
-}
-int fun_bitmapExportMonoVertical(Thread* th)
-{
-	LB* output;
-	LINT len;
-	LINT background = STACK_PULL_INT(th);
-	LBitmap* b = (LBitmap*)STACK_PNT(th, 0);
-	if ((!b) || (b->w & 7)) FUN_RETURN_NIL;
-	len = (b->w >> 3) * b->h;
-	output = memoryAllocStr(NULL, len); if (!output) return EXEC_OM;
-	_bitmapExportMonoVertical(b, (int)background, STR_START(output), len);
-	FUN_RETURN_PNT(output);
-}
 int fun_bitmapExportMonoVerticalBytes(Thread* th)
 {
 	LINT background = STACK_PULL_INT(th);
@@ -328,15 +284,14 @@ int fun_bitmapExportMonoVerticalBytes(Thread* th)
 	_bitmapExportMonoVertical(b, (int)background, STR_START(output)+offset, STR_LENGTH(output)-offset);
 	FUN_RETURN_PNT(output);
 }
-int fun_bitmapImportMonoVertical(Thread* th)
+int fun_bitmapExport565Bytes(Thread* th)
 {
-	LINT background = STACK_PULL_INT(th);
-	LINT color = STACK_PULL_INT(th);
-	LB* src = STACK_PULL_PNT(th);
+	LINT offset = STACK_PULL_INT(th);
+	LB* output = STACK_PULL_PNT(th);
 	LBitmap* b = (LBitmap*)STACK_PNT(th, 0);
-	if ((!b) || (!src)) return 0;
-	_bitmapImportMonoVertical(b, (int)color, (int)background, STR_START(src), STR_LENGTH(src));
-	return 0;
+	if ((!b) || (offset < 0)) FUN_RETURN_NIL;
+	_bitmapExport565(b, STR_START(output) + offset, STR_LENGTH(output) - offset);
+	FUN_RETURN_PNT(output);
 }
 
 int system2dInit(Pkg *system)
@@ -397,12 +352,9 @@ int system2dInit(Pkg *system)
 		{ NATIVE_FUN, "bitmapToYCrCb", fun_bitmapToYCrCb, "fun Bitmap -> Int"},
 		{ NATIVE_FUN, "idct88", fun_idct88, "fun array Float -> array Float"},
 		{ NATIVE_FUN, "dct88", fun_dct88, "fun array Float -> array Float"},
-		{ NATIVE_FUN, "bitmapExportMono", fun_bitmapExportMono, "fun Bitmap Int -> Str"},
-		{ NATIVE_FUN, "bitmapExportMonoBytes", fun_bitmapExportMonoBytes, "fun Bitmap Bytes Int Int -> Bitmap"},
-		{ NATIVE_FUN, "bitmapImportMono", fun_bitmapImportMono, "fun Bitmap Str Int Int -> Bitmap"},
-		{ NATIVE_FUN, "bitmapExportMonoVertical", fun_bitmapExportMonoVertical, "fun Bitmap Int -> Str"},
 		{ NATIVE_FUN, "bitmapExportMonoVerticalBytes", fun_bitmapExportMonoVerticalBytes, "fun Bitmap Bytes Int Int -> Bitmap"},
-		{ NATIVE_FUN, "bitmapImportMonoVertical", fun_bitmapImportMonoVertical, "fun Bitmap Str Int Int -> Bitmap"},
+		{ NATIVE_FUN, "bitmapExport565Bytes", fun_bitmapExport565Bytes, "fun Bitmap Bytes Int -> Bitmap"},
+
 	};
 	NATIVE_DEF(nativeDefs);
 	return 0;

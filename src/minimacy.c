@@ -135,6 +135,7 @@ const char** MTargv=NULL;
 MTHREAD_START startThread(void* custom)
 {
 	start(MTargc,(const char**)MTargv);
+	exit(0);
 	return MTHREAD_RETURN;
 }
 int startInThread(int argc, const char** argv)

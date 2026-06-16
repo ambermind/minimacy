@@ -224,7 +224,7 @@ fun _httpReceiveReply(h, data)=
 
 fun _httpConnect(h)=
 if DEBUG then echoLn strFormat("_httpConnect *:*", h.ipH, h.portH);
-	set h.tcpH=tcpOpen(h.ipH, h.portH);
+	set h.tcpH=Stream<tcpOpen(h.ipH, h.portH);
 	set h.ttH = set h.ttCopyH =
 		if h.tlsH then
 			if h.forceTls12H then
@@ -232,7 +232,7 @@ if DEBUG then echoLn strFormat("_httpConnect *:*", h.ipH, h.portH);
 			else
 				Stream<tls13.tlsStartClientExt(h.tcpH, h.serverH, h.cipherSuitesH, h.clientCertificateH, h.clientKeyH)
 		else
-			Stream<h.tcpH;
+			h.tcpH;
 	streamOnEvent(h.ttH,
 		(lambda(data)=
 			if DEBUG then (
@@ -281,7 +281,7 @@ fun httpGetHeader(h, headerName)= hashmapGet(h.replyHeadersH, strLowercase(heade
 fun httpSetHeader(h, key, val)=
 	hashmapSet(h.requestHeadersH, key, val);
 	h;;
-fun httpGetRemote(h) = [tcpRemoteIp(h.tcpH), tcpRemotePort(h.tcpH)];;	// returns [ip port]
+fun httpGetRemote(h) = [tcpRemoteIp(tcpFromStream(h.tcpH)), tcpRemotePort(tcpFromStream(h.tcpH))];;	// returns [ip port]
 
 fun httpGetCertificateChain(h)= 
 	match h.ttCopyH with 

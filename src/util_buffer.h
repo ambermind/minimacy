@@ -18,8 +18,7 @@ struct Buffer
 	LINT index;
 	LB* bloc;
 	char* buffer;
-	volatile Thread** pth;
-	volatile Buffer** link;
+	Worker* worker;
 };
 
 int _bufferBiggerFinalize(Buffer* b, LINT newsize);
@@ -28,21 +27,18 @@ Buffer* bufferCreate(void);
 Buffer* bufferReset(Buffer* b, LINT size);
 void bufferReinit(Buffer* b);
 void bufferRemove(Buffer* b, int delta);
-void bufferSetWorkerThread(volatile Buffer** pb, volatile Thread** pth);
-void bufferUnsetWorkerThread(volatile Buffer** pb, volatile Thread** pth);
-int bufferAddCharWorker(volatile Buffer** pb,char c);
+
 int bufferAddChar(Buffer* b,char c);
 int bufferAddZero(Buffer* b,LINT n);
 int bufferAddInt(Buffer* b,LINT i);
 int bufferAddIntN(Buffer* b,LINT i,LINT n);
 char bufferGetChar(Buffer* b,LINT index);
+char* bufferGetCharAddress(Buffer* b,LINT index);
 void bufferSetChar(Buffer* b,LINT index,char c);
 void bufferDelete(Buffer* b, LINT index, LINT remove);
 void bufferSetInt(Buffer* b,LINT index,LINT i);
 void bufferSetIntN(Buffer* b,LINT index,LINT i,LINT n);
 LINT bufferGetIntN(Buffer* b,LINT index,LINT n);
-char* bufferRequireWorker(volatile Buffer** pb, LINT len);
-int bufferAddBinWorker(volatile Buffer** pb, char* src, LINT len);
 int bufferAddBin(Buffer* b,char *src,LINT len);
 int bufferAddStr(Buffer* b,char *src);
 int bufferVPrintf(Buffer* b, char* format, va_list arglist);
@@ -52,4 +48,10 @@ LINT bufferSize(Buffer* b);
 char* bufferStart(Buffer* b);
 int bufferItem(Buffer* b, LW v, int type, LB* join);
 int bufferFormat(Buffer* b, Thread* th, LINT argc);
+
+Buffer* fixedBufferGet(LINT fixedRoot);
+void bufferSetWorker(Buffer* b, Worker* w);
+char* fixedBufferRequire(LINT fixedRoot, LINT len);
+int fixedBufferAddChar(LINT fixedRoot, char c);
+int fixedBufferAddBin(LINT fixedRoot, char* src, LINT len);
 #endif

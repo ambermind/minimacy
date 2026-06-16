@@ -212,7 +212,7 @@ fun _netFeed(enc, data)=
 	
 fun _netActivate(enc)=
 	if DEBUG then echoLn "> encX24j600: ethActivate";
-	streamInit(enc, nil,
+	streamInit(enc, nil, "ethernet", enc.nameI,
 		lambda()=	// onSelectRead
 			let fifoOut(enc.framesE) -> data in (
 				_netFeed(enc, nil);
@@ -220,8 +220,7 @@ fun _netActivate(enc)=
 			)
 		,
 		lambda(data, start) = if encX24j600Send(enc, data) then strLength(data),	// write
-		lambda()= streamCommonClose(enc),	// close
-		lambda(fEcho)=	call fEcho("ethernet", enc.nameI)	// show
+		lambda()= streamCommonClose(enc)	// close
 	);
 	streamSetWritable(enc, true);
 	encX24j600OnReceive(enc, lambda(data)= _netFeed(enc, data));

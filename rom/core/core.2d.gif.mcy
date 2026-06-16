@@ -24,11 +24,6 @@ const GIF_HEADER_FLAG=3::1::3::1::nil;;
 const GIF_LOCAL=2::2::2::2::1::nil;;
 const GIF_LOCAL_FLAG=3::3::1::1::nil;;
 
-
-fun _strFromLzwList(lData, bitLen)=
-	let lzwCreate(bitLen) -> lzw in
-	strListConcat(listMap(lData, lambda(data)=lzwInflate(lzw, data, 0, nil)));;
-
 fun _gifHeader(src, i, l)=
 	if l<>nil then let head(l) -> len in
 	let match len with
@@ -70,7 +65,7 @@ fun _localExtract(src, i, mainLut, delay, transp)=
 		let i+1 -> i in
 		let _readBlocks(src, i) -> data in
 		let _readNextI(src, i) -> iNext in
-		let _strFromLzwList(data, bpp) -> extract in
+		let strFromLzw(strBuild(data), bpp) -> extract in
 		let bitmapCreate(w, h, 0) -> bmp in
 		let if I<>0 then GIF_INTERLACED else GIF_NOT_INTERLACED -> lRows in
 		(
@@ -133,16 +128,15 @@ fun framesFromGif(src)=
 	let gifExtract(src) -> gif in
 	if gif<>nil then
 	let gif.bitmapG -> bmp in
-	arrayFromList(listMap(gif.lComponentsG, (lambda([x, y, image, delay])=
+	arrayFromList(listMap(gif.lComponentsG, lambda([x, y, image, delay])=
 		bitmapBlit(bmp, x, y, image, 0, 0, nil, nil, BLEND_ALPHA);
 		[bitmapCopy(bmp, 0, 0, nil, nil), delay]
-	)));;
+	));;
 
 fun bitmapFromGif(src)=
 	let gifExtract(src) -> gif in
 	if gif<>nil then
-	let gif.bitmapG -> bmp in
-	(
+	let gif.bitmapG -> bmp in (
 		for [x, y, image, delay] in gif.lComponentsG do
 			bitmapBlit(bmp, x, y, image, 0, 0, nil, nil, BLEND_ALPHA);
 		bmp

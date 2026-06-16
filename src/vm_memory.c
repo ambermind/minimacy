@@ -218,6 +218,7 @@ cleanup:
 }
 void memoryGCinit(void)
 {
+	int i;
 	LB* p;
 	MM.gcStage = GC_STAGE_MARK;
 	MM.listCheck = MM.listBlocks;
@@ -239,6 +240,7 @@ void memoryGCinit(void)
 	BLOCK_MARK(MM.popOblivions);
 	BLOCK_MARK(MM.tmpRoot);
 	BLOCK_MARK(MM.partitionsFS);
+	for (i = 0; i < FIXED_ROOTS_COUNT; i++) BLOCK_MARK(MM.fixedRoots[i]);
 	romdiskMark(NULL);
 	p = MM.listSafe;
 	while (p)
@@ -441,6 +443,30 @@ void memorySetTmpRoot(LB* p)
 	MM.tmpRoot = p;
 	BLOCK_MARK(MM.tmpRoot);
 }
+
+LINT fixedRootAlloc(LB* p)
+{
+	LINT i;
+	if (!p) return -1;
+	lockEnter(&MM.lock);
+	for (i = 0; i < FIXED_ROOTS_COUNT; i++) if (!MM.fixedRoots[i]) {
+		MM.fixedRoots[i]=p;
+//		PRINTF(LOG_SYS,"fixedRootAlloc -> %d\n", i);
+		lockLeave(&MM.lock);
+		return i;
+	}
+	lockLeave(&MM.lock);
+	return -1;
+}
+void fixedRootRelease(LINT fixedRoot) {
+//	PRINTF(LOG_SYS,"fixedRootRelease %d\n", fixedRoot);
+	if (fixedRoot>=0 && fixedRoot< FIXED_ROOTS_COUNT) MM.fixedRoots[fixedRoot]=NULL;
+}
+volatile LB* fixedRootValue(LINT fixedRoot) {
+	if (fixedRoot >= 0 && fixedRoot < FIXED_ROOTS_COUNT) return MM.fixedRoots[fixedRoot];
+	return NULL;
+}
+
 void memoryInit(int argc, const char** argv)
 {
 	int i;
@@ -476,7 +502,9 @@ void memoryInit(int argc, const char** argv)
 	MM.roots = NULL;
 	MM.popOblivions = NULL;
 	MM.tmpRoot = NULL;
+	for (i = 0; i < FIXED_ROOTS_COUNT; i++) MM.fixedRoots[i] = NULL;
 
+	for (i = 0; i < WORKERS_COUNT; i++) MM.workers[i].state = WORKER_READY;
 	MM._true = MM._false = NULL;
 
 	MM.ansiVolume= NULL;

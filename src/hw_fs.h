@@ -37,7 +37,7 @@ long long devNbSectors(char* path);
 int devSectorSize(char* path);
 
 LB* ansiReadContent(char* path, int* size);
-LINT ansiDirectoryList(volatile Buffer** pout, char* dir);
+LINT ansiDirectoryList(LINT fixedRootBuffer, char* dir);
 int ansiVolumeList(Thread* th, int* n);
 void ansiHelpBiosFinder(void);
 int ansiFsMount(const char* argv0, int standalone);

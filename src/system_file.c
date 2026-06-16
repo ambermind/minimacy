@@ -14,7 +14,7 @@ int _ansiFileForget(LB* p)
 	return 0;
 }
 
-WORKER_START _ansiFileOpen(volatile Thread* th)
+int fun_ansiFileOpen(Thread* th)
 {
 	File* f;
 	char* mode;
@@ -37,24 +37,23 @@ WORKER_START _ansiFileOpen(volatile Thread* th)
 	{
 		if (!ansiCreateDirs(STR_START(name))) file = ansiFileOpen(STR_START(name), mode);
 	}
-	if (!file) return workerDoneNil(th);
-	if (workerAllocExt(&th, sizeof(File), DBG_BIN, _ansiFileForget, NULL)) return workerDoneNil(th);	 // worker.OM has been set
-	f = (File*)STACK_PNT(th, 0);
-	f->file = file;
-	return workerDonePnt(th, (LB*)f);
-}
-int fun_ansiFileOpen(Thread* th) { return workerStart(th, 2, _ansiFileOpen); }
+	if (!file) FUN_RETURN_NIL;
 
-WORKER_START _ansiFileSize(volatile Thread* th)
+	f = (File*)memoryAllocNative(sizeof(File), DBG_BIN, _ansiFileForget, NULL); if (!f) return EXEC_OM;
+	f->file = file;
+	FUN_RETURN_PNT((LB*)f);
+}
+
+int fun_ansiFileSize(Thread* th) 
 {
 	File* f = (File*)STACK_PNT(th, 0);
-	if (f) return workerDoneInt(th,ansiFileSize(f->file));
-	return workerDoneNil(th);
+	if (!f) FUN_RETURN_NIL;
+	FUN_RETURN_INT(ansiFileSize(f->file));
 }
-int fun_ansiFileSize(Thread* th) { return workerStart(th, 1, _ansiFileSize); }
 
-WORKER_START _ansiFileRead(volatile Thread* th)
+WORKER_START _ansiFileRead(Worker* w)
 {
+	Thread* th = workerThread(w);
 	int lenIsNil = STACK_IS_NIL(th,0);
 	LINT len = STACK_INT(th, 0);
 	LINT start = STACK_INT(th, 1);
@@ -62,15 +61,16 @@ WORKER_START _ansiFileRead(volatile Thread* th)
 	int seekIsNil = STACK_IS_NIL(th,3);
 	LINT seek = STACK_INT(th, 3);
 	File* f = (File*)STACK_PNT(th, 4);
-	if (!f) return workerDoneNil(th);
+	if (!f) return workerDoneNil(w);
 	if ((!seekIsNil)&&(seek >= 0)) ansiFileSeek(f->file, seek);
 	WORKER_SUBSTR(src, start, len, lenIsNil, STR_LENGTH(src));
-	return workerDoneInt(th, ansiFileRead(f->file, STR_START(src)+start, len));
+	return workerDoneInt(w, ansiFileRead(f->file, STR_START(src)+start, len));
 }
 int fun_ansiFileRead(Thread* th) { return workerStart(th, 5, _ansiFileRead); }
 
-WORKER_START _ansiFileWrite(volatile Thread* th)
+WORKER_START _ansiFileWrite(Worker* w)
 {
+	Thread* th = workerThread(w);
 	int lenIsNil = STACK_IS_NIL(th,0);
 	LINT len = STACK_INT(th, 0);
 	LINT start = (STACK_INT(th, 1));
@@ -78,33 +78,35 @@ WORKER_START _ansiFileWrite(volatile Thread* th)
 	int seekIsNil = STACK_IS_NIL(th,3);
 	LINT seek = STACK_INT(th, 3);
 	File* f = (File*)STACK_PNT(th, 4);
-	if (!f) return workerDoneNil(th);
+	if (!f) return workerDoneNil(w);
 	if ((!seekIsNil) && (seek >= 0)) ansiFileSeek(f->file, seek);
 	WORKER_SUBSTR(dst, start, len, lenIsNil, STR_LENGTH(dst));
-	return workerDoneInt(th,ansiFileWrite(f->file, STR_START(dst) + start, len));
+	return workerDoneInt(w,ansiFileWrite(f->file, STR_START(dst) + start, len));
 }
 int fun_ansiFileWrite(Thread* th) { return workerStart(th, 5, _ansiFileWrite); }
 
-WORKER_START _ansiFileClose(volatile Thread* th)
+int fun_ansiFileClose(Thread* th)
 {
 	File* f = (File*)STACK_PNT(th, 0);
-	if (!f) return workerDoneNil(th);
+	if (!f) FUN_RETURN_NIL;
 	ansiFileClose(f->file);
 	f->file=NULL;
-	return workerDonePnt(th, MM._true);
+	FUN_RETURN_TRUE;
 }
-int fun_ansiFileClose(Thread* th) { return workerStart(th, 1, _ansiFileClose); }
 
-WORKER_START _ansiDiskList(volatile Thread* th)
+WORKER_START _ansiDiskList(Worker* w)
 {
+	LINT fixedRootBuffer;
+	Thread* th = workerThread(w);
 	LINT result;
 	LB* path = STACK_PNT(th, 0);
-	volatile Buffer* out = (Buffer*)STACK_PNT(th, 1);
-	if ((!path) || (!out)) return workerDoneNil(th);
-	bufferSetWorkerThread(&out, &th);
-	result = ansiDirectoryList(&out, STR_START(path));
-	bufferUnsetWorkerThread(&out, &th);
-	return workerDoneInt(th, result);
+	Buffer* out = (Buffer*)STACK_PNT(th, 1);
+	if ((!path) || (!out)) return workerDoneNil(w);
+	bufferSetWorker(out, w);
+	fixedRootBuffer = fixedRootAlloc((LB*)out);
+	result = ansiDirectoryList(fixedRootBuffer, STR_START(path));
+	fixedRootRelease(fixedRootBuffer);
+	return workerDoneInt(w, result);
 }
 int fun_ansiDiskList(Thread* th) { return workerStart(th, 2, _ansiDiskList); }
 
@@ -221,10 +223,10 @@ int systemFileInit(Pkg *system)
 		{ NATIVE_FUN, "_ansiFileOpen", fun_ansiFileOpen, "fun Str FileMode -> _AnsiFile" },
 		{ NATIVE_FUN, "_ansiFileSize", fun_ansiFileSize, "fun _AnsiFile -> Int" },
 		{ NATIVE_FUN, "_ansiFileTell", fun_ansiFileTell, "fun _AnsiFile -> Int" },
-		{ NATIVE_FUN, "_ansiFileRead", fun_ansiFileRead, "fun _AnsiFile Int Bytes Int Int -> Int" },
-		{ NATIVE_FUN, "_ansiFileWrite", fun_ansiFileWrite, "fun _AnsiFile Int Str Int Int -> Int" },
+		{ NATIVE_FUN, "_ansiFileRead", fun_ansiFileRead, "fun _AnsiFile Int Bytes Int Int Int -> Int" },
+		{ NATIVE_FUN, "_ansiFileWrite", fun_ansiFileWrite, "fun _AnsiFile Int Str Int Int Int -> Int" },
 		{ NATIVE_FUN, "_ansiFileClose", fun_ansiFileClose, "fun _AnsiFile -> Bool" },
-		{ NATIVE_FUN, "_ansiDiskList", fun_ansiDiskList, "fun Buffer Str -> Int" },
+		{ NATIVE_FUN, "_ansiDiskList", fun_ansiDiskList, "fun Buffer Str Int -> Int" },
 		{ NATIVE_FUN, "_ansiFileDelete", fun_ansiFileDelete, "fun Str -> Bool" },
 		{ NATIVE_FUN, "_ansiDirDelete", fun_ansiDirDelete, "fun Str -> Bool" },
 		{ NATIVE_FUN, "devNbSectors", fun_devNbSectors, "fun Str -> Int" },

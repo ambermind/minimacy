@@ -259,6 +259,7 @@ var GL_PROJECTION_MATRIX=0;;
 var GL_MODELVIEW_MATRIX=1;;
 
 fun glInitShaders ()=
+	echo "> openGL: ";
 	echoLn strJoin(" | ", [glGetString(GL_VERSION), glGetString(GL_VENDOR), glGetString(GL_RENDERER), glGetString(GL_SHADING_LANGUAGE_VERSION)]);
 	set ProgramMono= loadProgram(VERTEX_MONO, FRAGMENT_MONO, "aVertexPosition"::nil, "uColor"::"uPMatrix"::nil);
 	set ProgramColors= loadProgram(VERTEX_COLORS, FRAGMENT_COLORS, "aVertexPosition"::"aVertexColor"::nil, "uPMatrix"::nil);

@@ -7,6 +7,9 @@ export sftpServerOnNotify(h, f);;
 export sftpServerOnDir(h, f);;
 export sftpServerOnGet(h, f);;
 export sftpServerOnPut(h, f);;
+export sftpServerSetIdleTimeout(sftpServer, idleTimeout);;
+export sftpServerSetMaxConnections(sftpServer, maxConnections, evictionTimeout);;
+export sftpServerSetMaxRequestSize(h, maxRequestSize);;
 export SFTP_OPTION_SFTP, SFTP_OPTION_SCP_GET, SFTP_OPTION_SCP_PUT;;
 
 use core.net.ssh;;
@@ -15,12 +18,16 @@ use core.crypto.key;;
 
 const SSH_DEBUG=false;;
 
+const SFTPSERVER_MAX_REQUEST_SIZE=1024*1024;;
+
 const SFTP_OPTION_SFTP   = 1;;
 const SFTP_OPTION_SCP_GET= 2;;
 const SFTP_OPTION_SCP_PUT= 4;;
 
-struct SSHsftpServer= SSH + [channelS, modeS, stageS, pendingDataS, handleS, tmpGetS, tmpPutListS, tmpPathS,
-	optionsS,
+struct SSH_sftpServer=[srvS];;
+
+struct SSH_sftpServerSide= SSH + [channelS, modeS, stageS, pendingDataS, handleS, tmpGetS, tmpPutListS, tmpPutLengthS, tmpPathS,
+	optionsS, maxRequestSizeS,
 	fNotifyS, fDirS, fGetS, fPutS];;
 
 sum SftpMode = idleMode, sftpMode, scpPutMode, scpGetMode;;
@@ -174,6 +181,7 @@ fun sftpParseClose(h, data)=
 		else
 			let strBuild(listReverse(h.tmpPutListS)) -> data in (
 				set h.tmpPutListS=nil;
+				set h.tmpPutLengthS=nil;
 				if !call h.fPutS(h.tmpPathS, data) then sftpSendStatus(h, reqId, SSH_FX_PERMISSION_DENIED, "Permission denied")
 				else sftpSendStatus(h, reqId, SSH_FX_OK, "");
 				set h.tmpPathS=nil;
@@ -204,6 +212,7 @@ fun sftpParseOpen(h, data)=
 			void if h.fPutS==nil then sftpSendStatus(h, reqId, SSH_FX_PERMISSION_DENIED, "Permission denied")
 			else (
 				set h.tmpPutListS=nil;
+				set h.tmpPutLengthS=nil;
 				set h.tmpPathS=path;
 				sftpSendHandle(h, reqId);
 				set h.stageS=sftpPutStage;
@@ -239,7 +248,12 @@ fun sftpParseWrite(h, data)=
 	let _parseMsg(data, i+8) -> msg in (
 		if SSH_DEBUG then echoLn strFormat("sftp< Write * '*' from:* len:*", reqId, hexFromStr(handle), offsetL, strLength(msg));
 		set h.tmpPutListS=msg::h.tmpPutListS;
-		sftpSendStatus(h, reqId, SSH_FX_OK, "")
+		set h.tmpPutLengthS=h.tmpPutLengthS + strLength(msg);
+		if h.tmpPutLengthS>h.maxRequestSizeS then (
+			sftpSendStatus(h, reqId, SSH_FX_FAILURE, "Quota exceeded");
+			_scpClose(h, nil)
+		)
+		else sftpSendStatus(h, reqId, SSH_FX_OK, "")
 	);;
 
 fun sftpParseFSetStat(h, data)=
@@ -296,7 +310,8 @@ fun _scpClose(h, data)=
 	if data<>nil then sshSendChannelData(h.channelS, data);
 	sshSendChannelRequest(h.channelS, "exit-status", false, sshMsgInt(0));
 	sshSendChannelMsg(h.channelS, SSH2_MSG_CHANNEL_CLOSE, nil);
-	set h.modeS=idleMode;;
+	set h.modeS=idleMode;
+	streamClose(h.tcpS);;
 
 fun  _scpHandleGet(h, data)=
 	if SSH_DEBUG then echoLn "sftp< scp handle";
@@ -324,14 +339,20 @@ fun _scpHandlePut(h, data)=
 		void if !strStartsWith(data, "C") then _scpClose(h, "\2Broken connectionx\n")
 		else (
 			set h.tmpPutListS=nil;
+			set h.tmpPutLengthS=nil;
 			sshSendChannelData(h.channelS, "\0");
 			set h.stageS=scpPutDataStage
 		),
 	scpPutDataStage ->
-		void if data!="\0" then set h.tmpPutListS=data::h.tmpPutListS
+		void if data!="\0" then (
+			set h.tmpPutListS=data::h.tmpPutListS;
+			set h.tmpPutLengthS=h.tmpPutLengthS + strLength(data);
+			if h.tmpPutLengthS>h.maxRequestSizeS then _scpClose(h, "\2Quota exceeded\n")
+		)
 		else
 		let strBuild(listReverse(h.tmpPutListS)) -> data in (
 			set h.tmpPutListS=nil;
+			set h.tmpPutLengthS=nil;
 			sshSendChannelData(h.channelS, "\0");
 			if !call h.fPutS(h.tmpPathS, data) then _scpClose(h, "\2Broken connectionx\n")
 			else _scpClose(h, nil)
@@ -383,7 +404,8 @@ fun _sftpStart(h)=
 					scpPutMode -> _scpHandlePut(h, data),
 					sftpMode -> (
 						set h.pendingDataS=strConcat(h.pendingDataS, data);
-						_sftpProcessFrames(h)
+						if strLength(h.pendingDataS)>h.maxRequestSizeS then void _scpClose(h, "\2Quota exceeded\n")
+						else _sftpProcessFrames(h)
 					)
 				)
 				elif code==SSH_CHANNEL_EOF then (
@@ -398,22 +420,28 @@ fun _sftpStart(h)=
 
 fun sftpServerStart(serverKey, serverKeyPassword, localIp, localPort, options, fAuth)= 
 	let keyFromPEM(serverKey, serverKeyPassword) -> serverKey in
+	if serverKey==nil then void (if SSH_DEBUG then echoLn "sftp< UNABLE TO LOAD SERVER KEY")
+	else
 	let tcpSrvCreate(localIp, localPort) -> tcpSrv in
 	if tcpSrv==nil then void (if SSH_DEBUG then echoLn strFormat("sftp< UNABLE TO START TCP SERVER ON *:*", localIp, localPort))
 	else (
 		if SSH_DEBUG then echoLn strFormat("sftp< SERVER STARTED ON PORT *:*", localIp, localPort);
-		tcpSrvOnAccept(tcpSrv, lambda(tcp)= 
-			let [optionsS=options, modeS=idleMode, handleS=0] -> h in
-			sshAccept(h, serverKey, tcp, 
-				lambda(authMode, login, authData) = call fAuth(h, authMode, login, authData),
-				lambda(code, data)=
+		tcpSrvOnAccept(tcpSrv, lambda(stream)= 
+			let [optionsS=options, modeS=idleMode, handleS=0, maxRequestSizeS=SFTPSERVER_MAX_REQUEST_SIZE] -> h in
+			sshAccept(h, serverKey, stream, 
+				lambda(authMode, login, authData) = call fAuth(h, authMode, login, authData),	// Authentication
+				lambda(code, data)=	// Notification
 					if SSH_DEBUG then echoLn strFormat("sftp< Notified with code *", code);
 					if code==SSH_OK then void _sftpStart(h)
 					else sftpServerNotify(h, code, data);
 			)
 		);
-		tcpSrv
+		[srvS=tcpSrv]
 	);;
+fun sftpServerSetIdleTimeout(sftpServer, idleTimeout)=tcpSrvSetIdleTimeout(sftpServer.srvS, idleTimeout);;
+fun sftpServerSetMaxConnections(sftpServer, maxConnections, evictionTimeout)=tcpSrvSetMaxConnections(sftpServer.srvS, maxConnections, evictionTimeout);;
+
+fun sftpServerSetMaxRequestSize(h, maxRequestSize)= set h.maxRequestSizeS=maxRequestSize;;
 
 fun sftpServerOnNotify(h, f)= set h.fNotifyS=(lambda(code, data) = call f(code, data);0);;
 fun sftpServerOnDir(h, f)= set h.fDirS=f;;

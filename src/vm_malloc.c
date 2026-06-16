@@ -335,6 +335,7 @@ void bmmFree(void* block)
 
 void bmmCheckOrMoveMM()
 {
+	int i;
 	MARK_OR_MOVE(MM.system);
 	MARK_OR_MOVE(MM.scheduler);
 	MARK_OR_MOVE(MM.tmpStack);
@@ -347,6 +348,7 @@ void bmmCheckOrMoveMM()
 	MARK_OR_MOVE(MM.popOblivions);
 	MARK_OR_MOVE(MM.listOblivions);
 	MARK_OR_MOVE(MM.tmpRoot);
+	for (i = 0; i < FIXED_ROOTS_COUNT; i++) MARK_OR_MOVE(MM.fixedRoots[i]);
 	MARK_OR_MOVE(MM.partitionsFS);
 	romdiskMark(NULL);
 

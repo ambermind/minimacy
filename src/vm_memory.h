@@ -103,6 +103,7 @@ void VM_FREE(void* x);
 typedef struct HashSlots HashSlots;
 typedef struct Pkg Pkg;
 typedef struct Thread Thread;
+typedef struct Worker Worker;
 typedef struct Def Def;
 typedef struct Buffer Buffer;
 typedef struct Type Type;
@@ -137,6 +138,27 @@ struct Oblivion
 	Oblivion* popNext;	// list of oblivioned function to call
 };
 
+struct Worker {
+	volatile LINT state;
+	LINT fixedRootTh;
+	LINT sp;
+	MSEM* sem;
+	LINT cmdAllocSize;
+	LINT cmdBuffer;
+	LINT cmdResult;
+	int cmdType;
+	int OM;
+};
+
+
+#ifdef USE_WORKER_ASYNC
+#define WORKERS_COUNT 16
+#else
+#define WORKERS_COUNT 1
+#endif
+#define WORKER_MAX_FIXED_ROOTS 8
+#define FIXED_ROOTS_COUNT (WORKERS_COUNT*WORKER_MAX_FIXED_ROOTS)
+
 typedef struct {
 	MTHREAD_ID mainThread;
 	Thread* scheduler;
@@ -146,6 +168,8 @@ typedef struct {
 	LB* USELESS;
 	LB* roots;
 	LB* tmpRoot;
+	volatile LB* fixedRoots[FIXED_ROOTS_COUNT];
+	Worker workers[WORKERS_COUNT];
 	Oblivion* popOblivions;
 	Oblivion* listOblivions;
 
@@ -424,6 +448,10 @@ void memoryLeaveSafe(void);
 
 int memoryAddRoot(LB * root);
 void memorySetTmpRoot(LB* p);
+
+LINT fixedRootAlloc(LB* p);
+volatile LB* fixedRootValue(LINT fixedRoot);
+void fixedRootRelease(LINT fixedRoot);
 
 LB* memoryAllocArray(LINT size, LW dbg);
 LB* memoryAllocNative(LINT sizeofExt,LW dbg,FORGET forget,MARK mark);

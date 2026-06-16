@@ -34,7 +34,6 @@
 #endif
 
 #ifdef USE_SOCKET_WIN
-#include<winsock.h>
 #include<io.h>
 #include<conio.h>
 #define SOCKETWOULDBLOCK (WSAGetLastError()==WSAEWOULDBLOCK)

@@ -16,20 +16,23 @@ int _bufferBiggerFinalize(Buffer* b, LINT newsize)
 	b->size = newsize;
 	return 0;
 }
-int _bufferBigger(Buffer* b,LINT neededSize)
+LINT _bufferNewSize(Buffer* b, LINT neededSize)
 {
 	LINT newsize = b->size;
 	neededSize += b->index;
-//	PRINTF(LOG_DEV, "_bufferBigger "LSX" current "LSD" needs "LSD" \n", (void*)b, b->size, neededSize);
+	//	PRINTF(LOG_DEV, "_bufferBigger "LSX" current "LSD" needs "LSD" \n", (void*)b, b->size, neededSize);
 	while (newsize <= neededSize)
 	{
-		if (newsize < BUFFER_DOUBLE_UNTIL) newsize = newsize * 3/2;
+		if (newsize < BUFFER_DOUBLE_UNTIL) newsize = newsize * 3 / 2;
 		else newsize = neededSize + BUFFER_FINAL_INCREMENT;
 	}
+	return newsize;
+}
+int _bufferBigger(Buffer* b,LINT neededSize)
+{
+	LINT newsize = _bufferNewSize(b, neededSize);
 //	PRINTF(LOG_DEV,"bigger buffer %lld -> %lld (mainthread? %d)\n", b->size, newsize, memoryIsMainThread());
-	if (memoryIsMainThread()) return _bufferBiggerFinalize(b, newsize);
-	if (workerBiggerBuffer(b->pth, b, newsize)) return EXEC_OM;
-	return 0;
+	return _bufferBiggerFinalize(b, newsize);
 }
 
 void bufferMark(LB* user)
@@ -38,7 +41,6 @@ void bufferMark(LB* user)
 	MARK_OR_MOVE(b->bloc);
 	if (MOVING_BLOCKS) {
 		b->buffer = BIN_START(b->bloc);
-		if (b->link) *b->link = (Buffer*)b->header.listMark;
 	}
 }
 
@@ -48,8 +50,6 @@ Buffer* bufferReset(Buffer* b, LINT size)
 	if (!b) return NULL;
 	if (size < BUFFER_SIZE0) size = BUFFER_SIZE0;
 	b->index = 0;
-	b->pth = NULL;
-	b->link = NULL;
 	if (b->size && b->size < 1024) return b;
 	b->size = size;
 	b->bloc = NULL;
@@ -75,19 +75,6 @@ Buffer* bufferCreate(void)
 {
 	return bufferCreateWithSize(0);
 }
-void bufferSetWorkerThread(volatile Buffer** pb, volatile Thread** pth)
-{
-	(*pb)->link = pb;
-	(*pb)->pth = pth;
-	(*pth)->link = pth;
-}
-void bufferUnsetWorkerThread(volatile Buffer** pb, volatile Thread** pth)
-{
-	(*pb)->link = NULL;
-	(*pb)->pth = NULL;
-	(*pth)->link = NULL;
-}
-
 
 void bufferReinit(Buffer* b)
 {
@@ -98,15 +85,6 @@ void bufferRemove(Buffer* b, int delta)
 	if (delta<=0) return;
 	b->index-=delta;
 	if (b->index<0) b->index=0;
-}
-int bufferAddCharWorker(volatile Buffer** pb, char c)
-{
-	int k;
-	Buffer* b = (Buffer*)(*pb);
-	if ((b->index >= b->size) && (k = _bufferBigger(b, 1))) return k;
-	b = (Buffer*)(*pb);
-	b->buffer[b->index++] = c;
-	return 0;
 }
 
 int bufferAddChar(Buffer* b,char c)
@@ -155,6 +133,12 @@ char bufferGetChar(Buffer* b, LINT index)
 	if (index >= 0 && index < b->index) return b->buffer[index];
 	return 0;
 }
+char* bufferGetCharAddress(Buffer* b, LINT index)
+{
+	if (index < 0) index += b->index;
+	if (index >= 0 && index < b->index) return &b->buffer[index];
+	return NULL;
+}
 void bufferDelete(Buffer* b, LINT index, LINT remove)
 {
 	LINT i;
@@ -191,20 +175,6 @@ LINT bufferGetIntN(Buffer* b, LINT index, LINT n)
 	return result;
 }
 
-char* bufferRequireWorker(volatile Buffer** pb, LINT len)
-{
-	char* result;
-	Buffer* b = (Buffer*)(*pb);
-	if (len < 0) return NULL;
-	while (b->index + len >= b->size) {
-		if (_bufferBigger(b, len)) return NULL;
-		b = (Buffer*)(*pb);
-	}
-	result = b->buffer + b->index;
-	b->index += len;
-	return result;
-}
-
 char* bufferRequire(Buffer* b, LINT len)
 {
 	char* result;
@@ -215,19 +185,6 @@ char* bufferRequire(Buffer* b, LINT len)
 	return result;
 }
 
-int bufferAddBinWorker(volatile Buffer** pb, char* src, LINT len)
-{
-	int k;
-	Buffer* b = (Buffer*)(*pb);
-	if (len < 0) len = strlen(src);
-	while (b->index + len >= b->size) {
-		if ((k = _bufferBigger(b, len))) return k;
-		b = (Buffer*)(*pb);
-	}
-	memcpy(b->buffer + b->index, src, len);
-	b->index += len;
-	return 0;
-}
 int bufferAddBin(Buffer* b,char *src,LINT len)
 {
 	int k;
@@ -401,4 +358,61 @@ int bufferFormat(Buffer* b, Thread* th, LINT argc)
 		else if ((k=bufferAddChar(b, f[i]))) return k;
 	}
 	FUN_RETURN_BUFFER(b);
+}
+
+int _fixedBufferBigger(LINT fixedRootBuffer, LINT neededSize)
+{
+	Buffer* b = (Buffer*)fixedRootValue(fixedRootBuffer);
+	LINT newsize = _bufferNewSize(b, neededSize);
+	//	PRINTF(LOG_DEV,"bigger buffer %lld -> %lld (mainthread? %d)\n", b->size, newsize, memoryIsMainThread());
+	if (memoryIsMainThread()) return _bufferBiggerFinalize(b, newsize);
+	if (workerBiggerBuffer(fixedRootBuffer, newsize)) return EXEC_OM;
+	return 0;
+}
+
+void bufferSetWorker(Buffer* b, Worker* w)
+{
+	b->worker = w;
+}
+
+Buffer* fixedBufferGet(LINT fixedRootBuffer) {
+	return (Buffer*)fixedRootValue(fixedRootBuffer);
+}
+char* fixedBufferRequire(LINT fixedRootBuffer, LINT len)
+{
+	int k;
+	char* result;
+	Buffer* b = (Buffer*)fixedRootValue(fixedRootBuffer);
+	if (len < 0) return NULL;
+	if (b->index + len >= b->size) {
+		if ((k = _fixedBufferBigger(fixedRootBuffer, len))) return NULL;
+		b = (Buffer*)fixedRootValue(fixedRootBuffer);
+	}
+	result = b->buffer + b->index;
+	b->index += len;
+	return result;
+}
+int fixedBufferAddChar(LINT fixedRootBuffer, char c)
+{
+	int k;
+	Buffer* b = (Buffer*)fixedRootValue(fixedRootBuffer);
+	if (b->index >= b->size) {
+		if ((k = _fixedBufferBigger(fixedRootBuffer, 1))) return k;
+		b = (Buffer*)fixedRootValue(fixedRootBuffer);
+	}
+	b->buffer[b->index++] = c;
+	return 0;
+}
+int fixedBufferAddBin(LINT fixedRootBuffer, char* src, LINT len)
+{
+	int k;
+	Buffer* b = (Buffer*)fixedRootValue(fixedRootBuffer);
+	if (len < 0) len = strlen(src);
+	if (b->index + len >= b->size) {
+		if ((k = _fixedBufferBigger(fixedRootBuffer, len))) return k;
+		b = (Buffer*)fixedRootValue(fixedRootBuffer);
+	}
+	memcpy(b->buffer + b->index, src, len);
+	b->index += len;
+	return 0;
 }

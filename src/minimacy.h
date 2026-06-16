@@ -4,7 +4,7 @@
 #ifndef _MINIMACY_
 #define _MINIMACY_
 
-#define VERSION_MINIMACY "2.1.1"
+#define VERSION_MINIMACY "2.1.2"
 //#undef ON_WINDOWS
 //#define ON_NOTHING
 
@@ -13,6 +13,7 @@
 #ifdef _DEBUG
 #define DBG_MEM
 #endif
+#include <winsock2.h>
 #include <windows.h>
 #include <windowsx.h>
 #define WITH_UI
@@ -29,7 +30,7 @@
 #define USE_THREAD_WIN
 
 //#define USE_MEMORY_C
-//#define MEMORY_STATICS MEMORY_STATIC(0,1024 * 1024 * 384);
+//#define MEMORY_STATICS MEMORY_STATIC(0,1024 * 1024 * 16);
 //#define MEMORY_PARTS MEMORY_PART_STATIC(0)
 ////#define MEMORY_STATICS MEMORY_STATIC(0,1024 * 1024 * 128);MEMORY_STATIC(1,1024 * 1024 * 256);
 ////#define MEMORY_PARTS MEMORY_PART_STATIC(0),MEMORY_PART_STATIC(1)
@@ -229,7 +230,7 @@
 #define USE_HOST_ONLY_FUNCTIONS
 
 #define USE_MEMORY_C
-#define MEMORY_STATICS MEMORY_STATIC(0,1024*470);
+#define MEMORY_STATICS MEMORY_STATIC(0,1024*437);
 #endif
 
 #ifdef ON_RPI4

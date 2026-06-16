@@ -13,6 +13,10 @@ fun streamCheck(s)=
 	else void streamClose(s);;
 
 fun streamSocket(s)=s._socketS;;
+fun streamType(s)=s._typeS;;
+fun streamDetail(s)=s._detailS;;
+fun streamLastTouch(s)= s._touchS;;
+fun streamTerminated(s)= s._socketS==nil;;
 
 fun _streamClean()=
 \atomic
@@ -38,9 +42,22 @@ fun streamCommonClose(s)=
 	set _StreamList= listRemove(_StreamList, Stream<s);
 	true;;
 
+fun _streamTimeout(s)=
+	if streamTerminated(s) then void (if _DEBUG then echoLn "> stream already terminated")
+	else
+	let streamLastTouch(s) + s._idleTimeoutS - time() -> remainingTime in
+	void if remainingTime<=0 then streamAbort(s)
+	else onTimeout(remainingTime*1000, lambda()= _streamTimeout(s));;
+
+fun streamSetIdleTimeout(s, idleTimeout)=
+	set s._idleTimeoutS=idleTimeout;
+	if s._idleTimeoutS<>nil then _streamTimeout(s);
+	s;;
+
 fun streamClose(s)= call s._closeS();;
 
 fun streamWrite(s, data, start) =
+	set s._touchS=time();
 	let call s._writeS(data, start) -> next in
 	let strLength(data) -> len in (
 		_socketSetSelectWrite(s._socketS, next<>nil && next<>len);
@@ -69,15 +86,28 @@ fun _streamOnRead(s, onRead) =
 
 fun _streamOnWrite(s, onWrite) =
 	set s._thS= _This;
-	set s._onWriteS= if onWrite<>nil then (lambda ()= call onWrite(); 0);
+	set s._onWriteS= if onWrite<>nil then (lambda()= call onWrite(); 0);
 	if onWrite<>nil then _streamAddToList(s);
 	s;;
+	
+fun streamOnAccept(s, onAccept)=
+	set s._thS= _This;
+	set s._onAcceptS= if onAccept<>nil then (lambda(stream)= call onAccept(stream); 0);
+	if onAccept<>nil then _streamAddToList(s);
+	_socketSetSelectRead(s._socketS, onAccept<>nil);
+	s;;
 
+fun streamAbort(s) =
+	let s._onReadS -> f in (
+		streamClose(s);
+		threadPost(s._thS, lambda()= call f(nil))
+	);;
 fun streamSetSelectWrite(s, value) =	_socketSetSelectWrite(s._socketS, value&&(s._onWriteS<>nil));;
 fun streamSetSelectRead(s, value) =	_socketSetSelectRead(s._socketS, value&&(s._onReadS<>nil));;
 fun streamSetReadable(s, value) = socketSetReadable(s._socketS, value);;
 fun streamSetWritable(s, value) = socketSetWritable(s._socketS, value);;
 fun streamReadEvent(s, data) = call s._onReadS(data);;
+fun streamAcceptEvent(s, stream) = call s._onAcceptS(stream);;
 
 fun streamOnEvent(s, onRead, onWrite)=
 	_streamOnRead(s, onRead);
@@ -85,12 +115,14 @@ fun streamOnEvent(s, onRead, onWrite)=
 	if onWrite<>nil then streamSetSelectWrite(s, true);
 	s;;
 
-fun streamInit(s, socket, onSelectRead, fWrite, fClose, fShow)=
+fun streamInit(s, socket, type, name, onSelectRead, fWrite, fClose)=
 	set s._socketS=if socket<>nil then socket else socketEmpty();
+	set s._typeS=type;
+	set s._detailS=name;
 	set s._onSelectReadS=onSelectRead;
 	set s._writeS=fWrite;
 	set s._closeS=fClose;
-	set s._showS=fShow;
+	set s._touchS=time();
 	s;;
 
 //---------- select
@@ -130,23 +162,24 @@ fun _ioCheck()=
 		for s in lSelect do (
 			if _socketSelectWrite(s._socketS) && _socketWritable(s._socketS) then (
 				_socketSetSelectWrite(s._socketS, false);	// we remove it until the next uncomplete write
+				set s._touchS=time();
 				if streamCheck(s) then threadPost(s._thS, s._onWriteS)
 			);
-			if _socketSelectRead(s._socketS) && _socketReadable(s._socketS) then 
-				if s._thS==_ThreadBios then void call s._onSelectReadS
-				()else (
+			if _socketSelectRead(s._socketS) && _socketReadable(s._socketS) then (
+				set s._touchS=time();
+				if s._thS==_ThreadBios then void call s._onSelectReadS()
+				else (
 					_socketSetSelectRead(s._socketS, false);	// we remove it until the socket is read
-					if streamCheck(s) then threadPost(s._thS, (lambda ()=
+					if streamCheck(s) then threadPost(s._thS, lambda()=
 						_socketSetSelectRead(s._socketS, true);
-						call s._onSelectReadS
-					()))
+						call s._onSelectReadS()
+					)
 				)
-			
+			)
 		);
 		_workerCheck();
 		_timerCheck()
 	);;
-
 
 fun watcherUpdate(watcher, addr, mask, value)=
 	_watcherUpdate(watcher._socketS, addr, mask, value);
@@ -154,11 +187,10 @@ fun watcherUpdate(watcher, addr, mask, value)=
 
 fun watcherOpen(name)=
 	let [Stream] -> stream in
-	streamInit(stream, _watcherOpen(),
+	streamInit(stream, _watcherOpen(), "watcher", name,
 		lambda ()= streamReadEvent(stream, "x"),	// onSelectRead, we need a dummy data
 		nil,	// write
-		nil,	// close
-		lambda(fEcho)= call fEcho("watcher", name));;	//show
-
+		nil);;	// close
+		
 fun watcherOnEvent(watcher, onRead) = streamOnEvent(watcher, lambda(data)=call onRead(), nil);;
 fun watcherClose(watcher) = streamClose(watcher);;

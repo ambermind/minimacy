@@ -14,12 +14,25 @@
 #define WORKER_RETURN 0
 #endif
 
+#define WORKER_READY 0
+#define WORKER_RUN 1
+#define WORKER_DONE 2
+#define WORKER_BIGGER_BUFFER 3
+
+#define WORKER_RESULT_NIL 0
+#define WORKER_RESULT_INT 1
+#define WORKER_RESULT_BOOL 2
+
+#ifndef USE_WORKER_ASYNC
+extern char WorkerScratchpad[1024 * 34];
+#endif
+
 int workerStart(Thread* th, int argc, void* start);
-WORKER_RETURN_TYPE workerDoneNil(volatile Thread* th);
-WORKER_RETURN_TYPE workerDonePnt(volatile Thread* th, LB* result);
-WORKER_RETURN_TYPE workerDoneInt(volatile Thread* th, LINT result);
-int workerAllocExt(volatile Thread** pth, LINT sizeofExt, LW dbg, FORGET forget, MARK mark);
-int workerBiggerBuffer(volatile Thread** pth, Buffer* buffer, LINT newSize);
+Thread* workerThread(Worker* w);
+WORKER_RETURN_TYPE workerDoneNil(Worker* w);
+WORKER_RETURN_TYPE workerDoneBool(Worker* w, LINT result);
+WORKER_RETURN_TYPE workerDoneInt(Worker* w, LINT result);
+int workerBiggerBuffer(LINT fixedRootBuffer, LINT newSize);
 void workerWaitUntilAllInactive(void);
 
 int systemWorkerInit(Pkg* system);

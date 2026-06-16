@@ -10,16 +10,18 @@ export COOKIE_SAMESITE_STRICT;;
 export COOKIE_SAMESITE_NONE;;
 
 // as of 01 apr 2023, client certificate on tls12 server is not working with firefox, yet working with chrome
-//export httpSrvStart12Ex(hostList, ip, port, onConnect);;
-export httpSrvStartEx(hostList, ip, port, onConnect);;
+//export httpSrvStart12Ext(hostList, ip, port, onConnect);;
+export httpSrvStartExt(hostList, ip, port, onConnect);;
 export httpSrvStart(hostList, ip, port, onRequest);;
-export httpSrvSetDefaultTimeout(srv, timeout) ;;
+export httpSrvSetDefaultIdleTimeout(srv, idleTimeout);;
+export httpSrvSetMaxConnections(srv, maxConnections, evictionTimeout);;
 export httpSrvUpdateHostList(srv, hostList);;
 export httpSrvStop(srv);;
 export httpSrvOnRequest(h, cb) ;;
 export httpSrvOnWebSocket(h, cb) ;;
 export httpSrvOnMessage(h, cb) ;;
-export httpSrvSetTimeout(h, timeout) ;;
+export httpSrvSetIdleTimeout(h, timeout);;
+export httpSrvSetMaxRequestSize(h, maxRequestSize);;
 export httpSrvGetRemote(h) ;;
 export httpSrvGetCookies(h) ;;
 export httpSrvGetCookie(h, cookie);;
@@ -49,15 +51,15 @@ use core.crypto.cer;;
 use core.net.tls13;;
 use core.net.http;;
 
-const HTTPSERVER_TIMEOUT=4000;;
-const HTTPSERVER_WS_TIMEOUT=5*60000;;
+const HTTPSERVER_WS_TIMEOUT=5*60*1000;;
+const HTTPSERVER_MAX_REQUEST_SIZE=1024*1024;;
 
-struct HttpSrv=[tcpSrvS, timeoutS, onConnectS];;
+struct HttpSrv=[tcpSrvS, onConnectS];;
 
 struct HttpConnection=[
-	remoteH, ttH, sendH, iH, closeAfterH, timeH, timeoutH,
+	remoteH, ttH, sendH, iH, closeAfterH,
 	tlsH,
-	requestH, requestHeadersH, cookiesH, postDataH,
+	requestH, requestHeadersH, cookiesH, postDataH, maxRequestSizeH,
 	statusH, replyHeadersH,
 	handleDataH,
 	_bufferH, _contentH, _contentLengthH, _transferH,
@@ -165,8 +167,12 @@ fun _checkContentLength(h, data, len)=
 	h._contentLengthH>=len;;	// Warning, we assume that there are no immediately chained data
 
 fun _checkContentChunked(h, data)=
-	if 0<strLength(data) then set h._bufferH=strConcat(h._bufferH, data);
-	let strPos(h._bufferH, "\r\n", 0) -> i in
+	if strLength(data)>0 then set h._bufferH=strConcat(h._bufferH, data);
+	if strLength(h._bufferH)>h.maxRequestSizeH then void (
+		streamClose(h.ttH);
+		set h.ttH=nil
+	)
+	else let strPos(h._bufferH, "\r\n", 0) -> i in
 	if i==nil then false	// not even the first line of the chunk
 	else let intFromHex(strLeft(h._bufferH, i)) -> len in
 	if i+len+4>strLength(h._bufferH) then false	// not the ending of the chunk (including final \r\n)
@@ -247,6 +253,11 @@ fun _wsParseFrame(b)=
 
 fun _wsCheckContent(h, data)=
 	if 0<strLength(data) then set h._bufferH=strConcat(h._bufferH, data);
+	if strLength(h._bufferH)>h.maxRequestSizeH then void (
+		streamClose(h.ttH);
+		set h.ttH=nil
+	)
+	else
 	let h._bufferH -> b in
 	let _wsParseFrame(b) -> [maskStart, maskLength, dataLength] in
 	if maskStart<>nil then
@@ -315,7 +326,7 @@ fun _wsHandleData(h, data)=
 	if data<>nil then _wsCheckContent(h, data);;
 
 fun _wsHandleHeader(h)=
-	httpSrvSetTimeout(h, HTTPSERVER_WS_TIMEOUT);
+	httpSrvSetIdleTimeout(h, HTTPSERVER_WS_TIMEOUT);
 	let h.requestH -> [verb, uri, version] in
 	let call h.onWebSocketH(verb, uri) -> accept in
 	if accept && h.onMessageH<>nil then
@@ -362,6 +373,11 @@ fun _headerCookies(h)=
 // return true if provided data contains the end of the header
 fun _checkHeader(h, data)=
 	set h._bufferH= strConcat(h._bufferH, data);
+	if strLength(h._bufferH)>h.maxRequestSizeH then void (
+		streamClose(h.ttH);
+		set h.ttH=nil
+	)
+	else
 	let h._bufferH -> begining in
 	let strPos(begining, "\r\n\r\n", 0) -> i in
 	if i<>nil then
@@ -376,6 +392,11 @@ fun _checkHeader(h, data)=
 	(
 		set h._bufferH=nil;
 
+		if contentLength>h.maxRequestSizeH then (
+			streamClose(h.ttH);
+			set h.ttH=nil;
+			return false
+		);
 		set h._transferH=
 			if contentLength<>nil then transferLength contentLength
 			else if chunked then transferChunked
@@ -396,24 +417,10 @@ fun _headerHandleData(h, data)=
 	if ws then _wsHandleHeader(h)
 	else _httpHandleHeader(h);;
 
-fun httpTouch(h) = set h.timeH=timeMs();;
-
-fun _httpTimer(h)=
-//echo strFormat "h */ " h.timeoutH;
-	if h.ttH<>nil then
-	if (timeMs() - h.timeH)>=h.timeoutH then (
-//		echoTime "]close on timeout";
-		streamClose(h.ttH);
-		set h.ttH=nil;
-		nil
-	)
-	else onTimeout(1000, lambda ()= _httpTimer(h));;
-
-
-fun _httpFromServer(tls, tcp, tt, timeout, onConnect)=
+fun _httpFromServer(tls, stream, tt, onConnect)=
 //echoLn "_httpFromServer";
-	let [tcpRemoteIp(tcp), tcpRemotePort(tcp)] -> remote in
-	let [remoteH=remote, ttH=tt, tlsH=tls] -> h in
+	let [tcpRemoteIp(tcpFromStream(stream)), tcpRemotePort(tcpFromStream(stream))] -> remote in
+	let [remoteH=remote, ttH=tt, tlsH=tls, maxRequestSizeH=HTTPSERVER_MAX_REQUEST_SIZE] -> h in
 	if !call onConnect(h) then (
 		streamClose(h.ttH);
 		set h.ttH=nil;
@@ -424,29 +431,22 @@ fun _httpFromServer(tls, tcp, tt, timeout, onConnect)=
 //		dump httpGetRemote h;
 //		echoTime "new incoming connection";
 		_serverReset(h);
-		httpSrvSetTimeout(h, (if timeout<>nil then timeout else HTTPSERVER_TIMEOUT));
-		_httpTimer(h);
 		streamOnEvent(tt,
-			(lambda(data)=
+			lambda(data)=
 //echoLn "receive"; hexDump data;
-				httpTouch(h);
-				call h.handleDataH(h, data);
-				nil
-			),
-			(lambda ()=
-				httpTouch(h);
-				_httpSend(h, nil)
-			));
+				void call h.handleDataH(h, data),
+			lambda()=_httpSend(h, nil)
+		);
 		true
 	);;
 
 fun httpSrvUpdateHostList(srv, hostList)=
 	let hostList<>nil -> tls in
 	let tlsMakeHosts(hostList) -> hosts in
-	nil<>tcpSrvOnAccept(srv.tcpSrvS, lambda(tcp)= 
+	nil<>tcpSrvOnAccept(srv.tcpSrvS, lambda(stream)= 
 		threadStart("httpd", lambda ()=
-			let if tls then Stream<tlsStartServer(tcp, hosts) else Stream<tcp -> tt in
-			_httpFromServer(tls, tcp, tt, srv.timeoutS, srv.onConnectS)
+			let if tls then Stream<tlsStartServer(stream, hosts) else stream -> tt in
+			_httpFromServer(tls, stream, tt, srv.onConnectS)
 		)
 	);;
 
@@ -460,20 +460,22 @@ const COOKIE_SAMESITE_STRICT=8;;
 const COOKIE_SAMESITE_NONE=16;;
 
 // as of 01 apr 2023, client certificate on tls12 server is not working with firefox, yet working with chrome
-//fun httpSrvStart12Ex(hostList, ip, port, onConnect)= _httpSrvStartEx(hostList, ip, port, onConnect);;
+//fun httpSrvStart12Ext(hostList, ip, port, onConnect)= _httpSrvStartExt(hostList, ip, port, onConnect);;
 
-fun httpSrvStartEx(hostList, ip, port, onConnect)=
+fun httpSrvStartExt(hostList, ip, port, onConnect)=
 	let tcpSrvCreate(ip, port) -> tcpSrv in
+	if tcpSrv<>nil then
 	let [tcpSrvS=tcpSrv, onConnectS=onConnect] -> srv in
 	if httpSrvUpdateHostList(srv, hostList) then srv;;
 
 fun httpSrvStart(hostList, ip, port, onRequest)=
-	httpSrvStartEx(hostList, ip, port, (lambda(h)=
+	httpSrvStartExt(hostList, ip, port, (lambda(h)=
 		httpSrvOnRequest(h, (lambda(verb, uri)= call onRequest(h, verb, uri)));
 		true
 	));;
 
-fun httpSrvSetDefaultTimeout(srv, timeout) = set srv.timeoutS=timeout;;
+fun httpSrvSetDefaultIdleTimeout(srv, idleTimeout) = tcpSrvSetIdleTimeout(srv.tcpSrvS, idleTimeout); srv;;
+fun httpSrvSetMaxConnections(srv, maxConnections, evictionTimeout) = tcpSrvSetMaxConnections(srv.tcpSrvS, maxConnections, evictionTimeout); srv;;
 
 fun httpSrvStop(srv)=
 	tcpSrvClose(srv.tcpSrvS);
@@ -483,9 +485,8 @@ fun httpSrvOnRequest(h, cb) = set h.onRequestH = cb;;
 fun httpSrvOnWebSocket(h, cb) = set h.onWebSocketH = cb;;
 fun httpSrvOnMessage(h, cb) = set h.onMessageH = (lambda(code, msg) = call cb(code, msg); true);;
 
-fun httpSrvSetTimeout(h, timeout) =
-	set h.timeH=timeMs();
-	set h.timeoutH=timeout;;
+fun httpSrvSetIdleTimeout(h, timeout) = streamSetIdleTimeout(h.ttH, timeout); h;;
+fun httpSrvSetMaxRequestSize(h, maxRequestSize) = set h.maxRequestSizeH=maxRequestSize; h;;
 
 fun httpSrvGetRemote(h) = h.remoteH;;	// returns [ip port]
 

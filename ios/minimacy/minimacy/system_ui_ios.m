@@ -216,6 +216,7 @@ void sendEvent(int c, int x, int y, int v)
 }
 
 int fun_uiStart(Thread* th) {
+	LINT wId = STACK_PULL_INT(th);
     // we ignore most of the arguments as we have no control on the size of the screen and the ui is always fullscreen
     // at this stage only the type could be useful for a non GL ui, but we need to fix uiUpdate first
     LINT type = STACK_INT(th, 1);

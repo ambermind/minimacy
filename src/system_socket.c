@@ -176,15 +176,17 @@ int fun_hostName(Thread* th)
 	FUN_RETURN_STR(buf, -1);
 }
 
-WORKER_START _ipByName(volatile Thread* th)
+WORKER_START _ipByName(Worker* w)
 {
 	struct hostent* hp;
+	LINT fixedRootBuffer;
+	Thread* th = workerThread(w);
 	LINT n = 0;
-
 	LB* name = STACK_PNT(th, 0);
-	volatile Buffer* out = (Buffer*)STACK_PNT(th, 1);
-	if ((!name) || (!out)) return workerDoneNil(th);
-	bufferSetWorkerThread(&out, &th);
+	Buffer* out = (Buffer*)STACK_PNT(th, 1);
+	if ((!name) || (!out)) return workerDoneNil(w);
+	bufferSetWorker(out, w);
+	fixedRootBuffer = fixedRootAlloc((LB*)out);
 	hp = gethostbyname(STR_START(name));
 	if (hp)
 	{
@@ -195,34 +197,38 @@ WORKER_START _ipByName(volatile Thread* th)
 			struct in_addr Addr;
 			Addr.s_addr = *(p[n]);	// warning on Macos should cast with (in_addr_t) not known on windows
 			ip = (char*)inet_ntoa(Addr);
-			if (n) bufferAddCharWorker(&out, 0);
-			bufferAddBinWorker(&out, ip, strlen(ip));
+			if (n) fixedBufferAddChar(fixedRootBuffer, 0);
+			fixedBufferAddBin(fixedRootBuffer, ip, strlen(ip));
 			n++;
 		}
 	}
-	bufferUnsetWorkerThread(&out, &th);
-	return workerDoneInt(th,n);
+	fixedRootRelease(fixedRootBuffer);
+	return workerDoneInt(w,n);
 }
 int fun_ipByName(Thread* th) { return workerStart(th, 2, _ipByName); }
 
-WORKER_START _nameByIp(volatile Thread* th)
+WORKER_START _nameByIp(Worker* w)
 {
 	long addr;
 	struct hostent* hp;
+	LINT fixedRootBuffer;
+	Thread* th = workerThread(w);
 
 	LB* ip = STACK_PNT(th, 0);
-	volatile Buffer* out = (Buffer*)STACK_PNT(th, 1);
-	if ((!ip) || (!out)) return workerDoneNil(th);
-	bufferSetWorkerThread(&out, &th);
+	Buffer* out = (Buffer*)STACK_PNT(th, 1);
+	if ((!ip) || (!out)) return workerDoneNil(w);
+	bufferSetWorker(out, w);
+	fixedRootBuffer = fixedRootAlloc((LB*)out);
+
 	addr = inet_addr(STR_START(ip));
 	if ((hp = gethostbyaddr((char*)&addr, sizeof(addr), AF_INET)))
 	{
-		bufferAddBinWorker(&out, hp->h_name, strlen(hp->h_name));
-		bufferUnsetWorkerThread(&out, &th);
-		return workerDoneInt(th,1);
+		fixedBufferAddBin(fixedRootBuffer, hp->h_name, strlen(hp->h_name));
+		fixedRootRelease(fixedRootBuffer);
+		return workerDoneInt(w,1);
 	}
-	bufferUnsetWorkerThread(&out, &th);
-	return workerDoneNil(th);
+	fixedRootRelease(fixedRootBuffer);
+	return workerDoneNil(w);
 }
 int fun_nameByIp(Thread* th) { return workerStart(th, 2, _nameByIp); }
 
@@ -559,6 +565,7 @@ int fun_tcpListen(Thread* th)
 	SOCKET sock = INVALID_SOCKET;
 	long argp = 1;
 	struct linger lin;
+	int opt = 1;
 	int k;
 
 	LINT port = STACK_INT(th, 0);
@@ -578,6 +585,12 @@ int fun_tcpListen(Thread* th)
 	ina.sin_family = PF_INET;
 	ina.sin_port = htons((unsigned short)port);
 	ina.sin_addr.s_addr = ip_str ? inet_addr(STR_START(ip_str)) : INADDR_ANY;
+
+#ifdef USE_SOCKET_WIN
+	setsockopt(sock, SOL_SOCKET, SO_EXCLUSIVEADDRUSE, (const char*)&opt, sizeof(opt));
+#else
+	setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, (const char*)&opt, sizeof(opt));
+#endif
 	if ((k = bind(sock, (struct sockaddr*)&ina, sizeof(ina))) != 0)
 	{
 		PRINTF(LOG_SYS, "> Error: Tcp port %s:%d bind error\n", ip_str ? STR_START(ip_str) : "*", port);
@@ -1033,8 +1046,8 @@ int sysSocketInit(Pkg* system)
 		{ NATIVE_FUN, "_ethCreate", fun_ethCreate, "fun Int -> Socket"},
 		{ NATIVE_FUN, "_ethSend", fun_ethSend, "fun Socket Int Str -> Int"},
 		{ NATIVE_FUN, "_ethRead", fun_ethRead, "fun Socket -> Str"},
-		{ NATIVE_FUN, "_ipByName", fun_ipByName, "fun Buffer Str -> Int"},
-		{ NATIVE_FUN, "_nameByIp", fun_nameByIp, "fun Buffer Str -> Int"},
+		{ NATIVE_FUN, "_ipByName", fun_ipByName, "fun Buffer Str Int -> Int"},
+		{ NATIVE_FUN, "_nameByIp", fun_nameByIp, "fun Buffer Str Int -> Int"},
 		{ NATIVE_FUN, "hostName", fun_hostName, "fun -> Str"},
 		{ NATIVE_FUN, "ipChecksum", fun_ipChecksum, "fun Str Int -> Int"},
 		{ NATIVE_FUN, "ipChecksumFinal", fun_ipChecksumFinal, "fun Int -> Str"},
@@ -1048,7 +1061,7 @@ int sysSocketInit(Pkg* system)
 		WSADATA wsaData;
 		//		long argp = 1;
 
-		wVersionRequested = MAKEWORD(1, 1);
+		wVersionRequested = MAKEWORD(2, 2);
 		if (WSAStartup(wVersionRequested, &wsaData)) return -1;
 	}
 #endif

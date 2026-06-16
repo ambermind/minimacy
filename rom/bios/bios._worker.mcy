@@ -74,130 +74,104 @@ fun _internalInit()=
 			_handleInternal(0);
 			0
 		),
-		_showS=lambda(fEcho)= call fEcho("internal", "-")
+		_typeS="internal",
+		_detailS="-"
 	];
 	_streamAddToList(_InternalPipe);
 	_socketSetSelectRead(_InternalPipe._socketS, true);;
 
-var _WorkerList;;
+//-----------------------------------
+var _Workers=arrayCreate(_WORKERS_COUNT, nil);;
+const _WorkersFifo= fifoCreate();;
 
-fun _workerCheck ()=
-	set _WorkerList=listFilter(_WorkerList, lambda(th) =
-		if th._stateT<>_THREAD_WAIT then false
-		else match _workerDone(th._threadT) with 
-			nil -> (	
-				echoLn "> Thread is out of memory";
-				threadStop(th);
-				false
-			),
-			true -> (
-				_scheduleThread(th);
-				false
-			),
-			_ -> true
+fun workerGet()=
+	if _WORKERS_COUNT>0 then
+	\atomic (
+		for i=0; i<_WORKERS_COUNT do if _Workers[i]==nil then (
+//			echoLn strFormat("get worker *", i);
+			set _Workers[i]=_This;
+			return i
+		);
+		fifoIn(_WorkersFifo, _This);
+//		echoLn "waiting for worker";
+		_threadHoldOn()
 	);;
-fun _workerEnter()=
-	set _WorkerList=_This::_WorkerList;;
 
-fun _workerAlive ()= nil<>_WorkerList;;
+fun _workerFree(i)=
+	\atomic (
+		set _Workers[i]=nil;
+//		echoLn strFormat("release worker *", i);
+		let fifoOut(_WorkersFifo) -> th in
+		if th<>nil then (
+//			echoLn "reattributed worker";
+//			echoLn strFormat("get worker *", i);
+			set _Workers[i]=th;
+			_threadUnfreeze(th, i)
+		)
+	);;
+
+fun _workerCheck()=
+	for i=0; i<_WORKERS_COUNT do
+		let _Workers[i] -> th in
+		if th<>nil then
+		if th._stateT==_THREAD_DONE then _workerFree(i)
+		else
+		void match _workerHandle(i) with 
+		nil -> (	
+			echoLn strFormat("> Worker * is out of memory", i);
+			_workerFree(i);
+			threadStop(th)
+		),
+		true -> (
+			_workerFree(i);
+			if th._stateT==_THREAD_WAIT then _scheduleThread(th)
+		);;
+
+fun _workerAlive()=
+//	for i=0; i<_WORKERS_COUNT do if _Workers[i]<>nil then (echo i; echo "|");
+	for i=0; i<_WORKERS_COUNT do if _Workers[i]<>nil then return true;
+	false;;
 
 //-----------------------------------
 fun ipByName(hostname)= let bufferCreateWithSize(32) -> output in (
-	_workerEnter();
-	if 0<_ipByName(output, hostname) then strSplit("\0", strFromBuffer(output))
+	let workerGet() -> wId in
+	if 0<_ipByName(output, hostname, wId) then strSplit("\0", strFromBuffer(output))
 );;
 fun nameByIp(ip)= let bufferCreateWithSize(32) -> output in (
-	_workerEnter();
-	if 0<_nameByIp(output, ip) then strFromBuffer(output)
+	let workerGet() -> wId in
+	if 0<_nameByIp(output, ip, wId) then strFromBuffer(output)
 );;
 
 //-----------------------------------
-//struct Inflate = [_lockI _bufferI _srcI _bitI];;
+fun inflate(data) =
+	let workerGet() -> wId in
+	let bufferCreateWithSize(3*strLength(data)) -> output in
+	if _inflate(output, data, wId) then strFromBuffer(output);;
 
-//fun inflateCreate = 
-//	let bufferCreateWithSize 1024 -> output in
-//	[_lockI=lockCreate _bufferI=output _bitI=0];;
+fun deflate(data) =
+	let workerGet() -> wId in
+	let bufferCreateWithSize(strLength(data)) -> output in
+	if _deflate(output, data, wId) then strFromBuffer(output);;
 
-//fun inflateProcess infl data =
-//	lockSync infl._lockI (lambda=
-//		set infl._srcI = strConcat infl._srcI data;
-//		_workerEnter;
-//		let _inflate infl._bufferI infl._srcI infl._bitI -> result in
-//		if result==-1 then strFromBuffer infl._bufferI
-//		elif result<0 then void set infl._bufferI=nil
-//		elif result>=1024 then (
-//			set infl._srcI= strSlice infl._srcI result>>7 nil;
-//			set infl._bitI= result&7;
-//			nil
-//		)
-//	);;
-
-//fun inflate data =
-//	let inflateCreate -> infl in
-//	for i=0;i<strLength data;i+1024 do
-//		if infl._bufferI<>nil then
-//		let inflateProcess infl strSlice data i 1024 -> result in (
-//			_threadResign;
-//			result
-//		);;
-
-
-fun inflate(data) = let bufferCreateWithSize(3*strLength(data)) -> output in (
-	_workerEnter();
-	if _inflate(output, data, 0)==-1 then strFromBuffer(output)
-);;
-
-//fun deflate data = let bufferCreateWithSize strLength data -> output in (
-//	let 16384 -> SLICE in
-//	let 0 -> state in
-//	for i=0;i<strLength data;i+SLICE do (
-//		_workerEnter;
-//		if 0>set state= _deflate output (strSlice data i SLICE) state (i+SLICE>=strLength data) then return nil;
-//		_threadResign;
-//	);
-//	strFromBuffer output
-//);;
-
-fun deflate(data) = let bufferCreateWithSize(strLength(data)) -> output in (
-	_workerEnter();
-	if _deflate(output, data, 0, true)==0 then strFromBuffer(output)
-);;
-fun deflateBytes(data) = let bufferCreateWithSize(bytesLength(data)) -> output in (
-	_workerEnter();
-	if _deflateBytes(output, data, 0, true)==0 then strFromBuffer(output)
-);;
+fun deflateBytes(data) =
+	let workerGet() -> wId in
+	let bufferCreateWithSize(bytesLength(data)) -> output in
+	if _deflateBytes(output, data, wId) then strFromBuffer(output);;
 
 //-----------------------------------
-struct Lzw = [_lockL, _bufferL, _lzwL];;
-
-fun lzwCreate(nbits) = [_lockL=lockCreate(), _bufferL=bufferCreateWithSize(1024*16), _lzwL=_lzwCreate(nbits)];;
-fun _lzwProcess(lzw, src, start, length, fProcess)=
-	lockSync(lzw._lockL, (lambda()=
-		bufferReset(lzw._bufferL);
-		_workerEnter();
-		if false<>call fProcess(lzw._lzwL, lzw._bufferL, src, start, length) then
-			strFromBuffer(lzw._bufferL)
-	));;
-fun lzwDeflate(lzw, src, start, length)= _lzwProcess(lzw, src, start, length, #_lzwDeflate);;
-fun lzwInflate(lzw, src, start, length)= _lzwProcess(lzw, src, start, length, #_lzwInflate);;
-
-fun lzwDeflateFinalize(lzw) = lzwDeflate(lzw, nil, nil, nil);;
-
 fun lzwFromStr(data, bitLen)=
-	let lzwCreate(bitLen) -> lzw in
-	strConcat(		lzwDeflate(lzw, data, 0, nil),
-		lzwDeflateFinalize(lzw))
-	;;
+	let workerGet() -> wId in
+	let bufferCreateWithSize(1024*16) -> out in
+	if _lzwDeflate(out, data, bitLen, wId) then strFromBuffer(out);;
 
 fun strFromLzw(data, bitLen)=
-	let lzwCreate(bitLen) -> lzw in
-	lzwInflate(lzw, data, 0, nil);;
+	let workerGet() -> wId in
+	let bufferCreateWithSize(1024*16) -> out in
+	if _lzwInflate(out, data, bitLen, wId) then strFromBuffer(out);;
 
 #ifdef _mp3Decode
 fun mp3Decode(mp3) =
+	let workerGet() -> wId in
 	let bufferCreateWithSize(1024+10*strLength(mp3)) -> buffer in 
-	(
-		_workerEnter();
-		if _mp3Decode(buffer, mp3) then strFromBuffer(buffer)
-	);;
+	if _mp3Decode(buffer, mp3) then strFromBuffer(buffer);;
 #endif

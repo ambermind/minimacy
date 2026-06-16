@@ -22,30 +22,21 @@ void threadMark(LB* user)
 	LINT i;
 	LB* p = th->stack;
 
-	if (!p) return;
-
 	MARK_OR_MOVE(th->stack);
 	MARK_OR_MOVE(th->user);
 	MARK_OR_MOVE(th->error);
-	// there is no need to mark any pending worker's result pointer, as these pointers are
-	// stored in the stack by workerAllocExt before they are declared as the worker's result
 	if (MOVING_BLOCKS) {
 		MARK_OR_MOVE(th->listNext);	// this special list doesn't count for marking stage
 		MARK_OR_MOVE(th->fun);
-		MARK_OR_MOVE(th->worker.buffer);	// possible because all workers are inactive at this stage, see bmmCompact() function
-		if (th->worker.type == VAL_TYPE_PNT) {
-			LB* pnt=PNT_FROM_VAL(th->worker.result);
-			MARK_OR_MOVE(pnt);
-			th->worker.result=VAL_FROM_PNT(pnt);
-		}
+		if (!p) return;
 		for (i = 0; i <= th->sp; i++) if (ARRAY_IS_PNT(p, i)) {
 			LB* pnt = ARRAY_PNT(p, i);
 			MARK_OR_MOVE(pnt);
 			ARRAY_GET(p, i) = VAL_FROM_PNT(pnt);
 		}
-		if (th->link) *th->link = (Thread*)th->header.listMark;
 	}
 	else {
+		if (!p) return;
 		for(i=0;i<=th->sp;i++) if (ARRAY_IS_PNT(p,i)) BLOCK_MARK(ARRAY_PNT(p,i));
 	}
 }
@@ -67,13 +58,6 @@ Thread* threadCreate(LINT stackLen)
 	th=(Thread*)memoryAllocNative(sizeof(Thread),DBG_THREAD, threadForget,threadMark); if (!th) return NULL;
 	th->uid=ThreadCounter++;
 	th->count = 0;
-	th->worker.result = NIL;
-	th->worker.type = VAL_TYPE_PNT;
-	th->worker.buffer = NULL;
-	th->worker.state = WORKER_READY;
-	th->worker.sem = NULL;
-	th->worker.OM = 0;
-	th->link = NULL;
 	th->callstack=-1;
 	th->pc=0;
 	th->fun=NULL;
@@ -251,7 +235,7 @@ int fun_threadClear(Thread* th)
 	Thread* t = (Thread*)STACK_PNT(th, 0);
 	if (!t) return 0;
 //	PRINTF(LOG_DEV,"_threadClear %d from %d\n", t->uid, th->uid);
-	if (t == th) return 0;	// should not happen
+	if (t == th) FUN_RETURN_NIL;	// should not happen
 	stackReset(t);
 	t->callstack = -1;	// this will prevent function callstack from failing
 	t->stack = NULL;

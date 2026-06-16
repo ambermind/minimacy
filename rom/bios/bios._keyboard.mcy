@@ -24,15 +24,16 @@ fun onInput(cbRead, cbWrite)=
 	_socketSetSelectRead(_KeyboardSock, true);
 	let [Keyboard] -> kb in
 	(
-		streamInit(kb, _KeyboardSock,
-			(lambda ()=	// onSelectRead
+		streamInit(kb, _KeyboardSock, "keyboard", "-",
+			lambda()=	// onSelectRead
 				let _keyboardRead(kb._socketS) -> data in
 				if data==nil then void streamClose(kb)
-				else streamReadEvent(kb, data);
-			),
+				else streamReadEvent(kb, data)
+			,
 			nil,	// write
-			(lambda ()= inputClose(kb); true),	// close
-			(lambda(fEcho)= call fEcho("keyboard", "-")));	// echo
+			lambda()= inputClose(kb); true	// close
+		);
+			
 \atomic (
 		set _Keyboards= kb::_Keyboards;
 		_keyboardSync()
@@ -57,7 +58,7 @@ fun serialOpen(port, speed, format, parity, stop)=
 	if serial<>nil then
 	let _serialSocket(serial) -> socket in
 	let [_Serial] -> stream in
-	streamInit(stream, socket,
+	streamInit(stream, socket, "serial", port,
 		lambda ()=	// onSelectRead
 			let _serialRead(serial) -> data in (
 				streamReadEvent(stream, data);
@@ -65,8 +66,7 @@ fun serialOpen(port, speed, format, parity, stop)=
 			)
 		,
 		lambda(data, start) = _serialWrite(serial, data, start),	// write
-		(lambda ()= _serialClose(serial); streamCommonClose(stream)),	// close
-		lambda(fEcho)= call fEcho("serial", port));;
+		lambda()= _serialClose(serial); streamCommonClose(stream));;	// close
 
 fun serialOnEvent(serial, onRead, onWrite)= streamOnEvent(serial, onRead, onWrite);;
 fun serialWrite(serial, data, start)= streamWrite(serial, data, start);;

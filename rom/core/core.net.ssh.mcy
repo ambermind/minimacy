@@ -310,13 +310,13 @@ fun sshFail(h, code) =
 	sshTcpClose(h);;
 
 fun _sshTcpClosed(h, close)=
-	if close then tcpClose(h.tcpS);
+	if close then streamClose(h.tcpS);
 	sshNotifyEvent(h, SSH_CLOSED, nil);
 	set h.fNotifyEventS=nil;;
 
 fun sshTcpClose(h)=
 	if SSH_DEBUG then echoLn strFormat("*> sshTcpClose *", sshWho(h));
-	tcpClose(h.tcpS);
+	streamClose(h.tcpS);
 	set h.fNotifyEventS=nil;
 	0;;
 
@@ -330,7 +330,7 @@ fun _sshSend(h, data)=
 //		if SSH_DEBUG then hexDump data
 //	);
 	set h.sendS=strConcat(h.sendS, data);
-	set h.iS=tcpWrite(h.tcpS, h.sendS, h.iS);
+	set h.iS=streamWrite(h.tcpS, h.sendS, h.iS);
 	if h.iS>=strLength(h.sendS) then (
 		if h.closeAfterS then sshTcpClose(h);
 		set h.sendS=nil;
@@ -411,19 +411,27 @@ fun sshSendMsg(h, code, data) =
 
 fun sshDecodePacket(h, buf)=
 //	if SSH_DEBUG then echoLn strFormat("*> sshDecodePacket * bytes", sshWho(h), strLength(buf));
-	if BLOCK_SIZE<= strLength(buf) then
+	if strLength(buf)>=BLOCK_SIZE then
 	let h.keysS -> keys in
 	if !keys.decEnabledK then	// not encrypted
 		let 4+strRead32Msb(buf, 0) -> len in
 		(
 //			if SSH_DEBUG then echoLn strFormat("*> clear text", sshWho (h));
-			if len<= strLength(buf) then [strLeft(buf, len), len]
+			if len>35000 then void (	//	RFC 4253
+				if SSH_DEBUG then echoLn strFormat("*> close on excessive packet size (* bytes)", len);
+				sshTcpClose(h);
+			)
+			else if strLength(buf)>=len then [strLeft(buf, len), len]
 		)
 	else if nil<>keys.gcmDecK then	// encrypted with GCM
 		let 4+keys.decMacLenK+strRead32Msb(buf, 0) -> len in
-		(
+		if len>35000 then void (	//	RFC 4253
+			if SSH_DEBUG then echoLn strFormat("*> close on excessive packet size (* bytes)", len);
+			sshTcpClose(h);
+		)
+		else (
 //			if SSH_DEBUG then echoLn strFormat("*> gcm encrypted", sshWho(h));
-			if len<= strLength(buf) then
+			if strLength(buf)>=len then
 			let strLeft(buf, 4) -> A in
 			let strSlice(buf, 4, len-4-keys.decMacLenK) -> cipherText in
 			let strSlice(buf, len-keys.decMacLenK, keys.decMacLenK) ->mac in
@@ -440,7 +448,11 @@ fun sshDecodePacket(h, buf)=
 	let refGet(keys.decIvK) -> iv in // we need a copy
 	let call keys.decKeyK(keys.decIvK, strLeft(buf, BLOCK_SIZE)) -> firstBlock in
 	let 4+strRead32Msb(firstBlock, 0) -> len in
-	if strLength(buf)< (len+h.keysS.decMacLenK) then
+	if len>35000 then void (	//	RFC 4253
+		if SSH_DEBUG then echoLn strFormat("*> close on excessive packet size (* bytes)", len);
+		sshTcpClose(h);
+	)
+	else if strLength(buf)< (len+h.keysS.decMacLenK) then
 	(
 		refSet(keys.decIvK, iv);
 		if SSH_DEBUG then echoLn strFormat("uncomplete * < *", strLength(buf), (len+h.keysS.decMacLenK));
@@ -469,7 +481,13 @@ fun sshDecodePacket(h, buf)=
 fun sshParseProtocol(h)=
 	if SSH_DEBUG then echoLn strFormat("*< sshParseProtocol", sshWho(h));
 	let strPos(h._bufferS, "\10", 0) -> i in
-	if i<>nil then
+	if i==nil then (
+		if strLength(h._bufferS)>35000 then void (	//	RFC 4253
+			if SSH_DEBUG then echoLn strFormat("*> close on excessive packet size (* bytes)", strLength(h._bufferS));
+			sshTcpClose(h);
+		)
+	)
+	else
 	let if 13==strGet(h._bufferS, i-1) then i-1 else i -> len in
 	let strLeft(h._bufferS, len) -> peerProtocol in
 	(
@@ -1142,7 +1160,7 @@ fun sshParsePacket(h)=
 fun sshParse(h, data)=
 	set h._bufferS=strConcat(h._bufferS, data);
 	if h.fHandlePacketS==nil then sshParseProtocol(h)
-	else if 0<strLength(h._bufferS) then sshParsePacket(h);;
+	else if strLength(h._bufferS)>0 then sshParsePacket(h);;
 
 
 fun _sshCommonInit(h, fNotify)=
@@ -1153,7 +1171,7 @@ fun _sshCommonInit(h, fNotify)=
 
 	sshOnEvent(h, fNotify);
 
-	tcpOnEvent(h.tcpS,
+	streamOnEvent(h.tcpS,
 		lambda(data)=
 //			if SSH_DEBUG then echoLn strFormat("*<< TCP receive *", sshWho(h), hexFromInt(strLength(data)));
 //			if SSH_DEBUG then hexDump data;
@@ -1163,7 +1181,8 @@ fun _sshCommonInit(h, fNotify)=
 				void _sshTcpClosed(h, false)
 			)
 		,
-		(lambda ()= _sshSend(h, nil)));
+		lambda ()= _sshSend(h, nil)
+	);
 	h;;
 
 fun _sshAccept(h, serverKey, tcp, fCheckAuth, fNotify)=
@@ -1176,7 +1195,7 @@ fun _sshAccept(h, serverKey, tcp, fCheckAuth, fNotify)=
 
 fun _sshConnect(h, ip, port, fNotify)=
 	set h.clientS=true;
-	set h.tcpS=tcpOpen(ip, port);
+	set h.tcpS=Stream<tcpOpen(ip, port);
 	set h.sendS=strConcat(SSH_PROTOCOL_CLIENT, "\13\10");
 	set h.hashFifoS=fifoCreate();
 	_sshHashStr(h, SSH_PROTOCOL_CLIENT);

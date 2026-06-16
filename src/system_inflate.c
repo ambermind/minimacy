@@ -3,18 +3,12 @@
 // Minimacy (r) System
 #include "minimacy.h"
 #include "system_inflate.h"
+
 typedef struct Inflate Inflate;
 struct Inflate
 {
-	LB header;
-	FORGET forget;
-	MARK mark;
-
-	volatile Inflate** link;
-
-	volatile Buffer** pout;
-	volatile LB* srcBlock;
-	volatile char* src;
+	LINT fixedRootBuffer;
+	LINT fixedRootSrc;
 
 	HuffNode* lenDecoder;
 	HuffNode lenSet[MAX_LENGTH *2];
@@ -24,7 +18,6 @@ struct Inflate
 	HuffNode distSet[32*2];
 
 	int srcLen;
-	int blockStart;
 	int bit;
 };
 const int LEN_ORDER[] = {	//19
@@ -58,13 +51,18 @@ void getFixedDistLengths(int* lens)
 	int i;
 	for (i = 0; i < MAX_DIST; i++) lens[i] = 5;
 }
+
+char inflateReadByte(Inflate* z, int i)
+{
+	return (STR_START(fixedRootValue(z->fixedRootSrc)))[i];
+}
 // br... like bit reader
 int brBit0To7(Inflate* z)
 {
 	int i = z->bit;
 	if (i>= z->srcLen) return ERR_UNCOMPLETE;
 	z->bit++;
-	return 1 & (z->src[i >> 3] >> (i & 7));
+	return 1 & (inflateReadByte(z, i >> 3) >> (i & 7));
 }
 int brBitsLsb(Inflate* z, int n)
 {
@@ -74,7 +72,7 @@ int brBitsLsb(Inflate* z, int n)
 	for (i = 0; i < n;i++)
 	{
 		int j = z->bit + i;
-		char c = z->src[j >> 3];
+		char c = inflateReadByte(z, j >> 3);
 		val+= (1 & (c >> (j & 7)))<<i;
 	}
 	z->bit += n;
@@ -86,7 +84,7 @@ int brBytesLsb(Inflate* z, int n)
 	int i;
 	z->bit = (z->bit + 7) & ~7;
 	if ((z->bit + 8 * n) >= z->srcLen) return ERR_UNCOMPLETE;
-	for (i = 0; i < n; i++) val+= ((z->src[(z->bit >> 3) + i] & 255)<<(i<<3));
+	for (i = 0; i < n; i++) val+= (inflateReadByte(z, (z->bit >> 3) + i) & 255)<<(i<<3);
 	z->bit += 8 * n;
 	return val;
 }
@@ -95,7 +93,7 @@ char* brBytesSkip(Inflate* z, int n)
 	char* start;
 	z->bit = (z->bit + 7) & ~7;
 	if ((z->bit + 8 * n) > z->srcLen) return NULL;
-	start = (char*)&z->src[z->bit >> 3];
+	start = STR_START(fixedRootValue(z->fixedRootSrc)) + (z->bit >> 3);
 	z->bit += 8 * n;
 	return start;
 }
@@ -181,19 +179,19 @@ int huffmanDecodeCode0To7(Inflate* z, HuffNode* p)
 	}
 	return p->val;
 }
-int _inflateData(volatile Inflate** pz)
+int _inflateData(Inflate* z)
 {
-	Inflate* z = (Inflate*)*pz;
-	int code, dist, extra, offset, len, i;
+	int code, dist, extra, offset, len;
 	while (1) {
 		code = huffmanDecodeCode0To7(z, z->codeDecoder);
 		if (code < 0) return code;
 		else if (code < 256) {
-			if (bufferAddCharWorker(z->pout, code)) return ERR_OM;
-			z = (Inflate*)*pz;
+			if (fixedBufferAddChar(z->fixedRootBuffer, code)) return ERR_OM;
 		}
 		else if (code == 256) return 0;
 		else {
+			char* dst;
+			char* start;
 			code -= 257;
 			extra = LENS257[code * 2];
 			offset = LENS257[code * 2+1];
@@ -204,10 +202,19 @@ int _inflateData(volatile Inflate** pz)
 			offset = DISTANCES[dist * 2 + 1];
 			dist = brBitsLsb(z, extra); if (dist < 0) return dist;
 			dist += offset;
-			for (i = 0; i < len; i++) {
-				if (bufferAddCharWorker(z->pout, bufferGetChar((Buffer*)*z->pout, -dist))) return ERR_OM;
-				z = (Inflate*)*pz;
+//			printf("_inflateCopy %d\n", len);
+
+			dst = fixedBufferRequire(z->fixedRootBuffer, len); if (!dst) return ERR_OM;
+			start = bufferGetCharAddress((Buffer*)fixedRootValue(z->fixedRootBuffer), -(dist+len));
+//			if (dist < len) printf("cover\n");
+			if (start) while (len > 0) {
+				int copy = (dist < len) ? dist : len;
+				memcpy(dst, start, copy);
+				dst += copy;
+				start += copy;
+				len -= copy;
 			}
+//			else printf("wrong start\n");
 		}
 	}
 }
@@ -262,13 +269,12 @@ int _inflateLens(Inflate* z, int* lens, int nb)
 	return 0;
 }
 
-int _inflateBlockDynamic(volatile Inflate** pz)
+int _inflateBlockDynamic(Inflate* z)
 {
 	int k;
 	int lens[MAX_CODE + MAX_DIST];
 	int nbCodes, nbDist;
-	Inflate* z = (Inflate*)*pz;
-
+	
 	nbCodes = brBitsLsb(z, 5); if (nbCodes < 0) return nbCodes;
 	nbDist = brBitsLsb(z, 5); if (nbDist < 0) return nbDist;
 	nbCodes += 257; if (nbCodes > MAX_CODE) return ERR_FORMAT;
@@ -284,14 +290,13 @@ int _inflateBlockDynamic(volatile Inflate** pz)
 //	huffmanDump(z->distDecoder);
 	if (!z->distDecoder) return ERR_FORMAT;
 
-	return _inflateData(pz);
+	return _inflateData(z);
 }
 
-int _inflateBlockFixed(volatile Inflate** pz)
+int _inflateBlockFixed(Inflate* z)
 {
 	int lens[MAX_CODE];
-	Inflate* z = (Inflate*)*pz;
-
+	
 	getFixedCodeLengths(lens);
 	z->codeDecoder = _huffmanBuildDecoder(z->codeSet, lens, MAX_CODE);
 //	huffmanDump(z->codeDecoder);
@@ -302,109 +307,95 @@ int _inflateBlockFixed(volatile Inflate** pz)
 	if (!z->distDecoder) return ERR_FORMAT;
 //	huffmanDump(z->distDecoder);
 
-	return _inflateData(pz);
+	return _inflateData(z);
 }
 
-int _inflateBlockNoCompression(volatile Inflate** pz)
+int _inflateBlockNoCompression(Inflate* z)
 {
-	char* start;
+	char* src;
+	char* dst;
 	int len, coLen;
-	Inflate* z = (Inflate*)*pz;
+//	printf("_inflateBlockNoCompression\n");
 	len = brBytesLsb(z, 2);	if (len < 0) return len;
 	coLen = brBytesLsb(z, 2); if (coLen < 0) return coLen;
 	if ((len + coLen) != 0xffff) return ERR_FORMAT;
 
-	start = brBytesSkip(z, len); if (!start) return ERR_UNCOMPLETE;
-	if (bufferAddBinWorker(z->pout, start, len)) return ERR_OM;
+	dst = fixedBufferRequire(z->fixedRootBuffer, len); if (!dst) return ERR_OM;
+	src = brBytesSkip(z, len); if (!src) return ERR_UNCOMPLETE;
+	memcpy(dst, src, len);
 	return 0;
 	//	PRINTF(LOG_DEV,"len=%x coLen=%x i=%d sum=%x\n", len, coLen,z->bit,len+coLen);
 }
 
-int inflateLoop(volatile Inflate** pz)
+int inflateLoop(Inflate* z)
 {
 	while (1) {
 		int k, final, type;
-		Inflate* z = (Inflate*)*pz;
 		final = brBitsLsb(z, 1); if (final < 0) return final;
 		type = brBitsLsb(z, 2); if (type < 0) return type;
 //		PRINTF(LOG_DEV,"inflate type %d\n", type);
 		switch (type) {
 			case 0:
-				if ((k=_inflateBlockNoCompression(pz))) return k;
+				if ((k=_inflateBlockNoCompression(z))) return k;
 				break;
 			case 1:
-				if ((k=_inflateBlockFixed(pz))) return k;
+				if ((k=_inflateBlockFixed(z))) return k;
 				break;
 			case 2:
-				if ((k=_inflateBlockDynamic(pz))) return k;
+				if ((k=_inflateBlockDynamic(z))) return k;
 				break;
 			default:
 //				PRINTF(LOG_DEV,"unsupported block type %d\n", type);
 				return ERR_FORMAT;
 		}
-		(*pz)->blockStart=(*pz)->bit;
 		if (final) break;
 	}
 	return 0;
 }
-void inflateInit(Inflate* z, LB* src, int blockStart, volatile Buffer** pout)
+void inflateInit(Inflate* z, LB* src)
 {
-	z->pout = pout;
-
-	z->srcBlock = src;
-	z->src = STR_START(src);
 	z->srcLen = ((int)STR_LENGTH(src))<<3;
-	z->bit = z->blockStart = blockStart;
+	z->bit = 0;
 }
 //--------------------------------------
-WORKER_START _inflate(volatile Thread* th)
+WORKER_START _inflate(Worker* w)
 {
+#ifdef USE_WORKER_ASYNC
+	Inflate ZZ;
+	Inflate* z = &ZZ;
+#else
+	Inflate* z = (Inflate*)WorkerScratchpad;
+#endif
 	int k;
-	LINT result;
-	volatile Inflate* z= (volatile Inflate*)STACK_PNT(th, 0);
-	LINT startBit=STACK_INT(th,1);
-	LB* src = STACK_PNT(th, 2);
-	volatile Buffer* out = (Buffer*)STACK_PNT(th, 3);
-	inflateInit((Inflate*)z, src, (int)startBit, &out);
-	bufferSetWorkerThread(&out, &th);
-	z->link = &z;
-	k=inflateLoop(&z);
-	// -1: done, <0: error, >=0 new bitStart
-	result=(!k)?-1:((k==ERR_UNCOMPLETE)?z->blockStart:-2);
-	bufferUnsetWorkerThread(&out, &th);
-	z->link = NULL;
-	return workerDoneInt(th,result);
+	Thread* th = workerThread(w);
+
+	LB* src = STACK_PNT(th, 0);
+	Buffer* out = (Buffer*)STACK_PNT(th, 1);
+	if (!out) return workerDoneNil(w);
+	bufferSetWorker(out, w);
+	inflateInit(z, src);
+	z->fixedRootBuffer = fixedRootAlloc((LB*)out);
+	z->fixedRootSrc = fixedRootAlloc(src);
+
+	k = inflateLoop(z);
+	// 0: done, <0: error, >=0 new bitStart
+	
+	fixedRootRelease(z->fixedRootBuffer);
+	fixedRootRelease(z->fixedRootSrc);
+	if (k==0) return workerDoneBool(w, 1);
+	return workerDoneBool(w, 0);
 }
 
-void _inflateMark(LB* user)
-{
-	if (MOVING_BLOCKS) {
-		Inflate* z = (Inflate*)user;
-		MARK_OR_MOVE(z->srcBlock);
-		z->src = STR_START(z->srcBlock);
-		if (z->link) *z->link = (Inflate*)z->header.listMark;
-	}
-}
-
-int fun_inflate(Thread* th) { 
-	Inflate* z;
-	LINT startBit=STACK_INT(th,0);
-	LB* src = STACK_PNT(th, 1);
-	Buffer* out = (Buffer*)STACK_PNT(th, 2);
-	if ((!src) || (!out) || (startBit<0) || (startBit*8>STR_LENGTH(src))) FUN_RETURN_FALSE;
-	z = (Inflate*)memoryAllocNative(sizeof(Inflate), DBG_BIN, NULL, _inflateMark);
-	if (!z) return EXEC_OM;
-	STACK_PUSH_PNT_ERR(th, z, EXEC_OM);
-	return workerStart(th, 4, _inflate);
-}
+int fun_inflate(Thread* th) { return workerStart(th, 2, _inflate); }
 
 int systemInflateInit(Pkg* system)
 {
 	static const Native nativeDefs[] = {
-		{ NATIVE_FUN, "_deflate", fun_deflate, "fun Buffer Str Int Bool -> Int"},
-		{ NATIVE_FUN, "_deflateBytes", fun_deflate, "fun Buffer Bytes Int Bool -> Int"},
-		{ NATIVE_FUN, "_inflate", fun_inflate, "fun Buffer Str Int -> Int"},
+		{ NATIVE_FUN, "_deflate", fun_deflate, "fun Buffer Str Int -> Bool"},
+		{ NATIVE_FUN, "_deflateBytes", fun_deflate, "fun Buffer Bytes Int -> Bool"},
+		{ NATIVE_FUN, "_inflate", fun_inflate, "fun Buffer Str Int -> Bool"},
 	};
 	NATIVE_DEF(nativeDefs);
 	return 0;
 }
+

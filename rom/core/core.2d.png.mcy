@@ -10,7 +10,7 @@ export pngDepth(png);;
 export pngColorType(png);;
 export bitmapFromPng(src);;// fun Str -> Bitmap
 
-
+const DEBUG=false;;
 struct PngReader=[wP, hP, depthP, colorTypeP, compressP, filterP, interlacedP, valuesPerPixelP, paletteP, idatP, bmpP];;
 
 const PNG_MAGIC="\$89\$50\$4E\$47\$0D\$0A\$1A\$0A";;
@@ -98,7 +98,7 @@ fun _pngFilterBuffer(mode, png, data, rowStart, next, buffer)=
 				set C= (0xffffff & (C>>8)) | (B<<((vpp-1)*8));	// we use C as a fifo
 				bytesSet(buffer, i, val)
 			),
-	_ -> (if true then echoLn strFormat("unknown filter *", hexFromInt(mode)); nil);;
+	_ -> void if DEBUG then echoLn strFormat("unknown filter *", hexFromInt(mode));;
 
 fun _pngReadWithoutPalette(bmp, y, w, pass, data, fRead, mask, vpp)=
 	let PASS[pass] ->[ax, bx, ay, by] in
@@ -139,7 +139,7 @@ fun _pngDecodePass(png, bmp, data, rowStart, pass)=
 			3 -> _pngReadWithPalette(png, bmp, y, w, pass, buffer, vpp),	// PALETTE
 			4 -> _pngReadWithoutPalette(bmp, y, w, pass, buffer, fRead, mask, vpp),	// GRAYSCALE+ALPHA not tested
 			6 -> _pngReadWithoutPalette(bmp, y, w, pass, buffer, fRead, mask, vpp),	// RGBA
-			_ -> (if true then echoLn strFormat("unknown colorType *", hexFromInt(colorType));nil);
+			_ -> void if DEBUG then echoLn strFormat("unknown colorType *", hexFromInt(colorType));
 		set rowStart=rowStart+next;
 	);
 	rowStart;;

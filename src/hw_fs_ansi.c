@@ -217,7 +217,7 @@ LB* ansiReadContent(char* path, int* size)
 	return p;
 }
 
-void _ansiAddFileInfo(volatile Buffer** pout, char* path, LINT len, char* tmpAttr)
+void _ansiAddFileInfo(LINT fixedRootBuffer, char* path, LINT len, char* tmpAttr)
 {
 	LINT lAttr;
 	LINT lName;
@@ -230,13 +230,13 @@ void _ansiAddFileInfo(volatile Buffer** pout, char* path, LINT len, char* tmpAtt
 	if (len < 0) len = strlen(path);
 	lName = (path + len) - name;
 	lAttr = strlen(tmpAttr);
-	bufferAddBinWorker(pout, name, lName);
-	bufferAddCharWorker(pout, 0);
-	bufferAddBinWorker(pout, tmpAttr, lAttr + 1);
+	fixedBufferAddBin(fixedRootBuffer, name, lName);
+	fixedBufferAddChar(fixedRootBuffer, 0);
+	fixedBufferAddBin(fixedRootBuffer, tmpAttr, lAttr + 1);
 }
 
 #ifdef USE_FS_ANSI_WIN
-LINT ansiDirectoryList(volatile Buffer** pout, char* dir)	// we expect dir to end with '/'
+LINT ansiDirectoryList(LINT fixedRootBuffer, char* dir)	// we expect dir to end with '/'
 {
 	char search[MAX_PATH + 2];
 	char tmpAttr[32];
@@ -251,7 +251,7 @@ LINT ansiDirectoryList(volatile Buffer** pout, char* dir)	// we expect dir to en
 	{
 //		PRINTF(LOG_DEV, "filename: %s\n", fileinfo.name);
 		snprintf(tmpAttr, 32, LSX" "LSX" %c", (LINT)fileinfo.size, (LINT)fileinfo.time_write, (fileinfo.attrib & _A_SUBDIR) ? 'd' : '-');
-		_ansiAddFileInfo(pout, fileinfo.name, -1, tmpAttr);
+		_ansiAddFileInfo(fixedRootBuffer, fileinfo.name, -1, tmpAttr);
 
 		res = _findnext(h, &fileinfo);
 	}
@@ -277,7 +277,7 @@ int ansiDirDelete(char* path)
 }
 #endif
 #ifdef USE_FS_ANSI_UNIX
-LINT ansiDirectoryList(volatile Buffer** pout, char* dir)	// we expect dir to end with '/'
+LINT ansiDirectoryList(LINT fixedRootBuffer, char* dir)	// we expect dir to end with '/'
 {
 	char search[MAX_PATH + 2];
 	char tmpAttr[32];
@@ -295,7 +295,7 @@ LINT ansiDirectoryList(volatile Buffer** pout, char* dir)	// we expect dir to en
 		snprintf(candidate, MAX_PATH, "%s%s", dir, dp->d_name);
 		stat(candidate, &info);
 		snprintf(tmpAttr, 32, LSX" "LSX" %c", (LINT)info.st_size, (LINT)info.st_mtime, S_ISDIR(info.st_mode) ? 'd' : '-');
-		_ansiAddFileInfo(pout, dp->d_name, -1, tmpAttr);
+		_ansiAddFileInfo(fixedRootBuffer, dp->d_name, -1, tmpAttr);
 	}
 	closedir(d);
 	return 0;

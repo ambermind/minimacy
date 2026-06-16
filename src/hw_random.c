@@ -29,7 +29,7 @@ void hwRandomInit(void)
 void hwRandomBytes(char* dst, LINT len)
 {
 	if (fCrypt) {
-		int read=fread(dst, 1, len, fCrypt);
+		int read=(int)fread(dst, 1, len, fCrypt);
 		if (read>0) {
 			dst+=read;
 			len-=read;

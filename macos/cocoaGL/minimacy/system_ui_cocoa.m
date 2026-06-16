@@ -546,6 +546,8 @@ void sendEvent(int c, int x, int y, int v)
 }
 
 int fun_uiStart(Thread* th) {
+	LINT wId = STACK_PULL_INT(th);
+	
 	char* name;
 	
 	LB* p = STACK_PNT(th, 0);

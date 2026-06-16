@@ -809,11 +809,13 @@ fun _parseAlertData(tls, data)= call tls.cipherTLS.decodeDataC(tls, TLS_ALERT_RE
 
 fun _parse(tls, data)=
 	if _alive(tls) then
-	if 5>strLength(data) then data	// need more data
+	if strLength(data)<5 then data	// need more data
 	else 
 	let strRead16Msb(data, 1) -> version in
 	let 5+strRead16Msb(data, 3) -> len in
-	if len>strLength(data) then data	// need more data
+	if len>20000 then void _setError(tls, "EXCESSIVE BLOCK SIZE")	// RFC 5246 : 18KB
+	else
+	if strLength(data)<len then data	// need more data
 	else let strSlice(data, len, nil) -> nextData in
 	let strRead8(data, 0) -> type in
 	(
@@ -1049,7 +1051,7 @@ fun _tlsManageSubstream(substream, tls)=
 	set tls.substreamTT=substream;
 	set tls.iTT=0;
 	set tls.fifoReadTT=fifoCreate();
-	streamInit(tls, nil,
+	streamInit(tls, nil, "TLS1.2", streamDetail(substream),
 		lambda ()=	// onSelectRead
 			let fifoOut(tls.fifoReadTT) -> data in (
 				streamSetReadable(tls, fifoCount(tls.fifoReadTT)>0);
@@ -1064,10 +1066,7 @@ fun _tlsManageSubstream(substream, tls)=
 			-> len in
 			if len<>nil then start+len
 		,
-		(lambda ()= streamClose(substream); streamCommonClose(tls)),	// close
-		(lambda(fEcho)=	// show
-			call fEcho("TLS1.2", strFormat("*:*", tcpRemoteIp(substream), tcpRemotePort(substream)))
-		));
+		lambda ()= streamClose(substream); streamCommonClose(tls));	// close
 	streamOnEvent(substream,
 		lambda(data)=
 //				echoLn "<< receive"; hexDump data;

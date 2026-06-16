@@ -57,7 +57,7 @@ int systemUiInit(Pkg* system)
 		{ NATIVE_INT, "UI_FULLSCREEN", (void*)UI_FULLSCREEN, "Int" },
 		{ NATIVE_INT, "UI_GL", (void*)UI_GL, "Int" },
 
-		{ NATIVE_FUN, "_uiStart", fun_uiStart, "fun Int Int Int Int Int Str -> Bool"},
+		{ NATIVE_FUN, "_uiStart", fun_uiStart, "fun Int Int Int Int Int Str Int -> Bool"},
 		{ NATIVE_FUN, "_uiStop", fun_uiStop, "fun -> Bool" },
 #ifdef WITH_X11_BITMAP
 		{ NATIVE_FUN, "_uiUpdate", fun_uiUpdate, "fun Bitmap Int Int Int Int -> Bitmap"},

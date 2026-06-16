@@ -2,9 +2,9 @@
 // Copyright (c) 2022, Sylvain Huet, Ambermind
 // Minimacy (r) System
 
-struct TcpSrv=Stream+[nameTS, onAcceptTS];;
-struct Tcp=Stream+[remoteAddrT, remotePortT, incomingT, nameT];;
-struct Udp=Stream+[remoteAddrU, remotePortU, localAddrU, localPortU, nameU];;
+struct TcpSrv=Stream+[maxConnectionsS, idleTimeoutTS, evictionTimeoutS, connectionsS];;
+struct Tcp=Stream+[remoteAddrT, remotePortT, incomingT];;
+struct Udp=Stream+[remoteAddrU, remotePortU, localAddrU, localPortU];;
 
 var _UdpCreateFunction=#udpCreateNative;;
 var _TcpOpenFunction=#tcpOpenNative;;
@@ -25,29 +25,61 @@ fun tcpSrvClose(tcpSrv)= streamClose(TcpSrv<tcpSrv);;
 fun tcpSrvCreateNative(addr, port)=
 	let _tcpListen(addr, port) -> socket in
 	if socket<>nil then
-	let [
-		nameTS=strFormat("*:*", addr, port)
-	] -> tcpSrv in
-	streamInit(tcpSrv, socket,
-		lambda ()=	// onSelectRead
+	let [TcpSrv] -> tcpSrv in
+	streamInit(tcpSrv, socket, "TCPsrv", strFormat("*:*", addr, port),
+		lambda()=	// onSelectRead
 			let _tcpAccept(socket) -> [socket, addr, port] in
 			let _tcpCreate(socket, addr, port, true) -> tcp in 
-			call tcpSrv.onAcceptTS(tcp)
+			streamAcceptEvent(tcpSrv, Stream<tcp)
 		,
-		nil,	// write
-		(lambda ()= _socketClose(socket); streamCommonClose(tcpSrv)),	// close
-		lambda(fEcho)= call fEcho("TCPsrv", tcpSrv.nameTS));;	// show
+		nil,		// write
+		lambda()=	// close
+			_socketClose(socket);
+			streamCommonClose(tcpSrv)
+	);;
 
 fun tcpSrvCreate(addr, port)= call _TcpSrvCreateFunction(addr, port);;
 
-fun tcpSrvOnAccept(tcpSrv, onAccept)=
-	set tcpSrv._thS= _This;
-	set tcpSrv.onAcceptTS= if onAccept<>nil then (lambda(tcp)= 
-		void threadStart("tcpIn",lambda()= call onAccept(tcp))
+fun _tcpSrvAddConnection(s, tcp)=
+	if s.maxConnectionsS==nil then return true;
+\atomic (
+	if listLength(s.connectionsS)>=s.maxConnectionsS then (
+		set s.connectionsS = listFilter(s.connectionsS, lambda(tcp) = !streamTerminated(tcp));
+		if listLength(s.connectionsS)>=s.maxConnectionsS then (
+			if s.evictionTimeoutS<>nil then 
+				set s.connectionsS = listFilter(s.connectionsS, lambda(tcp) =
+					if (streamLastTouch(tcp) + s.evictionTimeoutS - time()) >0 then true
+					else void streamAbort(tcp)
+				);
+			if listLength(s.connectionsS)>=s.maxConnectionsS then (
+				if _DEBUG then echoLn strFormat("> TcpSrvExt: reject *", streamDetail(tcp));
+				return void streamClose(tcp)
+			)
+		)
 	);
-	if onAccept<>nil then _streamAddToList(tcpSrv);
-	_socketSetSelectRead(streamSocket(tcpSrv), onAccept<>nil);
+	set s.connectionsS= tcp::s.connectionsS;
+	true
+);;
+
+fun tcpSrvSetIdleTimeout(tcpSrv, idleTimeout)=
+	set tcpSrv.idleTimeoutTS = idleTimeout;
 	tcpSrv;;
+
+fun tcpSrvSetMaxConnections(tcpSrv, maxConnections, evictionTimeout)=
+	set tcpSrv.evictionTimeoutS = evictionTimeout;
+	set tcpSrv.maxConnectionsS = maxConnections;
+	tcpSrv;;
+
+fun tcpSrvOnAccept(tcpSrv, onAccept)=
+	streamOnAccept(tcpSrv, lambda(stream)=
+		if _DEBUG then echoLn strFormat("> TcpSrvExt: incoming *", streamDetail(stream));
+		if _DEBUG then echoLn strFormat("> TcpSrvExt: open connections: *", listLength(tcpSrv.connectionsS));
+		if _tcpSrvAddConnection(tcpSrv, stream) then (
+			streamSetIdleTimeout(stream, tcpSrv.idleTimeoutTS);
+			if _DEBUG then echoLn strFormat("> TcpSrvExt: accept *", streamDetail(stream));
+			void threadStart("tcpIn",lambda()= call onAccept(stream))
+		)
+	);;
 
 //-------------- Bsd TCP
 fun tcpClose(tcp)= streamClose(Tcp<tcp);;
@@ -56,19 +88,19 @@ fun _tcpCreate(socket, addr, port, incoming)=
 	let [
 		remoteAddrT=addr,
 		remotePortT=port,
-		incomingT=incoming,
-		nameT= strFormat("*:*", addr, port)
+		incomingT=incoming
 	] -> tcp in
 	streamInit(tcp, socket,
-		lambda ()=	// onSelectRead
+		if tcp.incomingT then "TCPin" else "TCPout", strFormat("*:*", addr, port),
+		lambda()=	// onSelectRead
 			let _tcpRead(socket) -> data in (
 				streamReadEvent(tcp, data);
 				if data==nil then void tcpClose(tcp);
 			)
 		,
 		lambda(data, start) = _tcpWrite(socket, data, start) ,	// write
-		(lambda ()= _socketClose(socket); streamCommonClose(tcp)),	// close
-		lambda(fEcho)= call fEcho(if tcp.incomingT then "TCPin" else "TCPout", tcp.nameT));;	// show
+		lambda()= _socketClose(socket); streamCommonClose(tcp)	// close
+	);;	// show
 
 fun tcpOnEvent(tcp, onRead, onWrite)= streamOnEvent(Tcp<tcp, onRead, onWrite);;
 
@@ -83,7 +115,7 @@ fun tcpRemoteIp(tcp)= tcp.remoteAddrT;;
 fun tcpRemotePort(tcp)= tcp.remotePortT;;
 
 fun tcpNoDelay(tcp, noDelay)= _tcpNoDelay((Tcp<tcp)._socketS, noDelay); tcp;;
-
+fun tcpFromStream(stream)= match stream with Tcp tcp -> tcp;;
 //-------------- Bsd UDP
 fun udpClose(udp)= streamClose(Udp<udp);;
 
@@ -93,11 +125,10 @@ fun udpCreateNative(remoteAddr, remotePort, localAddr, localPort)=
 	let [
 		localAddrU=localAddr,
 		localPortU=localPort,
-		nameU= strFormat("*:*", localAddr, localPort),
 		remoteAddrU=remoteAddr,
 		remotePortU=remotePort
 	] -> udp in
-	streamInit(udp, socket,
+	streamInit(udp, socket, "UDP", strFormat("*:*", localAddr, localPort),
 		lambda ()=	// onSelectRead
 			let _udpRead(socket) -> [data, ip, port] in
 			if port<>nil then (
@@ -109,9 +140,8 @@ fun udpCreateNative(remoteAddr, remotePort, localAddr, localPort)=
 		lambda(data, start) =	// write
 			_udpSend(socket, udp.remoteAddrU, udp.remotePortU, strTail(data, start))
 		,
-		(lambda ()= _socketClose(socket); streamCommonClose(udp)),	// close
-		lambda(fEcho)= call fEcho("UDP", udp.nameU));;	// show
-
+		lambda ()= _socketClose(socket); streamCommonClose(udp));;	// close
+		
 fun udpCreate(remoteAddr, remotePort, localAddr, localPort)=
 	call _UdpCreateFunction(remoteAddr, remotePort, localAddr, localPort);;
 
@@ -171,18 +201,18 @@ fun _nativeNetworksInit ()=	// declare native Ethernet Interfaces if any
 	for [index, name, family, mac, mtu, ip, submask] in _ethList() do
 	if mac<>"\0\0\0\0\0\0" then
 	let netSetup([Network], name, mac, mtu) -> net in (
-		netOnActivate(net, (lambda ()=
+		netOnActivate(net, lambda ()=
 			let _ethCreate(index) -> socket in
 			if socket<>nil then
-			streamInit(net, socket,
+			streamInit(net, socket, "ethernet", net.nameI,
 				lambda ()=	// onSelectRead
 					let _ethRead(socket) -> data in
 					streamReadEvent(net, data)
 				,
 				lambda(data, start) = _ethSend(socket, index, strTail(data, start)),	// write
-				lambda ()= streamCommonClose(net),	// close
-				lambda(fEcho)=	call fEcho("ethernet", net.nameI))// show
-		));
+				lambda ()= streamCommonClose(net)	// close
+			)
+		);
 		netUpdateAddr(net, ip, submask, nil, nil);
 		netAdd(net)
 	);;
