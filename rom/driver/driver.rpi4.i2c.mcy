@@ -1,25 +1,19 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Copyright (c) 2022, Sylvain Huet, Ambermind
 // Minimacy (r) System
-export I2c0, I2c1, I2c3, I2c4, I2c5, I2c6;; 
-export i2cInit(i2c, baudrate, sda_pin, scl_pin);; 
-export i2cWrite(i2c, addr, data);;
-export i2cWriteBytes(i2c, addr, data);;
-export i2cRead(i2c, addr, len);;
 
 // based on "BCM2711 ARM Peripherals" documentation, chapter 3 'BSC', and chapter 5.3 'Alternative Function Assignments'
-
 
 use driver.rpi4.gpio;;
 
 const CLOCK_ID_CORE=4;;
 const I2C_BASE= 0xFE200000;;
-const I2c0 = I2C_BASE+0x5000;;
-const I2c1 = I2C_BASE+0x604000;;
-const I2c3 = I2C_BASE+0x5600;;
-const I2c4 = I2C_BASE+0x5800;;
-const I2c5 = I2C_BASE+0x5a80;;
-const I2c6 = I2C_BASE+0x5c00;;
+export const I2c0 = I2C_BASE+0x5000;;
+export const I2c1 = I2C_BASE+0x604000;;
+export const I2c3 = I2C_BASE+0x5600;;
+export const I2c4 = I2C_BASE+0x5800;;
+export const I2c5 = I2C_BASE+0x5a80;;
+export const I2c6 = I2C_BASE+0x5c00;;
 
 const BSC_C   = 0x00;;
 	const C_READ = 0x01;;
@@ -54,7 +48,7 @@ fun i2cAltFunc(i2c, sda_pin, scl_pin) =
 		I2c5 -> if sda_pin == 10 || sda_pin == 12 then FSEL_ALT5,
 		I2c6 -> if sda_pin == 0 || sda_pin == 22 then FSEL_ALT5;;
 
-fun i2cInit(i2c, baudrate, sda_pin, scl_pin)=
+export fun i2cInit(i2c, baudrate, sda_pin, scl_pin)=
 	let i2cAltFunc(i2c, sda_pin, scl_pin) -> fsel_alt in
 	if fsel_alt<>nil then (
 		gpioSetPulls(true, false, gpioSetAlt(fsel_alt, sda_pin));
@@ -65,7 +59,7 @@ fun i2cInit(i2c, baudrate, sda_pin, scl_pin)=
 		i2c
 	);;
 
-fun i2cWrite(i2c, addr, data)=
+export fun i2cWrite(i2c, addr, data)=
 	write32(i2c+BSC_A, addr);
 	write32(i2c+BSC_C, C_CLEAR);
 	write32(i2c+BSC_S, S_CLKT | S_ERR | S_DONE);
@@ -93,9 +87,9 @@ fun i2cWrite(i2c, addr, data)=
 				return nil
 			)
 	);;
-fun i2cWriteBytes(i2c, addr, data)= i2cWrite(i2c, addr, strFromBytes(data));;
+export fun i2cWriteBytes(i2c, addr, data)= i2cWrite(i2c, addr, strFromBytes(data));;
 
-fun i2cRead(i2c, addr, len)= 
+export fun i2cRead(i2c, addr, len)= 
 	write32(i2c+BSC_A, addr);
 	write32(i2c+BSC_C, C_CLEAR);
 	write32(i2c+BSC_S, S_CLKT | S_ERR | S_DONE);

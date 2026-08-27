@@ -79,6 +79,9 @@
     <ClCompile Include="..\..\src\util_2d.c" />
     <ClCompile Include="..\..\src\util_ansi_math.c" />
     <ClCompile Include="..\..\src\util_ansi_str.c" />
+    <ClCompile Include="..\..\src\util_bignum.c" />
+    <ClCompile Include="..\..\src\util_bignum_ec.c" />
+    <ClCompile Include="..\..\src\util_bignum_opti.c" />
     <ClCompile Include="..\..\src\util_buffer.c" />
     <ClCompile Include="..\..\src\util_convert.c" />
     <ClCompile Include="..\..\src\util_hashmap.c" />
@@ -127,6 +130,7 @@
     <ClInclude Include="..\..\src\util_2d.h" />
     <ClInclude Include="..\..\src\util_2d_const.h" />
     <ClInclude Include="..\..\src\util_ansi.h" />
+    <ClInclude Include="..\..\src\util_bignum.h" />
     <ClInclude Include="..\..\src\util_buffer.h" />
     <ClInclude Include="..\..\src\util_convert.h" />
     <ClInclude Include="..\..\src\util_hashmap.h" />

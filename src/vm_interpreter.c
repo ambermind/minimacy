@@ -239,7 +239,7 @@ LINT interpreterRun(Thread* th,LINT maxCycles)
 	BC_PRECOMPUTE
 
 	bufferReset(MM.tmpBuffer, 0);
-	systemBignumReset();
+	bigReset();
 	while(1)
 	{
 		LINT count,i,j,b,n;

@@ -36,14 +36,18 @@ const OID_clientAuth="1.3.6.1.5.5.7.3.2";;
 const OID_codeSigning="1.3.6.1.5.5.7.3.3";;
 const OID_id_ad_ocsp="1.3.6.1.5.5.7.48.1";;
 const OID_caIssuers="1.3.6.1.5.5.7.48.2";;
-const OID_DES_CBC="1.3.36.3.1.1.2";;
-const OID_DES_3CBC="1.3.36.3.1.3.2";;
 const OID_x25519="1.3.101.110";;
 const OID_ed25519="1.3.101.112";;
 const OID_secp256k1="1.3.132.0.10";;
 const OID_secp384r1="1.3.132.0.34";;
 const OID_secp521r1="1.3.132.0.35";;
 
+// custom OIDs
+const OID_des_key="1.3.6.1.4.1.66405.1.2.1";;
+const OID_des3_key="1.3.6.1.4.1.66405.1.2.3";;
+const OID_aes128_key="1.3.6.1.4.1.66405.1.3.1";;
+const OID_aes192_key="1.3.6.1.4.1.66405.1.3.2";;
+const OID_aes256_key="1.3.6.1.4.1.66405.1.3.3";;
 
 const OID_CN="2.5.4.3";;
 const OID_serialNumber="2.5.4.5";;
@@ -105,8 +109,8 @@ const NiceOIDs= hashmapInit(6,
 [OID_secp256k1, "secp256k1"]::
 [OID_secp384r1, "secp384r1"]::
 [OID_secp521r1, "secp521r1"]::
-[OID_DES_CBC, "DES_CBC"]::
-[OID_DES_3CBC, "DES_3CBC"]::
+[OID_des_key, "des-key"]::
+[OID_des3_key, "des3-key"]::
 [OID_x25519, "x25519"]::
 [OID_ed25519, "ed25519"]::
 
@@ -131,6 +135,9 @@ const NiceOIDs= hashmapInit(6,
 [OID_AES128_CBC, "aes128-CBC"]::
 [OID_AES192_CBC, "aes192-CBC"]::
 [OID_AES256_CBC, "aes256-CBC"]::
+[OID_aes128_key, "aes128-key"]::
+[OID_aes192_key, "aes192-key"]::
+[OID_aes256_key, "aes256-key"]::
 [OID_ev_guidelines, "ev_guidelines"]::
 [OID_domain_validated, "domain_validated"]::
 [OID_organization_validated, "organization_validated"]::
@@ -146,6 +153,7 @@ const OIDprefix=
 	[4146, "GlobalSign NV/SA"]::
 	[6449, "Comodo Technology Development Ltd"]::
 	[11129, "Google"]::
+	[66405, "Ambermind"]::
 	nil)
 ]::
 ["2.16.840.1.", "US-Organization", hashmapInit(6,

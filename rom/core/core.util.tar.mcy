@@ -2,22 +2,6 @@
 // Copyright (c) 2022, Sylvain Huet, Ambermind
 // Minimacy (r) System
 
-export TarFile;;
-export tarFileName(t);;
-export tarSize(t);;
-export tarContent(t);;
-export tarUpdate(t);;
-export tarMode(t);;
-
-export tarLoadContent(src, t);;
-export tarExtractDirectories(src);;
-// the main decoding function:
-export tarExtractFiles(src, withContent);;
-// encode from disk files:
-export tarFromFileInfoList(lFileInfo);;	// lFileInfo: list of FileInfo structures (see bios functions fileListInfo, fileInfo)
-// encode from memory data:
-export tarFromFileList(lData);;	// lData : list of [fileName updateTime content]
-
 /*
 0	100	File name
 100	8	File mode (octal)
@@ -57,7 +41,7 @@ const TAR_DIR="5";;
 
 const TAR_ZEROS=strCreate(512, 0);;
 
-struct TarFile=[typeT, fileNameT, modeT, sizeT, offsetT, contentT, updateT, userNameT, groupNameT];;
+export struct TarFile=[typeT, fileNameT, modeT, sizeT, offsetT, contentT, updateT, userNameT, groupNameT];;
 
 fun _intFromOctal(src)=
 	let 0->v in for i=0;i<strLength(src) do set v=v*8+strGet(src, i)-'0';;
@@ -127,19 +111,19 @@ fun tarExtract(src)= _tarExtract(src, 0);;
 
 //----------------API
 //fun tarType(t)=t.typeT;;	// useless for now
-fun tarFileName(t)=t.fileNameT;;
-fun tarSize(t)=t.sizeT;;
-fun tarContent(t)=t.contentT;;
-fun tarUpdate(t)=t.updateT;;
-fun tarMode(t)=t.modeT;;
+export fun tarFileName(t)=t.fileNameT;;
+export fun tarSize(t)=t.sizeT;;
+export fun tarContent(t)=t.contentT;;
+export fun tarUpdate(t)=t.updateT;;
+export fun tarMode(t)=t.modeT;;
 
-fun tarLoadContent(src, t)= set t.contentT=strSlice(src, t.offsetT, t.sizeT);;
+export fun tarLoadContent(src, t)= set t.contentT=strSlice(src, t.offsetT, t.sizeT);;
 
-fun tarExtractDirectories(src)=
+export fun tarExtractDirectories(src)=
 	listFilter(tarExtract(src), lambda(t)= t.typeT==TAR_DIR);;
 
 // the main decoding function:
-fun tarExtractFiles(src, withContent)=
+export fun tarExtractFiles(src, withContent)=
 	listFilter(tarExtract(src), lambda(t)=
 		if t.typeT==TAR_NORMAL then (
 			if withContent then tarLoadContent(src, t);
@@ -149,9 +133,9 @@ fun tarExtractFiles(src, withContent)=
 
 
 // encode from disk files:
-fun tarFromFileInfoList(lFileInfo)=	// lFileInfo: list of FileInfo structures (see bios functions fileListInfo, fileInfo)
+export fun tarFromFileInfoList(lFileInfo)=	// lFileInfo: list of FileInfo structures (see bios functions fileListInfo, fileInfo)
 	_tarFinalize(listMap(lFileInfo, lambda(f)=_tarEncode(fileInfoName(f), fileInfoUpdate(f), load(fileInfoName(f)))));;
 
 // encode from memory data:
-fun tarFromFileList(lData)=	// lData : list of [fileName updateTime content]
+export fun tarFromFileList(lData)=	// lData : list of [fileName updateTime content]
 	_tarFinalize(listMap(lData, lambda([fileName, updateTime, content])=_tarEncode(fileName, updateTime, content)));;

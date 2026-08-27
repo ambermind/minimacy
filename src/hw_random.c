@@ -24,6 +24,7 @@ void hwRandomInit(void)
 {
 	if (!fCrypt) fCrypt = fopen("/dev/urandom", "r");
 	pseudoRandomInit();
+	//PRINTF(LOG_SYS,"------------DEV MODE------------\n");
 }
 
 void hwRandomBytes(char* dst, LINT len)
@@ -50,6 +51,7 @@ HCRYPTPROV hCryptProv = (HCRYPTPROV)NULL;
 void hwRandomInit(void)
 {
 	if (!hCryptProv) CryptAcquireContext(&hCryptProv, NULL, NULL, PROV_RSA_FULL, 0);
+	//PRINTF(LOG_SYS, "------------DEV MODE------------\n");
 	pseudoRandomInit();
 }
 void hwRandomBytes(char* dst, LINT len)

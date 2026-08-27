@@ -5,7 +5,7 @@ fun converge(x, y, cx, cy, n)=
 	if n<=0 then true
 	else 
 	\float
-		if x*x+y*y <=4 then converge(x*x-y*y +cx, 2*x*y +cy, cx, cy, \integer n-1);;
+		if x*x+y*y <=4 then converge(x*x-y*y +cx, 2*x*y +cy, cx, cy, \int n-1);;
 
 fun mandelbrot(x0, y0, dx, dy, N)=
 \float

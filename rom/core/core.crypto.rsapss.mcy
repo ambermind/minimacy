@@ -2,9 +2,6 @@
 // Copyright (c) 2022, Sylvain Huet, Ambermind
 // Minimacy (r) System
 
-export rsaPssSign(rsa, data, fHash, hashLen);;
-export rsaPssVerify(rsa, data, fHash, hashLen, signature);;
-
 use core.crypto.hash;;
 use core.crypto.rsa;;
 
@@ -41,7 +38,7 @@ fun _computeFromPublicKey(publicKey) =
 	let 0xff >> (rsaBitLen - emBits) -> firstByteMask in
 	[firstByteMask, blockLen];;
 
-fun rsaPssSign(rsa, data, fHash, hashLen)=
+export fun rsaPssSign(rsa, data, fHash, hashLen)=
 	let _computeFromPublicKey(rsaModulus(rsa)) -> [firstByteMask, blockLen] in
 	let strRand(hashLen) -> salt in
 	let mkMask2(fHash, data, salt) -> mask2 in
@@ -58,7 +55,7 @@ fun rsaPssSign(rsa, data, fHash, hashLen)=
 		bigSerialize(rsaComputePrivateExp(rsa, msg), blockLen)
 	);;
 	
-fun rsaPssVerify(rsa, data, fHash, hashLen, signature)=
+export fun rsaPssVerify(rsa, data, fHash, hashLen, signature)=
 	let rsaModulus(rsa) -> modulus in
 	let rsaPubExp(rsa) -> pubExp in
 	let _computeFromPublicKey(modulus) -> [firstByteMask, blockLen] in

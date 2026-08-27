@@ -43,12 +43,12 @@ Type* compileA6(Compiler* c)
 		if (isDecimal(c->parser->token))
 		{
 			LINT i;
-			if ((c->fmk->forceNumbers == FORCE_NUMBER_BIGNUM)|| (c->fmk->forceNumbers == FORCE_NUMBER_MOD) || (c->fmk->forceNumbers == FORCE_NUMBER_MODOPTI))
+			if (c->fmk->forceNumbers&FORCE_COMMON_BIGNUM)
 			{
 				LINT global;
-				bignum b = (bignum)bigAlloc(bignumFromDec(c->parser->token));
+				bignum b = (bignum)bigAlloc(bigFromDec(c->parser->token));
 				if (!b) return NULL;
-				bignumSignSet(b, 1 - bignumSign(b));
+				bigSignSet(b, 1 - bigSign(b));
 				if (funMakerAddGlobal(c->fmk, (LB*)b, &global)) return NULL;
 				if (bc_byte_or_int(c, global, OPconstb, OPconst)) return NULL;
 				return MM.BigNum;
@@ -73,7 +73,7 @@ Type* compileA6(Compiler* c)
 			if (bc_opcode(c, MM.bigNeg)) return NULL;
 			return MM.BigNum;
 		}
-		if ((c->fmk->forceNumbers == FORCE_NUMBER_MOD) || (c->fmk->forceNumbers == FORCE_NUMBER_MODOPTI))
+		if (c->fmk->forceNumbers & FORCE_COMMON_MOD)
 		{
 			if (typeUnify(c, t, MM.BigNum)) return NULL;
 			if (bc_byte_or_int(c, c->fmk->forceModulo, OPrlocb, OPrloc)) return NULL;
@@ -187,15 +187,47 @@ Type* compileA4(Compiler* c)
 			if (op == OPpowint) { opDef = MM.bigExpMod;  typ = MM.BigNum; }
 			if (op == OPdiv) { opDef = MM.bigDivMod;  typ = MM.BigNum; }
 		}
-		if (c->fmk->forceNumbers == FORCE_NUMBER_MODOPTI)
+		if (c->fmk->forceNumbers == FORCE_NUMBER_MOD_BARRETT)
 		{
 			if (op == OPmul) { opDef = MM.bigMulModBarrett;  typ = MM.BigNum; }
 			if (op == OPpowint) { opDef = MM.bigExpModBarrett;  typ = MM.BigNum; }
 			if (op == OPdiv) { opDef = MM.bigDivModBarrett;  typ = MM.BigNum; }
 			if (op == OPmod) { opDef = MM.bigModBarrett;  typ = MM.BigNum; }
 		}
+		if (c->fmk->forceNumbers == FORCE_NUMBER_MOD_MONTGOMERY)
+		{
+			if (op == OPmul) { opDef = MM.bigMulModMontgomery;  typ = MM.BigNum; }
+			if (op == OPpowint) { opDef = MM.bigExpModMontgomery;  typ = MM.BigNum; }
+			if (op == OPdiv) { opDef = MM.bigDivModMontgomery;  typ = MM.BigNum; }
+		}
 		if (typeUnify(c,t,typ)) return NULL;
 
+		if ((op == OPpowint) && (typ == MM.BigNum)) {
+			if (!parserNext(c)) return NULL;
+			if (!strcmp(c->parser->token, "2")) {
+				switch (c->fmk->forceNumbers) {
+				case FORCE_NUMBER_BIGNUM:
+					if (bc_opcode(c, MM.bigSquare)) return NULL;
+					break;
+				case FORCE_NUMBER_MOD:
+					if (bc_byte_or_int(c, c->fmk->forceModulo, OPrlocb, OPrloc)) return NULL;
+					if (bc_opcode(c, MM.bigSquareMod)) return NULL;
+					break;
+				case FORCE_NUMBER_MOD_BARRETT:
+					if (bc_byte_or_int(c, c->fmk->forceModulo, OPrlocb, OPrloc)) return NULL;
+					if (bc_byte_or_int(c, c->fmk->forceMu, OPrlocb, OPrloc)) return NULL;
+					if (bc_opcode(c, MM.bigSquareModBarrett)) return NULL;
+					break;
+				case FORCE_NUMBER_MOD_MONTGOMERY:
+					if (bc_byte_or_int(c, c->fmk->forceModulo, OPrlocb, OPrloc)) return NULL;
+					if (bc_byte_or_int(c, c->fmk->forceMu, OPrlocb, OPrloc)) return NULL;
+					if (bc_opcode(c, MM.bigSquareModMontgomery)) return NULL;
+					break;
+				}
+				continue;
+			}
+			parserRewind(c);
+		}
 		if (opDef == MM.bigModBarrett)
 		{
 			if (bc_byte_or_int(c, c->fmk->forceModulo, OPrlocb, OPrloc)) return NULL;
@@ -203,15 +235,21 @@ Type* compileA4(Compiler* c)
 			if (bc_opcode(c, opDef)) return NULL;
 			continue;
 		}
+		if ((op == OPmod) && (c->fmk->forceNumbers & FORCE_COMMON_MOD))
+		{
+			if (bc_byte_or_int(c, c->fmk->forceModulo, OPrlocb, OPrloc)) return NULL;
+			if (bc_opcode(c, MM.bigMod)) return NULL;
+			continue;
+		}
 
 		if (!(t=compileA5(c))) return NULL;
 		if (typeUnify(c,t,typ)) return NULL;
 		if (opDef >= 0) {
-			if ((c->fmk->forceNumbers == FORCE_NUMBER_MOD) || (c->fmk->forceNumbers == FORCE_NUMBER_MODOPTI))
+			if (c->fmk->forceNumbers & FORCE_COMMON_MOD)
 			{
 				if (bc_byte_or_int(c, c->fmk->forceModulo, OPrlocb, OPrloc)) return NULL;
 
-				if (c->fmk->forceNumbers == FORCE_NUMBER_MODOPTI)
+				if (c->fmk->forceNumbers == FORCE_NUMBER_MOD_BARRETT || c->fmk->forceNumbers == FORCE_NUMBER_MOD_MONTGOMERY)
 				{
 					if (bc_byte_or_int(c, c->fmk->forceMu, OPrlocb, OPrloc)) return NULL;
 				}
@@ -253,7 +291,7 @@ Type* compileA3(Compiler* c)
 			if (op == OPadd) { opDef = MM.bigAdd;  typ = MM.BigNum; }
 			if (op == OPsub) { opDef = MM.bigSub;  typ = MM.BigNum; }
 		}
-		if ((c->fmk->forceNumbers == FORCE_NUMBER_MOD)|| (c->fmk->forceNumbers == FORCE_NUMBER_MODOPTI))
+		if (c->fmk->forceNumbers & FORCE_COMMON_MOD)
 		{
 			if (op == OPadd) { opDef = MM.bigAddMod;  typ = MM.BigNum; }
 			if (op == OPsub) { opDef = MM.bigSubMod;  typ = MM.BigNum; }
@@ -262,7 +300,7 @@ Type* compileA3(Compiler* c)
 		if (!(t=compileA4(c))) return NULL;
 		if (typeUnify(c,t,typ)) return NULL;
 		if (opDef >= 0) {
-			if ((c->fmk->forceNumbers == FORCE_NUMBER_MOD) || (c->fmk->forceNumbers == FORCE_NUMBER_MODOPTI))
+			if (c->fmk->forceNumbers & FORCE_COMMON_MOD)
 			{
 				if (bc_byte_or_int(c, c->fmk->forceModulo, OPrlocb, OPrloc)) return NULL;
 			}
@@ -307,7 +345,7 @@ Type* compileA2(Compiler* c)
 		if (op==OPle) { op=OPlef; typ=MM.Float;}
 		if (op==OPge) { op=OPgef; typ=MM.Float;}
 	}
-	if ((c->fmk->forceNumbers == FORCE_NUMBER_BIGNUM) || (c->fmk->forceNumbers == FORCE_NUMBER_MOD) || (c->fmk->forceNumbers == FORCE_NUMBER_MODOPTI))
+	if (c->fmk->forceNumbers&FORCE_COMMON_BIGNUM)
 	{
 		if (op == OPgt) { opDef = MM.bigGT;  typ = MM.BigNum; }
 		if (op == OPge) { opDef = MM.bigGE;  typ = MM.BigNum; }

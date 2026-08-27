@@ -4,26 +4,15 @@
 
 // based on "BCM2711 ARM Peripherals" documentation, chapter 9 'SPI', and chapter 5.3 'Alternative Function Assignments'
 
-export Spi0, Spi3, Spi4, Spi5, Spi6;;
-export spiSetBaudrate(spi, baudrate);;
-export spiInit(spi, baudrate, clk_pin, mosi_pin, miso_pin);;
-export spiWriteByte(spi, dataInt);;
-export spiWrite(spi, dataStr);;
-export spiWriteRead(spi, dataStr);;
-export spiRead(spi, dataInt, len);;
-export spiWriteBytes(spi, dataBytes);;
-export spiWriteReadBytes(spi, dataBytes);;
-export spiReadBytes(spi, dataInt, len);;
-
 use driver.rpi4.gpio;;
 
 const CLOCK_ID_CORE=4;;
 const SPI_BASE= 0xFE204000;;
-const Spi0 = SPI_BASE+0x000;;
-const Spi3 = SPI_BASE+0x600;;
-const Spi4 = SPI_BASE+0x800;;
-const Spi5 = SPI_BASE+0xa00;;
-const Spi6 = SPI_BASE+0xc00;;
+export const Spi0 = SPI_BASE+0x000;;
+export const Spi3 = SPI_BASE+0x600;;
+export const Spi4 = SPI_BASE+0x800;;
+export const Spi5 = SPI_BASE+0xa00;;
+export const Spi6 = SPI_BASE+0xc00;;
 
 const SPI_CS  = 0x00;;
 	const CS_CLEAR_TX=0x10;;
@@ -47,12 +36,12 @@ fun spiAltFunc(spi, clk_pin, mosi_pin, miso_pin) =
 		Spi5 -> if clk_pin == 15 then FSEL_ALT3,
 		Spi6 -> if clk_pin == 21 then FSEL_ALT3;;
 
-fun spiSetBaudrate(spi, baudrate)=
+export fun spiSetBaudrate(spi, baudrate)=
 	let clockRate(CLOCK_ID_CORE) -> rate in
 	let rate/baudrate -> divider in
 	write32(spi+SPI_CLK, divider);;
 
-fun spiInit(spi, baudrate, clk_pin, mosi_pin, miso_pin)=
+export fun spiInit(spi, baudrate, clk_pin, mosi_pin, miso_pin)=
 	let spiAltFunc(spi, clk_pin, mosi_pin, miso_pin) -> fsel_alt in
 	if fsel_alt<>nil then (
 		gpioSetPulls(true, false, gpioSetAlt(fsel_alt, clk_pin));
@@ -90,11 +79,11 @@ fun spiCommon(spi, dataStr, dataBytes, dataInt, len, read)=
 		bytes
 	);;
 
-fun spiWriteByte(spi, dataInt)= bytesGet(spiCommon(spi, nil, nil, dataInt, 1, true), 0);;
-fun spiWrite(spi, dataStr)= spiCommon(spi, dataStr, nil, nil, nil, false); strLength(dataStr);;
-fun spiWriteRead(spi, dataStr)= strFromBytes(spiCommon(spi, dataStr, nil, nil, nil, true));;
-fun spiRead(spi, dataInt, len)= strFromBytes(spiCommon(spi, nil, nil, dataInt, len, true));;
+export fun spiWriteByte(spi, dataInt)= bytesGet(spiCommon(spi, nil, nil, dataInt, 1, true), 0);;
+export fun spiWrite(spi, dataStr)= spiCommon(spi, dataStr, nil, nil, nil, false); strLength(dataStr);;
+export fun spiWriteRead(spi, dataStr)= strFromBytes(spiCommon(spi, dataStr, nil, nil, nil, true));;
+export fun spiRead(spi, dataInt, len)= strFromBytes(spiCommon(spi, nil, nil, dataInt, len, true));;
 
-fun spiWriteBytes(spi, dataBytes)= spiCommon(spi, nil, dataBytes, nil, nil, false); bytesLength(dataBytes);;
-fun spiWriteReadBytes(spi, dataBytes)= strFromBytes(spiCommon(spi, nil, dataBytes, nil, nil, true));;
-fun spiReadBytes(spi, dataInt, len)= spiCommon(spi, nil, nil, dataInt, len, true);;
+export fun spiWriteBytes(spi, dataBytes)= spiCommon(spi, nil, dataBytes, nil, nil, false); bytesLength(dataBytes);;
+export fun spiWriteReadBytes(spi, dataBytes)= strFromBytes(spiCommon(spi, nil, dataBytes, nil, nil, true));;
+export fun spiReadBytes(spi, dataInt, len)= spiCommon(spi, nil, nil, dataInt, len, true);;

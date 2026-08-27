@@ -235,6 +235,9 @@ fun intShortFormat(divisor, v)= intShortFormatWithUnits(divisor, v, ""::"k"::"M"
 
 //------------ MISC
 
+fun binDump(str, m) = echoLn [str, ": ", hexFromStr(m)]; m;;
+fun bigDump(str, m) = echoLn [str, ": ", hexFromBig(m)]; m;;
+
 fun range(val, mn, mx)= (val>=mn) && (val<=mx);;
 
 fun fifoFromList(l)=

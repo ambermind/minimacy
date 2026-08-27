@@ -8,21 +8,6 @@
 // - certList is a list of PEM certificate contents
 // - authForClientCert is a certificate for client authentication (nil if none)
 // tlsMakeHosts returns the data you should pass to tlsStartServer
-export TLS12;;
-export tlsMakeHosts(hostList);;
-export tlsStage(tls);;
-export tlsSetCipherSuites(tls, cipherSuites);;
-export tlsSetSignatureAlgorithms(tls, signatureAlgorithms);;
-export tlsSetSupportedGroups(tls, supportedGroups);;
-export tlsGetClientCertificate(tls);;
-export tlsGetCertificateChain(tls);;
-export tlsAlert(tls);;
-export tlsWho(tls);;
-export tlsGetServerName(tls) ;;
-export tlsStartClientExt(substream, serverName, cipherSuites, clientCertificate, clientKey);;
-export tlsStartClient(substream, serverName);;
-export tlsStartServer(substream, hosts);;
-export tlsFromStream(substream);;
 
 const _DEBUG=false;;
 use core.crypto.hash;;
@@ -46,12 +31,13 @@ fun strLenFromList(l) = if l==nil then 0 else head(l)+strLenFromList(tail(l));;
 
 struct TlsCipher=[
 		encodeDataC, decodeDataC, makePremasterC, keyExchangeC, parseClientKeyExchangeC, serverKeyExchangeC,
+		gcmEncryptClientC, gcmEncryptServerC, gcmDecryptC,
 		macComputeC,
 		materialHmacC, payloadHashC,
 		macLengthC, keyLengthC, fixedIvLengthC, recordIvLengthC
 	];;
 
-struct TLS12= Stream+ [
+export struct TLS12= Stream+ [
 	serverTLS, hostsTLS,
 	cipherSuitesTLS, supportedGroupsTLS, signatureAlgorithmsTLS,
 	clientCertificateTLS, clientKeyTLS,
@@ -318,24 +304,43 @@ fun _makeGCMAuthData(tls, header, server, msgLen)=
 		strInt16Msb(msgLen)
 	});;
 
-fun _decodeGCM(tls, header, server, data)=
+fun _gcmInitEncrypt(tls, server)=
 	let if server then tls.serverWriteKeyTLS else tls.clientWriteKeyTLS -> aeskey in
 	let if server then tls.serverWriteIVTLS else tls.clientWriteIVTLS -> iv in
-	let strConcat(iv, strLeft(data, tls.cipherTLS.recordIvLengthC)) -> encryptionIV in
-	let strSlice(data, tls.cipherTLS.recordIvLengthC, nil) -> data in
-	let _makeGCMAuthData(tls, header, server, strLength(data)-AES_BLOCK) -> A in
-	let aesGcmDecryptGroup(aeskey, data, encryptionIV, A) -> msg in
-	if msg<>nil then msg
-	else _setError(tls, "DECODE GCM ERROR");;
+	let aesGcmInitEncrypt(aeskey) -> fEncrypt in
+	lambda(tls, header, server, encryptionIV, msg)=
+		let _makeGCMAuthData(tls, header, server, strLength(msg)) -> A in
+		let strConcat(iv, encryptionIV) -> encryptionIV in
+		let call fEncrypt(msg, encryptionIV, A) -> [cipherText, authBlock] in
+		let strConcat(cipherText, authBlock) -> encoded in
+		encoded;;
+
+fun _gcmInitDecrypt(tls, server)=
+	let if server then tls.serverWriteKeyTLS else tls.clientWriteKeyTLS -> aeskey in
+	let if server then tls.serverWriteIVTLS else tls.clientWriteIVTLS -> iv in
+	let aesGcmInitDecrypt(aeskey) -> fDecrypt in
+	set tls.cipherTLS.gcmDecryptC=(lambda(tls, header, server, data)=
+		let strConcat(iv, strLeft(data, tls.cipherTLS.recordIvLengthC)) -> encryptionIV in
+		let strSlice(data, tls.cipherTLS.recordIvLengthC, nil) -> data in
+		let _makeGCMAuthData(tls, header, server, strLength(data)-AES_BLOCK) -> A in
+		let strLength(data)-AES_BLOCK -> len in
+		let call fDecrypt(strLeft(data, len), strRight(data, AES_BLOCK), encryptionIV, A) -> msg in
+		if msg<>nil then msg
+		else _setError(tls, "WRONG GCM BLOCK")
+	);;
 
 fun _encodeGCM(tls, header, server, encryptionIV, msg)=
-	let _makeGCMAuthData(tls, header, server, strLength(msg)) -> A in
-	let if server then tls.serverWriteKeyTLS else tls.clientWriteKeyTLS -> aeskey in
-	let if server then tls.serverWriteIVTLS else tls.clientWriteIVTLS -> iv in
-	let strConcat(iv, encryptionIV) -> encryptionIV in
-	let aesGcmEncrypt(aeskey, msg, encryptionIV, A) -> [cipherText, authBlock] in
-	let strConcat(cipherText, authBlock) -> encoded in
-	encoded;;
+	if tls.cipherTLS.gcmEncryptClientC==nil then (
+		set tls.cipherTLS.gcmEncryptClientC=_gcmInitEncrypt(tls, false);
+		set tls.cipherTLS.gcmEncryptServerC=_gcmInitEncrypt(tls, true);
+	);
+	let if server then tls.cipherTLS.gcmEncryptServerC else tls.cipherTLS.gcmEncryptClientC -> fEncrypt in
+	call fEncrypt(tls, header, server, encryptionIV, msg);;
+
+fun _decodeGCM(tls, header, server, data)=
+	if tls.cipherTLS.gcmDecryptC==nil then _gcmInitDecrypt(tls, server);
+	call tls.cipherTLS.gcmDecryptC(tls, header, server, data);;
+
 
 //----------------- BUILDING FRAMES
 
@@ -964,7 +969,7 @@ fun _addHost(hosts, host)=
 
 
 //------------------------ Public API
-fun tlsMakeHosts(hostList)=
+export fun tlsMakeHosts(hostList)=
 	if hostList<>nil then
 	let hashmapCreate(6) -> hosts in
 	(
@@ -972,7 +977,7 @@ fun tlsMakeHosts(hostList)=
 		hosts
 	);;
 
-fun tlsStage(tls)= tls.stageTLS;;
+export fun tlsStage(tls)= tls.stageTLS;;
 
 fun tlsClientHello(tls) =
 	_mkHandshake(tls, TLS_CLIENT_HELLO, {
@@ -1011,22 +1016,22 @@ fun tlsCreateSrv(hosts) =
 		tls
 	);;
 
-fun tlsSetCipherSuites(tls, cipherSuites)= set tls.cipherSuitesTLS= cipherSuites;;
-fun tlsSetSignatureAlgorithms(tls, signatureAlgorithms)= set tls.signatureAlgorithmsTLS= signatureAlgorithms;;
-fun tlsSetSupportedGroups(tls, supportedGroups)= set tls.supportedGroupsTLS= supportedGroups;;
+export fun tlsSetCipherSuites(tls, cipherSuites)= set tls.cipherSuitesTLS= cipherSuites;;
+export fun tlsSetSignatureAlgorithms(tls, signatureAlgorithms)= set tls.signatureAlgorithmsTLS= signatureAlgorithms;;
+export fun tlsSetSupportedGroups(tls, supportedGroups)= set tls.supportedGroupsTLS= supportedGroups;;
 
-fun tlsGetClientCertificate(tls)= tls.clientValidatedCertificateTLS;;
-fun tlsGetCertificateChain(tls)= tls.certificateChainTLS;;
+export fun tlsGetClientCertificate(tls)= tls.clientValidatedCertificateTLS;;
+export fun tlsGetCertificateChain(tls)= tls.certificateChainTLS;;
 
 fun tlsReceive(tls, data)=
 //echoLn strFormat("tlsReceive * bytes", strLength(data));
 	if _alive(tls) then set tls.dataTLS=_parse(tls, strConcat(tls.dataTLS, data));;
 
 fun tlsSend(tls, msg)= _send(tls, TLS_APPLICATION_DATA, msg);;
-fun tlsAlert(tls)= tls.alertTLS;;
-fun tlsWho(tls)= if tls.serverTLS then "SERVER> " else "CLIENT> ";;
+export fun tlsAlert(tls)= tls.alertTLS;;
+export fun tlsWho(tls)= if tls.serverTLS then "SERVER> " else "CLIENT> ";;
 
-fun tlsGetServerName(tls) = tls.serverNameTLS;;
+export fun tlsGetServerName(tls) = tls.serverNameTLS;;
 
 fun tlsClose(tls)= streamClose(TLS12<tls);;
 
@@ -1083,14 +1088,14 @@ fun _tlsManageSubstream(substream, tls)=
 	streamSetSelectWrite(tls, true);
 	tls;;
 
-fun tlsStartClientExt(substream, serverName, cipherSuites, clientCertificate, clientKey)=
+export fun tlsStartClientExt(substream, serverName, cipherSuites, clientCertificate, clientKey)=
 	let tlsCreateCli(serverName, cipherSuites, clientCertificate, clientKey) -> tls in
 	_tlsManageSubstream(substream, tls);;
 
-fun tlsStartClient(substream, serverName)= tlsStartClientExt(substream, serverName, nil, nil, nil);;
+export fun tlsStartClient(substream, serverName)= tlsStartClientExt(substream, serverName, nil, nil, nil);;
 
-fun tlsStartServer(substream, hosts) =
+export fun tlsStartServer(substream, hosts) =
 	let tlsCreateSrv(hosts) -> tls in
 	_tlsManageSubstream(substream, tls);;
 
-fun tlsFromStream(substream)= match substream with TLS12 tls -> tls;;
+export fun tlsFromStream(substream)= match substream with TLS12 tls -> tls;;

@@ -80,6 +80,9 @@ add_library(native-minimacy SHARED
         ../../../../../../src/system_worker.c
         ../../../../../../src/util.c
         ../../../../../../src/util_2d.c
+        ../../../../../../src/util_bignum.c
+        ../../../../../../src/util_bignum_ec.c
+        ../../../../../../src/util_bignum_opti.c
         ../../../../../../src/util_buffer.c
         ../../../../../../src/util_convert.c
         ../../../../../../src/util_hashmap.c

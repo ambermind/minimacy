@@ -5,21 +5,13 @@
 // https://www.usb.org/sites/default/files/usbmassbulk_10.pdf
 // https://docs.oracle.com/en/storage/storage-software/acsls/8.5/acsir/scsi-commands.html
 
-export UsbStorageList;;
-export usbStorageReadFunction(m);;
-export usbStorageWriteFunction(m);;
-export usbStorageSize(m);;
-export usbStorageSectorSize(m);;
-export usbStorageNbSectors(m);;
-export usbStorageName(m);;
-
 use driver.rpi4.usb;;
 
 const DEBUG=false;;
 //----------------- MASS STORAGE
 
 struct MassStorage=[deviceM, inM, outM, tagM, nbSectorsM, sectorSizeM, readyM, lockM];;
-var UsbStorageList;;
+export var UsbStorageList;;
 
 const MAX_SECTORS_PER_OPERATION=32;;
 
@@ -118,12 +110,12 @@ fun usbStorageWriteSector(m, sector, data)=
 		512*nbSectors;
 	);;
 
-fun usbStorageReadFunction(m) = lambda(sector, nbSectors) = usbStorageReadSector(m, sector, nbSectors);;
-fun usbStorageWriteFunction(m) = lambda(sector, data) = usbStorageWriteSector(m, sector, data);;
-fun usbStorageSize(m) = if m.readyM then m.sectorSizeM*m.nbSectorsM;;
-fun usbStorageSectorSize(m) = if m.readyM then m.sectorSizeM;;
-fun usbStorageNbSectors(m) = if m.readyM then m.nbSectorsM;;
-fun usbStorageName(m) = if m.readyM then m.deviceM.nameD;;
+export fun usbStorageReadFunction(m) = lambda(sector, nbSectors) = usbStorageReadSector(m, sector, nbSectors);;
+export fun usbStorageWriteFunction(m) = lambda(sector, data) = usbStorageWriteSector(m, sector, data);;
+export fun usbStorageSize(m) = if m.readyM then m.sectorSizeM*m.nbSectorsM;;
+export fun usbStorageSectorSize(m) = if m.readyM then m.sectorSizeM;;
+export fun usbStorageNbSectors(m) = if m.readyM then m.nbSectorsM;;
+export fun usbStorageName(m) = if m.readyM then m.deviceM.nameD;;
 
 fun _init()=
 	usbRegister("int-8-6-80", #massStorageCreate);;

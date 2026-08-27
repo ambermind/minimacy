@@ -2,28 +2,6 @@
 // Copyright (c) 2022, Sylvain Huet, Ambermind
 // Minimacy (r) System
 
-export HttpArgs, stringArg _ _, fileArg _ _ _;;
-//export HttpArgs, stringArg(_, _), fileArg(_, _, _);;
-export httpSetHeader(h, key, val);;
-export httpGetHeader(h, headerName);;
-export httpGetHeaders(h);;
-export httpGetRemote(h);;
-export httpGetCertificateChain(h);;
-export httpFormUrlEncodedFromList(l);;
-export httpReuse(h, verb, url, version);;
-export httpCreate(verb, url, version);;
-export httpForceTls12(h);;
-export httpSetPostData(h, data);;
-export httpSetCipherSuites(h, cipherSuites);;
-export httpSetClientCertificate(h, clientCertificate, clientKey);;
-export httpSetUrlEncoded(h, l);;
-export httpSetMultipart(h, l);;
-export httpSetTimeout(h, timeout);;
-export httpSend(h, cb);;
-export httpClose(h);;
-export httpGet(url);;
-export httpGet12(url);;
-
 const DEBUG=false;;
 
 use core.crypto.hash;;
@@ -46,7 +24,7 @@ struct Http=[
 	cbReplyH
 	];;
 
-sum HttpArgs= stringArg _ _, fileArg _ _ _;;
+export sum HttpArgs= stringArg _ _, fileArg _ _ _;;
 
 var Boundary;;
 
@@ -274,23 +252,23 @@ fun _httpRestart(h)=
 
 //--------------------CLIENT END USER FUNCTIONS
 
-fun httpGetStatus(h) = h.statusH;;
-fun httpGetHeaders(h) = h.replyHeadersH;;
-fun httpGetHeader(h, headerName)= hashmapGet(h.replyHeadersH, strLowercase(headerName));;
+export fun httpGetStatus(h) = h.statusH;;
+export fun httpGetHeaders(h) = h.replyHeadersH;;
+export fun httpGetHeader(h, headerName)= hashmapGet(h.replyHeadersH, strLowercase(headerName));;
 
-fun httpSetHeader(h, key, val)=
+export fun httpSetHeader(h, key, val)=
 	hashmapSet(h.requestHeadersH, key, val);
 	h;;
-fun httpGetRemote(h) = [tcpRemoteIp(tcpFromStream(h.tcpH)), tcpRemotePort(tcpFromStream(h.tcpH))];;	// returns [ip port]
+export fun httpGetRemote(h) = [tcpRemoteIp(tcpFromStream(h.tcpH)), tcpRemotePort(tcpFromStream(h.tcpH))];;	// returns [ip port]
 
-fun httpGetCertificateChain(h)= 
+export fun httpGetCertificateChain(h)= 
 	match h.ttCopyH with 
 		TLS12 tls -> tls12.tlsGetCertificateChain(tls),
 		TLS13 tls -> tls13.tlsGetCertificateChain(tls);;
 
-fun httpFormUrlEncodedFromList(l)= strJoin("&", listMap(l, lambda(p)=let p->[key, val] in strBuild({urlFromStr(key), "=", urlFromStr(val)})));;
+export fun httpFormUrlEncodedFromList(l)= strJoin("&", listMap(l, lambda(p)=let p->[key, val] in strBuild({urlFromStr(key), "=", urlFromStr(val)})));;
 
-fun httpReuse(h, verb, url, version)=
+export fun httpReuse(h, verb, url, version)=
 	let _urlParse(url) -> [tls, server, port, uri] in
 	let if verb==nil then "GET" else verb -> verb in
 	let if version==nil then HTTP_1_0 else version -> version in
@@ -324,11 +302,11 @@ fun httpReuse(h, verb, url, version)=
 
 fun httpTouch(h) = set h.timeH=timeMs();;
 
-fun httpSetTimeout(h, timeout)=
+export fun httpSetTimeout(h, timeout)=
 	httpTouch(h);
 	set h.timeoutH=timeout;;
 
-fun httpCreate(verb, url, version)=
+export fun httpCreate(verb, url, version)=
 	let _urlParse(url) -> [tls, server, port, uri] in
 	let [tlsH=tls, serverH=server, portH=port] -> h in
 	(
@@ -336,18 +314,18 @@ fun httpCreate(verb, url, version)=
 		httpReuse(h, verb, url, version)
 	);;
 
-fun httpForceTls12(h) = set h.forceTls12H=true; h;;
-fun httpSetPostData(h, data)= set h.postDataH=data;;
-fun httpSetCipherSuites(h, cipherSuites)= set h.cipherSuitesH=cipherSuites;;
-fun httpSetClientCertificate(h, clientCertificate, clientKey)=
+export fun httpForceTls12(h) = set h.forceTls12H=true; h;;
+export fun httpSetPostData(h, data)= set h.postDataH=data;;
+export fun httpSetCipherSuites(h, cipherSuites)= set h.cipherSuitesH=cipherSuites;;
+export fun httpSetClientCertificate(h, clientCertificate, clientKey)=
 	set h.clientCertificateH=clientCertificate;
 	set h.clientKeyH=clientKey;;
 
-fun httpSetUrlEncoded(h, l)=
+export fun httpSetUrlEncoded(h, l)=
 	httpSetHeader(h, HTTP_CONTENT_TYPE, HTTP_URLENCODED);
 	httpSetPostData(h, strJoin("&", listMap(l, lambda([key, val])=strFormat("*=*", key, urlFromStr(val)))));;
 
-fun httpSetMultipart(h, l)=
+export fun httpSetMultipart(h, l)=
 	let _getMultiPartBoundary() -> boundary in
 	(
 		 httpSetHeader(h, HTTP_CONTENT_TYPE, strBuild({ HTTP_MULTIPART, "; boundary=----", boundary}));
@@ -365,13 +343,13 @@ fun _httpTimer(h)=
 	)
 	else onTimeout(1000, lambda ()= _httpTimer(h));;
 
-fun httpClose(h)=
+export fun httpClose(h)=
 	streamClose(h.ttH);
 	set h.ttH=nil;
 	set h.busyH=false;
 	nil;;
 
-fun httpSend(h, cb)=
+export fun httpSend(h, cb)=
 if DEBUG then echoLn "httpSend";
 	if h.busyH then (threadPost(h.thH, (lambda ()= call cb(nil, nil))); nil)
 	else
@@ -392,12 +370,12 @@ if DEBUG then echoLn "httpSend";
 	);;
 
 
-fun httpGet(url)=
+export fun httpGet(url)=
 	await(lambda(join)=
 		httpSend(httpCreate(nil, url, HTTP_1_0), lambda(code, data)= joinSend(join, data))
 	);;
 
-fun httpGet12(url)=
+export fun httpGet12(url)=
 	await(lambda(join)=
 		httpSend(httpForceTls12(httpCreate(nil, url, HTTP_1_0)), lambda(code, data)= joinSend(join, data))
 	);;

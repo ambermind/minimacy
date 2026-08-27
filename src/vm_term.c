@@ -261,9 +261,9 @@ void _itemDump(int mask, int skipHeader, LW v,int type,int rec,char* tab)
 	{
 		int i;
 		bignum a=(bignum)p;
-		if (!skipHeader) PRINTF(mask,"%s BigNum: (%d)",tab,bignumLen(a));
-		if (bignumSign(a)) PRINTF(mask,"-");
-		for(i=bignumLen(a)-1;i>=0;i--) PRINTF(mask,"%08x ",bignumGet(a,i));
+		if (!skipHeader) PRINTF(mask,"%s BigNum: (%d)",tab,bigLen(a));
+		if (bigSign(a)) PRINTF(mask,"-");
+		for(i=bigLen(a)-1;i>=0;i--) PRINTF(mask, BIG_WORD_FORMAT_ZEROS" ",bigGet(a,i));
 		PRINTF(mask,"\n");
 	}
 	else if (dbg==DBG_TYPE)

@@ -1,15 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Copyright (c) 2022, Sylvain Huet, Ambermind
 // Minimacy (r) System
-
-export MODE_NUMERIC, MODE_ALPHANUMERIC, MODE_BYTE;;
-export ECL_LOW, ECL_MEDIUM, ECL_QUARTILE, ECL_HIGH;;
-
-export qrcodeEcho(b);;
-export qrcode(msg, ecl);;
-export qrcodeWithBorder(msg, ecl, border);;
-
-
 const VERSION_MIN=1;;
 const VERSION_MAX=40;;
 
@@ -373,10 +364,10 @@ fun bestMask(b, bmask, ecl, version, i, score, best)=
 		)
 	);;
 
-enum _, MODE_NUMERIC, MODE_ALPHANUMERIC, _, MODE_BYTE;;
-enum ECL_LOW, ECL_MEDIUM, ECL_QUARTILE, ECL_HIGH;;
+export enum _, MODE_NUMERIC, MODE_ALPHANUMERIC, _, MODE_BYTE;;
+export enum ECL_LOW, ECL_MEDIUM, ECL_QUARTILE, ECL_HIGH;;
 
-fun qrcodeEcho(b)=
+export fun qrcodeEcho(b)=
 	echoLn "\n\n";
 	for y=0;y<bitmapH(b) do
 	(
@@ -386,7 +377,7 @@ fun qrcodeEcho(b)=
 	echoLn "\n\n";
 	b;;
 
-fun qrcode(msg, ecl)=
+export fun qrcode(msg, ecl)=
 	let modeFromMsg(msg) -> mode in
 	let versionFromMsg(msg, mode, ecl) -> version in
 	let getTotalBits(mode, version, msg) -> dataUsedBits in
@@ -406,7 +397,7 @@ fun qrcode(msg, ecl)=
 		);
 		b
 	);;
-fun qrcodeWithBorder(msg, ecl, border)=
+export fun qrcodeWithBorder(msg, ecl, border)=
 	let qrcode(msg, ecl) -> qr in
 	let 2*border+bitmapW(qr) -> w in
 	let bitmapCreate(w, w, BACK) -> b in

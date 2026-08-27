@@ -2,11 +2,6 @@
 // Copyright (c) 2022, Sylvain Huet, Ambermind
 // Minimacy (r) System
 
-export gifAnimate(frames, fRender);;
-export framesFromGif(src);;
-export bitmapFromGif(src);;
-
-
 const COMMENT_EXT_FUNC_CODE     =0xfe;;	// comment
 const GRAPHICS_EXT_FUNC_CODE    =0xf9;;	// graphics control
 const PLAINTEXT_EXT_FUNC_CODE   =0x01;;	// plaintext
@@ -122,9 +117,9 @@ fun _gifAnimate(frames, i, cb)=
 	
 //-------------API
 // cb is called with the next bitmap frame and returns true to continue, nil or false to stop the animation
-fun gifAnimate(frames, fRender)= _gifAnimate(frames, 0, fRender);;
+export fun gifAnimate(frames, fRender)= _gifAnimate(frames, 0, fRender);;
 
-fun framesFromGif(src)=
+export fun framesFromGif(src)=
 	let gifExtract(src) -> gif in
 	if gif<>nil then
 	let gif.bitmapG -> bmp in
@@ -133,7 +128,7 @@ fun framesFromGif(src)=
 		[bitmapCopy(bmp, 0, 0, nil, nil), delay]
 	));;
 
-fun bitmapFromGif(src)=
+export fun bitmapFromGif(src)=
 	let gifExtract(src) -> gif in
 	if gif<>nil then
 	let gif.bitmapG -> bmp in (

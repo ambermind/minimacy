@@ -176,6 +176,11 @@ fun cerExtKeyUsage(cer) =
 	let hashmapGet(cer.extensionsX, OID_extKeyUsage) -> asn1 in
 	if asn1<>nil then asn1ListOfStr(listFromAsn1(asn1));;
 
+fun cerHasExtKeyUsage(cer, usage)=
+	let hashmapGet(cer.extensionsX, OID_extKeyUsage) -> asn1 in
+	if asn1<>nil then
+	listContains(asn1ListOfStr(listFromAsn1(asn1)), usage);;
+
 fun cerBasicConstraints(cer)=
 	let hashmapGet(cer.extensionsX, OID_basicConstraints) -> asn1 in
 	if asn1<>nil then let listFromAsn1(asn1) -> ca::pathLenConstraint::_ in [boolFromAsn1(ca), intFromAsn1(pathLenConstraint)];;
@@ -218,7 +223,7 @@ fun cerEcho(cer)=
 		),
 		ecKey ec -> (
 			echoLn strFormat("EC *", ecKeyCurveName(ec));
-			_cerEchoHex(hexFromStr(ecKeyPubStr(ec)))
+			_cerEchoHex(hexFromStr(ecKeyPublic(ec)))
 		),
 		ed25519Key ed -> (
 			echoLn "ED25519";
@@ -290,16 +295,23 @@ fun cerCheckByAuth(certificate, certAuth)=
 	if algorithm==nil then void (if _DEBUG then echoLn strFormat("--signature algo * not supported", niceOID(certificate.signatureAlgorithmX)))
 	else signatureCheck(algorithm, certAuth.keyX, certificate.infoDerX, certificate.signatureX);;
 
-fun rootCertificateRegister(cer)=
+fun cerRegisterRootCertificate(cer)=
 	if !cerCheckTime(cer, time()) then (
-		if _DEBUG then echoLn strFormat("--certificate out of time: *", cer.subjectX);
-		nil
+		void if _DEBUG then echoLn strFormat("--certificate out of time: *", cer.subjectX)
 	)
 	else hashmapSet(_RootCertificates, cer.issuerX, cer);;
 
 fun _cerChainAbort(msg)= setError(msgError msg); abort;;
 
-fun _cerCheckChain(hChain, t0, cer) =
+fun _cerCheckPathLenConstraint(cer, depth)=
+	let cerBasicConstraints(cer) -> [_, pathLenConstraint] in
+	if pathLenConstraint<>nil && pathLenConstraint< depth then (
+		if _DEBUG then echoLn ["--wrong pathLenConstraint for ", cer.subjectX];
+		_cerChainAbort(strFormat("> pathLenConstraint not respected for: *", cer.subjectX))
+	)
+	else true;;
+
+fun _cerCheckChain(hChain, t0, cer, depth) =
 	if _DEBUG then echoLn ["--check ", cer.subjectX];
 	if !cerCheckTime(cer, t0) then _cerChainAbort(strFormat("> certificate out of time: *", cer.subjectX))
 	else
@@ -307,28 +319,34 @@ fun _cerCheckChain(hChain, t0, cer) =
 	let hashmapGet(_RootCertificates, issuer) -> root in
 	if cerCheckByAuth(cer, root) then (
 		if _DEBUG then echoLn ["--find root ", issuer];
+		_cerCheckPathLenConstraint(root, depth);
 		root::nil
 	)
 	else 
 	let hashmapGet(hChain, issuer) -> parentCer in
 	if parentCer==nil then (
 		if _DEBUG then echoLn ["--not found for ", issuer];
-		_cerChainAbort(strFormat("> no root certificate for: *", issuer)))
-	else
-	if !cerCheckByAuth(cer, parentCer) then _cerChainAbort(strFormat("> wrong signature chain in: *", cer.subjectX))
+		_cerChainAbort(strFormat("> no root certificate for: *", issuer))
+	)
+	elif !cerCheckByAuth(cer, parentCer) then _cerChainAbort(strFormat("> wrong signature chain in: *", cer.subjectX))
 	else (
+		_cerCheckPathLenConstraint(parentCer, depth);
 		hashmapSet(hChain, issuer, nil);
-		parentCer::_cerCheckChain(hChain, t0, parentCer)
+		parentCer::_cerCheckChain(hChain, t0, parentCer, depth+1)
 	);;
 
 fun cerCheckChain(t0, siteCer, lCertificates)=
 	if _DEBUG then echoLn "cerCheckChain";
 	try
-	if !cerHasKeyUsage(siteCer, KEYUSAGE_digitalSignature) then (
+	if !cerHasExtKeyUsage(siteCer, OID_serverAuth) then (
+		if _DEBUG then echoLn "--missing serverAuth extented usage";
+		_cerChainAbort(strFormat("> first certificate missing serverAuth extended usage: *", siteCer.subjectX))
+	)
+	elif !cerHasKeyUsage(siteCer, KEYUSAGE_digitalSignature) then (
 		if _DEBUG then echoLn "--missing digitalSignature usage";
 		_cerChainAbort(strFormat("> first certificate missing digitalSignature usage: *", siteCer.subjectX))
 	)
-	else if 0==hashmapCount(_RootCertificates) then (
+	elif 0==hashmapCount(_RootCertificates) then (
 		if _DEBUG then echoLn "--no root registered. Skip test";
 		siteCer::nil
 	)
@@ -337,6 +355,6 @@ fun cerCheckChain(t0, siteCer, lCertificates)=
 	(
 		for cer in lCertificates do
 			if cerIsCertificateAuthority(cer)&&cerHasKeyUsage(cer, KEYUSAGE_keyCertSign) then hashmapSet(hChain, cer.subjectX, cer);
-		siteCer::_cerCheckChain(hChain, t0, siteCer)
+		siteCer::_cerCheckChain(hChain, t0, siteCer, 0)
 	);;
 

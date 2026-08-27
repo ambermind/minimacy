@@ -357,6 +357,7 @@ void pseudoRandomInit(void)
 {
 	pseudoRandomEntropy(hwTimeMs());	// clearly not enough...
 	// during development, it is useful to have a reproductible random sequence
+	//PRINTF(LOG_SYS, "------------DEV MODE------------\n");
 }
 LINT pseudoRandom32(void)
 {
@@ -396,7 +397,7 @@ int lwEquals(LW a, int ta, LW b, int tb)
 			}
 			else if (HEADER_DBG(pa) == DBG_B)
 			{
-				if (bignumEquals((bignum)pa, (bignum)pb)) return 1;
+				if (bigEquals((bignum)pa, (bignum)pb)) return 1;
 			}
 		}
 	}

@@ -12,25 +12,6 @@ LB* compileName(Compiler* c, char* what, int startsWithUpper)
 	if (pkgFirstGet(c->pkg, c->parser->token)) return (LB*) compileError(c,"'%s' already defined\n", compileToken(c));
 	return memoryAllocStr(c->parser->token, -1);
 }
-LB* exportLabelList(Compiler* c, char* name)
-{
-	LB* exports = c->exports;
-	while (exports) {
-		LB* labels = ARRAY_PNT(exports, LIST_VAL);
-		char* label = STR_START(ARRAY_PNT(labels, LIST_VAL));
-		if (!strcmp(label, name)) return labels;
-		exports= ARRAY_PNT(exports, LIST_NXT);
-	}
-	return NULL;
-}
-int exportLabelListIsSingle(Compiler* c, char* name)
-{
-	LB* labelList = exportLabelList(c, name);
-	LB* labelNext = labelList ? ARRAY_PNT(labelList, LIST_NXT) : NULL;
-	if (labelList && labelNext) return 0;
-	return 1;
-}
-
 LB* compilePkgName(Compiler* c)
 {
 	bufferReinit(MM.tmpBuffer);
@@ -147,8 +128,6 @@ Type* compileFun1(Compiler *c, LB* name)
 	Type* t;
 	Type* u;
 	LINT pIndex = parserIndex(c);
-	LB* labelList = exportLabelList(c,STR_START(name));
-	LB* labelNext = labelList?ARRAY_PNT(labelList, LIST_NXT):NULL;
 	if (!parserNext(c)) return compileError(c,"unexpected end of file\n");
 	if (!strcmp(c->parser->token, ":")) {
 		if (compilerSkipTypeDef(c)) return NULL;
@@ -156,23 +135,10 @@ Type* compileFun1(Compiler *c, LB* name)
 	else parserRewind(c);
 
 	if (parserAssume(c, "(")) return NULL;
-	if (labelList) {
-		if (!labelNext) return compileError(c, "more arguments than in the export declaration\n");
-		if (strcmp(STR_START(ARRAY_PNT(labelNext, LIST_VAL)), "("))
-			return compileError(c, "argument name '%s' does not match with export declaration '%s'\n", c->parser->token, STR_START(ARRAY_PNT(labelNext, LIST_VAL)));
-		labelNext = ARRAY_PNT(labelNext, LIST_NXT);
-	}
-
 	while(1)
 	{
 		Type* u;
 		if (!parserNext(c)) return compileError(c, "locals or ')' expected (found '%s')\n", compileToken(c));
-		if (labelList) {
-			if (!labelNext) return compileError(c, "more arguments than in the export declaration\n");
-			if (strcmp(STR_START(ARRAY_PNT(labelNext, LIST_VAL)), c->parser->token))
-				return compileError(c, "argument name '%s' does not match with export declaration '%s'\n", c->parser->token, STR_START(ARRAY_PNT(labelNext, LIST_VAL)));
-			labelNext = ARRAY_PNT(labelNext, LIST_NXT);
-		}
 		if (!strcmp(c->parser->token, ")")) break;
 		
 		u= typeAllocUndef();  if (!u) return NULL;
@@ -182,15 +148,8 @@ Type* compileFun1(Compiler *c, LB* name)
 		argc++;
 		if ((!parserNext(c)) || (strcmp(c->parser->token, ",") && strcmp(c->parser->token, ")")))
 			return compileError(c, "',' or ')' expected (found '%s')\n", compileToken(c));
-		if (labelList) {
-			if (!labelNext) return compileError(c, "more arguments than in the export declaration\n");
-			if (strcmp(STR_START(ARRAY_PNT(labelNext, LIST_VAL)), c->parser->token))
-				return compileError(c, "argument name '%s' does not match with export declaration '%s'\n", c->parser->token, STR_START(ARRAY_PNT(labelNext, LIST_VAL)));
-			labelNext = ARRAY_PNT(labelNext, LIST_NXT);
-		}
 		if (!strcmp(c->parser->token, ")")) break;
 	}
-	if (labelList && labelNext) return compileError(c,"less arguments than in the export declaration\n");
 //	parserRewind(c);
 
 	u = typeAllocUndef();  if (!u) return NULL;
@@ -206,7 +165,7 @@ Type* compileFun1(Compiler *c, LB* name)
 	def->proto = 1;
 	if (!def) return NULL;
 
-	if (pkgAddDef(c->pkg, name, def)) return NULL;
+	if (pkgAddDef(c->pkg, name, def, c->export)) return NULL;
 	if (parserUntil(c, ";;")) return NULL;
 
 	return t;
@@ -216,12 +175,11 @@ Type* compileVarOrConst1(Compiler* c,LINT code, LB* name)
 {
 	Def* def;
 	Type* t = typeAllocWeak(); if (!t) return NULL;
-	if (!exportLabelListIsSingle(c, STR_START(name))) return compileError(c,"the export declaration is not compatible with a constant or a variable (should have no argument)\n");
 
 	def = defAlloc(code, DEF_INDEX_VALUE, NIL, VAL_TYPE_PNT, t); if (!def) return NULL;
 	def->proto = 1;
 	defSetParser(def, c, parserIndex(c));
-	if (pkgAddDef(c->pkg, name, def)) return NULL;
+	if (pkgAddDef(c->pkg, name, def, c->export)) return NULL;
 	if (parserUntil(c, ";;")) return NULL;
 	return def->type;
 }
@@ -232,7 +190,6 @@ Type* compileType1(Compiler* c, LB* name,int sum)
 	Type* typeType;
 	int n = 0;
 	LINT pIndex = parserIndex(c);
-	if (!exportLabelListIsSingle(c, STR_START(name))) return compileError(c,"the export declaration is not compatible with a type (should have no argument)\n");
 
 	if (parserNext(c) && !strcmp(c->parser->token, "{"))
 	{
@@ -261,7 +218,7 @@ Type* compileType1(Compiler* c, LB* name,int sum)
 		defType->proto = 1;
 		defSetParser(defType, c, pIndex);
 		typeType->def = defType;
-		if (pkgAddDef(c->pkg, name, defType)) return NULL;	// this will also set defType->name
+		if (pkgAddDef(c->pkg, name, defType, c->export)) return NULL;	// this will also set defType->name
 
 		return compileDefCons1(c);
 	}
@@ -270,7 +227,7 @@ Type* compileType1(Compiler* c, LB* name,int sum)
 	defSetParser(defType, c, pIndex);
 	typeType->def = defType;
 
-	if (pkgAddDef(c->pkg, name, defType)) return NULL;	// this will also set defType->name
+	if (pkgAddDef(c->pkg, name, defType, c->export)) return NULL;	// this will also set defType->name
 	return compileStructure1(c, defType);
 }
 
@@ -305,8 +262,8 @@ Type* compileEnum(Compiler* c)
 		if ((!parserNext(c))||(!isLabel(c->parser->token))) return compileError(c,"label expected (found %s)\n", compileToken(c));
 
 		pIndex = parserIndex(c);
-		if (!exportLabelListIsSingle(c, c->parser->token)) return compileError(c,"the export declaration is not compatible with a type (should have no argument)\n");
 		def = pkgAddConstInt(c->pkg, c->parser->token, num++, MM.Int); if (!def) return NULL;
+		def->public=c->export;
 		defSetParser(def, c, pIndex);
 
 		if ((!parserNext(c)) || (strcmp(c->parser->token, ",") && strcmp(c->parser->token, ";;"))) return compileError(c, "',' or ';;' expected (found %s)\n", compileToken(c));
@@ -315,42 +272,30 @@ Type* compileEnum(Compiler* c)
 }
 Type* compileExport(Compiler* c)
 {
-	int count = 0;
-	int parentheses = 0;
-	if (c->pkg->first) return compileError(c,"export declarations must be before any other declaration\n");
 	while (parserNext(c)) {
-		if ((!strcmp(c->parser->token, ";;"))||(!parentheses && !strcmp(c->parser->token, ","))) {
-			if (count) {
-				STACK_PUSH_NIL_ERR(MM.tmpStack, NULL);
-				while(count) {
-					STACK_PUSH_FILLED_ARRAY_ERR(MM.tmpStack, LIST_LENGTH, DBG_LIST, NULL);
-					count--;
-				}
-				STACK_PUSH_PNT_ERR(MM.tmpStack, c->exports, NULL);
-				STACK_PUSH_FILLED_ARRAY_ERR(MM.tmpStack, LIST_LENGTH, DBG_LIST, NULL);
-				c->exports = STACK_PULL_PNT(MM.tmpStack);
-			}
-			if (!strcmp(c->parser->token, ";;")) return MM.Boolean;
-		}
-		else {
-			if (!strcmp(c->parser->token, "(")) parentheses++;
-			else if (!strcmp(c->parser->token, ")")) parentheses--;
-			if ((!count)&&(compileFunctionIsPrivate(c->parser->token))) return compileError(c,"cannot export private labels starting with underscore like '%s'\n", compileToken(c));
-			STACK_PUSH_STR_ERR(MM.tmpStack, c->parser->token, -1, NULL);
-			count++;
-		}
+		Def* d;
+		if (!isLabel(c->parser->token)) return compileError(c, "label expected (found %s)\n", compileToken(c));
+		if (compileFunctionIsPrivate(c->parser->token)) return compileError(c, "can't export labels starting with underscore (%s)\n", compileToken(c));
+		d = pkgFirstGet(c->pkg, c->parser->token);
+		if (!d) return compileError(c, "'%s' not defined\n", compileToken(c));
+		d->public = DEF_PUBLIC;
+
+		if ((!parserNext(c)) || (strcmp(c->parser->token, ",") && strcmp(c->parser->token, ";;"))) return compileError(c, "',' or ';;' expected (found %s)\n", compileToken(c));
+		if (!strcmp(c->parser->token, ";;")) break;
 	}
-	return NULL;
+	return MM.Boolean;
 }
 
 Type* compileFile1(Compiler* c, int depth, int depthFail)
 {
 	c->parser->mayGetBackToParent = 1;
+	c->hasExport = 0;
 	while (parserNext(c))
 	{
 		LB* name;
 		char* token = c->parser->token;
 		c->parser->mayGetBackToParent = 0;
+		c->export = DEF_PENDING;
 		memoryEnterSafe();
 		if (!strcmp(token, "#"))
 		{
@@ -419,39 +364,6 @@ Type* compileFile1(Compiler* c, int depth, int depthFail)
 		else if (depthFail) {
 			if (parserUntil(c, ";;")) return NULL;
 		}
-		else if (!strcmp(token, "fun"))
-		{
-			name = compileName(c, "name of function", 0); if (!name) return NULL;
-			if (!compileFun1(c, name)) return compileErrorInFunction(c, "error compiling function '%s'\n", STR_START(name));
-		}
-		else if (!strcmp(token, "sum"))
-		{
-			name = compileName(c, "name of sum", 1); if (!name) return NULL;
-			if (!compileType1(c, name, 1)) return compileError(c, "error compiling type '%s'\n", STR_START(name));
-		}
-		else if (!strcmp(token, "struct"))
-		{
-			name = compileName(c, "name of struct", 1); if (!name) return NULL;
-			if (!compileType1(c, name, 0)) return compileError(c, "error compiling type '%s'\n", STR_START(name));
-		}
-		else if (!strcmp(token, "extend"))
-		{
-			if (!compileExtend1(c)) return compileError(c, "error compiling extend\n");
-		}
-		else if (!strcmp(token, "enum"))
-		{
-			if (!compileEnum(c)) return compileError(c, "error compiling enumeration\n");
-		}
-		else if ((!strcmp(token, "var")) || (!strcmp(token, "const")))
-		{
-			LINT code = strcmp(token, "var") ? DEF_CODE_CONST : DEF_CODE_VAR;
-			name = compileName(c, "name of definition", 1); if (!name) return NULL;
-			if (!compileVarOrConst1(c, code, name))
-			{
-				if (code == DEF_CODE_VAR) return compileError(c, "error compiling var '%s'\n", STR_START(name));
-				return compileError(c, "error compiling const '%s'\n", STR_START(name));
-			}
-		}
 		else if (!strcmp(token, "use"))
 		{
 			if (!compileImport(c)) return compileError(c, "error compiling import\n");
@@ -461,42 +373,75 @@ Type* compileFile1(Compiler* c, int depth, int depthFail)
 		{
 			if (!compileInclude(c)) return compileError(c, "error compiling include\n");
 		}
-		else if (!strcmp(token, "export"))
-		{
-			if (!compileExport(c)) return compileError(c, "error compiling public\n");
+		else {
+			if (!strcmp(token, "export")) {
+				c->export = DEF_PUBLIC;
+				c->hasExport = 1;
+				if (!parserNext(c)) return compileError(c, "unexpected end of file\n");
+				token = c->parser->token;
+			}
+			if (!strcmp(token, "fun"))
+			{
+				name = compileName(c, "name of function", 0); if (!name) return NULL;
+				if (!compileFun1(c, name)) return compileErrorInFunction(c, "error compiling function '%s'\n", STR_START(name));
+			}
+			else if (!strcmp(token, "sum"))
+			{
+				name = compileName(c, "name of sum", 1); if (!name) return NULL;
+				if (!compileType1(c, name, 1)) return compileError(c, "error compiling type '%s'\n", STR_START(name));
+			}
+			else if (!strcmp(token, "struct"))
+			{
+				name = compileName(c, "name of struct", 1); if (!name) return NULL;
+				if (!compileType1(c, name, 0)) return compileError(c, "error compiling type '%s'\n", STR_START(name));
+			}
+			else if (!strcmp(token, "extend"))
+			{
+				if (!compileExtend1(c)) return compileError(c, "error compiling extend\n");
+			}
+			else if (!strcmp(token, "enum"))
+			{
+				if (!compileEnum(c)) return compileError(c, "error compiling enumeration\n");
+			}
+			else if ((!strcmp(token, "var")) || (!strcmp(token, "const")))
+			{
+				LINT code = strcmp(token, "var") ? DEF_CODE_CONST : DEF_CODE_VAR;
+				name = compileName(c, "name of definition", 1); if (!name) return NULL;
+				if (!compileVarOrConst1(c, code, name))
+				{
+					if (code == DEF_CODE_VAR) return compileError(c, "error compiling var '%s'\n", STR_START(name));
+					return compileError(c, "error compiling const '%s'\n", STR_START(name));
+				}
+			}
+			else if (c->export) {
+				parserRewind(c);
+				if (!compileExport(c)) return compileError(c, "error compiling export\n");
+			}
+			//		else if (!strcmp(token, "export"))
+					//{
+					//	if (!compileExport(c)) return compileError(c, "error compiling public\n");
+					//}
+			else return compileError(c, "unknown declaration '%s'\n", token);
 		}
-		else return compileError(c, "unknown declaration '%s'\n", token);
 		c->parser->mayGetBackToParent = 1;
 		memoryLeaveSafe();
 	}
 	return MM.Boolean;	// anything except NIL
 }
-Type* checkExport(Compiler* c)
+void checkExport(Compiler* c)
 {
-	LB* exports = c->exports;
-	if (exports) {
-		Def* p = c->pkg->first;
-		while (p) {
-			p->public = DEF_HIDDEN;
-			p = p->next;
-		}
+	Def* p = c->pkg->first;
+	while (p) {
+		if (p->public == DEF_PENDING) p->public = c->hasExport?DEF_HIDDEN: DEF_PUBLIC;
+		p = p->next;
 	}
-	while (exports) {
-		LB* labels = ARRAY_PNT(exports, LIST_VAL);
-		char* label = STR_START(ARRAY_PNT(labels, LIST_VAL));
-		Def* def = pkgGet(c->pkg, label, 0);
-		if (!def) return compileError(c,"exported label '%s' not defined\n", label);
-		def->public = DEF_PUBLIC;
-		exports = ARRAY_PNT(exports, LIST_NXT);
-	}
-	return MM.Boolean;
 }
 
 Type* compileStep1(Compiler* c)
 {
 	Type* t = compileFile1(c, 0, 0);
 	if (!t) return NULL;
-	if (!checkExport(c)) return NULL;
+	checkExport(c);
 	if (!compileImports(c)) return NULL;
 	return t;
 }

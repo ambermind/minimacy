@@ -72,7 +72,6 @@ void compilerMark(LB* user)
 	MARK_OR_MOVE(c->firstBytecodeBuffer);
 	MARK_OR_MOVE(c->parser);
 	MARK_OR_MOVE(c->mainParser);
-	MARK_OR_MOVE(c->exports);
 	MARK_OR_MOVE(c->def0);
 }
 
@@ -95,7 +94,6 @@ Type* compile(LB* src,Pkg* pkg,int fromImport, int* displayed)
 	c->mainParser = NULL;
 	c->displayed=0;
 	c->nbDerivations = 0;
-	c->exports = NULL;
 	pkg->stage = PKG_STAGE_COMPILING;
 
 	t0 = hwTimeMs();
@@ -153,7 +151,6 @@ Type* compile(LB* src,Pkg* pkg,int fromImport, int* displayed)
 	}
 	if (displayed) *displayed = c->displayed;
 	c->pkg->forPrompt = 1;
-//	itemDump(LOG_USER, VAL_FROM_PNT(c->exports), 0);
 	TMP_PULL();	// pull compiler
 	pkg->stage = PKG_STAGE_READY;
 	memoryLeaveSafe();

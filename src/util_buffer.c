@@ -270,7 +270,7 @@ int _bufferItem(Buffer* b, LW v, int type, LB* join, int rec, int* first)
 		{
 			TMP_PUSH(p,EXEC_OM);
 			if ((k=_bufferJoin(b, join, first))) return k;
-			if ((k = bignumDecToBuffer((bignum)p, b))) return k;
+			if ((k = bigDecToBuffer((bignum)p, b))) return k;
 			TMP_PULL();
 			return 0;
 		}

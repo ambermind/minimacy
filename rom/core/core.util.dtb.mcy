@@ -2,9 +2,6 @@
 // Copyright (c) 2022, Sylvain Huet, Ambermind
 // Minimacy (r) System
 
-export dtbDump(dtb);;
-export dtbFind(dtb, path);;
-
 const FDT_BEGIN_NODE=1;;
 const FDT_END_NODE=2;;
 const FDT_PROP=3;;
@@ -55,7 +52,7 @@ fun _dtbEnum(dtb, offStr, i, prefix)=
 			i
 		);;
 
-fun dtbDump(dtb)=
+export fun dtbDump(dtb)=
 	let strRead32Msb(dtb, 0) -> magic in
 	if magic==0xD00DFEED then
 	let strRead32Msb(dtb, 8) -> off_dt_struct in
@@ -100,7 +97,7 @@ fun _dtbFind(dtb, offStrings, path, i)=
 			else _dtbFind(dtb, offStrings, path, next),
 		FDT_NOP -> _dtbFind(dtb, offStrings, path, i);;
 
-fun dtbFind(dtb, path)=
+export fun dtbFind(dtb, path)=
 	let strRead32Msb(dtb, 0) -> magic in
 	if magic==0xD00DFEED then
 	let strRead32Msb(dtb, 8) -> off_dt_struct in

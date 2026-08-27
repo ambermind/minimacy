@@ -32,7 +32,6 @@ Type* compileStructure1(Compiler* c, Def* structDef)
 
 		pIndex = parserIndex(c);
 		if (!isLabel(c->parser->token)) break;	// "]" case
-		if (!exportLabelListIsSingle(c, c->parser->token)) return compileError(c,"the export declaration is not compatible with a type (should have no argument)\n");
 
 		if (pkgFirstGet(c->pkg, c->parser->token)) return compileError(c,"'%s' already defined\n", compileToken(c));
 		fieldName = memoryAllocStr(c->parser->token, -1); if (!fieldName) return NULL;
@@ -52,7 +51,7 @@ Type* compileStructure1(Compiler* c, Def* structDef)
 		defSet(structDef,VAL_FROM_PNT((LB*)fieldDef),VAL_TYPE_PNT);
 		fieldDef->parent = structDef;
 		defSetParser(fieldDef, c, pIndex);
-		if (pkgAddDef(c->pkg, fieldName, fieldDef)) return NULL;
+		if (pkgAddDef(c->pkg, fieldName, fieldDef, DEF_PENDING)) return NULL;
 		nFields++;
 
 		if ((!parserNext(c)) || (strcmp(c->parser->token, ",") && strcmp(c->parser->token, "]")))

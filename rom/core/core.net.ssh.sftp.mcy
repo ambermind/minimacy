@@ -2,10 +2,9 @@
 // Copyright (c) 2022, Sylvain Huet, Ambermind
 // Minimacy (r) System
 
-
 use core.net.ssh;;
 use core.net.ssh.sftp.common;;
-const SSH_DEBUG=true;;
+const SSH_DEBUG=false;;
 
 // permission bits
 const _S_IFIFO	=0x1000;; // FIFO
@@ -21,8 +20,8 @@ const _S_IWRITE	=0x0080;;
 const _S_IREAD	=0x0100;;
 
 
-sum SftpCallback= fileListS _, handleS _, errorS _ _, fileContentS _, attrS _, okS;;
-sum SftpSort=
+export sum SftpCallback= fileListS _, handleS _, errorS _ _, fileContentS _, attrS _, okS;;
+export sum SftpSort=
 	SORT_BY_NAME, SORT_BY_NAME_DESC, SORT_BY_SIZE, SORT_BY_SIZE_DESC,
 	SORT_BY_MODIFICATION_TIME, SORT_BY_MODIFICATION_TIME_DESC,
 	SORT_BY_ACCESS_TIME, SORT_BY_ACCESS_TIME_DESC;;
@@ -226,10 +225,10 @@ fun _sftpSimpleRequest(h, code, data, cb)=
 
 // ------------------------ ASYNC API
 
-fun sftpConnectAsync(ip, port, login, auth, fNotify)=
+export fun sftpConnectAsync(host, port, login, auth, fCheckPublickKey, fNotify)=
 	let [Sftp] -> h in (
 		sftpOnEvent(h, fNotify);
-		sshConnect(h, ip, port, login, auth, (lambda(code, data)=
+		sshConnect(h, host, port, login, auth, fCheckPublickKey, (lambda(code, data)=
 			if code==SSH_OK then void sftpFtpStartSession(h)
 			else sftpNotifyEvent(h, code, data)
 		));
@@ -246,21 +245,21 @@ fun _sftpDir(h, handle, cb, result)=
 		call cb(arg);
 	));;
 
-fun sftpDirAsync(h, path, cb)=
+export fun sftpDirAsync(h, path, cb)=
 	let _sftpMakeCb(cb) ->cb in
 	sftpSend(h, SSH_FXP_OPENDIR, sshMsgStr(path), (lambda(arg)=
 		match arg with handleS handle-> return _sftpDir(h, handle, cb, nil);
 		call cb(arg)
 	));;
 
-fun sftpMkdirAsync(h, path, attr, cb)=
+export fun sftpMkdirAsync(h, path, attr, cb)=
 	let if attr==nil then {sshMsgInt(SSH_FILEXFER_ATTR_PERMISSIONS), sshMsgInt(0x1ff)} else attr->attr in
 	_sftpSimpleRequest(h, SSH_FXP_MKDIR, [ sshMsgStr(path), attr ], cb);;
 
-fun sftpRmdirAsync(h, path, cb)= _sftpSimpleRequest(h, SSH_FXP_RMDIR, [ sshMsgStr(path) ], cb);;
+export fun sftpRmdirAsync(h, path, cb)= _sftpSimpleRequest(h, SSH_FXP_RMDIR, [ sshMsgStr(path) ], cb);;
 
 fun _sftpGet(h, handle, cb, result)=
-	sftpSend(h, SSH_FXP_READ, {sshMsgStr(handle), sshMsgInt64(h.offsetSF), sshMsgInt(0x8000)}, (lambda(arg)=
+	sftpSend(h, SSH_FXP_READ, {sshMsgStr(handle), sshMsgInt64(0, h.offsetSF), sshMsgInt(0x8000)}, (lambda(arg)=
 		match arg with
 			fileContentS content-> (
 				set h.offsetSF=h.offsetSF+strLength(content);
@@ -274,7 +273,7 @@ fun _sftpGet(h, handle, cb, result)=
 		call cb(arg)
 	));;
 
-fun sftpGetAsync(h, path, cb)=
+export fun sftpGetAsync(h, path, cb)=
 	set h.offsetSF=0;
 	let _sftpMakeCb(cb) ->cb in
 	sftpSend(h, SSH_FXP_OPEN, {sshMsgStr(path), sshMsgInt(SSH_FXF_READ), sshMsgInt(0)},lambda(arg)=
@@ -283,11 +282,11 @@ fun sftpGetAsync(h, path, cb)=
 			_ -> call cb(arg)
 	);;
 
-fun sftpStatAsync(h, path, cb)=
+export fun sftpStatAsync(h, path, cb)=
 	let _sftpMakeCb(cb) ->cb in
 	sftpSend(h, SSH_FXP_STAT, sshMsgStr(path), cb);;
 
-fun sftpLStatAsync(h, path, cb)=
+export fun sftpLStatAsync(h, path, cb)=
 	let _sftpMakeCb(cb) ->cb in
 	sftpSend(h, SSH_FXP_LSTAT, sshMsgStr(path), cb);;
 
@@ -295,14 +294,14 @@ fun _sftpPut(h, handle, cb)=
 	if h.sendingOffsetSF>= strLength(h.sendingDataSF) then
 		sftpSend(h, SSH_FXP_CLOSE, sshMsgStr(handle), cb)
 	else
-		let strSlice(h.sendingDataSF, h.sendingOffsetSF, h.channelS.peerPacketMaxSizeC) -> content in
-		sftpSend(h, SSH_FXP_WRITE, {sshMsgStr(handle), sshMsgInt64(h.sendingOffsetSF), sshMsgStr(content)}, (lambda(arg)=
+		let strSlice(h.sendingDataSF, h.sendingOffsetSF, sshChannelPeerPacketMaxSize(h.channelS)) -> content in
+		sftpSend(h, SSH_FXP_WRITE, {sshMsgStr(handle), sshMsgInt64(0, h.sendingOffsetSF), sshMsgStr(content)}, (lambda(arg)=
 			set h.sendingOffsetSF=h.sendingOffsetSF+strLength(content);
 			if arg==okS then _sftpPut(h, handle, cb)
 			else call cb(arg)
 		));;
 
-fun sftpPutAsync(h, path, content, attr, cb)=
+export fun sftpPutAsync(h, path, content, attr, cb)=
 	let if attr==nil then {sshMsgInt(SSH_FILEXFER_ATTR_PERMISSIONS), sshMsgInt(0644)} else attr->attr in
 	let _sftpMakeCb(cb) ->cb in
 	sftpSend(h, SSH_FXP_OPEN, [
@@ -321,24 +320,24 @@ fun sftpPutAsync(h, path, content, attr, cb)=
 			_ -> call cb(arg)
 	);;
 
-fun sftpSetStatAsync(h, path, attr, cb)= _sftpSimpleRequest(h, SSH_FXP_SETSTAT, [ sshMsgStr(path), attr ], cb);;
+export fun sftpSetStatAsync(h, path, attr, cb)= _sftpSimpleRequest(h, SSH_FXP_SETSTAT, [ sshMsgStr(path), attr ], cb);;
 
-fun sftpRenameAsync(h, oldPath, newPath, cb)= _sftpSimpleRequest(h, SSH_FXP_RENAME, [ sshMsgStr(oldPath), sshMsgStr(newPath) ], cb);;
+export fun sftpRenameAsync(h, oldPath, newPath, cb)= _sftpSimpleRequest(h, SSH_FXP_RENAME, [ sshMsgStr(oldPath), sshMsgStr(newPath) ], cb);;
 
-fun sftpRemoveAsync(h, path, cb)= _sftpSimpleRequest(h, SSH_FXP_REMOVE, [ sshMsgStr(path) ], cb);;
+export fun sftpRemoveAsync(h, path, cb)= _sftpSimpleRequest(h, SSH_FXP_REMOVE, [ sshMsgStr(path) ], cb);;
 
 //--------------------- SYNC API
-fun sftpIsDir(permission)= (permission & _S_IFMT)==_S_IFDIR;;
+export fun sftpIsDir(permission)= (permission & _S_IFMT)==_S_IFDIR;;
 
-fun sftpEchoDir(fileList)=
+export fun sftpEchoDir(fileList)=
 	for f in fileList do echoLn f.longF;
 	fileList;;
 
-fun sftpAttrFromPermission(permission)= {sshMsgInt(SSH_FILEXFER_ATTR_PERMISSIONS), sshMsgInt(permission)};;
+export fun sftpAttrFromPermission(permission)= {sshMsgInt(SSH_FILEXFER_ATTR_PERMISSIONS), sshMsgInt(permission)};;
 
-fun sftpHome(h)= h.homeSF;;
+export fun sftpHome(h)= h.homeSF;;
 
-fun sftpSort(sort, fileList) =
+export fun sftpSort(sort, fileList) =
 	quicksort(fileList, match sort with
 	SORT_BY_SIZE -> (lambda(a, b)= a.sizeF<b.sizeF),
 	SORT_BY_SIZE_DESC -> (lambda(a, b)= a.sizeF>b.sizeF),
@@ -349,56 +348,56 @@ fun sftpSort(sort, fileList) =
 	SORT_BY_NAME_DESC -> (lambda(a, b)= 0<strCmp(a.shortF, b.shortF)),
 	_ -> lambda(a, b)= 0>strCmp(a.shortF, b.shortF));;
 
-fun sftpConnect(ip, port, login, auth)=
-	await(lambda(join)=sftpConnectAsync(ip, port, login, auth, lambda(h, code, data)= joinSend(join, if code==SSH_READY then h)));;
+export fun sftpConnect(host, port, login, auth, fCheckPublickKey)=
+	await(lambda(join)=sftpConnectAsync(host, port, login, auth, fCheckPublickKey, lambda(h, code, data)= joinSend(join, if code==SSH_READY then h)));;
 
-fun sftpDir(h, path)=
+export fun sftpDir(h, path)=
 	await(lambda(join)=sftpDirAsync(h, path, lambda(arg)= joinSend(join, match arg with fileListS fileList -> fileList)));;
 
-fun sftpMkdir(h, path, attr)=
+export fun sftpMkdir(h, path, attr)=
 	await(lambda(join)=sftpMkdirAsync(h, path, attr, lambda(arg)= joinSend(join, match arg with okS -> true)));;
 
-fun sftpRmdir(h, path)= 
+export fun sftpRmdir(h, path)= 
 	await(lambda(join)=sftpRmdirAsync(h, path, lambda(arg)= joinSend(join, match arg with okS -> true)));;
 
-fun sftpGet(h, path)=
+export fun sftpGet(h, path)=
 	await(lambda(join)=sftpGetAsync(h, path, lambda(arg)= joinSend(join, match arg with fileContentS data -> data)));;
 
-fun sftpStat(h, path)=
+export fun sftpStat(h, path)=
 	await(lambda(join)=sftpStatAsync(h, path, lambda(arg)= joinSend(join, match arg with attrS attr -> attr)));;
 
-fun sftpLStat(h, path)=
+export fun sftpLStat(h, path)=
 	await(lambda(join)=sftpLStatAsync(h, path, lambda(arg)= joinSend(join, match arg with attrS attr -> attr)));;
 
-fun sftpPut(h, path, content, attr)=
+export fun sftpPut(h, path, content, attr)=
 	await(lambda(join)=sftpPutAsync(h, path, content, attr, lambda(arg)= joinSend(join, match arg with okS -> true)));;
 
-fun sftpSetStat(h, path, attr)=
+export fun sftpSetStat(h, path, attr)=
 	await(lambda(join)=sftpSetStatAsync(h, path, attr, lambda(arg)= joinSend(join, match arg with okS -> true)));;
 
-fun sftpRename(h, oldPath, newPath)= 
+export fun sftpRename(h, oldPath, newPath)= 
 	await(lambda(join)=sftpRenameAsync(h, oldPath, newPath, lambda(arg)= joinSend(join, match arg with okS -> true)));;
 
-fun sftpRemove(h, path)= 
+export fun sftpRemove(h, path)= 
 	await(lambda(join)=sftpRemoveAsync(h, path, lambda(arg)= joinSend(join, match arg with okS -> true)));;
 
 fun _sftpMkPath(h, www, uri, i)=
 	let strPos(uri, "/", i) -> i in
 	if i<>nil then
 	(
-		dump sftpMkdir(h, echoLn strConcat(www, strLeft(uri, i)), nil);
+		sftpMkdir(h, strConcat(www, strLeft(uri, i)), nil);
 		_sftpMkPath(h, www, uri, i+1)
 	);;
 
 // make sure that the remote path of www/uri exists, assuming that www already exists
 fun sftpMkPath(h, www, uri)= _sftpMkPath(h, www, strFromUrl(uri), 1);;	// 1 -> skip the initial '/' of the uri
 
-fun sftpWWWSend(ip, port, login, auth, www, uri, content)=
-	let sftpConnect(ip, port, login, auth) -> h in
+export fun sftpWWWSend(host, port, login, auth, fCheckPublickKey, www, uri, content)=
+	let sftpConnect(host, port, login, auth, fCheckPublickKey) -> h in
 	if h<>nil then
 	(
 		sftpMkPath(h, www, uri);
-		dump sftpPut(h, strConcat(www, uri), content, nil);
-		dump sshClose(h);
+		sftpPut(h, strConcat(www, uri), content, nil);
+		sshClose(h);
 
 	);;

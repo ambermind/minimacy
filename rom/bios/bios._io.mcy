@@ -7,7 +7,7 @@ var _StreamList;;
 
 // alive if at least one stream different from _InteralPipe
 // (tail _StreamList<>nil || head _Stream<>_internalPipe)
-fun _streamAlive ()= tail(_StreamList)<>nil;;		// there is always the internal stream
+fun _streamAlive()= tail(_StreamList)<>nil;;		// there is always the internal stream
 fun streamCheck(s)=
 	if s._thS._stateT <> _THREAD_DONE then true
 	else void streamClose(s);;

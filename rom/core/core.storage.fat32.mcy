@@ -2,15 +2,8 @@
 // Copyright (c) 2022, Sylvain Huet, Ambermind
 // Minimacy (r) System
 use core.util.cache;;
-export volumeFindPartitions(volume, writable);;
-export volumeMount(volume, mount, root);;
-export volumeSetCacheSize(size);;
-export fatFromTime(t);;
-export SECTOR_SIZE;;
-export fat32Dump(p);;
-export Fat32Partitions;;
 
-const SECTOR_SIZE=512;;
+export const SECTOR_SIZE=512;;
 
 var CacheSize= 1024*1024;;
 
@@ -81,7 +74,7 @@ fun _timeFromFat(data)=
 	let 1980+ 127&(data>>25) -> year in
 	timeFromDate(year, month, day, h, m, s);;
 
-fun fatFromTime(t)=
+export fun fatFromTime(t)=
 	let max(t, 315532800) -> t in	// no date before 1980/01/01
 	let date(t) -> [year, month, day, _, h, m, s] in
 	(s/2) +
@@ -618,7 +611,7 @@ fun _deleteFile(p, d)=
 	
 //---------------------------------------------------
 //----- fat32Dump for dev only: display and check the content of a partition
-var Fat32Partitions;;
+export var Fat32Partitions;;
 fun _fatDumpChain(p, h, cluster)=
 	echo strFormat(" -> *", hexFromInt(cluster));
 	if _validCluster(cluster) then (
@@ -637,7 +630,7 @@ fun _fat32Dumpdir(p, h, path, prefix)=
 		if isDirectory(d) then _fat32Dumpdir(p, h, strFormat("**/", path, d.fullNameDF), strConcat("----", prefix))
 	);;
 
-fun fat32Dump(p)=
+export fun fat32Dump(p)=
 	_partitionCacheInit(p);
 	let hashsetCreate(10) -> h in (
 		echoLn strFormat("\ndump volume *", p.volumeLabelP);
@@ -705,7 +698,7 @@ fun _partitionInitFat32(bootSector, partitionStart, volume)=
 		let listFind(_partitionDir(p, ""), lambda(d)= isVolumeName(d)) -> d in
 		if d<>nil then set p.volumeLabelP=d.fullNameDF;
 		echoLn strFormat("> Storage: found fat32 partition (* Bytes, cluster size: *): *",
-			strWithDelimiter(3, ".", strFromBig(\bigNum bigFromInt(largeTotalSector)*bigFromInt(bytesPerSector))),
+			strWithDelimiter(3, ".", strFromBig(\big bigFromInt(largeTotalSector)*bigFromInt(bytesPerSector))),
 			p.bytesPerClusterP, p.volumeLabelP
 		);
 		p::nil
@@ -820,14 +813,14 @@ fun _mkPartition(volume, p, writable) =
 	computeUsedSectorsP= lambda()= _partitionUsedSectors(p)
 ];;
 
-fun volumeFindPartitions(volume, writable)=
+export fun volumeFindPartitions(volume, writable)=
 	let set Fat32Partitions= _volumeGetHardPartitions(volume) -> _partitions in
 	listMap(_partitions, lambda(p)= volumeAddPartition(volume, _mkPartition(volume, p, writable)));;
 
-fun volumeMount(volume, mount, root)=
+export fun volumeMount(volume, mount, root)=
 	let fsAddVolume(volume) -> volume in
 	let volumeFindPartitions(volume, true) -> partitions in
 	partitionsMount(partitions, true, mount, root);;
 
 // this function must be called before volumeFindPartitions. Then it is too late.
-fun volumeSetCacheSize(size)= set CacheSize=size;;
+export fun volumeSetCacheSize(size)= set CacheSize=size;;

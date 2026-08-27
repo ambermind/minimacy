@@ -127,16 +127,16 @@ fun _asn1ReadSize(bin, j)=
 	let j+1+nb+size -> next in
 	if next<=binLen then [strSlice(bin, j+1+nb, size), next];;
 
-fun asn1GetObject(bin, class, pc, tag)=
+fun _asn1GetObject(bin, class, pc, tag, depth)=
 	if class<>0 then
 	(
-		if pc<>0 then asn1ClassConstructed class tag _asn1Unpack(bin, 0)
+		if pc<>0 then asn1ClassConstructed class tag _asn1Unpack(bin, 0, depth+1)
 		else asn1ClassPrimitive class tag bin
 	)
 	else if pc<>0 then
 	match tag with
-		ASN1_SEQUENCE -> asn1Seq _asn1Unpack(bin, 0),
-		ASN1_SET -> asn1Set _asn1Unpack(bin, 0),
+		ASN1_SEQUENCE -> asn1Seq _asn1Unpack(bin, 0, depth+1),
+		ASN1_SET -> asn1Set _asn1Unpack(bin, 0, depth+1),
 		_ -> (echoLn strFormat("asn1 tag unknown: * (*/*)", tag, class, pc); hexDump bin; asn1Else class pc tag bin)
 	else
 	match tag with
@@ -152,15 +152,16 @@ fun asn1GetObject(bin, class, pc, tag)=
 		ASN1_UTCTIME -> asn1UtcTime bin,
 		_ -> (echoLn strFormat("asn1 tag unknown: * (*/*)", tag, class, pc); hexDump bin; asn1Else class pc tag bin);;
 
-fun _asn1Unpack(bin, i)=
+fun _asn1Unpack(bin, i, depth)=
+	if depth<32 then
 	if i<strLength(bin) then
 	let _asn1ReadCode(bin, i) ->[class, pc, tag, i] in
 	let _asn1ReadSize(bin, i) ->[content, i] in
 	if i<>nil then 
-	let asn1GetObject(content, class, pc, tag) -> asn1 in
-	asn1::_asn1Unpack(bin, i);;
+	let _asn1GetObject(content, class, pc, tag, depth) -> asn1 in
+	asn1::_asn1Unpack(bin, i, depth);;
 
-fun asn1Unpack(bin)= head(_asn1Unpack(bin, 0));;
+fun asn1Unpack(bin)= head(_asn1Unpack(bin, 0, 0));;
 
 fun asn1InfoBlock(bin)=	// to be used with certificates and csr
 	let _asn1ReadCode(bin, 0) ->[_, _, _, i] in

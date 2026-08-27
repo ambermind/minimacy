@@ -13,7 +13,7 @@ fun rsaFromPublic(modulus, pubExp)=
 	[modulusR=modulus, pubExpR=pubExp];;
 
 fun rsaFromPQ(pubExp, p, q)=
-\bigNum
+\big
 	let p*q -> modulus in
 	let (p-1)*(q-1) -> phi in
 	let bigInv(pubExp, phi) -> privExp in
@@ -52,5 +52,10 @@ fun rsaPubExp(rsa)= rsa.pubExpR;;
 
 fun rsaComputePrivateExp(rsa, msg)=
 	bigExpChinese5(msg, rsa.pR, rsa.qR, rsa.dPR, rsa.dQR, rsa.qInvR);;
+
+fun rsaComputePrivateExpAndCheck(rsa, msg)=
+	let rsaComputePrivateExp(rsa, msg) -> result in
+	let bigExpMod(result,  rsa.pubExpR, rsa.modulusR) -> check in
+	if msg==check then result;;
 
 fun rsaIsPrivate(rsa)= rsa.privExpR<>nil;;

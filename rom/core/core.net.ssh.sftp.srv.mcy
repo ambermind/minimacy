@@ -2,16 +2,6 @@
 // Copyright (c) 2022, Sylvain Huet, Ambermind
 // Minimacy (r) System
 
-export sftpServerStart(serverKey, serverKeyPassword, localIp, localPort, options, fAuth);;
-export sftpServerOnNotify(h, f);;
-export sftpServerOnDir(h, f);;
-export sftpServerOnGet(h, f);;
-export sftpServerOnPut(h, f);;
-export sftpServerSetIdleTimeout(sftpServer, idleTimeout);;
-export sftpServerSetMaxConnections(sftpServer, maxConnections, evictionTimeout);;
-export sftpServerSetMaxRequestSize(h, maxRequestSize);;
-export SFTP_OPTION_SFTP, SFTP_OPTION_SCP_GET, SFTP_OPTION_SCP_PUT;;
-
 use core.net.ssh;;
 use core.net.ssh.sftp.common;;
 use core.crypto.key;;
@@ -20,9 +10,9 @@ const SSH_DEBUG=false;;
 
 const SFTPSERVER_MAX_REQUEST_SIZE=1024*1024;;
 
-const SFTP_OPTION_SFTP   = 1;;
-const SFTP_OPTION_SCP_GET= 2;;
-const SFTP_OPTION_SCP_PUT= 4;;
+export const SFTP_OPTION_SFTP   = 1;;
+export const SFTP_OPTION_SCP_GET= 2;;
+export const SFTP_OPTION_SCP_PUT= 4;;
 
 struct SSH_sftpServer=[srvS];;
 
@@ -311,7 +301,7 @@ fun _scpClose(h, data)=
 	sshSendChannelRequest(h.channelS, "exit-status", false, sshMsgInt(0));
 	sshSendChannelMsg(h.channelS, SSH2_MSG_CHANNEL_CLOSE, nil);
 	set h.modeS=idleMode;
-	streamClose(h.tcpS);;
+	streamClose(sshStream(h));;
 
 fun  _scpHandleGet(h, data)=
 	if SSH_DEBUG then echoLn "sftp< scp handle";
@@ -381,7 +371,8 @@ fun _sftpParseChannelRequest(h, type, wantReply, data)=
 				sshSendChannelSuccess(h.channelS)
 			)
 			elif strStartsWith(cmd, "scp -t ") && bitTest(h.optionsS, SFTP_OPTION_SCP_PUT) then 
-			let strTail(cmd, 7) -> path in (
+			let strTail(cmd, 7) -> path in
+			let _sftpRealPath(path) -> path in (
 				set h.tmpPathS= path;
 				set h.tmpGetS=nil;
 				set h.modeS=scpPutMode;
@@ -418,7 +409,7 @@ fun _sftpStart(h)=
 		)
 	));;
 
-fun sftpServerStart(serverKey, serverKeyPassword, localIp, localPort, options, fAuth)= 
+export fun sftpServerStart(serverKey, serverKeyPassword, localIp, localPort, options, fAuth)= 
 	let keyFromPEM(serverKey, serverKeyPassword) -> serverKey in
 	if serverKey==nil then void (if SSH_DEBUG then echoLn "sftp< UNABLE TO LOAD SERVER KEY")
 	else
@@ -438,12 +429,12 @@ fun sftpServerStart(serverKey, serverKeyPassword, localIp, localPort, options, f
 		);
 		[srvS=tcpSrv]
 	);;
-fun sftpServerSetIdleTimeout(sftpServer, idleTimeout)=tcpSrvSetIdleTimeout(sftpServer.srvS, idleTimeout);;
-fun sftpServerSetMaxConnections(sftpServer, maxConnections, evictionTimeout)=tcpSrvSetMaxConnections(sftpServer.srvS, maxConnections, evictionTimeout);;
+export fun sftpServerSetIdleTimeout(sftpServer, idleTimeout)=tcpSrvSetIdleTimeout(sftpServer.srvS, idleTimeout);;
+export fun sftpServerSetMaxConnections(sftpServer, maxConnections, evictionTimeout)=tcpSrvSetMaxConnections(sftpServer.srvS, maxConnections, evictionTimeout);;
 
-fun sftpServerSetMaxRequestSize(h, maxRequestSize)= set h.maxRequestSizeS=maxRequestSize;;
+export fun sftpServerSetMaxRequestSize(h, maxRequestSize)= set h.maxRequestSizeS=maxRequestSize;;
 
-fun sftpServerOnNotify(h, f)= set h.fNotifyS=(lambda(code, data) = call f(code, data);0);;
-fun sftpServerOnDir(h, f)= set h.fDirS=f;;
-fun sftpServerOnGet(h, f)= set h.fGetS=f;;
-fun sftpServerOnPut(h, f)= set h.fPutS=f;;
+export fun sftpServerOnNotify(h, f)= set h.fNotifyS=(lambda(code, data) = call f(code, data);0);;
+export fun sftpServerOnDir(h, f)= set h.fDirS=f;;
+export fun sftpServerOnGet(h, f)= set h.fGetS=f;;
+export fun sftpServerOnPut(h, f)= set h.fPutS=f;;

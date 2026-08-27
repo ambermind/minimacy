@@ -163,7 +163,7 @@ var Matrix={matId()::nil, matId()::nil};;
 var MatrixId=0;;
 var LastMatrix;;
 
-// matrix are organized by columns. The first row is m.0 m.4 m.8 m.12
+// matrix are organized by columns. The first row is m[0], m[4], m[8], m[12]
 
 fun matId ()= {1., 0., 0., 0., 0., 1., 0., 0., 0., 0., 1., 0., 0., 0., 0., 1. };;
 fun matCopy(a) = arrayInit(16, lambda(i)=a[i]);;

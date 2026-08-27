@@ -2,7 +2,6 @@
 // Copyright (c) 2022, Sylvain Huet, Ambermind
 // Minimacy (r) System
 
-
 use core.net.ssh;;
 
 struct SSHshell= SSH + [channelS, fNotifyEventS];;
@@ -40,13 +39,13 @@ fun shellStartSession(h)=
 		else shellNotifyEvent(h, code, data)
 	);;
 
-fun shellConnect(ip, port, login, auth, fNotify)=
+export fun shellConnect(host, port, login, auth, fCheckPublickKey, fNotify)=
 	let [SSHshell] -> h in (
 		shellOnEvent(h, fNotify);
-		sshConnect(h, ip, port, login, auth, lambda(code, data)=
+		sshConnect(h, host, port, login, auth, fCheckPublickKey, lambda(code, data)=
 			if code==SSH_OK then shellStartSession(h)
 			else shellNotifyEvent(h, code, data)
 		)
 	);;
 
-fun shellSendData(h, data) = sshSendChannelData(h.channelS, data);;
+export fun shellSendData(h, data) = sshSendChannelData(h.channelS, data);;

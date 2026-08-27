@@ -2,8 +2,6 @@
 // Copyright (c) 2022, Sylvain Huet, Ambermind
 // Minimacy (r) System
 
-export jpgFromBitmap(bmp, quality);;
-
 use core.util.huffman;;
 
 struct JpgMaker=[
@@ -222,7 +220,7 @@ fun mkQuant1(quality) =
 	let 20-(quality/5) -> increment in
 	quantCreate(start, increment);;
 
-fun jpgFromBitmap(bmp, quality)=
+export fun jpgFromBitmap(bmp, quality)=
 	let mkQuant0(quality) -> quant0 in
 	let mkQuant1(quality) -> quant1 in
 	let [

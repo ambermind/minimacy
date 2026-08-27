@@ -2,8 +2,6 @@
 // Copyright (c) 2022, Sylvain Huet, Ambermind
 // Minimacy (r) System
 
-export pngFromBitmap(bmp, alpha);;
-
 const PNG_MAGIC="\$89\$50\$4E\$47\$0D\$0A\$1A\$0A";;
 const _VALUES_PER_PIXEL_FROM_COLORTYPE={1, nil, 3, 1, 2, nil, 4};;
 
@@ -65,7 +63,7 @@ fun _pngMakeData(bmp, alpha)=
 	);;
 
 //-------------------- API
-fun pngFromBitmap(bmp, alpha)=	// fun Bitmap Bool -> Str
+export fun pngFromBitmap(bmp, alpha)=	// fun Bitmap Bool -> Str
 	if bmp<>nil then
 	let bitmapW(bmp) -> w in
 	let bitmapH(bmp) -> h in

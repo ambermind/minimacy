@@ -123,7 +123,7 @@ Type* compileSpecial(Compiler* c)
 		c->fmk->forceNumbers = backup;
 		return t;
 	}
-	if (!strcmp(c->parser->token, "integer"))
+	if (!strcmp(c->parser->token, "int"))
 	{
 		int backup = c->fmk->forceNumbers;
 		c->fmk->forceNumbers = FORCE_NUMBER_NONE;
@@ -131,7 +131,7 @@ Type* compileSpecial(Compiler* c)
 		c->fmk->forceNumbers = backup;
 		return t;
 	}
-	if (!strcmp(c->parser->token, "bigNum"))
+	if (!strcmp(c->parser->token, "big"))
 	{
 		int backup = c->fmk->forceNumbers;
 		c->fmk->forceNumbers = FORCE_NUMBER_BIGNUM;
@@ -161,7 +161,7 @@ Type* compileSpecial(Compiler* c)
 		c->fmk->forceModulo = moduloBackup;
 		return t;
 	}
-	if (!strcmp(c->parser->token, "modBarrett"))
+	if ((!strcmp(c->parser->token, "modBarrett"))||(!strcmp(c->parser->token, "modMontgomery")))
 	{
 		Locals* modulo;
 		Locals* mu;
@@ -169,6 +169,7 @@ Type* compileSpecial(Compiler* c)
 		LINT moduloBackup = c->fmk->forceModulo;
 		LINT muBackup = c->fmk->forceMu;
 		int backup = c->fmk->forceNumbers;
+		int barrett = !strcmp(c->parser->token, "modBarrett");
 		c->fmk->forceNumbers = FORCE_NUMBER_BIGNUM;
 
 		if (parserAssume(c, "(")) return NULL;
@@ -186,12 +187,31 @@ Type* compileSpecial(Compiler* c)
 		if (bc_byte_or_int(c, c->fmk->forceMu, OPslocb, OPsloc)) return NULL;
 
 		if (parserAssume(c, ")")) return NULL;
-		c->fmk->forceNumbers = FORCE_NUMBER_MODOPTI;
+		c->fmk->forceNumbers = barrett?FORCE_NUMBER_MOD_BARRETT: FORCE_NUMBER_MOD_MONTGOMERY;
 		if (!(t = compileExpression(c))) return NULL;
 		c->fmk->forceNumbers = backup;
 		c->fmk->forceModulo = moduloBackup;
 		c->fmk->forceMu = muBackup;
 		c->fmk->locals = localsBefore;
+		return t;
+	}
+	if (!strcmp(c->parser->token, "in"))
+	{
+		if (c->fmk->forceNumbers != FORCE_NUMBER_MOD_MONTGOMERY) return compileError(c, "\\in must be inside a \\modMontgomery expression\n");
+		if (!(t = compileExpression(c))) return NULL;
+		if (typeUnify(c, t, MM.BigNum)) return NULL;
+		if (bc_byte_or_int(c, c->fmk->forceModulo, OPrlocb, OPrloc)) return NULL;
+		if (bc_opcode(c, MM.bigMontgomeryForm)) return NULL;
+		return t;
+	}
+	if (!strcmp(c->parser->token, "out"))
+	{
+		if (c->fmk->forceNumbers != FORCE_NUMBER_MOD_MONTGOMERY) return compileError(c, "\\out must be inside a \\modMontgomery expression\n");
+		if (!(t = compileExpression(c))) return NULL;
+		if (typeUnify(c, t, MM.BigNum)) return NULL;
+		if (bc_byte_or_int(c, c->fmk->forceModulo, OPrlocb, OPrloc)) return NULL;
+		if (bc_byte_or_int(c, c->fmk->forceMu, OPrlocb, OPrloc)) return NULL;
+		if (bc_opcode(c, MM.bigMontgomeryRedc)) return NULL;
 		return t;
 	}
 	return compileError(c,"unknown special (found '%s')\n", compileToken(c));
@@ -332,10 +352,10 @@ Type* compileTerm(Compiler* c)
 	else if (isDecimal(c->parser->token))
 	{
 		LINT i;
-		if ((c->fmk->forceNumbers == FORCE_NUMBER_BIGNUM) || (c->fmk->forceNumbers == FORCE_NUMBER_MOD) || (c->fmk->forceNumbers == FORCE_NUMBER_MODOPTI))
+		if (c->fmk->forceNumbers&FORCE_COMMON_BIGNUM)
 		{
 			LINT global;
-			LB* res = bigAlloc(bignumFromDec(c->parser->token));
+			LB* res = bigAlloc(bigFromDec(c->parser->token));
 			if (!res) return NULL;
 			if (funMakerAddGlobal(c->fmk, res, &global)) return NULL;
 			if (bc_byte_or_int(c, global, OPconstb, OPconst)) return NULL;
@@ -363,11 +383,11 @@ Type* compileTerm(Compiler* c)
 		&&(isHexstring(c->parser->token+2)))
 	{
 		LINT i;
-		if ((c->fmk->forceNumbers == FORCE_NUMBER_BIGNUM) || (c->fmk->forceNumbers == FORCE_NUMBER_MOD) || (c->fmk->forceNumbers == FORCE_NUMBER_MODOPTI))
+		if (c->fmk->forceNumbers&FORCE_COMMON_BIGNUM)
 		{
 			LINT global;
 			LB* res;
-			res = bigAlloc(bignumFromHex(c->parser->token + 2));
+			res = bigAlloc(bigFromHex(c->parser->token + 2));
 			if (!res) return NULL;
 			if (funMakerAddGlobal(c->fmk, res, &global)) return NULL;
 			if (bc_byte_or_int(c, global, OPconstb, OPconst)) return NULL;

@@ -42,10 +42,8 @@ fun _pkcs1Decrypt(N, data, forPrivateKey, fexp)=
 	let bigSerialize(decoded, blockLen) -> block in
 	let strGet(block, 0) -> type in
 	if (!forPrivateKey && type==1)||(forPrivateKey && type==2) then	// no else, this returns nil when wrong header byte
-	(
-		for i=1;i<blockLen do if 0==strGet(block, i) then return strTail(block, i+1);
-		nil
-	);;
+	let strCharPos(block, 0, 1) -> i in
+	if i<>nil then strTail(block, i+1);;
 
 fun _pkcs1LoopEncrypt(N, data, i, blockLen, forPrivateKey, fexp)=
 	if i<strLength(data) then _pkcs1Encrypt(N, strSlice(data, i, blockLen), forPrivateKey, fexp)::_pkcs1LoopEncrypt(N, data, i+blockLen, blockLen, forPrivateKey, fexp);;
@@ -62,26 +60,16 @@ fun _pkcs1Process(N, data, forEncryption, forPrivateKey, fexp)=
 	strListConcat(if forEncryption<>0 then _pkcs1LoopEncrypt(N, data, 0, inputBlockLen, forPrivateKey, fexp)
 		else _pkcs1LoopDecrypt(N, data, 0, inputBlockLen, forPrivateKey, fexp));;
 
-fun pkcs1EncryptPub(N, exponent, data) = _pkcs1Process(N, data, 1, false, lambda(msg)=bigExpMod(msg, exponent, N));;
-fun pkcs1DecryptPub(N, exponent, data) = _pkcs1Process(N, data, 0, false, lambda(msg)=bigExpMod(msg, exponent, N));;
-fun pkcs1EncryptPriv(N, data, fexp)= _pkcs1Process(N, data, 1, true, fexp);;
-fun pkcs1DecryptPriv(N, data, fexp)= _pkcs1Process(N, data, 0, true, fexp);;
-
-fun pkcs1EncryptPubRsa(rsa, data)= pkcs1EncryptPub(rsaModulus(rsa), rsaPubExp(rsa), data);;
-fun pkcs1DecryptPubRsa(rsa, data)= pkcs1DecryptPub(rsaModulus(rsa), rsaPubExp(rsa), data);;
-fun pkcs1EncryptPrivRsa(rsa, data) = pkcs1EncryptPriv(rsaModulus(rsa), data, lambda(msg) = rsaComputePrivateExp(rsa, msg));;
-fun pkcs1DecryptPrivRsa(rsa, data) = pkcs1DecryptPriv(rsaModulus(rsa), data, lambda(msg) = rsaComputePrivateExp(rsa, msg));;
+fun pkcs1EncryptPubRsa(rsa, data) = _pkcs1Process(rsaModulus(rsa), data, 1, false, lambda(msg) = bigExpMod(msg,  rsaPubExp(rsa), rsaModulus(rsa)));;
+fun pkcs1DecryptPubRsa(rsa, data) = _pkcs1Process(rsaModulus(rsa), data, 0, false, lambda(msg) = bigExpMod(msg,  rsaPubExp(rsa), rsaModulus(rsa)));;
+fun pkcs1EncryptPrivRsa(rsa, data)= _pkcs1Process(rsaModulus(rsa), data, 1, true,  lambda(msg) = rsaComputePrivateExpAndCheck(rsa, msg));;
+fun pkcs1DecryptPrivRsa(rsa, data)= _pkcs1Process(rsaModulus(rsa), data, 0, true,  lambda(msg) = rsaComputePrivateExpAndCheck(rsa, msg));;
 
 fun rsaPkcs1Sign(rsa, data, magic, fHash)=
 	let strConcat(strFromHex(magic), call fHash(data)) -> hash in
 	pkcs1EncryptPrivRsa(rsa, hash);;
 
 fun rsaPkcs1SignatureCheck(rsa, data, signature, magic, fHash)=
-/*	echoLn "=======================rsaPkcs1SignatureCheck";
-	dump certificate;
-	hexDump data;
-	dump signature;
-*/
 	let strConcat(strFromHex(magic), call fHash(data)) -> hash in
 	if hash<>nil then
 	let pkcs1DecryptPubRsa(rsa, signature) -> decode in

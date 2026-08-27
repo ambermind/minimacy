@@ -49,6 +49,7 @@ extern unsigned char NativeDefsArgc[NATIVE_DEF_LENGTH];
 
 #define DEF_HIDDEN 0
 #define DEF_PUBLIC 1
+#define DEF_PENDING 2
 
 
 // fun bytecode (code>0)  : index=DEF_INDEX_BC, val=bytecode (LB*), type
@@ -150,7 +151,7 @@ Pkg* pkgImportByName(char* name);
 void pkgCleanCompileError(void);
 
 //void pkgSetStart(Pkg* pkg, LB* start);
-int pkgAddDef(Pkg* pkg, LB* name, Def* def);
+int pkgAddDef(Pkg* pkg, LB* name, Def* def, char public);
 Def* pkgFirstGet(Pkg* pkg, char* name);
 Def* pkgGet(Pkg* pkg, char* name, int followParent);
 void pkgRemoveDef(Def* def);

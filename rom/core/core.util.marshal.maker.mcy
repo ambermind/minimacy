@@ -2,10 +2,7 @@
 // Copyright (c) 2022, Sylvain Huet, Ambermind
 // Minimacy (r) System
 
-export marshalMaker(src);;
-
 use core.util.token;;
-
 
 sum MarshalMaker= typeM _ _, listM _, arrayM _, IntM, UintM, StrM, BoolM, FloatM, hashmapM _ _, tupleM _, sumM _ _, structM _ _,customM _;;
 
@@ -213,7 +210,7 @@ fun mMakeParse(p)=
 		]),
 		_ -> nil;;
 
-fun marshalMaker(src)=
+export fun marshalMaker(src)=
 	let mFull(src) -> declarations in strBuild([
 "use core.util.marshal;;\n
 /*

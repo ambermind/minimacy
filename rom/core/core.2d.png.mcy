@@ -2,14 +2,6 @@
 // Copyright (c) 2022, Sylvain Huet, Ambermind
 // Minimacy (r) System
 
-export pngDecodeOpen(src);;
-export pngW(png);;
-export pngH(png);;
-export pngIDAT(png);;
-export pngDepth(png);;
-export pngColorType(png);;
-export bitmapFromPng(src);;// fun Str -> Bitmap
-
 const DEBUG=false;;
 struct PngReader=[wP, hP, depthP, colorTypeP, compressP, filterP, interlacedP, valuesPerPixelP, paletteP, idatP, bmpP];;
 
@@ -185,15 +177,15 @@ fun _pngChunkReader(png, src, i, inputs)=
 
 
 //-------------------- API
-fun pngDecodeOpen(src)=	// fun Str -> Png
+export fun pngDecodeOpen(src)=	// fun Str -> Png
 	if strStartsWith(src, PNG_MAGIC) then
 	_pngChunkReader(nil, src, strLength(PNG_MAGIC), nil);;
 
-fun pngW(png)=png.wP;;
-fun pngH(png)=png.hP;;
-fun pngIDAT(png)=png.idatP;;
-fun pngDepth(png)=png.depthP;;
-fun pngColorType(png)=png.colorTypeP;;
+export fun pngW(png)=png.wP;;
+export fun pngH(png)=png.hP;;
+export fun pngIDAT(png)=png.idatP;;
+export fun pngDepth(png)=png.depthP;;
+export fun pngColorType(png)=png.colorTypeP;;
 
-fun bitmapFromPng(src)= (_pngFinalize(pngDecodeOpen(src))).bmpP;;// fun Str -> Bitmap
+export fun bitmapFromPng(src)= (_pngFinalize(pngDecodeOpen(src))).bmpP;;// fun Str -> Bitmap
 

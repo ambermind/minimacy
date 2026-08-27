@@ -4,12 +4,6 @@
 
 // to be used with: https://letmeknow.fr/fr/modules-d-extensions/2432-ecran-oled-i2c-128-x-64-pixel-096-pouce-652733145321.html
 
-export ssd1306Init(i2cPort, i2cSda, i2cScl);;
-export ssd1306Erase(oled, val);;
-export ssd1306Blit(oled, bmp, background);;
-export ssd1306BlitRaw(oled, data);;
-export ssd1306SetLock(lock);;
-
 use driver.generic.i2c;;
 
 struct Oled=[i2cO];;
@@ -50,12 +44,12 @@ const SSD1306_BLIT_INIT = SSD1306_PAGEADDR::0x00::0x07::SSD1306_COLUMNADDR::0x00
 
 var BlitCmdBuffer;;
 
-fun ssd1306SetLock(lock) = set I2cLock=lock;;
+export fun ssd1306SetLock(lock) = set I2cLock=lock;;
 
 fun ssd1306WriteCmds(i2cPort, cmds)=
 	for cmd in cmds do i2cWrite(i2cPort, I2C_ADDR, strConcat("\0", strInt8(cmd)));;
 
-fun ssd1306Erase(oled, val)=
+export fun ssd1306Erase(oled, val)=
 	let bytesCreate((128*64/8) + 1, val) -> bytes in
 	lockSync(I2cLock, (lambda ()=
 		bytesSet(bytes, 0, SSD1306_STARTLINE);
@@ -63,7 +57,7 @@ fun ssd1306Erase(oled, val)=
 		i2cWriteBytes(oled.i2cO, I2C_ADDR, bytes)
 	));;
 
-fun ssd1306BlitRaw(oled, data)=
+export fun ssd1306BlitRaw(oled, data)=
 	if BlitCmdBuffer==nil then set BlitCmdBuffer=bytesCreate((128*64/8) + 1, 0);
 	bytesSet(BlitCmdBuffer, 0, SSD1306_STARTLINE);
 	bytesCopy(BlitCmdBuffer, 1, data, 0, nil);
@@ -72,7 +66,7 @@ fun ssd1306BlitRaw(oled, data)=
 		i2cWriteBytes(oled.i2cO, I2C_ADDR, BlitCmdBuffer)
 	));;
 
-fun ssd1306Blit(oled, bmp, background)=
+export fun ssd1306Blit(oled, bmp, background)=
 	if BlitCmdBuffer==nil then set BlitCmdBuffer=bytesCreate((128*64/8) + 1, 0);
 	bytesSet(BlitCmdBuffer, 0, SSD1306_STARTLINE);
 	bitmapExportMonoVerticalBytes(bmp, BlitCmdBuffer, 1, background);
@@ -81,7 +75,7 @@ fun ssd1306Blit(oled, bmp, background)=
 		i2cWriteBytes(oled.i2cO, I2C_ADDR, BlitCmdBuffer)
 	));;
 
-fun ssd1306Init(i2cPort, i2cSda, i2cScl) =
+export fun ssd1306Init(i2cPort, i2cSda, i2cScl) =
 	lockSync(I2cLock, (lambda ()=
 		i2cInit(i2cPort, 1000000, i2cSda, i2cScl);
 		ssd1306WriteCmds(i2cPort,

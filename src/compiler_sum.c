@@ -13,25 +13,15 @@ Type* compileDefCons1(Compiler* c)
 		LB* consName;
 		LINT argc=0;
 		LINT pIndex;
-		LB* labelList;
-		LB* labelNext;
+
 		if ((!parserNext(c))||(!isLabel(c->parser->token)))
 			return compileError(c,"constructor name expected (found '%s')\n",compileToken(c));
 		pIndex = parserIndex(c);
-
-		labelList = exportLabelList(c, c->parser->token);
-		labelNext = labelList ? ARRAY_PNT(labelList, LIST_NXT) : NULL;
 
 		if (pkgFirstGet(c->pkg, c->parser->token)) return compileError(c,"'%s' already defined\n", compileToken(c));
 		consName=memoryAllocStr(c->parser->token,-1); if (!consName) return NULL;
 		while(parserNext(c)&& strcmp(c->parser->token, ",") && strcmp(c->parser->token, ";;"))
 		{
-			if (labelList) {
-				if (!labelNext) return compileError(c,"more arguments than in the export declaration\n");
-				if (strcmp(STR_START(ARRAY_PNT(labelNext, LIST_VAL)), c->parser->token))
-					return compileError(c,"argument name '%s' does not match with export declaration '%s'\n", c->parser->token, STR_START(ARRAY_PNT(labelNext, LIST_VAL)));
-				labelNext = ARRAY_PNT(labelNext, LIST_NXT);
-			}
 			// we accept label, label:Type
 			if (!isLabel(c->parser->token)) return compileError(c, "label expected (found '%s')\n", compileToken(c));
 			if (!parserNext(c)) return compileError(c, "':' or label expected (found '%s')\n", compileToken(c));
@@ -42,7 +32,6 @@ Type* compileDefCons1(Compiler* c)
 			TYPE_PUSH_NULL(typeAllocUndef());
 			argc++;
 		}
-		if (labelList && labelNext) return compileError(c,"less arguments than in the export declaration\n");
 		parserRewind(c);
 
 		if (argc)
@@ -59,7 +48,7 @@ Type* compileDefCons1(Compiler* c)
 		}
 		consDef->proto = 1;
 		defSetParser(consDef, c, pIndex);
-		if (pkgAddDef(c->pkg, consName, consDef)) return NULL;
+		if (pkgAddDef(c->pkg, consName, consDef, c->export)) return NULL;
 
 		if ((!parserNext(c))||(strcmp(c->parser->token,",")&&strcmp(c->parser->token,";;")))
 			return compileError(c,"',' or ';;' expected (found '%s')\n",compileToken(c));

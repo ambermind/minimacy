@@ -2,19 +2,6 @@
 // Copyright (c) 2022, Sylvain Huet, Ambermind
 // Minimacy (r) System
 
-// use this function for a simple polygon
-// 'points' is an array of vertices: array array Int
-// each vertice is an array of 2 integers
-// there order is either clockwise or counterclockwise
-// for example: {{250 30} {180 30} {40 300} {60 300} {200 150} {300 180}}
-export bitmapPolygon(bmp, points, color, blend);;
-
-// use this function when there are holes in your polygon
-// 'polygons' should be a list of simple polygons 
-// for example: {{250 30} {180 30} {40 300} {60 300} {200 150} {300 180}}:{{220 40} {180 80} {230 50}}:nil
-export bitmapPolygons(bmp, polygons, color, blend);;
-
-
 use core.util.insertsort;;
 
 const X=0;;
@@ -93,12 +80,20 @@ fun _edgesFromPoly(points)=
 	insertsort(edges, #cmpY);;
 
 //-------------API
-fun bitmapPolygon(bmp, points, color, blend)=
+// use this function for a simple polygon
+// 'points' is an array of vertices: array array Int
+// each vertice is an array of 2 integers
+// there order is either clockwise or counterclockwise
+// for example: {{250 30} {180 30} {40 300} {60 300} {200 150} {300 180}}
+export fun bitmapPolygon(bmp, points, color, blend)=
 	let _edgesFromPoly(points) -> edges in
 	let (head(edges)).yE -> yStart in
 	_polyScanline(bmp, color, blend, yStart, nil, edges);;
 
-fun bitmapPolygons(bmp, polygons, color, blend)=
+// use this function when there are holes in your polygon
+// 'polygons' should be a list of simple polygons 
+// for example: {{250 30} {180 30} {40 300} {60 300} {200 150} {300 180}}:{{220 40} {180 80} {230 50}}:nil
+export fun bitmapPolygons(bmp, polygons, color, blend)=
 	let doubleListCompress(listMap(polygons, #_edgesFromPoly)) -> edges in
 	let insertsort(edges, #cmpY) -> edges in
 	let (head(edges)).yE -> yStart in

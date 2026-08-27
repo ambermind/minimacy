@@ -18,4 +18,9 @@ void AESEncrypt(AesCtx* ctx, char* data);
 void AESDecrypt(AesCtx* ctx, char* data);
 void AESOutput(AesCtx* ctx, char* output);
 
+void aesGcmPrecompute(unsigned char* H, unsigned char* dst);
+void aesGcmMul(unsigned char* V, unsigned char* tAll, unsigned char* dst);
+void bytesMsbInc(unsigned char* V, int len);
+void aesGcmGhash(char* src, int len, unsigned char* tAll, unsigned char* Y);
+
 #endif //_AES_H_

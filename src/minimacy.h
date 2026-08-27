@@ -4,7 +4,7 @@
 #ifndef _MINIMACY_
 #define _MINIMACY_
 
-#define VERSION_MINIMACY "2.1.2"
+#define VERSION_MINIMACY "2.1.3"
 //#undef ON_WINDOWS
 //#define ON_NOTHING
 
@@ -230,7 +230,7 @@
 #define USE_HOST_ONLY_FUNCTIONS
 
 #define USE_MEMORY_C
-#define MEMORY_STATICS MEMORY_STATIC(0,1024*437);
+#define MEMORY_STATICS MEMORY_STATIC(0,1024*430);
 #endif
 
 #ifdef ON_RPI4

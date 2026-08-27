@@ -2,8 +2,6 @@
 // Copyright (c) 2022, Sylvain Huet, Ambermind
 // Minimacy (r) System
 
-export KeyCodes;;
-
 use driver.rpi4.usb;;
 use driver.rpi4.usb.hid;;
 
@@ -11,7 +9,7 @@ use driver.rpi4.usb.hid;;
 const DEBUG=false;;
 //const DEBUG=true;;
 
-var KeyCodes={
+export var KeyCodes={
 nil,	nil,	nil,	nil,	//0x00
 nil,	nil,	nil,	nil,	//0x01
 nil,	nil,	nil,	nil,	//0x02

@@ -4,11 +4,6 @@
 // TODO : clear the cache when (hashmapCount dns.cacheD)>XXX
 // TODO : possible race condition on dns.cacheD
 
-export dnsAddHost(domain, ip);;
-export dnsRequest(domain, cb);;
-export dnsSetServer(dns);;
-
-
 sum DnsCache= dnsIp _, dnsPending _;;
 
 struct Dns=[udpD, transactionD, cacheD];;
@@ -109,10 +104,10 @@ fun isIp(ip)=
 		if (c<>'.')&&((c<'0')||(c>'9')) then return false;
 	true;;
 
-fun dnsSetServer(dns)= if dns<>nil then set PUBLIC_DNS=dns;;
-fun dnsAddHost(domain, ip)= hashmapSet(_DnsHosts, domain, ip);;
+export fun dnsSetServer(dns)= if dns<>nil then set PUBLIC_DNS=dns;;
+export fun dnsAddHost(domain, ip)= hashmapSet(_DnsHosts, domain, ip);;
 
-fun dnsRequest(domain, cb)=
+export fun dnsRequest(domain, cb)=
 //echoLn ["dnsRequest " domain];
 	if cb<>nil then
 	let (lambda(x)= call cb(x);0) -> cb in	// this allows to pass a callback with any returned type and to store it in DnsCache structure

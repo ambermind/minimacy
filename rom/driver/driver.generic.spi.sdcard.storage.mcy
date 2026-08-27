@@ -4,14 +4,6 @@
 
 // to be used with: https://letmeknow.fr/fr/autres/2936-mini-module-carte-micro-sd-9052458557521.html
 
-export sdInit(spiPort, spiClk, spiMosi, spiMiso, spiCs);;
-export sdNbSectors(sd);;
-export sdSectorSize(sd);;
-export sdRead(sd, sector, nbSectors);;
-export sdWrite(sd, sector, data);;
-export sdSetLock(lock);;
-export sdDetect(sd);;
-
 use driver.generic.spi;;
 use driver.generic.gpio;;
 
@@ -73,7 +65,7 @@ const SPI_DATA_RESPONSE_MASK=0x1f;;
 
 var SdLock=lockCreate();;
 
-fun sdSetLock(lock) = set SdLock=lock;;
+export fun sdSetLock(lock) = set SdLock=lock;;
 
 fun readyWait(sd) =
 	let timeMs() -> t0 in
@@ -177,7 +169,7 @@ fun reset(sd)=
 	for i=0;i<20 do spiWriteByte(sd.spiPortS, TOKEN_DUMMY);
 	true;;
 
-fun sdInit(spiPort, spiClk, spiMosi, spiMiso, spiCs)=
+export fun sdInit(spiPort, spiClk, spiMosi, spiMiso, spiCs)=
 	lockSync(SdLock, lambda ()=
 		if DEBUG then echoLn "> SD: sdInit";
 		spiInit(spiPort, SPI_LOW_FREQ, spiClk, spiMosi, spiMiso);
@@ -199,8 +191,8 @@ fun sdInit(spiPort, spiClk, spiMosi, spiMiso, spiCs)=
 		)
 	);;
 
-fun sdSectorSize(sd) = sd.sectorSizeS;;
-fun sdNbSectors(sd) = sd.nbSectorsS;;
+export fun sdSectorSize(sd) = sd.sectorSizeS;;
+export fun sdNbSectors(sd) = sd.nbSectorsS;;
 
 fun spiInside(sd, f) =
 	lockSync(SdLock, lambda ()=
@@ -225,7 +217,7 @@ fun _sdReadLoop(sd, start, nbSectors, i)=
 	let _sdReadSector(sd, start+i) -> data in
 	if data<>nil then data::_sdReadLoop(sd, start, nbSectors, i+1);;
 
-fun sdRead(sd, sector, nbSectors)= 
+export fun sdRead(sd, sector, nbSectors)= 
 //	if DEBUG then echoLn strFormat("sdRead * *",hexFromInt (sector), nbSectors);
 	if nbSectors>=1 then
 	let if sd.highCapacityS then sector else sector*sd.sectorSizeS -> start in
@@ -247,7 +239,7 @@ fun _sdWriteSector(sd, token, data, offset)=
 	if readyWait(sd) then
 	result==SPI_DATA_ACCEPTED;;
 
-fun sdWrite(sd, sector, data)= 
+export fun sdWrite(sd, sector, data)= 
 	let bytesLength(data)>>9 -> nbSectors in
 	let if DEBUG then echoLn strFormat("sdWrite * *", hexFromInt(sector), nbSectors) -> _ in
 //	let if DEBUG then hexDumpBytes(data) -> _ in
@@ -277,5 +269,5 @@ fun sdWrite(sd, sector, data)=
 		)
 	);;
 
-fun sdDetect(sd)=
+export fun sdDetect(sd)=
 	spiInside(sd, lambda()= nil<>sdCmd(sd, CMD0_GO_IDLE_STATE, 0x0, false));;

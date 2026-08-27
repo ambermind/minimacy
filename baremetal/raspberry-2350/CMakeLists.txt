@@ -118,6 +118,9 @@ target_sources(minimacy PRIVATE
 	../../src/util_2d.c
 	../../src/util_ansi_str.c
 	../../src/util_ansi_math.c
+	../../src/util_bignum.c
+	../../src/util_bignum_ec.c
+	../../src/util_bignum_opti.c
 	../../src/util_buffer.c
 	../../src/util_convert.c
 	../../src/util_hashmap.c

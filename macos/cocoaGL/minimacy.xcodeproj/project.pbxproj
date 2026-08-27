@@ -77,11 +77,14 @@
 		CD0DBF552996CEC300C9121C /* hw_fs_romdisk.c in Sources */ = {isa = PBXBuildFile; fileRef = CD0DBF4D2996CEC300C9121C /* hw_fs_romdisk.c */; };
 		CD0DBF572996CEC300C9121C /* hw_fs.c in Sources */ = {isa = PBXBuildFile; fileRef = CD0DBF4F2996CEC300C9121C /* hw_fs.c */; };
 		CD0DBF582996CEC300C9121C /* hw_fs_ansi.c in Sources */ = {isa = PBXBuildFile; fileRef = CD0DBF502996CEC300C9121C /* hw_fs_ansi.c */; };
+		CD21D199301FDD6A00D6F6F8 /* util_bignum.c in Sources */ = {isa = PBXBuildFile; fileRef = CD21D197301FDD6A00D6F6F8 /* util_bignum.c */; };
+		CD21D19A301FDD6A00D6F6F8 /* util_bignum_opti.c in Sources */ = {isa = PBXBuildFile; fileRef = CD21D198301FDD6A00D6F6F8 /* util_bignum_opti.c */; };
 		CD394AA0290A87D1007DA0CE /* system_audio.c in Sources */ = {isa = PBXBuildFile; fileRef = CD394A9F290A87D1007DA0CE /* system_audio.c */; };
 		CD394AA2290A88C2007DA0CE /* AudioToolbox.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = CD394AA1290A88C2007DA0CE /* AudioToolbox.framework */; platformFilter = maccatalyst; };
 		CD4EB62D2D4F708500394323 /* system_ble.m in Sources */ = {isa = PBXBuildFile; fileRef = CD4EB62C2D4F708500394323 /* system_ble.m */; };
 		CD5CC43C28B53D3600935E7B /* system_inflate.c in Sources */ = {isa = PBXBuildFile; fileRef = CD5CC43528B53D3500935E7B /* system_inflate.c */; };
 		CD5CC43F28B53D3600935E7B /* system_deflate.c in Sources */ = {isa = PBXBuildFile; fileRef = CD5CC43928B53D3600935E7B /* system_deflate.c */; };
+		CD76131A303B45D5006365FA /* util_bignum_ec.c in Sources */ = {isa = PBXBuildFile; fileRef = CD761319303B45D5006365FA /* util_bignum_ec.c */; };
 		CD868C4F2DBBD5B300D631FC /* crypto_checksum.c in Sources */ = {isa = PBXBuildFile; fileRef = CD868C4E2DBBD5B300D631FC /* crypto_checksum.c */; };
 		CD8B4FDA2D6DC0C900BC57C5 /* crypto_hash.c in Sources */ = {isa = PBXBuildFile; fileRef = CD8B4FD82D6DC0C900BC57C5 /* crypto_hash.c */; };
 		CDC85C4D28F6EEA700AC8AF0 /* topLevel.mcy in Resources */ = {isa = PBXBuildFile; fileRef = CDC85C4C28F6EEA700AC8AF0 /* topLevel.mcy */; };
@@ -204,6 +207,9 @@
 		CD0DBF4F2996CEC300C9121C /* hw_fs.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; name = hw_fs.c; path = ../../../src/hw_fs.c; sourceTree = "<group>"; };
 		CD0DBF502996CEC300C9121C /* hw_fs_ansi.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; name = hw_fs_ansi.c; path = ../../../src/hw_fs_ansi.c; sourceTree = "<group>"; };
 		CD0DBF512996CEC300C9121C /* hw_fs.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = hw_fs.h; path = ../../../src/hw_fs.h; sourceTree = "<group>"; };
+		CD21D196301FDD6A00D6F6F8 /* util_bignum.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = util_bignum.h; path = /Users/funfoo/minimacy/src/util_bignum.h; sourceTree = "<absolute>"; };
+		CD21D197301FDD6A00D6F6F8 /* util_bignum.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; name = util_bignum.c; path = /Users/funfoo/minimacy/src/util_bignum.c; sourceTree = "<absolute>"; };
+		CD21D198301FDD6A00D6F6F8 /* util_bignum_opti.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; name = util_bignum_opti.c; path = /Users/funfoo/minimacy/src/util_bignum_opti.c; sourceTree = "<absolute>"; };
 		CD394A9E290A87D1007DA0CE /* system_audio.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = system_audio.h; path = ../../../src/system_audio.h; sourceTree = "<group>"; };
 		CD394A9F290A87D1007DA0CE /* system_audio.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; name = system_audio.c; path = ../../../src/system_audio.c; sourceTree = "<group>"; };
 		CD394AA1290A88C2007DA0CE /* AudioToolbox.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = AudioToolbox.framework; path = System/Library/Frameworks/AudioToolbox.framework; sourceTree = SDKROOT; };
@@ -212,6 +218,7 @@
 		CD5CC43528B53D3500935E7B /* system_inflate.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; name = system_inflate.c; path = ../../../src/system_inflate.c; sourceTree = "<group>"; };
 		CD5CC43628B53D3500935E7B /* system_inflate.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = system_inflate.h; path = ../../../src/system_inflate.h; sourceTree = "<group>"; };
 		CD5CC43928B53D3600935E7B /* system_deflate.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; name = system_deflate.c; path = ../../../src/system_deflate.c; sourceTree = "<group>"; };
+		CD761319303B45D5006365FA /* util_bignum_ec.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; name = util_bignum_ec.c; path = /Users/funfoo/minimacy/src/util_bignum_ec.c; sourceTree = "<absolute>"; };
 		CD868C4D2DBBD5B300D631FC /* crypto_checksum.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = crypto_checksum.h; path = ../../../src/crypto_checksum.h; sourceTree = "<group>"; };
 		CD868C4E2DBBD5B300D631FC /* crypto_checksum.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; name = crypto_checksum.c; path = ../../../src/crypto_checksum.c; sourceTree = "<group>"; };
 		CD8B4FD32D6DBFE400BC57C5 /* system_serial.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = system_serial.h; path = ../../../src/system_serial.h; sourceTree = "<group>"; };
@@ -383,6 +390,10 @@
 				CDF77C612C8AF362005A921C /* util_ansi_math.c */,
 				CDF77C602C8AF362005A921C /* util_ansi_str.c */,
 				CDF77C632C8AF362005A921C /* util_ansi.h */,
+				CD21D196301FDD6A00D6F6F8 /* util_bignum.h */,
+				CD21D197301FDD6A00D6F6F8 /* util_bignum.c */,
+				CD761319303B45D5006365FA /* util_bignum_ec.c */,
+				CD21D198301FDD6A00D6F6F8 /* util_bignum_opti.c */,
 				CD0A995C284A3BAB00A51904 /* util_buffer.c */,
 				CD0A9963284A3BAB00A51904 /* util_buffer.h */,
 				CD0A9987284A3BAC00A51904 /* util_convert.c */,
@@ -493,6 +504,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				CD0A99D8284A3BAD00A51904 /* compiler_instances.c in Sources */,
+				CD76131A303B45D5006365FA /* util_bignum_ec.c in Sources */,
 				CD0A99BA284A3BAD00A51904 /* compiler_step3.c in Sources */,
 				CD8B4FDA2D6DC0C900BC57C5 /* crypto_hash.c in Sources */,
 				CDF77C682C8AF362005A921C /* system_serial.c in Sources */,
@@ -536,6 +548,8 @@
 				CD0A99B6284A3BAD00A51904 /* util_buffer.c in Sources */,
 				CD0A99C7284A3BAD00A51904 /* system.c in Sources */,
 				CD0A99AD284A3BAD00A51904 /* system_worker.c in Sources */,
+				CD21D199301FDD6A00D6F6F8 /* util_bignum.c in Sources */,
+				CD21D19A301FDD6A00D6F6F8 /* util_bignum_opti.c in Sources */,
 				CD0A99C9284A3BAD00A51904 /* hw.c in Sources */,
 				CD0A99B7284A3BAD00A51904 /* util_hashmap.c in Sources */,
 				CD024CC02D5B5C65007A1A72 /* system_location.m in Sources */,

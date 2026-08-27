@@ -2,14 +2,6 @@
 // Copyright (c) 2022, Sylvain Huet, Ambermind
 // Minimacy (r) System
 
-export pi4SdInit();;
-export pi4SdCID();;
-export pi4SdCSD();;
-export pi4SdNbSectors();;
-export pi4SdSectorSize();;
-export pi4SdRead(sector, nbSectors);;
-export pi4SdWrite(sector, data);;
-
 const DEBUG=false;;
 const MMIO_BASE = 0xFE000000;;
 
@@ -190,7 +182,7 @@ fun _read128Response ()=
 		strFromBytes(r128);
 	);;
 
-fun pi4SdInit ()=
+export fun pi4SdInit ()=
 	if DEBUG then echoLn "> pi4SdInit";
 	_gpioPudClk(47, 0);
 	for i=48;i<=53 do _gpioPudClk(i, 7);
@@ -278,7 +270,7 @@ fun _pi4SdRead(buffer, start, lba, num)=
 		
 	);;
 
-fun pi4SdRead(sector, nbSectors)=
+export fun pi4SdRead(sector, nbSectors)=
 	let bytesCreate(512*nbSectors, 0) -> buffer in
 	let _pi4SdRead(buffer, 0, sector, nbSectors) -> len in
 	bytesSlice(buffer, 0, len);;
@@ -294,7 +286,7 @@ fun _storageWriteLoop(buffer, start, lba, num)=
 		512+_storageWriteLoop(buffer, start+512, lba+1, num-1)
 	);;
 
-fun pi4SdWrite(sector, data)=
+export fun pi4SdWrite(sector, data)=
 	//	if DEBUG then echoLn strFormat "> pi4SdWrite * *" sector bytesLength data;
 	let bytesLength(data)>>9 -> nbSectors in
 	if (nbSectors>=1) && !bitTest(bytesLength(data), 511) then
@@ -312,7 +304,7 @@ fun pi4SdWrite(sector, data)=
 		
 	);;
 
-fun pi4SdSectorSize()= SectorSize;;
-fun pi4SdNbSectors()= NbSectors;;
-fun pi4SdCID()= CID;;
-fun pi4SdCSD()= CSD;;
+export fun pi4SdSectorSize()= SectorSize;;
+export fun pi4SdNbSectors()= NbSectors;;
+export fun pi4SdCID()= CID;;
+export fun pi4SdCSD()= CSD;;

@@ -2,24 +2,16 @@
 // Copyright (c) 2022, Sylvain Huet, Ambermind
 // Minimacy (r) System
 
-export shellServerStart(serverKey, serverKeyPassword, localIp, localPort, fCheckAuth, fNotify);;
-export shellServerSetIdleTimeout(shellServer, idleTimeout);;
-export shellServerSetMaxConnections(shellServer, maxConnections, evictionTimeout);;
-export shellServerOnEvent(h, fNotify);;
-export shellServerSendData(h, data);;
-export shellServerClose(h);;
-export SSH_SHELL_TERM, SSH_SHELL_EXEC;;
-
 use core.net.ssh;;
 use core.crypto.key;;
 
-extend SSH_NOTIFICATIONS with SSH_SHELL_TERM, SSH_SHELL_EXEC;;
+export extend SSH_NOTIFICATIONS with SSH_SHELL_TERM, SSH_SHELL_EXEC;;
 
 struct SSH_shellServer=[srvS];;
 
 struct SSH_shellServerSide= SSH + [channelS, fNotifyEventS];;
 
-fun shellServerOnEvent(h, fNotify)= set h.fNotifyEventS=(lambda(code, data) = call fNotify(h, code, data);0);;
+export fun shellServerOnEvent(h, fNotify)= set h.fNotifyEventS=(lambda(code, data) = call fNotify(h, code, data);0);;
 
 fun shellServerNotifyEvent(h, code, data)=
 	if SSH_DEBUG then echoLn strFormat("> shellServerNotifyEvent code *", code);
@@ -53,7 +45,7 @@ fun execStart(h)=
 		)
 	));;
 
-fun shellServerStart(serverKey, serverKeyPassword, localIp, localPort, fCheckAuth, fNotify)= 
+export fun shellServerStart(serverKey, serverKeyPassword, localIp, localPort, fCheckAuth, fNotify)= 
 	let keyFromPEM(serverKey, serverKeyPassword) -> serverKey in
 	let tcpSrvCreate(localIp, localPort) -> tcpSrv in
 	if tcpSrv==nil then void (if SSH_DEBUG then echoLn strFormat("> UNABLE TO START TCP SERVER ON *:*", localIp, localPort))
@@ -74,8 +66,8 @@ fun shellServerStart(serverKey, serverKeyPassword, localIp, localPort, fCheckAut
 		[srvS=tcpSrv]
 	);;
 
-fun shellServerSetIdleTimeout(shellServer, idleTimeout)=tcpSrvSetIdleTimeout(shellServer.srvS, idleTimeout);;
-fun shellServerSetMaxConnections(shellServer, maxConnections, evictionTimeout)=tcpSrvSetMaxConnections(shellServer.srvS, maxConnections, evictionTimeout);;
+export fun shellServerSetIdleTimeout(shellServer, idleTimeout)=tcpSrvSetIdleTimeout(shellServer.srvS, idleTimeout);;
+export fun shellServerSetMaxConnections(shellServer, maxConnections, evictionTimeout)=tcpSrvSetMaxConnections(shellServer.srvS, maxConnections, evictionTimeout);;
 
-fun shellServerSendData(h, data) = sshSendChannelData(h.channelS, data);;
-fun shellServerClose(h) = sshSendChannelClose(h.channelS);;
+export fun shellServerSendData(h, data) = sshSendChannelData(h.channelS, data);;
+export fun shellServerClose(h) = sshSendChannelClose(h.channelS);;

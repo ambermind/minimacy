@@ -28,7 +28,7 @@ struct FunMaker
 	LINT breakList;
 	LINT continueList;
 	LINT forceModulo;
-	LINT forceMu;
+	LINT forceMu;	// Barrett reduction or Montgomery R-inv
 	int forceNumbers;
 };
 
@@ -69,8 +69,9 @@ struct Compiler
 	int nbDerivations;
 	Parser* parser;	// current parser
 	Parser* mainParser;	// main parser (only main parser may include files)
-	LB* exports;
 	Def* def0;
+	char export;
+	char hasExport;
 };
 
 #define COMPILER_ERR_SN -1
@@ -80,11 +81,14 @@ struct Compiler
 #define BC_JUMP_SIZE 3
 #define LOCALS_MAX_NUMBER 255
 
-#define FORCE_NUMBER_NONE 0
-#define FORCE_NUMBER_FLOAT 1
-#define FORCE_NUMBER_BIGNUM 2
-#define FORCE_NUMBER_MOD 3
-#define FORCE_NUMBER_MODOPTI 4
+#define FORCE_NUMBER_NONE           0x00
+#define FORCE_NUMBER_FLOAT          0x01
+#define FORCE_NUMBER_BIGNUM         0x02
+#define FORCE_NUMBER_MOD            0x04
+#define FORCE_NUMBER_MOD_BARRETT    0x08
+#define FORCE_NUMBER_MOD_MONTGOMERY 0x10
+#define FORCE_COMMON_BIGNUM         0x1e	// all bignums
+#define FORCE_COMMON_MOD            0x1c	// all modulos
 
 #define BC_ARGS(bc) (((LINT*)STR_START(bc))[0])
 #define BC_LOCALS(bc) (((LINT*)STR_START(bc))[1])
@@ -98,10 +102,11 @@ struct Compiler
 #define INSTANCE_POSITION 3
 #define INSTANCE_NEXT 4
 
-#define FUN_START_NAME "0000"
+#define INSTANCE_TAG_IDLE 0
+#define INSTANCE_TAG_PROCESS 1
+#define INSTANCE_TAG_LOOP 2
 
-LB* exportLabelList(Compiler* c, char* name);
-int exportLabelListIsSingle(Compiler* c, char* name);
+#define FUN_START_NAME "0000"
 
 int funMakerInit(Compiler *c,Locals* locals, Locals* typeLabels, LINT level, Def* def, Def* defForInstances);
 void funMakerRelease(Compiler *c);

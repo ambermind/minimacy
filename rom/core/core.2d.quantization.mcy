@@ -2,12 +2,6 @@
 // Copyright (c) 2022, Sylvain Huet, Ambermind
 // Minimacy (r) System
 
-export quantifyFrame(quantifiedOctree, paletteMaxLength, frame);;
-export paletteFromQuantization(quantifiedOctree);;
-export paletteProject(aPalette, paletteOctree, rgb);;
-export bitmapPalettize(frame, paletteOctree, aPalette);;
-export quantization(bmp, paletteMaxLength);;
-
 // we use an octree with leafs having 1 or 2 colors. Each time a new color is added, if we exceed the palette size,
 // we fusion the deepest 2-colors leaf and smallest distance
 // Maths prove that there is always a 2-colors leaf at the deepest level of the octree 
@@ -235,7 +229,7 @@ fun _ocDump(t, depth, x, dx, y, dy, z, dz)=
 
 fun octreeDump(t)= echoLn strFormat("dump nb=* proximity=*", _ocNb(t), _ocProximity(t)) ; _ocDump(t, nil, 0, 256, 0, 256, 0, 256); t;;
 
-fun quantifyFrame(quantifiedOctree, paletteMaxLength, frame)=
+export fun quantifyFrame(quantifiedOctree, paletteMaxLength, frame)=
 	let bitmapW(frame) -> w in
 	let bitmapH(frame) -> h in
 	(
@@ -250,16 +244,16 @@ fun quantifyFrame(quantifiedOctree, paletteMaxLength, frame)=
 			);
 		quantifiedOctree
 	);;
-fun paletteFromQuantization(quantifiedOctree)=
+export fun paletteFromQuantization(quantifiedOctree)=
 	let fifoCreate() -> fifo in
 	(
 		set quantifiedOctree=ocPalette(quantifiedOctree, fifo);	// this will attach a palette index to each color
 		[quantifiedOctree, arrayFromList(fifoList(fifo))]
 	);;
 
-fun paletteProject(aPalette, paletteOctree, rgb)=ocGet(aPalette, paletteOctree, 0, 256, 0, 256, 0, 256, rgb&0xffffff, nil);;	// 256: because each component is 8 bits
+export fun paletteProject(aPalette, paletteOctree, rgb)=ocGet(aPalette, paletteOctree, 0, 256, 0, 256, 0, 256, rgb&0xffffff, nil);;	// 256: because each component is 8 bits
 
-fun bitmapPalettize(frame, paletteOctree, aPalette)=
+export fun bitmapPalettize(frame, paletteOctree, aPalette)=
 	let bitmapW(frame) -> w in
 	let bitmapH(frame) -> h in
 	let bytesCreate(w*h, 0) -> output in
@@ -271,7 +265,7 @@ fun bitmapPalettize(frame, paletteOctree, aPalette)=
 		strFromBytes(output)
 	);;
 
-fun quantization(bmp, paletteMaxLength)=
+export fun quantization(bmp, paletteMaxLength)=
 	let quantifyFrame(nil, paletteMaxLength, bmp) -> quantifiedOctree in
 	let paletteFromQuantization(quantifiedOctree) -> [paletteOctree, aPalette] in
 	let bitmapPalettize(bmp, paletteOctree, aPalette) -> palettized in

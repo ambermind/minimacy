@@ -97,18 +97,18 @@ fun parseShortList(data, i, end)= if i<end then strSlice(data, i, 2)::parseShort
 fun parseByteList(data, i, end)= if i<end then strRead8(data, i)::parseByteList(data, i+1, end);;
 
 fun _structFromEc(ec) =
-	let ecCreate(ec) -> key in
+	let ecKeyCreate(ec) -> key in
 	[
-		publicKeyC= ecKeyPubStr(key),
-		dhC= lambda(pub)= ecEcdhStr(key, pub)
+		publicKeyC= ecKeyPublic(key),
+		dhC= lambda(pub)= ecEcdh(key, pub)
 	];;
 
 fun makeCurve(curveInfo)=
 //echoLn ["curveInfo ", hexFromInt curveInfo];
 	let match curveInfo with
-		TLS_x25519 -> let x25519KeyPair(nil) -> privateKey in
+		TLS_x25519 -> let x25519Create() -> privateKey in
 			[
-				publicKeyC=  x25519KeyPub(privateKey),
+				publicKeyC=  x25519Public(privateKey),
 				dhC=lambda(pub)= x25519Ecdh(privateKey, pub)
 			],
 		TLS_secp256r1 -> _structFromEc(ecSecp256r1()),

@@ -2,8 +2,6 @@
 // Copyright (c) 2022, Sylvain Huet, Ambermind
 // Minimacy (r) System
 
-export pi4EthInit();;
-
 const DEBUG=false;;
 
 const BASE_BCM54213=0xFD580000;;
@@ -495,7 +493,7 @@ fun _netActivate(eth)=
 	streamSetWritable(eth, true);
 	Network<eth;;	// cast to Network
 
-fun pi4EthInit()=
+export fun pi4EthInit()=
 	echoLn "> Eth: init";
 	if _pi4EthInit() then
 	let [framesE=fifoCreate()] -> eth in (

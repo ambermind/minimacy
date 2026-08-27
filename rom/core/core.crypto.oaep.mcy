@@ -62,8 +62,8 @@ fun _oaepDecrypt(N, data, fexp)=
 		let _oaepMaskGenerator(strLeftBytes(block, _HASHLEN), blockLen-_HASHLEN) -> mask in
 			bytesXor(block, _HASHLEN, mask, 0, nil);
 		if sha256("")==bytesSliceOfStr(block, _HASHLEN, _HASHLEN) then
-		for i=_HASHLEN*2;i<blockLen do if 0x01==bytesGet(block, i) then return bytesSliceOfStr(block, i+1, nil);
-		nil
+		let bytesCharPos(block, 0x01, _HASHLEN*2) -> i in
+		if i<>nil then bytesSliceOfStr(block, i+1, nil)
 	);;
 
 fun _oaepLoopEncrypt(N, data, i, blockLen, fexp)=

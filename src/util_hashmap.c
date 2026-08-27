@@ -75,7 +75,7 @@ LINT hashmapComputeBignum(LINT nbits, bignum key)
 
 	LINT i;
 	LINT result = key->sign;
-	LINT len = key->len * sizeof(uint);
+	LINT len = key->len * sizeof(bigword);
 	char* p = (char*)key->data;
 	for (i = 0; i < len; i++)
 	{

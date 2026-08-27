@@ -165,14 +165,14 @@ Def* defAlloc(LINT code,LINT index,LW val,int valType,Type* type)
 	d->type=type;
 	d->name=NULL;
 	d->proto = 0;
-	d->tagged = 0;
+	d->tagged = INSTANCE_TAG_IDLE;
 	d->instances = NULL;
 	d->parent = NULL;
 	d->dI = d->dCI = 0;
 
 	d->parser=NULL;
 	d->parserIndex = 0;
-	d->public = DEF_PUBLIC;
+	d->public = DEF_PENDING;
 	d->next=NULL;
 	defSet(d,val,valType);
 	return d;
@@ -261,7 +261,7 @@ char* pkgName(Pkg* pkg)
 	return STR_START(pkg->name);
 }
 
-int pkgAddDef(Pkg* pkg, LB* name, Def* d)
+int pkgAddDef(Pkg* pkg, LB* name, Def* d, char public)
 {
 	int k;
 //	PRINTF(LOG_DEV,"def '%s' -> %x\n",STR_START(name),(LINT)d);
@@ -269,6 +269,7 @@ int pkgAddDef(Pkg* pkg, LB* name, Def* d)
 	d->header.pkg = pkg;
 	if ((k = hashmapDictAdd(pkg->defs, name, (LB*)d))) return k;
 	if (name && compileFunctionIsPrivate(STR_START(name))) d->public = DEF_HIDDEN;
+	else d->public = public;
 	d->next = pkg->first;
 	pkg->first = d;
 	return 0;
@@ -360,7 +361,7 @@ Def* pkgGet(Pkg* pkg, char* name, int followParent)
 			if ((!p)&&(pkg==MM.system)) p=(LB*)systemFakeNative(name);
 			if (p) {
 				Def* d = (Def*)p;
-				if (d->public!= DEF_HIDDEN) return d;
+				if (d->public== DEF_PUBLIC) return d;
 			}
 		}
 		if (!list) return NULL;
@@ -608,7 +609,7 @@ Def* pkgAddType(Pkg *pkg,char* name)
 	type=typeAlloc(TYPECODE_PRIMARY,NULL,0); if (!type) return NULL;
 	d=defAlloc(DEF_CODE_TYPE,0,NIL,VAL_TYPE_PNT, type); if (!d) return NULL;
 	type->def = d;
-	if (pkgAddDef(pkg, pname, d)) return NULL;
+	if (pkgAddDef(pkg, pname, d, DEF_PENDING)) return NULL;
 	memoryLeaveSafe();
 //	PRINTF(LOG_DEV,"Native Type: %s\n", name);
 	return d;
@@ -634,7 +635,8 @@ Def* pkgAddOpcodeStr(Pkg* pkg, char* name, LINT opcode, char* typeStr)
 		return NULL;
 	}
 	d = defAlloc(type->nb - 1, DEF_INDEX_OPCODE, VAL_FROM_PNT(value), VAL_TYPE_PNT, type); if (!d) return NULL;
-	if (pkgAddDef(pkg, pname, d)) return NULL;
+	if (pkgAddDef(pkg, pname, d, DEF_PENDING)) return NULL;
+	d->public = DEF_PUBLIC;
 	memoryLeaveSafe();
 	return d;
 }
@@ -652,7 +654,7 @@ Def* pkgAddConstStr(Pkg* pkg, char* name, LW value, int valType, char* typeStr)
 		return NULL;
 	}
 	d = defAlloc(DEF_CODE_CONST, 0, value, valType, type); if (!d) return NULL;
-	if (pkgAddDef(pkg, pname, d)) return NULL;
+	if (pkgAddDef(pkg, pname, d, DEF_PENDING)) return NULL;
 	memoryLeaveSafe();
 	return d;
 }
@@ -666,7 +668,7 @@ Def* pkgAddConst(Pkg *pkg,char* name,LW value,int valType, Type* type)
 	memoryEnterSafe();
 	pname=memoryAllocStr(name,-1); if (!pname) return NULL;
 	d = defAlloc(DEF_CODE_CONST, 0, value, valType, type); if (!d) return NULL;
-	if (pkgAddDef(pkg, pname, d)) return NULL;
+	if (pkgAddDef(pkg, pname, d, DEF_PENDING)) return NULL;
 	memoryLeaveSafe();
 	return d;
 }
@@ -684,7 +686,7 @@ Def* pkgAddSum(Pkg *pkg,char* name)
 	mainType=typeAlloc(TYPECODE_PRIMARY, NULL,0); if (!mainType) return NULL;
 	defType=defAlloc(DEF_CODE_SUM,0,NIL, VAL_TYPE_PNT, mainType); if (!defType) return NULL;
 	mainType->def = defType;
-	if (pkgAddDef(pkg, pname, defType)) return NULL;	// this will also set defType->name
+	if (pkgAddDef(pkg, pname, defType, DEF_PENDING)) return NULL;	// this will also set defType->name
 	memoryLeaveSafe();
 	return defType;
 }
@@ -701,7 +703,7 @@ Def* pkgAddCons(Pkg *pkg,char* name,Def* defType,Type* consType)
 	defSet(defType,VAL_FROM_PNT((LB*)defCons),VAL_TYPE_PNT);
 	defCons->parent = defType;
 
-	if (pkgAddDef(pkg, pname, defCons)) return NULL;	// this will also set defType->name
+	if (pkgAddDef(pkg, pname, defCons, DEF_PENDING)) return NULL;	// this will also set defType->name
 	memoryLeaveSafe();
 	return defCons;
 }
@@ -717,7 +719,7 @@ Def* pkgAddCons0(Pkg* pkg, char* name, Def* defType)
 	defSet(defType,VAL_FROM_PNT((LB*)defCons),VAL_TYPE_PNT);
 	defCons->parent = defType;
 
-	if (pkgAddDef(pkg, pname, defCons)) return NULL;	// this will also set defType->name
+	if (pkgAddDef(pkg, pname, defCons, DEF_PENDING)) return NULL;	// this will also set defType->name
 	memoryLeaveSafe();
 	return defCons;
 }

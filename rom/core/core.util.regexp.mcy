@@ -2,16 +2,7 @@
 // Copyright (c) 2022, Sylvain Huet, Ambermind
 // Minimacy (r) System
 
-export RegExp;;
-// test regexp at a given position i. Return all the patterns starting at this position.
-export regexpTest(src, pattern, i);;
-
-// search for the next matching position "i" and return this position and all the patterns starting at this position
-export regexpNext(src, pattern, i);;
-export regexpCreate(str);;
-
-
-sum RegExp= mRepeat _ _ _ _, mAny _, mStr _ _, mInTable _ _, mNotInTable _ _, mOr _ _, mDone, mEOF, mBegin _;;
+export sum RegExp= mRepeat _ _ _ _, mAny _, mStr _ _, mInTable _ _, mNotInTable _ _, mOr _ _, mDone, mEOF, mBegin _;;
 
 fun fMATCH_ALL ()= bytesCreate(256, 0);;
 fun fMATCH_CHAR(c, table) = bytesSet(table, c, 1);;
@@ -184,7 +175,7 @@ fun _rOr(tokens, next)=
 
 //--------------API
 // test regexp at a given position i. Return all the patterns starting at this position.
-fun regexpTest(src, pattern, i)=
+export fun regexpTest(src, pattern, i)=
 	let fifoCreate() -> fifo in
 	(
 		_matchCheck(src, pattern, i, (lambda(j)= fifoIn(fifo, strSlice(src, i, j-i))));
@@ -192,13 +183,13 @@ fun regexpTest(src, pattern, i)=
 	);;
 
 // search for the next matching position "i" and return this position and all the patterns starting at this position
-fun regexpNext(src, pattern, i)=
+export fun regexpNext(src, pattern, i)=
 	if i<strLength(src) then
 	let regexpTest(src, pattern, i) -> l in
 	if l<>nil then [i, l]
 	else regexpNext(src, pattern, i+1);;
 
-fun regexpCreate(str)=
+export fun regexpCreate(str)=
 	try
 	let tokenCreate(str) -> tokens in
 	let tokenVal(tokens) -> token in

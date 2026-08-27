@@ -24,9 +24,9 @@ fun _ntpReceive(udp, t3, data)=
 		let bigAbs(bigFromInt(_strReadTime(data, 32))) -> t1 in
 		let bigAbs(bigFromInt(_strReadTime(data, 40))) -> t2 in
 		let bigAbs(bigFromInt(t3)) -> t3 in
-		let \bigNum (t1+t2)/2 -> tServer in
-		let \bigNum (t0+t3)/2 -> tClient in
-		let intFromBig(\bigNum tServer-tClient) -> dt in
+		let \big (t1+t2)/2 -> tServer in
+		let \big (t0+t3)/2 -> tClient in
+		let intFromBig(\big tServer-tClient) -> dt in
 		time()+dt;;
 
 fun ntpRequest(cb) =

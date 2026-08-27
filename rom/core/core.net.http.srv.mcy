@@ -2,47 +2,6 @@
 // Copyright (c) 2022, Sylvain Huet, Ambermind
 // Minimacy (r) System
 
-export HttpSrv, HttpConnection;;
-export COOKIE_SECURE;;
-export COOKIE_HTTP_ONLY;;
-export COOKIE_SAMESITE_LAX;;
-export COOKIE_SAMESITE_STRICT;;
-export COOKIE_SAMESITE_NONE;;
-
-// as of 01 apr 2023, client certificate on tls12 server is not working with firefox, yet working with chrome
-//export httpSrvStart12Ext(hostList, ip, port, onConnect);;
-export httpSrvStartExt(hostList, ip, port, onConnect);;
-export httpSrvStart(hostList, ip, port, onRequest);;
-export httpSrvSetDefaultIdleTimeout(srv, idleTimeout);;
-export httpSrvSetMaxConnections(srv, maxConnections, evictionTimeout);;
-export httpSrvUpdateHostList(srv, hostList);;
-export httpSrvStop(srv);;
-export httpSrvOnRequest(h, cb) ;;
-export httpSrvOnWebSocket(h, cb) ;;
-export httpSrvOnMessage(h, cb) ;;
-export httpSrvSetIdleTimeout(h, timeout);;
-export httpSrvSetMaxRequestSize(h, maxRequestSize);;
-export httpSrvGetRemote(h) ;;
-export httpSrvGetCookies(h) ;;
-export httpSrvGetCookie(h, cookie);;
-export httpSrvGetRequest(h) ;;
-export httpSrvGetRequestHeaders(h) ;;
-export httpSrvGetRequestHeader(h, headerName) ;;
-export httpSrvGetServerName(h) ;;
-export httpSrvGetPostData(h) ;;
-
-export httpSrvGetClientCertificate(h);;
-export httpSrvGetClientCertificateLogin(h);;
-export httpSrvParseArgs(h);;
-export httpSrvAddHeader(h, key, val);;
-export httpSrvSetHeader(h, key, val);;
-export httpSrvRedirect(h, url);;
-export httpSrvSetCookie(h, name, value, expires, path, domain, attr);;
-export httpSrvSetStatus(h, version, code, text);;
-export httpWsSend(h, opcode, data);;
-export httpWsClose(h);;
-
-
 use core.util.base64;;
 use core.crypto.hash;;
 use core.crypto.oid;;
@@ -54,9 +13,9 @@ use core.net.http;;
 const HTTPSERVER_WS_TIMEOUT=5*60*1000;;
 const HTTPSERVER_MAX_REQUEST_SIZE=1024*1024;;
 
-struct HttpSrv=[tcpSrvS, onConnectS];;
+export struct HttpSrv=[tcpSrvS, onConnectS];;
 
-struct HttpConnection=[
+export struct HttpConnection=[
 	remoteH, ttH, sendH, iH, closeAfterH,
 	tlsH,
 	requestH, requestHeadersH, cookiesH, postDataH, maxRequestSizeH,
@@ -440,7 +399,7 @@ fun _httpFromServer(tls, stream, tt, onConnect)=
 		true
 	);;
 
-fun httpSrvUpdateHostList(srv, hostList)=
+export fun httpSrvUpdateHostList(srv, hostList)=
 	let hostList<>nil -> tls in
 	let tlsMakeHosts(hostList) -> hosts in
 	nil<>tcpSrvOnAccept(srv.tcpSrvS, lambda(stream)= 
@@ -453,58 +412,58 @@ fun httpSrvUpdateHostList(srv, hostList)=
 fun _addIfNotNil(a, l)= if a==nil then l else a::l;;
 
 //--------------------SERVER END USER FUNCTIONS
-const COOKIE_SECURE=1;;
-const COOKIE_HTTP_ONLY=2;;
-const COOKIE_SAMESITE_LAX=4;;
-const COOKIE_SAMESITE_STRICT=8;;
-const COOKIE_SAMESITE_NONE=16;;
+export const COOKIE_SECURE=1;;
+export const COOKIE_HTTP_ONLY=2;;
+export const COOKIE_SAMESITE_LAX=4;;
+export const COOKIE_SAMESITE_STRICT=8;;
+export const COOKIE_SAMESITE_NONE=16;;
 
 // as of 01 apr 2023, client certificate on tls12 server is not working with firefox, yet working with chrome
-//fun httpSrvStart12Ext(hostList, ip, port, onConnect)= _httpSrvStartExt(hostList, ip, port, onConnect);;
+//export fun httpSrvStart12Ext(hostList, ip, port, onConnect)= _httpSrvStartExt(hostList, ip, port, onConnect);;
 
-fun httpSrvStartExt(hostList, ip, port, onConnect)=
+export fun httpSrvStartExt(hostList, ip, port, onConnect)=
 	let tcpSrvCreate(ip, port) -> tcpSrv in
 	if tcpSrv<>nil then
 	let [tcpSrvS=tcpSrv, onConnectS=onConnect] -> srv in
 	if httpSrvUpdateHostList(srv, hostList) then srv;;
 
-fun httpSrvStart(hostList, ip, port, onRequest)=
+export fun httpSrvStart(hostList, ip, port, onRequest)=
 	httpSrvStartExt(hostList, ip, port, (lambda(h)=
 		httpSrvOnRequest(h, (lambda(verb, uri)= call onRequest(h, verb, uri)));
 		true
 	));;
 
-fun httpSrvSetDefaultIdleTimeout(srv, idleTimeout) = tcpSrvSetIdleTimeout(srv.tcpSrvS, idleTimeout); srv;;
-fun httpSrvSetMaxConnections(srv, maxConnections, evictionTimeout) = tcpSrvSetMaxConnections(srv.tcpSrvS, maxConnections, evictionTimeout); srv;;
+export fun httpSrvSetDefaultIdleTimeout(srv, idleTimeout) = tcpSrvSetIdleTimeout(srv.tcpSrvS, idleTimeout); srv;;
+export fun httpSrvSetMaxConnections(srv, maxConnections, evictionTimeout) = tcpSrvSetMaxConnections(srv.tcpSrvS, maxConnections, evictionTimeout); srv;;
 
-fun httpSrvStop(srv)=
+export fun httpSrvStop(srv)=
 	tcpSrvClose(srv.tcpSrvS);
 	true;;
 	
-fun httpSrvOnRequest(h, cb) = set h.onRequestH = cb;;
-fun httpSrvOnWebSocket(h, cb) = set h.onWebSocketH = cb;;
-fun httpSrvOnMessage(h, cb) = set h.onMessageH = (lambda(code, msg) = call cb(code, msg); true);;
+export fun httpSrvOnRequest(h, cb) = set h.onRequestH = cb;;
+export fun httpSrvOnWebSocket(h, cb) = set h.onWebSocketH = cb;;
+export fun httpSrvOnMessage(h, cb) = set h.onMessageH = (lambda(code, msg) = call cb(code, msg); true);;
 
-fun httpSrvSetIdleTimeout(h, timeout) = streamSetIdleTimeout(h.ttH, timeout); h;;
-fun httpSrvSetMaxRequestSize(h, maxRequestSize) = set h.maxRequestSizeH=maxRequestSize; h;;
+export fun httpSrvSetIdleTimeout(h, timeout) = streamSetIdleTimeout(h.ttH, timeout); h;;
+export fun httpSrvSetMaxRequestSize(h, maxRequestSize) = set h.maxRequestSizeH=maxRequestSize; h;;
 
-fun httpSrvGetRemote(h) = h.remoteH;;	// returns [ip port]
+export fun httpSrvGetRemote(h) = h.remoteH;;	// returns [ip port]
 
-fun httpSrvGetCookies(h) = h.cookiesH;;
-fun httpSrvGetCookie(h, cookie)= hashmapGet(h.cookiesH, cookie);;
+export fun httpSrvGetCookies(h) = h.cookiesH;;
+export fun httpSrvGetCookie(h, cookie)= hashmapGet(h.cookiesH, cookie);;
 
-fun httpSrvGetRequest(h) = h.requestH;;	// returns [verb uri version]
-fun httpSrvGetRequestHeaders(h) = h.requestHeadersH;;
-fun httpSrvGetRequestHeader(h, headerName)= hashmapGet(h.requestHeadersH, strLowercase(headerName));;
-fun httpSrvGetServerName(h) = tlsGetServerName(tlsFromStream(h.ttH));;
-fun httpSrvGetPostData(h) = h.postDataH;;
+export fun httpSrvGetRequest(h) = h.requestH;;	// returns [verb uri version]
+export fun httpSrvGetRequestHeaders(h) = h.requestHeadersH;;
+export fun httpSrvGetRequestHeader(h, headerName)= hashmapGet(h.requestHeadersH, strLowercase(headerName));;
+export fun httpSrvGetServerName(h) = tlsGetServerName(tlsFromStream(h.ttH));;
+export fun httpSrvGetPostData(h) = h.postDataH;;
 
-fun httpSrvGetClientCertificate(h)= tlsGetClientCertificate(tlsFromStream(h.ttH));;
-fun httpSrvGetClientCertificateLogin(h)= 
+export fun httpSrvGetClientCertificate(h)= tlsGetClientCertificate(tlsFromStream(h.ttH));;
+export fun httpSrvGetClientCertificateLogin(h)= 
 	let httpSrvGetClientCertificate(h) -> cer in
 	cerSubjectValue(cer, OID_CN);;
 	
-fun httpSrvParseArgs(h)=
+export fun httpSrvParseArgs(h)=
 	let hashmapCreate(4) -> strings in
 	let hashmapCreate(1) -> files in
 	let h.requestH ->[_, uri, _] in
@@ -518,20 +477,20 @@ fun httpSrvParseArgs(h)=
 		[strings, files]
 	);;
 
-fun httpSrvAddHeader(h, key, val)=
+export fun httpSrvAddHeader(h, key, val)=
 	hashmapSet(h.replyHeadersH,  key, val::hashmapGet(h.replyHeadersH,  key));
 	h;;
 
-fun httpSrvSetHeader(h, key, val)=
+export fun httpSrvSetHeader(h, key, val)=
 	hashmapSet(h.replyHeadersH,  key, val::nil);
 	h;;
 
-fun httpSrvRedirect(h, url)=
+export fun httpSrvRedirect(h, url)=
 	httpSrvSetStatus(h, HTTP_1_0, 302, "Found");
 	httpSrvAddHeader(h, HTTP_LOCATION, url);
 	"";;
 
-fun httpSrvSetCookie(h, name, value, expires, path, domain, attr)=
+export fun httpSrvSetCookie(h, name, value, expires, path, domain, attr)=
 	httpSrvAddHeader(h, HTTP_SET_COOKIE, strJoin("; ", 
 		(strFormat("*=*", name, value))::
 		_addIfNotNil(if expires<>nil then strConcat("Expires=", fullDate(expires)),
@@ -543,9 +502,9 @@ fun httpSrvSetCookie(h, name, value, expires, path, domain, attr)=
 		_addIfNotNil(if bitTest(attr, COOKIE_SAMESITE_STRICT) then "SameSite=Strict",
 		_addIfNotNil(if bitTest(attr, COOKIE_SAMESITE_NONE) then "SameSite=None",
 		nil))))))))));;
-fun httpSrvSetStatus(h, version, code, text)= set h.statusH=[version, code, text]; 0;;
+export fun httpSrvSetStatus(h, version, code, text)= set h.statusH=[version, code, text]; 0;;
 
-fun httpWsSend(h, opcode, data)=
+export fun httpWsSend(h, opcode, data)=
 	let strBuild({
 		strInt8(0x80|opcode),
 		_wsLength(false, data),
@@ -554,7 +513,7 @@ fun httpWsSend(h, opcode, data)=
 	_httpSend(h, frame);
 	0;;
 
-fun httpWsClose(h)=
+export fun httpWsClose(h)=
 	set h.closeAfterH=true;
 	httpWsSend(h, WS_OPCODE_CLOSE, "");
 	0;;

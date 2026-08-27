@@ -585,6 +585,13 @@ int fun_signExtend(Thread* th)
 	val=signExtend(val,bit);
 	FUN_RETURN_INT(val);
 }
+int fun_selectConstantTime(Thread* th)
+{
+	LINT which = STACK_INT(th, 2) & 1;
+	STACK_INTERNAL_COPY(th, 2, 1 - which);
+	STACK_DROPN(th, 2);
+	return 0;
+}
 
 int systemCoreInit(Pkg *system)
 {
@@ -727,6 +734,7 @@ int systemCoreInit(Pkg *system)
 		{ NATIVE_FUN, "hashsetBitSize", fun_hashmapBitSize, "fun hashset a1 -> Int"},
 		{ NATIVE_FUN, "hashsetGetSlot", fun_hashmapGetSlot, "fun hashset a1 Int -> list a1"},
 
+		{ NATIVE_FUN, "selectConstantTime", fun_selectConstantTime, "fun Int a0 a0 -> a0" },
 
 //		{ NATIVE_INT,"foobar",(void*)1234,"Int" },
 	};

@@ -839,7 +839,7 @@ lockSync(TcpLock, lambda ()=
 	let strRead16Msb(msg, 0) -> remotePort in
 	let strRead16Msb(msg, 2) -> localPort in
 	let strRead8(msg, 13) -> flag in
-	if bitTest(flag, TCP_SYN) then void _tcpHandleSyn(net, remoteAddr, localAddr, remotePort, localPort, flag, msg)
+	if flag==TCP_SYN then void _tcpHandleSyn(net, remoteAddr, localAddr, remotePort, localPort, flag, msg)
 	else
 	let _tcpKey(remoteAddr, localAddr, remotePort, localPort) -> key in
 	let hashmapGet(TcpListener, key) -> t in

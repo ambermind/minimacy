@@ -2,27 +2,6 @@
 // Copyright (c) 2022, Sylvain Huet, Ambermind
 // Minimacy (r) System
 
-export UsbLock;;
-export DMA_BASE_HI, ENPOINT_MAX_COUNT;;
-export xhciInit();;
-export cmdEnableSlot();;
-export cmdOnSlot(slot, control, inputContext);;
-export transferSetFunction(slot, epId, len, f);;
-export transferWait(slot, epId, len);;
-
-export sharedMemDump(start, offset, len);;
-export sharedMemAllocate(size);;
-export sharedMemSet32(addr, offset, value);;
-export sharedMemSet16(addr, offset, value);;
-
-export ringTrb(r);;
-export ringCreate(n, forEvents);;
-export ringEnqueue(r, paramH, paramL, status, control);;
-export dcbaaSetAddr(slot, addr);;
-export dcbaaDump();;
-export portCheck(port);;
-export portSpeed(port);;
-
 use driver.rpi4.usb.pcie;;
 
 const DEBUG_LOW=false;;
@@ -30,7 +9,7 @@ const DEBUG=false;;
 //const DEBUG=true;;
 //----------------- XHCI
 const XHCI_BASE_HI= 0x06;;	// ARM_XHCI_BASE    = 0x6_0000_0000
-const DMA_BASE_HI = 0x04;;	// MEM_DMA_PCIE_BASE= 0x4_0000_0000;;
+export const DMA_BASE_HI = 0x04;;	// MEM_DMA_PCIE_BASE= 0x4_0000_0000;;
 
 const XHCI_PAGE_SIZE= 4096;;
 
@@ -103,12 +82,12 @@ const TRBcontrol=12;;
 const CH_PROP=8;;
 const TAG_NOTIFY_XHCI_RESET	=0x00030058;;
 
-const ENPOINT_MAX_COUNT = 31;;
+export const ENPOINT_MAX_COUNT = 31;;
 const XHCI_TIMEOUT= 2000;;
 
 struct Ring=[trbR, nR, iR, cycleStateR ];;
 
-const UsbLock=lockCreate();;
+export const UsbLock=lockCreate();;
 
 var DCBAA;;
 
@@ -138,24 +117,24 @@ fun xhciWriteAddr(offset, valL)= xhciWrite32(offset, valL); xhciWrite32(offset+4
 fun slotDoorbell(slot)=DB_BASE + slot*4;;
 fun portAddr(port)=PORTS_PORTSC+(port-1)*PORTS_PORT_SIZE;;
 
-fun sharedMemAllocate(size) = sharedMemAllocateBoundaries(size, 64, XHCI_PAGE_SIZE);;
-fun sharedMemSet32(addr, offset, value)= sharedMemWrite32(addr, offset, sharedMemRead32(addr, offset)|value);;
-fun sharedMemSet16(addr, offset, value)= sharedMemWrite16(addr, offset, sharedMemRead16(addr, offset)|value);;
+export fun sharedMemAllocate(size) = sharedMemAllocateBoundaries(size, 64, XHCI_PAGE_SIZE);;
+export fun sharedMemSet32(addr, offset, value)= sharedMemWrite32(addr, offset, sharedMemRead32(addr, offset)|value);;
+export fun sharedMemSet16(addr, offset, value)= sharedMemWrite16(addr, offset, sharedMemRead16(addr, offset)|value);;
 
-fun sharedMemDump(start, offset, len) =
+export fun sharedMemDump(start, offset, len) =
 	echoLn strFormat("dump from *", hexFromInt(start+offset));
 	hexDump sharedMemExport(start+offset, len);;
 
-fun dcbaaDump() = sharedMemDump(DCBAA, 0, (CONFIG_MAX_SLOTS + 1)*8);;
-fun dcbaaSetAddr(slot, addr)=
+export fun dcbaaDump() = sharedMemDump(DCBAA, 0, (CONFIG_MAX_SLOTS + 1)*8);;
+export fun dcbaaSetAddr(slot, addr)=
 	sharedMemWrite32(DCBAA, slot*8, addr);
 	sharedMemWrite32(DCBAA, slot*8+4, DMA_BASE_HI);;
 
 fun trbCommand(control) = (control & TRB_CONTROL_TRB_TYPE_MASK)>> TRB_CONTROL_TRB_TYPE_SHIFT;;
 fun trbCurrent(r) = r.trbR + r.iR*TRB_LENGTH;;
-fun ringTrb(r) = r.trbR;;
+export fun ringTrb(r) = r.trbR;;
 
-fun ringCreate(n, forEvents)=
+export fun ringCreate(n, forEvents)=
 	if DEBUG_LOW then echoLn strFormat("ringCreate *", n);
 	let sharedMemAllocate(n*TRB_LENGTH) -> trb in (
 		if (!forEvents) then
@@ -169,7 +148,7 @@ fun ringCreate(n, forEvents)=
 		[trbR=trb, nR=n, iR=0, cycleStateR=TRB_CONTROL_C]
 	);;
 
-fun ringEnqueue(r, paramH, paramL, status, control)=
+export fun ringEnqueue(r, paramH, paramL, status, control)=
 	let trbCurrent(r) -> trb in
 	let sharedMemRead32(trb, TRBcontrol) -> ctrl in
 	if (ctrl&TRB_CONTROL_C)<>r.cycleStateR then (	// nil when ring is full
@@ -188,7 +167,7 @@ fun ringEnqueue(r, paramH, paramL, status, control)=
 		trb
 	);;
 
-fun xhciInit()=
+export fun xhciInit()=
 	if !pcieInit() then return msgAndReturn("cannot setup pcie", false);
 	if mbox(CH_PROP, {TAG_NOTIFY_XHCI_RESET, 4, 4, 0x100000}, 8)==nil then return msgAndReturn("cannot reset xhci", false);
 	if !pcieEnable() then return msgAndReturn("cannot enable pcie", false);
@@ -238,11 +217,11 @@ fun xhciInit()=
 
 	true;;
 
-fun portCheck(port)=
+export fun portCheck(port)=
 	let if port==1 then PORTSC_PR else PORTSC_PLS_MASK -> bitToCheck in
 	!bitTest(xhciRread32(portAddr(port)), bitToCheck);;	// bit is 0 -> success
 
-fun portSpeed(port)=
+export fun portSpeed(port)=
 	(xhciRread32(portAddr(port)) & PORTSC_PORT_SPEED_MASK) >> PORTSC_PORT_SPEED_SHIFT;;
 
 fun xhciSetTimeout(join)=	// we post a timeout function from the caller thread to the watcher thread
@@ -260,7 +239,7 @@ fun _cmdExec(control, paramH, paramL)=
 		joinWait(CmdCurrentJoin)
 	);;
 
-fun cmdEnableSlot()= lockSync(UsbLock, lambda()=
+export fun cmdEnableSlot()= lockSync(UsbLock, lambda()=
 	let _cmdExec(TRB_CMD_ENABLE_SLOT, 0, 0) -> slot in
 	if slot<>nil then (
 		set TransferLen[slot]=arrayCreate(ENPOINT_MAX_COUNT+1, nil);
@@ -269,7 +248,7 @@ fun cmdEnableSlot()= lockSync(UsbLock, lambda()=
 	)
 );;
 
-fun cmdOnSlot(slot, control, inputContext)= lockSync(UsbLock, lambda()=
+export fun cmdOnSlot(slot, control, inputContext)= lockSync(UsbLock, lambda()=
 	_cmdExec(control|(slot<<TRB_SLOTID_SHIFT), DMA_BASE_HI, inputContext)
 );;
 
@@ -289,14 +268,14 @@ fun portStatusEvent(port)=
 		xhciWrite32(portAddr(port), portSC & ~PORTSC_PED)
 	);;
 
-fun transferSetFunction(slot, epId, len, f)=
+export fun transferSetFunction(slot, epId, len, f)=
 	dataSyncBarrier();
 	xhciWrite32(slotDoorbell(slot), epId);
 	set TransferLen[slot][epId]=len;
 	set TransferFunctions[slot][epId]=f;
 	nil;;
 
-fun transferWait(slot, epId, len)=
+export fun transferWait(slot, epId, len)=
 	let joinCreate() -> join in (
 		xhciSetTimeout(join);
 		transferSetFunction(slot, epId, len, lambda(len)= joinSend(join, len));

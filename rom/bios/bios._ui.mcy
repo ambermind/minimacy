@@ -291,10 +291,10 @@ fun _uiOnSizeDefault(x, y)=
 fun _uiOnPaintDefault()= nil;;
 fun _uiOnSizeDefault(x, y)= nil;;
 
-fun _uiAlive()= true;;
-fun _uiStopThread(th)= nil;;
 var _OffX;;
 var _OffY;;
+fun _uiAlive()= _OffX<>nil;;
+fun _uiStopThread(th)= nil;;
 fun uiW()=bitmapW(_BackBuffer);;
 fun uiH()=bitmapH(_BackBuffer);;
 fun _xConvert(x, y)= x;;

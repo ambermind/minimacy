@@ -132,7 +132,7 @@ fun _disksInit(biosMode) =
 	true;;
 
 fun splashDisplay(splash)=
-	ssd1306BlitRaw(oled(), splash);;
+	ssd1306BlitRaw(_Oled, splash);;
 
 //var LastLeft;;
 //var LastRight;;
@@ -167,7 +167,7 @@ fun main()=
 
 	keyEmulateWithGpio(Key_Left, SWITCH_LEFT);
 	keyEmulateWithGpio(Key_Right, SWITCH_RIGHT);
-	displaySetup(128, 64, (lambda(bmp)=ssd1306Blit(oled(), bmp, 0); true));
+	displaySetup(128, 64, (lambda(bmp)=ssd1306Blit(_Oled, bmp, 0); true));
 
 	set _EthLeft = encX24j600Init(ETH_LEFT,  SPI_PORT, SPI_CLK_PIN, SPI_MOSI_PIN, SPI_MISO_PIN, SPI_CS_LEFT_PIN,  SPI_INT_LEFT_PIN);
 	set _EthRight= encX24j600Init(ETH_RIGHT, SPI_PORT, SPI_CLK_PIN, SPI_MOSI_PIN, SPI_MISO_PIN, SPI_CS_RIGHT_PIN, SPI_INT_RIGHT_PIN);

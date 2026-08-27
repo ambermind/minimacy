@@ -7,15 +7,6 @@
 //	- ENC424J600/624J600 datasheet
 //	- ENC424J600/624J600 Silicon Errata and Data Sheet Clarification
 
-export encX24j600Init(name, spiPort, spiClk, spiMosi, spiMiso, spiCs, spiInt);;
-export encX24j600SetLock(lock);;
-export encX24j600Receive(enc);;
-export encX24j600Send(enc, data);;
-export encX24j600OnReceive(enc, fReceive);;
-export encX24j600LinkStatus(enc);;
-export encX24j600WaitForLink(enc);;
-export encX24j600SetPromiscuous(enc, promiscuous);;
-
 use driver.generic.spi;;
 use driver.generic.gpio;;
 
@@ -99,7 +90,7 @@ const RESET_PATTERN= 0x55aa;;
 
 var EncLock=lockCreate();;
 
-fun encX24j600SetLock(lock) = set EncLock=lock;;
+export fun encX24j600SetLock(lock) = set EncLock=lock;;
 
 fun _loopTimeout(timeout, errorMsg, fTest)=
 	let timeMs()+timeout -> tEnd in
@@ -160,7 +151,7 @@ fun encX24j600LinkStatus(enc) =
 		bitTest(PHSTAT1_LLSTAT, regReadPhy(enc, ENC_PHSTAT1))
 	);;
 
-fun encX24j600Receive(enc) =
+export fun encX24j600Receive(enc) =
 	if enc<>nil then
 	lockSync(EncLock, lambda ()=
 		let ESTAT_PKTCNT & regRead(enc, ENC_ESTAT) -> epkcnt in
@@ -181,7 +172,7 @@ fun encX24j600Receive(enc) =
 		)
 	);;
 
-fun encX24j600Send(enc, data)=
+export fun encX24j600Send(enc, data)=
 	if enc<>nil then
 	lockSync(EncLock, lambda ()=
 		if DEBUG then (echoLn "> encX24j600Send"; hexDump data);
@@ -197,7 +188,7 @@ fun encX24j600Send(enc, data)=
 		)
 	);;
 
-fun encX24j600OnReceive(enc, fReceive)=
+export fun encX24j600OnReceive(enc, fReceive)=
 	if enc<>nil then
 	let watcherOpen("encX24j600Int") -> watcher in
 		let gpioWatcherAddress(enc.spiIntE) -> addr in
@@ -226,17 +217,17 @@ fun _netActivate(enc)=
 	encX24j600OnReceive(enc, lambda(data)= _netFeed(enc, data));
 	Network<enc;;
 
-fun encX24j600WaitForLink(enc) =
+export fun encX24j600WaitForLink(enc) =
 	if DEBUG then echoLn "> encX24j600: wait for link";
 	 _loopTimeout(LINK_TIMEOUT, "> encX24j600: waitForUp timeout", lambda ()= encX24j600LinkStatus(enc));;
 
-fun encX24j600SetPromiscuous(enc, promiscuous) =
+export fun encX24j600SetPromiscuous(enc, promiscuous) =
 	regClrBits(enc, ENC_ECON1, ECON1_RXEN);
 	regWrite(enc, ENC_ERXFCON, (ERXFCON_CRCEN | ERXFCON_RUNTEN | ERXFCON_UCEN | ERXFCON_MCEN | if promiscuous then ERXFCON_NOTMEEN));
 	regSetBits(enc, ENC_ECON1, ECON1_RXEN);
 	enc;;
 
-fun encX24j600Init(name, spiPort, spiClk, spiMosi, spiMiso, spiCs, spiInt) =
+export fun encX24j600Init(name, spiPort, spiClk, spiMosi, spiMiso, spiCs, spiInt) =
 	if DEBUG then echoLn "> encX24j600Init: start init";
     spiInit(spiPort, 12500*1000, spiClk, spiMosi, spiMiso);
 

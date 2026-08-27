@@ -53,7 +53,6 @@ ENDHEADERMAGIC
 22	n	Comment
 */
 
-export ZipFile;;
 /*
 The MS-DOS date. The date is a packed value with the following format.
 0-4	Day of the month (1-31)
@@ -66,23 +65,8 @@ Bits	Description
 5-10	Minute (0-59)
 11-15	Hour (0-23 on a 24-hour clock)
 */
-export dosTimeStamp(v);;
-export dosTimeFromTime(t);;
-export zipFileName(z);;
-export zipFlag(z);;
-export zipCompressed(z);;
-export zipUncompressed(z);;
-export zipContent(z);;
-export zipUpdate(z);;
-export zipLoadContent(src, z);;
-export zipExtractFiles(src, withContent);;
-// encode from memory data:
-export zipFromFileList(lData);; // lData : list of [fileName updateTime content]
 
-// encode from disk files:
-export zipFromFileInfoList(lFileInfo);;	// lFileInfo: list of FileInfo structures (see bios functions fileListInfo, fileInfo)
-
-struct ZipFile=[fileNameZ, flagZ, methodZ, compressedZ, uncompressedZ, offsetZ, contentZ, crcZ, updateZ];;
+export struct ZipFile=[fileNameZ, flagZ, methodZ, compressedZ, uncompressedZ, offsetZ, contentZ, crcZ, updateZ];;
 const LOCALHEADERMAGIC    =0x04034b50;;
 const CENTRALHEADERMAGIC  =0x02014b50;;
 const ENDHEADERMAGIC      ="PK\$05\$06";;
@@ -191,25 +175,25 @@ Bits	Description
 5-10	Minute (0-59)
 11-15	Hour (0-23 on a 24-hour clock)
 */
-fun dosTimeStamp(v)=
+export fun dosTimeStamp(v)=
 	let v>>16 -> date in
 	let v&65535 -> time in
 	timeFromDate(		1980+(date>>9)&127, (date>>5)&15, date&31,
 		(time>>11)&31, (time>>5)&63, 2*(time&31));;
 
-fun dosTimeFromTime(t)=
+export fun dosTimeFromTime(t)=
 	let date(t) -> [y, month, d, w, h, m, s] in
 	let ((y-1980)%100)<<9 + (month)<<5 + d -> date in
 	let h<<11 + m<<5 + s>>1 -> time in
 	time+ date<<16;;
 
-fun zipFileName(z)=z.fileNameZ;;
-fun zipFlag(z)=z.flagZ;;
-//fun zipMethod(z)=z.methodZ;;	// useless for now
-fun zipCompressed(z)=z.compressedZ;;
-fun zipUncompressed(z)=z.uncompressedZ;;
-fun zipContent(z)=z.contentZ;;
-fun zipUpdate(z)=z.updateZ;;
+export fun zipFileName(z)=z.fileNameZ;;
+export fun zipFlag(z)=z.flagZ;;
+//export fun zipMethod(z)=z.methodZ;;	// useless for now
+export fun zipCompressed(z)=z.compressedZ;;
+export fun zipUncompressed(z)=z.uncompressedZ;;
+export fun zipContent(z)=z.contentZ;;
+export fun zipUpdate(z)=z.updateZ;;
 
 fun _zipDecode(src)=
 	let strPosRev(src, ENDHEADERMAGIC, nil) -> i in
@@ -217,13 +201,13 @@ fun _zipDecode(src)=
 	let _zipHeader(src, i+4, ZIP_ENDHEADER) -> (_::_::nbEntry::nb2::sizeDir::offset::commentSize::_) in
 	_zipParseCentrals(src, offset);;
 
-fun zipLoadContent(src, z)=
+export fun zipLoadContent(src, z)=
 	if Z_DEFLATED==z.methodZ then
 	let strSlice(src, z.offsetZ, z.compressedZ) -> comp in
 	let inflate(comp) -> src in
 	if (z.uncompressedZ==strLength(src)) && strCrc32(src, 0)==z.crcZ then set z.contentZ=src;;
 
-fun zipExtractFiles(src, withContent)=
+export fun zipExtractFiles(src, withContent)=
 	listFilter(_zipDecode(src), (lambda(z)=
 		if withContent then zipLoadContent(src, z);
 		true
@@ -231,10 +215,10 @@ fun zipExtractFiles(src, withContent)=
 
 
 // encode from memory data:
-fun zipFromFileList(lData)= // lData : list of [fileName updateTime content]
+export fun zipFromFileList(lData)= // lData : list of [fileName updateTime content]
 	_zipEncode(lData, 0, nil, nil);;
 
 // encode from disk files:
-fun zipFromFileInfoList(lFileInfo)=	// lFileInfo: list of FileInfo structures (see bios functions fileListInfo, fileInfo)
+export fun zipFromFileInfoList(lFileInfo)=	// lFileInfo: list of FileInfo structures (see bios functions fileListInfo, fileInfo)
 	zipFromFileList(listMap(lFileInfo, lambda(f)= if !fileInfoIsDir(f) then [fileInfoName(f), fileInfoUpdate(f), load(fileInfoName(f))]));;
 	

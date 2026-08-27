@@ -87,16 +87,16 @@ fun ctrEncrypt(msg, blockLen, count, i, fencrypt, fcount)=
 		out::ctrEncrypt(msg, blockLen, call fcount(count), i+blockLen, fencrypt, fcount)
 	);;
 
-fun ctrEncryptRef(msg, blockLen, count, i, fencrypt, fInc)=
+fun ctrEncryptCount(msg, blockLen, count, i, fencrypt, fInc)=
 	let strLength(msg) -> n in
 	if i<n then
-	let call fencrypt(bigSerialize(refGet(count), blockLen)) ->  out in
+	let call fencrypt(count) ->  out in
 	let if (n-i)<blockLen then strLeft(out, n-i) else out -> out in
 	let strSliceOfBytes(out, 0, nil) -> out in
 	(
 		bytesXor(out, 0, msg, i, nil);
 		call fInc(count);
-		out::ctrEncryptRef(msg, blockLen, count, i+blockLen, fencrypt, fInc)
+		out::ctrEncryptCount(msg, blockLen, count, i+blockLen, fencrypt, fInc)
 	);;
 
 fun ctrEncryptOpti(msg, blockLen, count, fencrypt, fcount)=
@@ -143,8 +143,8 @@ fun _gcmCountFromIv(mulH, iv, blockLen)=
 	else
 	_gcmGhash(blockLen, mulH, "", iv);;
 
-fun gcmProcess(data, blockLen, iv, A, encrypt, fEncrypt, fNextCount, fMakeMulH)=
-	let bigDeserialize(call fEncrypt(strCreate(blockLen, 0))) -> H in
+fun _gcmProcess(data, blockLen, iv, A, encrypt, fEncrypt, fNextCount, fMakeMulH)=
+	let call fEncrypt(strCreate(blockLen, 0)) -> H in
 	let call fMakeMulH(H) -> mulH in
 	let bigDeserializeBytes(_gcmCountFromIv(mulH, iv, blockLen)) -> count in
 
@@ -159,10 +159,10 @@ fun gcmProcess(data, blockLen, iv, A, encrypt, fEncrypt, fNextCount, fMakeMulH)=
 	[C, T];;
 	
 fun gcmEncrypt(msg, blockLen, iv, A, fEncrypt, fNextCount, fMakeMulH)=
-	gcmProcess(msg, blockLen, iv, A, true, fEncrypt, fNextCount, fMakeMulH);;
+	_gcmProcess(msg, blockLen, iv, A, true, fEncrypt, fNextCount, fMakeMulH);;
 
 fun gcmDecrypt(cipher, T, blockLen, iv, A, fEncrypt, fNextCount, fMakeMulH)=
-	let gcmProcess(cipher, blockLen, iv, A, false, fEncrypt, fNextCount, fMakeMulH) -> [msg, T2] in
+	let _gcmProcess(cipher, blockLen, iv, A, false, fEncrypt, fNextCount, fMakeMulH) -> [msg, T2] in
 	if T==T2 then msg;;
 
 //------------- padding

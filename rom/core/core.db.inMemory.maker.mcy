@@ -2,8 +2,6 @@
 // Copyright (c) 2022, Sylvain Huet, Ambermind
 // Minimacy (r) System
 
-export dbCompile(src, pkgName);;
-
 //-----------GENERATOR
 fun initialUpper(src)= let strLeft(src, 1) -> first in let strSlice(src, 1, nil) -> next in strConcat(strUppercase(first), next);;
 fun initialGenerator(src) = let strLeft(src, 1) -> first in let strSlice(src, 1, nil) -> next in
@@ -321,7 +319,7 @@ fun wordExtract(src)=
 		listFilter(strSplit(" ", line), lambda(w)= 0<strLength(w))
 	);;
 
-fun dbCompile(src, pkgName)= 
+export fun dbCompile(src, pkgName)= 
 	let _dbGenerator(wordExtract(src), nil, nil, nil, nil, nil, nil, nil) -> [database, tables] in
 	let	checkDatabase(database, tables)-> tables in
 	if tables<>nil then

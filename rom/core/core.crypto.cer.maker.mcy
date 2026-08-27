@@ -5,25 +5,6 @@
 // https://datatracker.ietf.org/doc/html/rfc5280 : certificate
 // https://datatracker.ietf.org/doc/html/rfc2986 : csr
 
-export subjectListFromString(subject);;
-export csrCreate(key, subjectList);;
-export csrSetSubjectAltName(names, csr);;
-export csrDER(csr);;
-export csrPEM(csr);;
-
-export csrSetExtension(critical, oid, asn1, csr);;
-export csrSetBasicConstraint(CA, csr);;
-export csrSetSubjectKeyIdentifier(csr);;
-export csrSetAuthorityKeyIdentifier(keyIdentifier, csr);;
-export csrSetExtKeyUsage(usages, csr);;
-export csrSetKeyUsage(usages, csr);;
-
-export csrAutoSign(csr);;
-export csrSignWithCer(cer, csr);;
-export cerFromCsr(key, durationDays, csr);;
-export cerDER(cer);;
-export cerPEM(cer);;
-
 use core.crypto.oid;;
 use core.crypto.asn1;;
 use core.crypto.pem;;
@@ -37,7 +18,7 @@ const _DEBUG=false;;
 
 const SubjectOID = hashmapInit(4,
 	["C", OID_C]::["CN", OID_CN]::["O", OID_O]::["OU", OID_OU]::["L", OID_L]::["ST", OID_ST]::nil);;
-fun subjectListFromString(subject)=
+export fun subjectListFromString(subject)=
 	let strLeft(subject, 1) -> separator in
 	listMap(tail(strSplit(separator, subject)), lambda(keyVal) =
 		let strSplit("=", keyVal) -> key::val::_ in
@@ -66,7 +47,7 @@ fun _x509Pack(x)=
 		(asn1BitString 0 x.signatureX)::
 		nil);;
 
-fun csrCreate(key, subjectList) =	// key is a private key
+export fun csrCreate(key, subjectList) =	// key is a private key
 	let match key with
 		rsaKey _ -> OID_RSA_PKCS1_SHA512,
 		ecKey _ -> OID_ecdsa_with_SHA256,
@@ -108,36 +89,36 @@ fun _csrBuildInfo(csr)=
 			)::nil
 		)::nil;;
 
-fun csrDER(csr) = 
+export fun csrDER(csr) = 
 	if csr.certificateX then return nil;
 	set csr.infoDerX=asn1Pack(_csrBuildInfo(csr));
 	set csr.signatureX=signatureGenerate(signAlgoByOID(csr.signatureAlgorithmX), csr.keyX, csr.infoDerX);
 	_x509Pack(csr);;
-fun csrPEM(csr) = pemMake("CERTIFICATE REQUEST", csrDER(csr));;
+export fun csrPEM(csr) = pemMake("CERTIFICATE REQUEST", csrDER(csr));;
 		
-fun csrSetExtension(critical, oid, asn1, csr) =
+export fun csrSetExtension(critical, oid, asn1, csr) =
 	hashmapSet(csr.extensionsX, oid, asn1); 
 	if critical then hashsetAdd(csr.criticalExtensionsX, oid)
 	else void hashsetRemove(csr.criticalExtensionsX, oid); 
 	csr;;
-fun csrSetBasicConstraint(CA, csr) = csrSetExtension(true, OID_basicConstraints, asn1Seq (asn1Bool CA)::nil, csr);;
-fun csrSetSubjectKeyIdentifier(csr) =
+export fun csrSetBasicConstraint(CA, csr) = csrSetExtension(true, OID_basicConstraints, asn1Seq (asn1Bool CA)::nil, csr);;
+export fun csrSetSubjectKeyIdentifier(csr) =
 	csrSetExtension(false, OID_subjectKeyIdentifier, asn1OctetString computeSubjectKeyIdentifier(csr), csr);;
-fun csrSetAuthorityKeyIdentifier(keyIdentifier, csr) =
+export fun csrSetAuthorityKeyIdentifier(keyIdentifier, csr) =
 	csrSetExtension(false, OID_authorityKeyIdentifier, asn1Seq (asn1ClassPrimitive ASN1_CONTEXT_SPECIFIC 0 keyIdentifier)::nil, csr);;
-fun csrSetSubjectAltName(names, csr)=
+export fun csrSetSubjectAltName(names, csr)=
 	csrSetExtension(false, OID_subjectAltName,
 		asn1Seq listMap(names, lambda(name) = asn1ClassPrimitive ASN1_CONTEXT_SPECIFIC 2 name), csr);;
 
-fun csrSetKeyUsage(usages, csr) =
+export fun csrSetKeyUsage(usages, csr) =
 	csrSetExtension(true, OID_keyUsage, 
 		asn1Echo("> ", asn1BitString 0 strInt8(listReduce(usages, 0, lambda(val, usage)= val|(1<<usage)))), csr);;
 
-fun csrSetExtKeyUsage(usages, csr) =
+export fun csrSetExtKeyUsage(usages, csr) =
 	csrSetExtension(false, OID_extKeyUsage,
 		asn1Seq listMap(usages, lambda(oid) = asn1ObjectIdentifier oid), csr);;
 
-fun csrAutoSign(csr) =
+export fun csrAutoSign(csr) =
 	csrSetSubjectKeyIdentifier(csr);
 	csrSetAuthorityKeyIdentifier(cerSubjectKeyIdentifier(csr), csr);
 	csrSetBasicConstraint(true, csr);
@@ -145,7 +126,7 @@ fun csrAutoSign(csr) =
 	set csr.issuerX=csr.subjectX;
 	csr;;
 
-fun csrSignWithCer(cer, csr) =
+export fun csrSignWithCer(cer, csr) =
 	csrSetAuthorityKeyIdentifier(cerSubjectKeyIdentifier(cer),
 		csrSetSubjectKeyIdentifier(csr));
 	set csr.issuerOidsX=cer.subjectOidsX;
@@ -173,7 +154,7 @@ fun _cerBuildInfo(cer)=
 			))::nil
 		)::nil;;
 
-fun cerFromCsr(key, durationDays, csr) =
+export fun cerFromCsr(key, durationDays, csr) =
 	let time() -> t0 in
 	let [
 		certificateX=true,
@@ -194,5 +175,5 @@ fun cerFromCsr(key, durationDays, csr) =
 		cer
 	);;
 
-fun cerDER(cer) = if cer.certificateX then _x509Pack(cer);;
-fun cerPEM(cer) = pemMake("CERTIFICATE", cerDER(cer));;
+export fun cerDER(cer) = if cer.certificateX then _x509Pack(cer);;
+export fun cerPEM(cer) = pemMake("CERTIFICATE", cerDER(cer));;

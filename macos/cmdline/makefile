@@ -68,6 +68,9 @@ system_ui_x11.o \
 system_worker.o \
 util.o \
 util_2d.o \
+util_bignum.o \
+util_bignum_ec.o \
+util_bignum_opti.o \
 util_buffer.o \
 util_convert.o \
 util_hashmap.o \

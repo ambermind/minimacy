@@ -301,6 +301,45 @@ int fun_aesWriteBytes(Thread* th)
 	FUN_RETURN_PNT((LB*)d);
 }
 
+int fun_aesGcmPrecompute(Thread* th)
+{
+	LB* p;
+	LB* H = STACK_PNT(th, 0);
+	if ((!H) || (STR_LENGTH(H)!=16)) FUN_RETURN_NIL;
+	p = memoryAllocStr(NULL, 16*512); if (!p) return EXEC_OM;
+	aesGcmPrecompute((unsigned char*)STR_START(H), (unsigned char*)STR_START(p));
+	FUN_RETURN_PNT(p);
+}
+int fun_bytesMsbInc(Thread* th)
+{
+	LB* V = STACK_PNT(th, 0);
+	if (!V) FUN_RETURN_NIL;
+	bytesMsbInc((unsigned char*)STR_START(V), (int)STR_LENGTH(V));
+	return 0;
+}
+int fun_aesGcmMul(Thread* th)
+{
+	LB* p;
+	LB* tAll = STACK_PNT(th, 0);
+	LB* V = STACK_PNT(th, 1);
+	if ((!tAll) || (STR_LENGTH(tAll) != 512 * 16)) FUN_RETURN_NIL;
+	if ((!V) || (STR_LENGTH(V) != 16)) FUN_RETURN_NIL;
+	p = memoryAllocStr(NULL, 16); if (!p) return EXEC_OM;
+	aesGcmMul((unsigned char*)STR_START(V), (unsigned char*)STR_START(tAll), (unsigned char*)STR_START(p));
+	FUN_RETURN_PNT(p);
+}
+int fun_aesGcmGhash(Thread* th)
+{
+	LB* tAll = STACK_PNT(th, 0);
+	LB* src = STACK_PNT(th, 1);
+	LB* dst = STACK_PNT(th, 2);
+	if ((!tAll) || (STR_LENGTH(tAll) != 512 * 16)) FUN_RETURN_NIL;
+	if ((!dst) || (STR_LENGTH(dst) != 16)) FUN_RETURN_NIL;
+	if (!src) FUN_RETURN_NIL;
+	aesGcmGhash(STR_START(src), (int)STR_LENGTH(src), (unsigned char*)STR_START(tAll), (unsigned char*)STR_START(dst));
+	FUN_RETURN_PNT(dst);
+}
+
 //------------ DES
 int fun_desCreate(Thread* th)
 {
@@ -479,7 +518,12 @@ int systemCryptoInit(Pkg *system)
 		{ NATIVE_FUN, "aesDecrypt", fun_aesDecrypt, "fun Aes Str Int -> Aes" },
 		{ NATIVE_FUN, "aesDecryptBytes", fun_aesDecrypt, "fun Aes Bytes Int -> Aes" },
 		{ NATIVE_FUN, "aesOutput", fun_aesOutput, "fun Aes -> Str" },
+		{ NATIVE_FUN, "aesOutputBytes", fun_aesOutput, "fun Aes -> Bytes" },
 		{ NATIVE_FUN, "aesWriteBytes", fun_aesWriteBytes, "fun Aes Bytes Int -> Aes" },
+		{ NATIVE_FUN, "aesGcmPrecompute", fun_aesGcmPrecompute, "fun Str -> Str" },
+		{ NATIVE_FUN, "aesGcmMul", fun_aesGcmMul, "fun Str Str -> Bytes" },
+		{ NATIVE_FUN, "aesGcmGhash", fun_aesGcmGhash, "fun Bytes Str Str -> Bytes" },
+		{ NATIVE_FUN, "bytesMsbInc", fun_bytesMsbInc, "fun Bytes -> Bytes" },
 		{ NATIVE_INT, "DES_BLOCK", (void*)DES_BLOCKLEN, "Int" },
 		{ NATIVE_FUN, "desCreate", fun_desCreate, "fun Str -> Des" },
 		{ NATIVE_FUN, "desEncrypt", fun_desEncrypt, "fun Des Str Int -> Des" },

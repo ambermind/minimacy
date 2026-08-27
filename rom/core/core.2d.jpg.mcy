@@ -2,12 +2,6 @@
 // Copyright (c) 2022, Sylvain Huet, Ambermind
 // Minimacy (r) System
 
-export jpgDecodeOpen(bin);;
-export jpgW(png);;
-export jpgH(png);;
-export jpgNbComponents(jpg);;
-export bitmapFromJpg(bin);;
-
 use core.util.huffman;;
 
 // interesting sources:
@@ -321,7 +315,7 @@ fun _chunkReader(jpg, i, decodeAll)=
 
 fun _jpgFinalize(jpg) = _chunkReader(jpg, jpg.SosStartJ, true); jpg;;
 
-fun jpgDecodeOpen(bin) =
+export fun jpgDecodeOpen(bin) =
 	let [
 		binJ=bin,
 		quantTablesJ=arrayCreate(16, nil),	// usually only two tables, but numbering is on 4 bits
@@ -332,8 +326,8 @@ fun jpgDecodeOpen(bin) =
 		jpg;
 	);;
 
-fun jpgW(png)=png.wJ;;
-fun jpgH(png)=png.hJ;;
-fun jpgNbComponents(jpg)=jpg.nbComponentsJ;;
+export fun jpgW(png)=png.wJ;;
+export fun jpgH(png)=png.hJ;;
+export fun jpgNbComponents(jpg)=jpg.nbComponentsJ;;
 
-fun bitmapFromJpg(bin) = (_jpgFinalize(jpgDecodeOpen(bin))).bmpJ;;
+export fun bitmapFromJpg(bin) = (_jpgFinalize(jpgDecodeOpen(bin))).bmpJ;;

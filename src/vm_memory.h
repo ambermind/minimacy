@@ -223,18 +223,28 @@ typedef struct {
 	LINT bigAdd;
 	LINT bigSub;
 	LINT bigMul;
+	LINT bigSquare;
 	LINT bigDiv;
 	LINT bigExp;
 	LINT bigAddMod;
 	LINT bigSubMod;
 	LINT bigMulMod;
+	LINT bigSquareMod;
 	LINT bigDivMod;
 	LINT bigExpMod;
 
 	LINT bigMulModBarrett;
+	LINT bigSquareModBarrett;
 	LINT bigDivModBarrett;
 	LINT bigExpModBarrett;
 	LINT bigModBarrett;
+
+	LINT bigMontgomeryRedc;
+	LINT bigMontgomeryForm;
+	LINT bigMulModMontgomery;
+	LINT bigSquareModMontgomery;
+	LINT bigDivModMontgomery;
+	LINT bigExpModMontgomery;
 
 	LINT bigMod;
 	LINT bigNeg;

@@ -5,8 +5,6 @@
 // this package allows to create a font from a TTF file. This font may be used with the functions from core.2d.font
 // it does not implement True Type "instructions". Therefore fonts may not be displayed nicely at small sizes
 // the specified height is the height in pixels that contains every glyphs
-export fontFromTTF(ttfContent, height, cMax);;
-export ttfDrawChar(bmp, x, y, height, c, ttf, color, blend);;
 
 use core.2d.font;;
 use core.2d.font.ttf.parser;;
@@ -147,7 +145,7 @@ fun scanline(bmp, color, blend, y, verticals, currents)=
 		scanline(bmp, color, blend, y-1, verticals, currents)
 	);;
 
-fun ttfDrawChar(bmp, x, y, height, c, ttf, color, blend)=
+export fun ttfDrawChar(bmp, x, y, height, c, ttf, color, blend)=
 	let hashmapGet(ttf.charsT, c) -> gid in
 	let ttf.glyphsT[gid] -> g in
 	let floatFromInt(height)/.floatFromInt(ttf.heightT) -> k in
@@ -197,7 +195,7 @@ fun _fontDrawGlyphs(bmp, ttf, height, baseline, lChars, chars)=
 		let OVERSAMPLE*height -> hh in
 		ttfDrawChar(bmp, x, y, hh, c, ttf, 0xffffffff, nil);;
 
-fun fontFromTTF(ttfContent, height, cMax) =
+export fun fontFromTTF(ttfContent, height, cMax) =
 	let ttfParse(ttfContent) -> ttf in
 	if ttf<>nil then
 	let floatFromInt(height)/.floatFromInt(ttf.heightT) -> k in	// coeff applied to glyph native coordinates

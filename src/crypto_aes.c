@@ -217,3 +217,129 @@ void AESOutput(AesCtx* ctx, char* output)
 {
 	memcpy(output, ctx->W, AES_BLOCKLEN);
 }
+
+// For GCM operation mode, we need multiplications in F2[x]/x^128+x^7+x^2+x+1
+// Sums and substractions are the same (?!): a simple XOR.
+// In such a polynom the degree 0 is at the most left (bit 127 in the usual order).
+// Therefore, the polynom x^7+x^2+x+1 is 0xe1000000000000000000000000000000
+// the Minimacy version is :
+// 
+//const _R=bigFromHex("e1000000000000000000000000000000");;
+//fun mulH(V, H)=
+//	let bigFromInt(0) -> Z in
+//	(
+//		for i=0; i<128 do
+//		(
+//			if 0<>bigBit(H, 127-i) then set Z=bigXor(Z, V);
+//			set V=
+//				if 0<>bigBit(V, 0) then bigXor(_R, bigASR1(V))
+//				else bigASR1(V)
+//		);
+//		Z
+//	);;
+//
+// In order to speed it up, we precompute a table of 512 16-bytes vectors,
+// so that the multiplication is only 32 XOR operations on 16 bytes vectors.
+// Everything is done in constant time
+
+void _aesClear(unsigned int* a)
+{
+	a[0] = 
+	a[1] = 
+	a[2] = 
+	a[3] = 0;
+}
+void _aesCopy(unsigned int* a, unsigned int* b)	// a= b
+{
+	a[0] = b[0];
+	a[1] = b[1];
+	a[2] = b[2];
+	a[3] = b[3];
+}
+void _aesXor(unsigned int* a, unsigned int* b)	// a= a^b
+{
+	a[0] ^= b[0];
+	a[1] ^= b[1];
+	a[2] ^= b[2];
+	a[3] ^= b[3];
+}
+void _aesASR1(unsigned char* b)
+{
+	int i;
+	for(i=15;i>0;i--) b[i]= (b[i] >> 1) | ((b[i-1] & 1) << 7);
+	b[0]>>=1;
+}
+void _aesGcmMul4bits(unsigned char* H, int b4, unsigned char* Z)
+{
+	int i;
+	unsigned char V[16];
+	_aesClear((unsigned int*)Z);
+	_aesCopy((unsigned int*)V, (unsigned int*)H);
+	for (i = 8; i > 0; i >>= 1) {
+		unsigned char alt;
+		unsigned char c = (V[15] & 1)-1;
+		if (b4 & i) _aesXor((unsigned int*)Z, (unsigned int*)V);
+		_aesASR1(V);
+		alt = V[0] ^ 0xe1;
+		V[0] = (alt & ~c) | (V[0] & c);	// constant time
+	}
+}
+void _aesGcmMulx4(unsigned char* src, unsigned char* V)
+{
+	int i;
+	_aesCopy((unsigned int*)V, (unsigned int*)src);
+	for (i = 0; i < 4; i++) {
+		unsigned char alt;
+		unsigned char c = (V[15] & 1) - 1;
+		_aesASR1(V);
+		alt = V[0] ^ 0xe1;	// constant time
+		V[0] = (alt & ~c) | (V[0] & c);
+	}
+}
+void aesGcmPrecompute(unsigned char* H, unsigned char* dst)
+{
+	int i;
+	for (i = 0; i < 16; i++) _aesGcmMul4bits(H, i, dst + (i << 4));
+	for (;i<512;i++) _aesGcmMulx4(dst + ((i-16) << 4), dst + (i << 4));
+}
+
+void aesGcmMul(unsigned char* V, unsigned char* tAll, unsigned char* dst)
+{
+	int i;
+	unsigned char* src = tAll;
+	_aesClear((unsigned int*)dst);
+	for (i = 0; i < 16; i++) {
+		unsigned char c = V[i];
+		_aesXor((unsigned int*)dst, (unsigned int*)&src[(15 & (c >> 4)) << 4]);
+		_aesXor((unsigned int*)dst, (unsigned int*)&src[(16 + (15 & c)) << 4]);
+		src += 32 * 16;
+	}
+}
+void bytesMsbInc(unsigned char* V, int len)
+{
+	int i = len-1;
+	while (i >= 0) {
+		if (++V[i]) break;
+		i--;
+	}
+}
+
+void aesGcmGhash(char* src, int len0, unsigned char* tAll, unsigned char* Y)
+{
+	int i;
+	int len = len0 & (~15);
+	unsigned char R[16];
+	for (i = 0; i < len; i += 16) {
+		_aesXor((unsigned int*)Y, (unsigned int*)&src[i]);
+		aesGcmMul(Y, tAll, R);
+		_aesCopy((unsigned int*)Y, (unsigned int*)R);
+	}
+	if (len != len0) {
+		char srcTail[16];
+		_aesClear((unsigned int*)srcTail);
+		memcpy(srcTail, src + len, len0 - len);
+		_aesXor((unsigned int*)Y, (unsigned int*)srcTail);
+		aesGcmMul(Y, tAll, R);
+		_aesCopy((unsigned int*)Y, (unsigned int*)R);
+	}
+}

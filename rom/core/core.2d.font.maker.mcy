@@ -2,8 +2,6 @@
 // Copyright (c) 2022, Sylvain Huet, Ambermind
 // Minimacy (r) System
 
-export mkFont(family, size, style, N);;
-
 use core.2d.png.maker;;
 
 const ListStyles=
@@ -93,7 +91,7 @@ fun mkFontFromCodeList(lCodes, family, size, style)=
 fun mkCodeList(i, N)=
 	if i<N then i::mkCodeList(i+1, N);;
 
-fun mkFont(family, size, style, N)=
+export fun mkFont(family, size, style, N)=
 	let mkCodeList(0, N) -> lCodes in
 	mkFontFromCodeList(lCodes, family, size, style);;
 	

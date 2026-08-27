@@ -257,6 +257,15 @@
     <ClCompile Include="..\wincmd.c">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="..\..\src\util_bignum.c">
+      <Filter>Source Files\src</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\util_bignum_ec.c">
+      <Filter>Source Files\src</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\util_bignum_opti.c">
+      <Filter>Source Files\src</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="resource.h">
@@ -390,6 +399,9 @@
     </ClInclude>
     <ClInclude Include="..\resource.h">
       <Filter>Source Files</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\src\util_bignum.h">
+      <Filter>Source Files\src</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>

@@ -2,26 +2,6 @@
 // Copyright (c) 2022, Sylvain Huet, Ambermind
 // Minimacy (r) System
 
-
-export Mysql, MysqlReply, errorReply _ _ _, okReply, rowReply _;;
-export ERROR_PACKET;;
-export ERROR_CLOSED;;
-export ERROR_BUSY;;
-export ERROR_CONNECT;;
-
-export mysqlConnect(server, port, login, password, database, tls, cbConnect);;
-export mysqlSetCharset(h, charset);;
-export mysqlQuery(h, command, cb) ;;
-export mysqlUseDatabase(h, database, cb) ;;
-export mysqlQuit(h) ;;
-export mysqlProtocol(h);;
-export mysqlVersion(h);;
-export mysqlColumns(h);;
-export mysqlLastInsert(h);;
-export sql(val);;
-export mysqlConvertColumns(h, l);;
-
-
 use core.util.base64;;
 use core.crypto.hash;;
 use core.net.dns;;
@@ -33,7 +13,7 @@ const COMMAND_QUERY="\3";;
 const UTF8 = 33;;	// alias of UTF8_GENERAL_CI
 const LATIN1 = 8;;	// alias of LATIN1_SWEDISH_CI
 
-sum MysqlReply= errorReply _ _ _, okReply, rowReply _;;
+export sum MysqlReply= errorReply _ _ _, okReply, rowReply _;;
 
 sum MysqlStage= greetingS, loginS, readyS, ongoingS, terminatedS;;
 
@@ -44,7 +24,7 @@ struct MysqlColumn=[
 	charsetC, lengthC, typeC, flagsC, decimalsC
 ];;
 
-struct Mysql=[
+export struct Mysql=[
 	thP, tlsP, serverP, ipP, portP,
 	loginP, passwordP, databaseP,
 	charsetP,
@@ -325,7 +305,7 @@ fun __mysqlConnect(h, ip, cbConnect)=
 	),
 	lambda ()= _mysqlSend(h, nil));;
 
-fun mysqlConnect(server, port, login, password, database, tls, cbConnect)=
+export fun mysqlConnect(server, port, login, password, database, tls, cbConnect)=
 	if tls then (echoLn "> Mysql SSL not yet supported"; nil)
 	else if cbConnect<>nil then
 	let [
@@ -343,22 +323,22 @@ fun mysqlConnect(server, port, login, password, database, tls, cbConnect)=
 	);;
 
 //--------------------- API
-const ERROR_PACKET=-1;;
-const ERROR_CLOSED=-2;;
-const ERROR_BUSY=-3;;
-const ERROR_CONNECT=-4;;
+export const ERROR_PACKET=-1;;
+export const ERROR_CLOSED=-2;;
+export const ERROR_BUSY=-3;;
+export const ERROR_CONNECT=-4;;
 
-fun mysqlSetCharset(h, charset)= set h.charsetP=charset;;
+export fun mysqlSetCharset(h, charset)= set h.charsetP=charset;;
 
-fun mysqlQuery(h, command, cb) = _mysqlQuery(h, strConcat(COMMAND_QUERY, command), cb);;
-fun mysqlUseDatabase(h, database, cb) = _mysqlQuery(h, strConcat(COMMAND_USE_DATABASE, database), cb);;
-fun mysqlQuit(h) = _mysqlQuery(h, COMMAND_QUIT, nil);;
+export fun mysqlQuery(h, command, cb) = _mysqlQuery(h, strConcat(COMMAND_QUERY, command), cb);;
+export fun mysqlUseDatabase(h, database, cb) = _mysqlQuery(h, strConcat(COMMAND_USE_DATABASE, database), cb);;
+export fun mysqlQuit(h) = _mysqlQuery(h, COMMAND_QUIT, nil);;
 
-fun mysqlProtocol(h)= h.protocolC;;
-fun mysqlVersion(h)= h.versionC;;
+export fun mysqlProtocol(h)= h.protocolC;;
+export fun mysqlVersion(h)= h.versionC;;
 
-fun mysqlColumns(h)= h.columnsQ;;
-fun mysqlLastInsert(h)= h.lastInsertQ;;
-fun sql(val)= sqlFromStr(strBuild(val));;
+export fun mysqlColumns(h)= h.columnsQ;;
+export fun mysqlLastInsert(h)= h.lastInsertQ;;
+export fun sql(val)= sqlFromStr(strBuild(val));;
 
-fun mysqlConvertColumns(h, l)= listMap(l, lambda(column)= arrayIndexOf(h.columnsQ, column));;
+export fun mysqlConvertColumns(h, l)= listMap(l, lambda(column)= arrayIndexOf(h.columnsQ, column));;
