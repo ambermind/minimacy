@@ -4,7 +4,7 @@
 #ifndef _SYSTEM_2D_
 #define _SYSTEM_2D_
 
-#define BITMAP_MAX_LENGTH (1024*16)
+#define BITMAP_MAX_LENGTH (1024*24)
 
 typedef unsigned char lchar;
 

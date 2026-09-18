@@ -486,8 +486,8 @@ fun _uiOnUnclick(x, y, v)  = _uiCommonEvent(x, y, v, "unclick", _EVENT_UNCLICK);
 fun _uiOnVwheel(x, y, v)   = _uiCommonEvent(x, y, v, "vwheel", _EVENT_VWHEEL);;
 fun _uiOnHwheel(x, y, v)   = _uiCommonEvent(x, y, v, "hwheel", _EVENT_HWHEEL);;
 fun _uiOnDropFiles(x, y, v)= _uiCommonEvent(x, y, v, "dropFiles", _EVENT_DROPFILES);;
-
 fun _uiInit()=
+	if _Uicb<>nil then return nil;
 	_registerInternalHook(_EVENT_PAINT, #_uiOnPaint);
 	_registerInternalHook(_EVENT_CLICK, #_uiOnClick);
 	_registerInternalHook(_EVENT_UNCLICK, #_uiOnUnclick);
@@ -503,7 +503,6 @@ fun _uiInit()=
 	_registerInternalHook(_EVENT_RESUME, #_uiOnResume);
 	_registerInternalHook(_EVENT_MULTITOUCH, #_uiOnMultiTouch);
 	_registerInternalHook(_EVENT_DROPFILES, #_uiOnDropFiles);
-
 	set _Uicb=arrayCreate(_INTERNAL_MAX_CODE, nil);;
 
 fun uiPostKeyDown(x)  = _uiOnKeyDown(x, 0, 0);;

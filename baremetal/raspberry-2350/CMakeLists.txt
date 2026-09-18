@@ -21,6 +21,7 @@ add_compile_options("-DON_MM_2350")
 #add_compile_options("-DON_PICO_2")
 
 add_compile_options("-Wno-discarded-qualifiers")
+add_compile_options("-fsigned-char")
 
 # Initialise pico_sdk from installed location
 # (note this can come from environment, CMake cache etc)

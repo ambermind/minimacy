@@ -13,7 +13,7 @@ fun _isAlive()=
 	let _oblivionPop() -> f in if f<>nil then threadStart("_oblivion_", f);
 	if _HardStop then false
 	elif _NiceStop then (0<fifoCount(_RunList)) || _workerAlive()
-	else fifoCount(_RunList)>0 || _timerAlive() || _streamAlive() || _workerAlive() || _internalExtAlive() || _uiAlive() || audioPlaying();;
+	else fifoCount(_RunList)>0 || _timerAlive() || _streamAlive() || _workerAlive() || _internalExtAlive() || _uiAlive();;
 
 fun _schedulerLoop()=
 	while _isAlive() do

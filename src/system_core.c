@@ -563,7 +563,54 @@ int fun_setHostUser(Thread* th)
 	if (result < 0) FUN_RETURN_NIL;
 	FUN_RETURN_BOOL(result);
 }
+#ifdef ON_WINDOWS
+int fun_spawnWin(Thread* th)
+{
+	LB* args = STACK_PNT(th, 0);
+	if (!args) FUN_RETURN_NIL;
 
+	STARTUPINFOA si = { sizeof(si) };
+	PROCESS_INFORMATION pi;
+	BOOL ok = CreateProcessA(
+		NULL,       // module
+		STR_START(args),    // command line
+		NULL, NULL, // attributes
+		FALSE,      // inherit
+		CREATE_NEW_CONSOLE, // flags
+		NULL,       // environment
+		NULL,       // current dir
+		&si, &pi
+	);
+	if (!ok) FUN_RETURN_BOOL(0);
+
+	CloseHandle(pi.hProcess);
+	CloseHandle(pi.hThread);
+
+	FUN_RETURN_BOOL(1);
+}
+#endif
+#ifdef GROUP_UNIX
+int fun_spawn(Thread* th)
+{
+	int argc, i;
+	char** argv;
+	LB* args = STACK_PNT(th, 0);
+	if (!args) FUN_RETURN_NIL;
+	argc=ARRAY_LENGTH(args);
+	if (!argc) FUN_RETURN_NIL;
+	argv=malloc((argc+1)*sizeof(char*));
+	if (!argv) FUN_RETURN_NIL;
+	for(i=0;i<argc;i++) argv[i]=ARRAY_PNT(args, i)?STR_START(ARRAY_PNT(args, i)):"";
+	argv[argc]=NULL;
+//	for(i=0;i<argc;i++) printf("%d: %s\n", i, argv[i]);
+	if (!fork()) {
+		execvp(argv[0],argv);
+		exit(0);
+	}
+	free(argv);
+	FUN_RETURN_BOOL(1);
+}
+#endif
 #define intOpeI_I(name,ope)	\
 int name(Thread* th)	\
 {	\
@@ -735,7 +782,12 @@ int systemCoreInit(Pkg *system)
 		{ NATIVE_FUN, "hashsetGetSlot", fun_hashmapGetSlot, "fun hashset a1 Int -> list a1"},
 
 		{ NATIVE_FUN, "selectConstantTime", fun_selectConstantTime, "fun Int a0 a0 -> a0" },
-
+#ifdef ON_WINDOWS
+		{ NATIVE_FUN, "_spawnWin", fun_spawnWin, "fun Str -> Bool" },
+#endif
+#ifdef GROUP_UNIX
+		{ NATIVE_FUN, "_spawn", fun_spawn, "fun array Str -> Bool" },
+#endif
 //		{ NATIVE_INT,"foobar",(void*)1234,"Int" },
 	};
 

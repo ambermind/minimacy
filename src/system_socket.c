@@ -675,7 +675,7 @@ void internalSend(char* src, int len) {}
 #endif
 
 
-#ifdef USE_ETH_UNIX
+#ifdef USE_ETH_LINUX
 int fun_ethList(Thread* th)
 {
 	int count=0;

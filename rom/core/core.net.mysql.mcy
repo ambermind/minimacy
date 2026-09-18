@@ -4,7 +4,12 @@
 
 use core.util.base64;;
 use core.crypto.hash;;
+use core.crypto.cer;;
 use core.net.dns;;
+use core.net.tls13;;
+//use core.net.tls12;;
+
+const DEBUG=false;;
 
 const COMMAND_QUIT="\1";;
 const COMMAND_USE_DATABASE="\2";;
@@ -13,7 +18,7 @@ const COMMAND_QUERY="\3";;
 const UTF8 = 33;;	// alias of UTF8_GENERAL_CI
 const LATIN1 = 8;;	// alias of LATIN1_SWEDISH_CI
 
-export sum MysqlReply= errorReply _ _ _, okReply, rowReply _;;
+export sum MysqlReply= errorReply _ _ _, okReply, columnsReply, rowReply _, endOfRowsReply, endReply;;
 
 sum MysqlStage= greetingS, loginS, readyS, ongoingS, terminatedS;;
 
@@ -26,7 +31,7 @@ struct MysqlColumn=[
 
 export struct Mysql=[
 	thP, tlsP, serverP, ipP, portP,
-	loginP, passwordP, databaseP,
+	loginP, passwordP, hashP, databaseP,
 	charsetP,
 	lockP,
 
@@ -83,7 +88,7 @@ fun _buildPkg(number, data)=
 	if data<>nil then strConcat(strInt32Lsb((number<<24)+strLength(data)), data);;
 
 fun _mysqlSend(h, data)=
-//	echoTime "send"; hexDump data;
+	if DEBUG then (echoTime "send"; hexDump data);
 	set h.sendC=strConcat(h.sendC, data);
 //	echo "send "; echoLn 
 	set h.iC=streamWrite(h.ttC, h.sendC, h.iC);
@@ -128,7 +133,10 @@ fun _mysqlParseFE(h, packet)=
 	set h.srvStatusC=strRead16Lsb(packet, 3);
 	if h.partQ==rowR then
 	(
-		_mysqlCbLastCall(h, okReply);
+		set h.partQ=startR;
+		set h.stageC=ongoingS;
+		call h.cbQueryQ(endOfRowsReply);
+		if !bitTest(h.srvStatusC, 0x0008) then _mysqlCbLastCall(h, endReply);
 		true
 	)
 	else let fifoList(h.columnsTmpQ) -> lColumns in
@@ -137,6 +145,7 @@ fun _mysqlParseFE(h, packet)=
 		set h.columnsQ= arrayFromList(listMap(lColumns, (lambda(c)=c.nameC)));
 		set h.columnsTmpQ=nil;
 		set h.partQ=rowR;
+		call h.cbQueryQ(columnsReply);
 		false
 	);;
 
@@ -157,13 +166,29 @@ fun _mysqlParseOk(h, packet)=
 				false
 			),
 			ongoingS -> (
-				_mysqlCbLastCall(h, okReply);
+				call h.cbQueryQ(okReply);
+				if !bitTest(h.srvStatusC, 0x0008) then _mysqlCbLastCall(h, endReply);
 				true
 			)
 	);;
 
+fun _loginRequestUser(h, withCredential)=
+	strBuild([
+		strInt16Lsb(0xa685| if h.tlsP then 0x0800),
+		strInt16Lsb(0x0003),
+		strInt32Lsb(0x40000000),
+		strInt8(h.charsetP),
+		"\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0",	// 16
+		"\0\0\0\0\0\0\0",	// 7
+		if withCredential then {
+			h.loginP, "\0",
+			strInt8(strLength(h.hashP)),
+			h.hashP
+		}
+	]);;
+
 fun _mysqlParseGreeting(h, packet)=
-//	echoLn "greeting"; hexDump packet;
+	if DEBUG then (echoLn "> SQL: greeting"; hexDump packet);
 	let strRead8(packet, 0) -> protocol in
 	let _parseStringZero(packet, 1) -> [version, i] in
 	if i<>nil then
@@ -178,24 +203,19 @@ fun _mysqlParseGreeting(h, packet)=
 	let _parseStringZero(packet, i+18) -> [salt2, i] in
 	let _parseStringZero(packet, i) -> [authPlugin, i] in
 	if i==strLength(packet) then	
-	let _hashPassword(h.passwordP, strConcat(salt1, salt2)) -> hashPass in
-	let strBuild({
-		strInt16Lsb(0xa685),
-		strInt16Lsb(0x0003),
-		strInt32Lsb(0x40000000),
-		strInt8(h.charsetP),
-		"\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0",	// 16
-		"\0\0\0\0\0\0\0",	// 7
-		h.loginP, "\0",
-		strInt8(strLength(hashPass)),
-		hashPass
-	}) -> data in
-	(
+	let set h.hashP=_hashPassword(h.passwordP, strConcat(salt1, salt2));
+		_loginRequestUser(h,!h.tlsP)
+	-> data in (
 		set h.srvStatusC=srvStatus;
 		set h.protocolC=protocol;
 		set h.versionC=version;
 		set h.stageC=loginS;
 		_mysqlSend(h, _buildPkg(1, data));
+		if h.tlsP then (
+			set h.ttC=Stream<tlsStartClient(h.ttC, MYSQL_SERVERNAME);
+			set h.sendC=_buildPkg(2, _loginRequestUser(h,true));
+			_streamSetEvents(h)
+		);
 		true
 	);;
 
@@ -235,7 +255,7 @@ fun _mysqlHandleData(h, data)=
 		let strRead8(buffer, 3) -> number in
 		let strRead8(packet, 0) -> code in
 		(
-//		hexDump packet;
+			if DEBUG then (echoLn "> SQL: packet received"; hexDump packet);
 			set h._bufferC=strSlice(buffer, 4+length, nil);
 			match code with
 				0 -> _mysqlParseOk(h, packet),
@@ -281,33 +301,56 @@ fun _mysqlQuery(h, query, cbQuery)=
 		nil
 	);;
 
+fun _streamSetEvents(h)=
+	streamOnEvent(h.ttC,
+		lambda(data)=
+			if DEBUG then (echoLn "receive"; hexDump data; echoTime h.stageC);
+			if data==nil then let h.cbQueryQ -> cb in
+			(
+				if DEBUG then echoTime "> SQL: client receives close";
+				set h.cbQueryQ=nil;
+				set h.ttC=nil;
+				set h.stageC=terminatedS;
+				if cb<>nil then call cb(errorReply ERROR_CLOSED "CLOSED" "Connection closed");
+				nil
+			)
+			else _mysqlHandleData(h, data);
+			nil
+		,
+		lambda ()= _mysqlSend(h, nil)
+	);;
+
 fun __mysqlConnect(h, ip, cbConnect)=
 	set h.ipP=ip;
 	let thisThread() -> th in
 	set h.cbQueryQ=
 		if th==h.thP then (lambda(ok)= call cbConnect(h, ok);nil)
 		else (lambda(ok)= threadPost(th, lambda ()= call cbConnect(h, ok)));
-	set h.ttC= tcpOpen(ip, h.portP); //(if h.tlsP then h.serverP);
-	streamOnEvent(h.ttC,
-	(lambda(data)=
-//	echoLn "receive"; hexDump data; echoTime h.stageC;
-		if data==nil then let h.cbQueryQ -> cb in
-		(
-//			echoTime "client receives close";
-			set h.cbQueryQ=nil;
-			set h.ttC=nil;
-			set h.stageC=terminatedS;
-			if cb<>nil then call cb(errorReply ERROR_CLOSED "CLOSED" "Connection closed");
-			nil
-		)
-		else _mysqlHandleData(h, data);
-		nil
-	),
-	lambda ()= _mysqlSend(h, nil));;
+	set h.ttC= Stream<tcpOpen(ip, h.portP); //(if h.tlsP then h.serverP);
+	_streamSetEvents(h);;
 
-export fun mysqlConnect(server, port, login, password, database, tls, cbConnect)=
-	if tls then (echoLn "> Mysql SSL not yet supported"; nil)
-	else if cbConnect<>nil then
+//--------------------- API
+export const ERROR_PACKET=-1;;
+export const ERROR_CLOSED=-2;;
+export const ERROR_BUSY=-3;;
+export const ERROR_CONNECT=-4;;
+
+export fun mysqlSetCharset(h, charset)= set h.charsetP=charset;;
+
+export fun mysqlQueryAsync(h, command, cb) = _mysqlQuery(h, strConcat(COMMAND_QUERY, command), cb);;
+export fun mysqlQuit(h) = _mysqlQuery(h, COMMAND_QUIT, nil);;
+
+export fun mysqlProtocol(h)= h.protocolC;;
+export fun mysqlVersion(h)= h.versionC;;
+
+export fun mysqlColumns(h)= h.columnsQ;;
+export fun mysqlLastInsert(h)= h.lastInsertQ;;
+export fun sql(val)= sqlFromStr(strBuild(val));;
+
+export fun mysqlConvertColumns(h, l)= listMap(l, lambda(column)= arrayIndexOf(h.columnsQ, column));;
+
+export fun mysqlConnectAsync(server, port, login, password, database, tls, cbConnect)=
+	if cbConnect<>nil then
 	let [
 		thP=thisThread(),
 		serverP=server, portP=port, tlsP=tls,
@@ -322,23 +365,56 @@ export fun mysqlConnect(server, port, login, password, database, tls, cbConnect)
 		else __mysqlConnect(h, ip, cbConnect)
 	);;
 
-//--------------------- API
-export const ERROR_PACKET=-1;;
-export const ERROR_CLOSED=-2;;
-export const ERROR_BUSY=-3;;
-export const ERROR_CONNECT=-4;;
+export fun mysqlConnect(server, port, login, password, database, tls)=
+	await(lambda(join)=mysqlConnectAsync(server, port, login, password, database, tls, lambda(h, reply)=
+		match reply with
+			errorReply code sqlState msg -> joinSend(join, nil),
+			endReply -> joinSend(join, h)
+		)
+	);;
 
-export fun mysqlSetCharset(h, charset)= set h.charsetP=charset;;
+export fun mysqlQuery(h, query)=
+	let fifoCreate() -> fifo in (
+		await(lambda(join)= 
+			let fifoCreate() -> fifoTemp in
+			mysqlQueryAsync(h, query, lambda(reply)=
+				void match reply with
+					errorReply code sqlState msg -> (fifoIn(fifo, {{"error", sqlState, strFromInt(code), msg}}); joinSend(join, nil)),
+					okReply -> fifoIn(fifo, {{"ok", "lastInsert", strFromInt(mysqlLastInsert(h))}}),
+					columnsReply -> fifoIn(fifoTemp,mysqlColumns(h)),
+					rowReply row -> fifoIn(fifoTemp,row),
+					endOfRowsReply -> fifoIn(fifo, arrayFromList({"table"}::fifoList(fifoTemp))),
+					endReply -> joinSend(join, nil)
+			)
+		);
+		fifoList(fifo)
+	);;
 
-export fun mysqlQuery(h, command, cb) = _mysqlQuery(h, strConcat(COMMAND_QUERY, command), cb);;
-export fun mysqlUseDatabase(h, database, cb) = _mysqlQuery(h, strConcat(COMMAND_USE_DATABASE, database), cb);;
-export fun mysqlQuit(h) = _mysqlQuery(h, COMMAND_QUIT, nil);;
+fun _tableMaxColumns(table)= arrayReduce(table, 0, lambda(v, t)= max(v, arrayLength(t)));;
 
-export fun mysqlProtocol(h)= h.protocolC;;
-export fun mysqlVersion(h)= h.versionC;;
+fun _tableMaxColumnWidth(table)=
+	let arrayCreate(_tableMaxColumns(table), 0) -> widths in (
+		for row of table do
+			let arrayLength(row) -> n in
+			for v,i of row do set widths[i] = max(widths[i], strLength(v));
+		widths
+	);;
 
-export fun mysqlColumns(h)= h.columnsQ;;
-export fun mysqlLastInsert(h)= h.lastInsertQ;;
-export fun sql(val)= sqlFromStr(strBuild(val));;
-
-export fun mysqlConvertColumns(h, l)= listMap(l, lambda(column)= arrayIndexOf(h.columnsQ, column));;
+export fun sqlPrettyPrint(result)=
+	for table in result do 
+		let _tableMaxColumnWidth(table) -> widths in (
+			for row,j of table do (
+				if j==0 then echoLn strJoin(" / ", row)
+				else (
+					if j==1 then echoLn "--";
+					for v,i of row do echo strFormat("|**", strCreate(widths[i]-strLength(v), 32), v);
+					echoLn "|";
+					if j==1 then (
+						for v of widths do echo strFormat("|*",strCreate(v, '-'));
+						echoLn "|"
+					)
+				)
+			);
+			echoLn ""
+		);
+	result;;

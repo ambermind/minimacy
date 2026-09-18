@@ -158,6 +158,7 @@ fun mkCipherSuites(cipherSuites)=
 	});;
 
 fun client_ext_server_name(name)=
+	if name<>nil && name<>MYSQL_SERVERNAME then
 	mkExtension(EXT_SERVER_NAME, {
 		mkBlock16({
 			strInt8(0),

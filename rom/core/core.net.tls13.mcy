@@ -48,7 +48,7 @@ export struct TLS13= Stream+ [
 
 	clientSignAlgoTLS, clientSignContextTLS,
 
-	peerCertificatesTLS, clientValidatedCertificateTLS, siteCertificateTLS,
+	peerCertificatesTLS, clientValidatedCertificateTLS,
 	certificateChainTLS,
 
 	masterSecretTLS, clientTrafficSecretTLS, serverTrafficSecretTLS,
@@ -321,7 +321,7 @@ fun _clientExtensions(tls)=
 	});;
 
 fun _clientCertificate(tls)=
-	if tls.clientSignAlgoTLS<>nil && tls.clientKeyTLS<>nil then
+	if tls.clientSignAlgoTLS<>nil then
 	let strLength(tls.clientCertificateTLS) -> len in
 	_encodeHandshake(tls, TLS_CERTIFICATE,
 		if len>0 then
@@ -465,14 +465,11 @@ fun _clientParseCertificateVerify(tls, data)=
 //echoLn "\n\n\ncertifs"; 	for cer in tls.peerCertificatesTLS do (cerEcho(cer); echoLn "\n---------\n");
 	let time()->t0 in
 	let listReverse(tls.peerCertificatesTLS) -> lCertificates in
-	let set tls.siteCertificateTLS= cerByServerName(tls.serverNameTLS, lCertificates) -> siteCertificate in
-	if siteCertificate==nil then _setError(tls, ["SERVERNAME NOT FOUND IN CERTIFICATE ", tls.serverNameTLS])
-	else
-	let set tls.certificateChainTLS=cerCheckChain(t0, siteCertificate, lCertificates) -> certificateChain in
+	let set tls.certificateChainTLS=cerCheckChain(t0, tls.serverNameTLS, lCertificates) -> certificateChain in
 	if certificateChain==nil then
 		match lastError() with msgError error -> _setError(tls, error)
 	else
-	let signatureCheckFromCertificate(signAlgo, siteCertificate, strConcat(TLS_CERTIFICATE_VERIFY_SERVER_PREFIX, payload_hash), sign) -> result in
+	let signatureCheckFromCertificate(signAlgo, head(certificateChain), strConcat(TLS_CERTIFICATE_VERIFY_SERVER_PREFIX, payload_hash), sign) -> result in
 	if !result then
 		let if result==false then "WRONG SIGNATURE " else strFormat("UNKNOWN ALGO ") -> txt in
 		_setError(tls, [txt, hexFromInt(signAlgo)])

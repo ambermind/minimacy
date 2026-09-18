@@ -40,6 +40,8 @@ const KeyUsageNames={
 	"dataEncipherment", "keyEncipherment", "nonRepudiation", "digitalSignature"
 };;
 
+const MYSQL_SERVERNAME="mysql";;
+
 const _RootCertificates=hashmapCreate(6);;
 
 // ----- loading
@@ -335,14 +337,19 @@ fun _cerCheckChain(hChain, t0, cer, depth) =
 		parentCer::_cerCheckChain(hChain, t0, parentCer, depth+1)
 	);;
 
-fun cerCheckChain(t0, siteCer, lCertificates)=
+fun cerCheckChain(t0, serverName, lCertificates)=
 	if _DEBUG then echoLn "cerCheckChain";
 	try
-	if !cerHasExtKeyUsage(siteCer, OID_serverAuth) then (
+	let if serverName==MYSQL_SERVERNAME then head(lCertificates) else cerByServerName(serverName, lCertificates) -> siteCer in
+	if siteCer==nil then (
+		if _DEBUG then echoLn "--missing serverName";
+		_cerChainAbort(strFormat("> server name not found in certificates *", serverName))
+	)
+	elif serverName<>MYSQL_SERVERNAME && !cerHasExtKeyUsage(siteCer, OID_serverAuth) then (
 		if _DEBUG then echoLn "--missing serverAuth extented usage";
 		_cerChainAbort(strFormat("> first certificate missing serverAuth extended usage: *", siteCer.subjectX))
 	)
-	elif !cerHasKeyUsage(siteCer, KEYUSAGE_digitalSignature) then (
+	elif serverName<>MYSQL_SERVERNAME && !cerHasKeyUsage(siteCer, KEYUSAGE_digitalSignature) then (
 		if _DEBUG then echoLn "--missing digitalSignature usage";
 		_cerChainAbort(strFormat("> first certificate missing digitalSignature usage: *", siteCer.subjectX))
 	)
@@ -357,4 +364,3 @@ fun cerCheckChain(t0, siteCer, lCertificates)=
 			if cerIsCertificateAuthority(cer)&&cerHasKeyUsage(cer, KEYUSAGE_keyCertSign) then hashmapSet(hChain, cer.subjectX, cer);
 		siteCer::_cerCheckChain(hChain, t0, siteCer, 0)
 	);;
-

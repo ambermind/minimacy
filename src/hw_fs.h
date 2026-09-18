@@ -19,7 +19,8 @@
 
 void systemCleanDir(char* p);
 void systemRemoveLast(char* p);
-void systemMainDir(char* path, int len, const char* argv0);
+void systemExecPath(char* path, int len, const char* argv0);
+void systemMinimacyDir(char* path, int len);
 void systemUserDir(char* userDir, int len);
 void systemCurrentDir(char* curDir, int len);
 
@@ -40,9 +41,7 @@ LB* ansiReadContent(char* path, int* size);
 LINT ansiDirectoryList(LINT fixedRootBuffer, char* dir);
 int ansiVolumeList(Thread* th, int* n);
 void ansiHelpBiosFinder(void);
-int ansiFsMount(const char* argv0, int standalone);
-void ansiFsInit(void);
-void ansiFsRelease(void);
+int ansiFsMount();
 
 void romdiskMark(LB* user);
 int romdiskVolumeList(Thread* th, int* n);
@@ -61,10 +60,12 @@ int _partitionAdd(LB* type, LINT index, char* physicalPath);
 int _volumeList(Thread* th, LB* type, LINT index, int writable, LINT nbSectors, LINT sectorSize);
 int volumeList(Thread* th);
 
+char* fsMinimacyDir(void);
+char* fsExecPath(void);
 char* fsCurrentDir(void);
 char* fsUserDir(void);
-int fsMount(const char* argv0, int standalone);
-void fsInit(void);
+int fsMount(int standalone);
+void fsInit(const char* argv0);
 void fsRelease(void);
 
 

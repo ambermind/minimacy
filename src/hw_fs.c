@@ -4,11 +4,15 @@
 #include"minimacy.h"
 
 #ifdef USE_FS_SYSTEMDIR_STUB
-char CurrentDir[1];
-char UserDir[1];
+char CurrentDir[2];
+char UserDir[2];
+char ExecPath[2];
+char MinimacyDir[2];
 #else
 char CurrentDir[MAX_PATH + 32];
 char UserDir[MAX_PATH + 2];
+char ExecPath[MAX_PATH + 2];
+char MinimacyDir[MAX_PATH + 2];
 #endif
 void _fsAddFileInfo(Buffer* out, char* path, LINT len, char* tmpAttr)
 {
@@ -159,6 +163,12 @@ int _partitionAdd(LB* type, LINT index, char* physicalPath)
 	MM.partitionsFS = STACK_PULL_PNT(MM.tmpStack);
 	return 0;
 }
+char* fsMinimacyDir(void) {
+	return MinimacyDir;
+}
+char* fsExecPath(void) {
+	return ExecPath;
+}
 char* fsCurrentDir(void) {
 	return CurrentDir;
 }
@@ -166,24 +176,24 @@ char* fsUserDir(void) {
 	return UserDir;
 }
 
-int fsMount(const char* argv0, int standalone)
+int fsMount(int standalone)
 {
-
 	if (romdiskMount(standalone)) return -1;
 #ifdef USE_FS_ANSI
-	if (ansiFsMount(argv0, standalone)) return -1;
+	if (ansiFsMount()) return -1;
 #endif
 	return 0;
 }
 
-void fsInit(void)
+void fsInit(const char* argv0)
 {
 	romdiskInit();
-#ifdef USE_FS_ANSI
-	ansiFsInit();
-#endif
+	strcpy(ExecPath, "");
+	strcpy(MinimacyDir, "");
 	strcpy(CurrentDir, "");
 	strcpy(UserDir, "");
+	systemExecPath(ExecPath, MAX_PATH, argv0);
+	systemMinimacyDir(MinimacyDir, MAX_PATH);
 	systemUserDir(UserDir, MAX_PATH);
 	systemCurrentDir(CurrentDir, MAX_PATH);
 	PRINTF(LOG_SYS, "> Current working directory: %s\n", strlen(CurrentDir)?CurrentDir:"[empty]");
@@ -194,7 +204,4 @@ void fsInit(void)
 void fsRelease(void)
 {
 	romdiskRelease();
-#ifdef USE_FS_ANSI
-	ansiFsRelease();
-#endif
 }

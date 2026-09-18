@@ -1,0 +1,175 @@
+# SPDX-License-Identifier: GPL-3.0-only
+# Copyright (c) 2022, Sylvain Huet, Ambermind
+
+# NOTE: Use 'gmake' instead of 'make'!
+
+CC:= cc
+CCL=$(CC)
+
+ROOT:= ../..
+OBJDIR := $(ROOT)/obj
+BINDIR := $(ROOT)/bin
+TARGET := $(BINDIR)/minimacy
+
+vpath %.c $(ROOT)/src
+vpath %.h $(ROOT)/src
+
+CORE= $(addprefix $(OBJDIR)/, \
+compiler.o \
+compiler_call.o \
+compiler_globals.o \
+compiler_instances.o \
+compiler_letgetset.o \
+compiler_locals.o \
+compiler_loops.o \
+compiler_match.o \
+compiler_parser.o \
+compiler_prog.o \
+compiler_step1.o \
+compiler_step2.o \
+compiler_step3.o \
+compiler_step4.o \
+compiler_struct.o \
+compiler_sum.o \
+compiler_term.o \
+compiler_try.o \
+crypto_aes.o \
+crypto_checksum.o \
+crypto_des.o \
+crypto_hash.o \
+crypto_rc4.o \
+hw.o \
+hw_console.o \
+hw_fs.o \
+hw_fs_ansi.o \
+hw_fs_romdisk.o \
+hw_random.o \
+hw_thread.o \
+hw_time.o \
+minimacy.o \
+system_bignum.o \
+system.o \
+system_2d.o\
+system_audio.o\
+system_binary.o \
+system_buffer.o \
+system_bytes.o \
+system_core.o \
+system_convert.o \
+system_crypto.o \
+system_deflate.o \
+system_event.o \
+system_file.o \
+system_inflate.o \
+system_lzw.o \
+system_serial.o \
+system_socket.o \
+system_str.o \
+system_tmp.o \
+system_ui.o \
+system_ui_gl.o \
+system_ui_x11.o \
+system_worker.o \
+util.o \
+util_2d.o \
+util_ansi_math.o \
+util_ansi_str.o \
+util_bignum.o \
+util_bignum_ec.o \
+util_bignum_opti.o \
+util_buffer.o \
+util_convert.o \
+util_hashmap.o \
+util_xml.o \
+vm_interpreter.o \
+vm_malloc.o \
+vm_memory.o \
+vm_opcodes.o \
+vm_term.o \
+vm_thread.o \
+vm_types.o )
+
+CFLAG=-O3 -D ON_BSD
+
+OBJ= $(CORE)
+LIBS= -lm -lpthread
+
+TARGETX11GL= $(TARGET)X11GL
+LIBSX11GL  = $(LIBS) -lX11 -lXext -lGL -lGLU 
+CFLAGX11GL = -O3 -D ON_BSD_X11GL
+LIBDIRX11GL= -L/usr/X11R7/lib -R/usr/X11R7/lib
+INCX11GL   = -I/usr/X11R7/include
+
+TARGETX11= $(TARGET)X11
+LIBSX11  = $(LIBS) -lX11 -lXext 
+CFLAGX11 = -O3 -D ON_BSD_X11
+LIBDIRX11= -L/usr/X11R7/lib -R/usr/X11R7/lib
+INCX11   = -I/usr/X11R7/include
+
+
+help:
+	@echo ""
+	@echo "Welcome to NetBSD Minimacy!"
+	@echo ""
+	@echo "available targets"
+	@echo "-----------------"
+	@echo "gmake nox          : build non graphic release, like a server" 
+	@echo "gmake x11          : build pure X11 release"
+	@echo "gmake x11gl        : build X11/openGL release"
+	@echo "gmake all          : build nox, x11 and x11gl targets"
+	@echo "gmake clean        : clean build directory" 
+	@echo "gmake clean-nox    : clean nox target" 
+	@echo "gmake clean-x11    : clean x11 target"
+	@echo "gmake clean-x11gl  : clean x11gl target"
+	@echo "gmake clean-all    : clean all targets"
+
+nox: $(TARGET)
+x11gl: CFLAG:= $(CFLAGX11GL)
+x11gl: INC:= $(INCX11GL)
+x11gl: $(TARGETX11GL)
+
+x11: CFLAG:= $(CFLAGX11)
+x11: INC:= $(INCX11)
+x11: $(TARGETX11)
+
+all:
+	gmake clean-all
+	gmake nox
+	gmake clean-x11gl
+	gmake x11gl
+	gmake clean-x11
+	gmake x11
+
+$(TARGET) : $(OBJ)
+	$(CCL) -o $@ $^ $(INC) $(LIBDIR) $(LIBS)
+	@echo "Done --> " $(TARGET)
+
+$(TARGETX11GL) : $(OBJ)
+	$(CCL) -o $@ $^ $(INCX11GL) $(LIBDIRX11GL) $(LIBSX11GL)
+	@echo "Done --> " $(TARGETX11GL)
+
+$(TARGETX11) : $(OBJ)
+	$(CCL) -o $@ $^ $(INCX11) $(LIBDIRX11) $(LIBSX11)
+	@echo "Done --> " $(TARGETX11)
+
+$(OBJDIR)/%.o: %.c
+	$(CC) $(CFLAG) $(INC) -c $< -o $@
+
+$(OBJ): | $(OBJDIR)
+
+$(OBJDIR):
+	mkdir -p $(OBJDIR)
+
+clean:
+	rm -rf $(OBJDIR) 2>/dev/null
+
+clean-nox: clean
+	rm -rf $(TARGET)
+
+clean-x11gl:clean 
+	rm -rf $(TARGETX11GL)
+
+clean-x11:clean 
+	rm -rf $(TARGETX11)
+
+clean-all: clean clean-nox clean-x11gl clean-x11

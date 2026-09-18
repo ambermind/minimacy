@@ -21,18 +21,24 @@
 #endif
 
 #ifdef USE_FS_SYSTEMDIR_STUB
-void systemMainDir(char* path, int len, const char* argv0) { path[0] = 0; }
-void systemCurrentDir(char* path, int len) { path[0] = 0; }
-void systemUserDir(char* path, int len) { path[0] = 0; }
+void systemExecPath(char* path, int len, const char* argv0) {}
+void systemMinimacyDir(char* path, int len) {}
+void systemCurrentDir(char* path, int len) {}
+void systemUserDir(char* path, int len) {}
 #endif
 #ifdef USE_FS_SYSTEMDIR_WINDOWS
-void systemMainDir(char* path, int len, const char* argv0)
+void systemExecPath(char* path, int len, const char* argv0)
 {
 	GetModuleFileNameA(NULL, path, len);
+}
+void systemMinimacyDir(char* path, int len)
+{
+	strcpy(path, fsExecPath());
 	systemCleanDir(path);
 	systemRemoveLast(path);
 	systemRemoveLast(path);
 }
+
 void systemCurrentDir(char* curDir, int len)
 {
 	GetCurrentDirectoryA(len, curDir);
@@ -49,15 +55,11 @@ void systemUserDir(char* userDir, int len)
 }
 #endif
 #ifdef USE_FS_SYSTEMDIR_UNIX
-int systemCheckFile(char* execpath, int len, const char* argv0)
+int systemRealPath(char* execpath, int len)
 {
 	char realp[1024];
 	char* p;
 	struct stat info;
-	int currentLen=strlen(execpath);
-	if (currentLen+1+strlen(argv0)>len) return -1;
-	if((currentLen>0)&&(execpath[currentLen-1]!='/')) strcat(execpath,"/");
-	strcat(execpath,argv0);
 //	printf("check %s\n",execpath);
 	if (lstat(execpath, &info)) return -1;
 	if (S_ISDIR(info.st_mode)) return -1;
@@ -69,28 +71,35 @@ int systemCheckFile(char* execpath, int len, const char* argv0)
 	if (strlen(p)>len) return -1;
 	strcpy(execpath,p);
 	free(p);
+	return 0;	
+}
+int _systemPathAppend(char* execpath, int len, const char* argv0)
+{
+	int currentLen=strlen(execpath);
+	if (currentLen+1+strlen(argv0)>len) return -1;
+	if((currentLen>0)&&(execpath[currentLen-1]!='/')) strcat(execpath,"/");
+	strcat(execpath,argv0);
 	return 0;
 }
 
-int _systemExecPath(char* execpath, int len, const char* argv0)
+int _systemExecFromArg0(char* execpath, int len, const char* argv0)
 {
 	char* envpath;
 	int i,j;
 	if (argv0[0]=='/') {	// argv0 contains an absolute path
-		struct stat info;
 		if (strlen(argv0)>len) return -1;
 		strcpy(execpath,argv0);
-		return stat(execpath, &info)?-1:0;
+		return systemRealPath(execpath, len);
 	}
 	if (getcwd(execpath, len)) {	// test argv0 as a path relative to the current working directory
-		if (!systemCheckFile(execpath, len, argv0)) return 0;
+		if ((!_systemPathAppend(execpath, len, argv0))&&(!systemRealPath(execpath, len))) return 0;
 	}
 	envpath=getenv("PATH");
 	j=0;
 	for(i=0;i<=strlen(envpath);i++) {
 		if ((envpath[i]==':')||(envpath[i]==0)) {
 			execpath[j]=0;
-			if (!systemCheckFile(execpath, len, argv0)) return 0;
+			if ((!_systemPathAppend(execpath, len, argv0))&&(!systemRealPath(execpath, len))) return 0;
 			j=0;
 		}
 		else {
@@ -99,7 +108,7 @@ int _systemExecPath(char* execpath, int len, const char* argv0)
 	}
 	return -1;
 }
-void systemMainDir(char* path, int len, const char* argv0)
+void systemExecPath(char* path, int len, const char* argv0)
 {
 	// https://stackoverflow.com/questions/933850/how-do-i-find-the-location-of-the-executable-in-c
 	ssize_t result = readlink("/proc/self/exe", path, len); // linux
@@ -107,15 +116,19 @@ void systemMainDir(char* path, int len, const char* argv0)
 	if (result < 0) result = readlink("/proc/self/path/a.out", path, len); // solaris
 	path[(result < 0) ? 0 : result] = 0;
 // on Mac we need to search further, from the current directory and from the PATH environment value
-	if (result <0 && argv0) result=_systemExecPath(path,len,argv0);
+	if (result <0 && argv0) result=_systemExecFromArg0(path,len,argv0);
 	if (result<0) {
 		path[0]=0;
 		return;
 	}
+//	printf("<%s>\n",path);
+}
+void systemMinimacyDir(char* path, int len)
+{
+	strcpy(path, fsExecPath());
 	systemCleanDir(path);
 	systemRemoveLast(path);
 	systemRemoveLast(path);
-//	printf("<%s>\n",path);
 }
 void systemCurrentDir(char* curDir, int len)
 {
@@ -398,25 +411,16 @@ void ansiHelpBiosFinder(void)
 	PRINTF(LOG_USER, "On some Unix system such as Macos commandline target, Minimacy may encounter trouble to get its actual path. Then you may launch the Minimacy executable providing its absolute path.\n");
 }
 
-int ansiFsMount(const char* argv0, int standalone)
+int ansiFsMount()
 {
-#ifndef BOOT_SKIP_FS_ANSI
-	char MinimacyDir[MAX_PATH + 2];
-
-	strcpy(MinimacyDir, "");
-	systemMainDir(MinimacyDir, MAX_PATH, argv0);
-	PRINTF(LOG_SYS, "> Minimacy directory       : %s\n", MinimacyDir);
-	snprintf(MinimacyDir+strlen(MinimacyDir), MAX_PATH-strlen(MinimacyDir), "rom/");
-	_partitionAdd(MM.ansiVolume, 0, MinimacyDir);
-	PRINTF(LOG_SYS, "> Rom directory            : %s\n", MinimacyDir);
-#endif
+	char RomDir[MAX_PATH + 2];
+	if (strlen(fsExecPath())) PRINTF(LOG_SYS, "> Minimacy executable      : %s\n", fsExecPath());
+	PRINTF(LOG_SYS, "> Minimacy directory       : %s\n", fsMinimacyDir());
+	strcpy(RomDir, fsMinimacyDir());
+	snprintf(RomDir+strlen(RomDir), MAX_PATH-strlen(RomDir), "rom/");
+	_partitionAdd(MM.ansiVolume, 0, RomDir);
+	PRINTF(LOG_SYS, "> Rom directory            : %s\n", RomDir);
 	return 0;
-}
-void ansiFsInit(void)
-{
-}
-void ansiFsRelease(void)
-{
 }
 #endif
 

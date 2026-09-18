@@ -159,7 +159,7 @@ int usrLedInit(Pkg* system)
 }
 
 int systemBleInit(Pkg* system);
-
+int systemToInit(Pkg* system);
 int systemTmpInit(Pkg* system)
 {
 	usrSdInit(system);
@@ -170,6 +170,9 @@ int systemTmpInit(Pkg* system)
 #endif
 #ifdef USE_HOST_ONLY_FUNCTIONS
 	hostOnlyFunctionsInit(system);
+#endif
+#ifdef WITH_TO7
+	systemToInit(system);
 #endif
 	return 0;
 }

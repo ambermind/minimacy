@@ -762,5 +762,6 @@ void systemInit(Pkg *system)
 void systemTerminate(void)
 {
 	sysSocketClose();
+	systemAudioClose();
 }
 

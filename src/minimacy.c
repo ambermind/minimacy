@@ -97,10 +97,11 @@ int start(int argc, const char** argv)
 	cMallocInit();
 #endif
 	if (hwInit()) goto cleanup;
+	fsInit(argc?argv[0]:NULL);
 	do
 	{
 		memoryInit(argc,argv);
-		if (fsMount(argc?argv[0]:NULL, standalone)) goto cleanup;
+		if (fsMount(standalone)) goto cleanup;
 		if (boot())
 		{
 			memoryEnd();
@@ -148,19 +149,12 @@ int startInThread(int argc, const char** argv)
 	return 0;
 }
 #endif
-#if defined ON_UNIX || defined ON_MACOS_CMDLINE || defined ON_RPIOS
+#if defined ON_UNIX || defined ON_MACOS_CMDLINE
 int main(int argc, const char** argv)
 {
 	signal(SIGPIPE,SIG_IGN);
 
 	return start(argc,argv);
-}
-#endif
-
-#ifdef ON_UNIX_BM
-int main(int argc, const char** argv)
-{
-		return start(argc,argv);
 }
 #endif
 

@@ -1,9 +1,12 @@
-#----------------------DO NOT TOUCH BELOW
-export CC= gcc
-export AR= ar
+# SPDX-License-Identifier: GPL-3.0-only
+# Copyright (c) 2022, Sylvain Huet, Ambermind
+
+# NOTE: Use 'gmake' instead of 'make'!
+
+CC:= gcc
 CCL=$(CC)
 
-ROOT:= ..
+ROOT:= ../..
 OBJDIR := $(ROOT)/obj
 BINDIR := $(ROOT)/bin
 TARGET := $(BINDIR)/minimacy
@@ -86,40 +89,39 @@ vm_term.o \
 vm_thread.o \
 vm_types.o )
 
-CFLAG=-O3 -D ON_UNIX
+CFLAG=-O3 -D ON_BSD
 
 OBJ= $(CORE)
 LIBS= -lm -lpthread
 
 TARGETX11GL= $(TARGET)X11GL
-LIBSX11GL  = $(LIBS) -lX11 -lXext -lasound -lGL -lGLU 
-CFLAGX11GL = -O3 -D ON_UNIX_X11GL
+LIBSX11GL  = $(LIBS) -lX11 -lXext -lGL -lGLU 
+CFLAGX11GL = -O3 -D ON_BSD_X11GL
 LIBDIRX11GL= -L/usr/X11R6/lib
 INCX11GL   = -I/usr/X11R6/include
 
 TARGETX11= $(TARGET)X11
-LIBSX11  = $(LIBS) -lX11 -lXext -lasound 
-CFLAGX11 = -O3 -D ON_UNIX_X11
+LIBSX11  = $(LIBS) -lX11 -lXext 
+CFLAGX11 = -O3 -D ON_BSD_X11
 LIBDIRX11= -L/usr/X11R6/lib
 INCX11   = -I/usr/X11R6/include
 
-TARGETRPIOS= $(TARGET)RPiOS64
 
 help:
 	@echo ""
+	@echo "Welcome to FreeBSD Minimacy!"
+	@echo ""
 	@echo "available targets"
 	@echo "-----------------"
-	@echo "make nox          : build non graphic release, like a server" 
-	@echo "make x11          : build pure X11 release"
-	@echo "make x11gl        : build X11/openGL release"
-	@echo "make all          : build nox, x11 and x11gl targets"
-	@echo "make pi           : build Raspberry Pi OS 64 bits release"
-	@echo "make clean        : clean build directory" 
-	@echo "make clean-nox    : clean nox target" 
-	@echo "make clean-x11    : clean x11 target"
-	@echo "make clean-x11gl  : clean x11gl target"
-	@echo "make clean-pi     : clean pi target"
-	@echo "make clean-all    : clean all targets"
+	@echo "gmake nox          : build non graphic release, like a server" 
+	@echo "gmake x11          : build pure X11 release"
+	@echo "gmake x11gl        : build X11/openGL release"
+	@echo "gmake all          : build nox, x11 and x11gl targets"
+	@echo "gmake clean        : clean build directory" 
+	@echo "gmake clean-nox    : clean nox target" 
+	@echo "gmake clean-x11    : clean x11 target"
+	@echo "gmake clean-x11gl  : clean x11gl target"
+	@echo "gmake clean-all    : clean all targets"
 
 nox: $(TARGET)
 x11gl: CFLAG:= $(CFLAGX11GL)
@@ -131,16 +133,12 @@ x11: INC:= $(INCX11)
 x11: $(TARGETX11)
 
 all:
-	make clean-all
-	make nox
-	make clean-x11gl
-	make x11gl
-	make clean-x11
-	make x11
-
-pi: CFLAG:= -O3 -D ON_RPIOS
-pi: INC:= $(INCX11GL)
-pi: $(TARGETRPIOS)
+	gmake clean-all
+	gmake nox
+	gmake clean-x11gl
+	gmake x11gl
+	gmake clean-x11
+	gmake x11
 
 $(TARGET) : $(OBJ)
 	$(CCL) -o $@ $^ $(INC) $(LIBDIR) $(LIBS)
@@ -153,10 +151,6 @@ $(TARGETX11GL) : $(OBJ)
 $(TARGETX11) : $(OBJ)
 	$(CCL) -o $@ $^ $(INCX11) $(LIBDIRX11) $(LIBSX11)
 	@echo "Done --> " $(TARGETX11)
-
-$(TARGETRPIOS): $(OBJ)
-	$(CCL) -o $@ $^ $(INCX11GL) $(LIBDIRX11GL) $(LIBSX11GL)
-	@echo "Done --> " $(TARGETRPIOS)
 
 $(OBJDIR)/%.o: %.c
 	$(CC) $(CFLAG) $(INC) -c $< -o $@
@@ -178,7 +172,4 @@ clean-x11gl:clean
 clean-x11:clean 
 	rm -rf $(TARGETX11)
 
-clean-pi: clean
-	rm -rf $(TARGETRPIOS)
-
-clean-all: clean clean-nox clean-x11gl clean-x11 clean-pi
+clean-all: clean clean-nox clean-x11gl clean-x11

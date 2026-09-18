@@ -256,3 +256,14 @@ fun bytesInit(n, f)=
 fun bitmapErase(b, color)= bitmapFill(b, color, nil);;
 
 fun memoryTry(size) = _memoryTry(size)||(gcCompact(); _memoryTry(size));;
+
+#ifdef _spawnWin
+fun spawn(args) =
+	let listMap(args, lambda(w)= strFormat("\"*\"", strReplace(w,"\"", "\\\""))) -> args in
+	_spawnWin(strJoin(" ", args));;
+fun spawnSelf(args) = spawn(_execPath::strReplace(head(args), "[minimacy]", _minimacyDir)::tail(args));;
+#endif
+#ifdef _spawn
+fun spawn(args) = _spawn(arrayFromList(args));;
+fun spawnSelf(args) = spawn(_execPath::strReplace(head(args), "[minimacy]", _minimacyDir)::tail(args));;
+#endif

@@ -101,13 +101,13 @@ raspberry-pi-uart.o \
 
 OBJ= $(CORE) $(EXTRA)
 
-CFLAGS = -O2 -Wall -ffreestanding -nostdinc -nostdlib -nostartfiles -Wno-strict-aliasing
+CFLAGS = -O2 -Wall -ffreestanding -nostdinc -nostdlib -nostartfiles -Wno-strict-aliasing -fsigned-char
 
 TARGET= minimacyRpi4
 
 help:
 	@echo ""
-	@echo "Welcome to bare-metal Rapsberry Pi Minimacy! Bare-metal made easy!!!"
+	@echo "Welcome to bare-metal Raspberry Pi Minimacy! Bare-metal made easy!!!"
 	@echo ""
 	@echo "available targets"
 	@echo "-----------------"

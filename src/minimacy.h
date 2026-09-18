@@ -4,7 +4,7 @@
 #ifndef _MINIMACY_
 #define _MINIMACY_
 
-#define VERSION_MINIMACY "2.1.3"
+#define VERSION_MINIMACY "2.1.4"
 //#undef ON_WINDOWS
 //#define ON_NOTHING
 
@@ -20,6 +20,7 @@
 #define WITH_GL
 #define WITH_AUDIO
 //#define WITH_DECODE_MP3
+//#define WITH_TO7
 #define WITH_SERIAL_BLE	// uncomment also #define ENABLE_BLE in windows/ble_c.h
 #define WITH_NATIVE_FONT
 #define GROUP_COMMON_ANSI
@@ -30,10 +31,10 @@
 #define USE_THREAD_WIN
 
 //#define USE_MEMORY_C
-//#define MEMORY_STATICS MEMORY_STATIC(0,1024 * 1024 * 16);
+//#define MEMORY_STATICS MEMORY_STATIC(0,1024 * 1024 * 8);
 //#define MEMORY_PARTS MEMORY_PART_STATIC(0)
-////#define MEMORY_STATICS MEMORY_STATIC(0,1024 * 1024 * 128);MEMORY_STATIC(1,1024 * 1024 * 256);
-////#define MEMORY_PARTS MEMORY_PART_STATIC(0),MEMORY_PART_STATIC(1)
+//////#define MEMORY_STATICS MEMORY_STATIC(0,1024 * 1024 * 128);MEMORY_STATIC(1,1024 * 1024 * 256);
+//////#define MEMORY_PARTS MEMORY_PART_STATIC(0),MEMORY_PART_STATIC(1)
 //#define MEMORY_SAFE_SIZE (128 * 1024)
 
 
@@ -230,7 +231,7 @@
 #define USE_HOST_ONLY_FUNCTIONS
 
 #define USE_MEMORY_C
-#define MEMORY_STATICS MEMORY_STATIC(0,1024*430);
+#define MEMORY_STATICS MEMORY_STATIC(0,1024*420);
 #endif
 
 #ifdef ON_RPI4
@@ -271,64 +272,48 @@ extern volatile unsigned char _end;
 #define MEMORY_SAFE_SIZE (128 * 1024)
 #endif
 
-#ifdef ON_UNIX_X11GL
-#define ON_UNIX
+#ifdef ON_LINUX_X11GL
+#define ON_LINUX
 #define WITH_UI
 #define WITH_GL
 #define WITH_AUDIO
 #endif
 
-#ifdef ON_UNIX_X11
-#define ON_UNIX
+#ifdef ON_LINUX_X11
+#define ON_LINUX
 #define WITH_UI
 #define WITH_X11_BITMAP
 #define WITH_AUDIO
 #endif
 
-#ifdef ON_UNIX
-#define DEVICE_MODE "Unix"
-#define GROUP_FULL_ANSI
-#define GROUP_UNIX
-#define USE_FS_SYSTEMDIR_UNIX
+#ifdef ON_LINUX
+#ifndef DEVICE_MODE
+#define DEVICE_MODE "Linux"
+#endif
+#define ON_UNIX
 #define USE_DEVICE_UNIX
-#define USE_X11
+#define USE_ETH_LINUX
 #define USE_ALSA
-#define USE_ETH_UNIX
 #endif
 
-#ifdef ON_UNIX_BM
-#define DEVICE_MODE "UnixBareMetal"
-#define GROUP_BAREMETAL
-#define MEMORY_C_SIZE (1024 * 1024 * 128)
-#define USE_ETH_STUB
-#define USE_SERIAL_STUB
-#define USE_STDARG_ANSI
-#define USE_RANDOM_C
-#define USE_TIME_ANSI
-//#define USE_TIME_STUB
-#define USE_ETH_STUB
-#define USE_FS_ROMDISK0 "../baremetal/nothing/nothing-native-romdisk.h"
-#define USE_FS_SYSTEMDIR_STUB
-#define USE_SERIAL_STUB
-#define USE_CONSOLE_OUT_ANSI
-#define USE_CONSOLE_IN_STUB
-
-#define NEED_ALIGN
-
-#endif
-
-#ifdef ON_RPIOS
-#define DEVICE_MODE "RPiOS"
+#ifdef ON_BSD_X11GL
+#define ON_BSD
 #define WITH_UI
 #define WITH_GL
-#define WITH_AUDIO
-#define GROUP_FULL_ANSI
-#define GROUP_UNIX
-#define USE_FS_SYSTEMDIR_UNIX
-#define USE_DEVICE_UNIX
-#define USE_X11
-#define USE_ALSA
-#define USE_ETH_UNIX
+#endif
+
+#ifdef ON_BSD_X11
+#define ON_BSD
+#define WITH_UI
+#define WITH_X11_BITMAP
+#endif
+
+#ifdef ON_BSD
+#ifndef DEVICE_MODE
+#define DEVICE_MODE "Bsd"
+#endif
+#define ON_UNIX
+#define USE_ETH_STUB
 #endif
 
 #ifdef ON_MACOS_X11GL
@@ -347,15 +332,19 @@ extern volatile unsigned char _end;
 
 #ifdef ON_MACOS_CMDLINE
 #define DEVICE_MODE "MacOsCmdLine"
-#define GROUP_FULL_ANSI
-#define GROUP_UNIX
-#define USE_FS_SYSTEMDIR_UNIX
+#define ON_UNIX
 #define USE_MACOS
-#define USE_X11
 #define USE_AUDIOTOOLBOX
 #define DEPRECATED_SEM
 #define USE_ETH_STUB
 #define USE_DEVICE_UNIX
+#endif
+
+#ifdef ON_UNIX
+#define GROUP_FULL_ANSI
+#define GROUP_UNIX
+#define USE_FS_SYSTEMDIR_UNIX
+#define USE_X11
 #endif
 
 #ifdef ON_MACOS

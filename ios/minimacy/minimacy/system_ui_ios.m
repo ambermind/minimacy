@@ -298,18 +298,6 @@ int fun_glSwapBuffers(Thread* th)
 }
 int viewPortScale(int u) { float v=u; v*=UI->scale; return (int)v; }
 
-void systemMainDir(char* path, int len, const char* argv0)
-{
-    NSString* file=[[NSBundle mainBundle]pathForResource:@"topLevel" ofType:@"mcy"];
-    if (file) [file getFileSystemRepresentation:path maxLength:1023];
-    else strcpy(path,"");
-    for(int i=(int)strlen(path)-1;i>=0;i--) if (path[i]=='/') {
-        path[i+1]=0;
-        break;
-    }
-//    printf("minimacy dir=%s\n%d\n",path,strlen(path));
-}
-
 void notifySuspend(void)
 {
     if (UI && !UI->suspended)
@@ -327,8 +315,19 @@ void notifyResume(void)
     }
 }
 
-void systemCurrentDir(char* path, int len) { path[0] = 0; }
-void systemUserDir(char* path, int len) { path[0] = 0; }
+void systemExecPath(char* path, int len, const char* argv0) {}
+void systemMinimacyDir(char* path, int len)
+{
+    NSString* file=[[NSBundle mainBundle]pathForResource:@"topLevel" ofType:@"mcy"];
+    if (file) [file getFileSystemRepresentation:path maxLength:1023];
+    else strcpy(path,"");
+    for(int i=(int)strlen(path)-1;i>=0;i--) if (path[i]=='/') {
+        path[i+1]=0;
+        break;
+    }
+}
+void systemCurrentDir(char* path, int len) {}
+void systemUserDir(char* path, int len) {}
 
 int systemUiHwInit(Pkg* system) {
     systemBleInit(system);

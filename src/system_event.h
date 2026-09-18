@@ -20,7 +20,7 @@ enum UIevent {
 	EVENT_SUSPEND,
 	EVENT_RESUME,
 	EVENT_MULTITOUCH,
-	EVENT_DROPFILES
+	EVENT_DROPFILES,
 };
 
 void internalPoke(void);

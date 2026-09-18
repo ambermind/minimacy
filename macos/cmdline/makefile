@@ -1,4 +1,6 @@
-#----------------------DO NOT TOUCH BELOW
+# SPDX-License-Identifier: GPL-3.0-only
+# Copyright (c) 2022, Sylvain Huet, Ambermind
+
 CC:= gcc -arch arm64 -arch x86_64
 CCL=$(CC)
 
@@ -101,6 +103,8 @@ LIBDIRX11= -L/usr/X11R6/lib
 INCX11   = -I/usr/X11R6/include
 
 help:
+	@echo ""
+	@echo "Welcome to MacOS command line Minimacy!"
 	@echo ""
 	@echo "available targets"
 	@echo "-----------------"

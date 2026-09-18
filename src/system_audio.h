@@ -5,4 +5,5 @@
 #define _SYSTEM_AUDIO_
 
 int systemAudioInit(Pkg* system);
+void systemAudioClose(void);
 #endif

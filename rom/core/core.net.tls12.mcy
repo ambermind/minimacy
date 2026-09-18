@@ -58,7 +58,7 @@ export struct TLS12= Stream+ [
 
 	clientSignAlgoTLS,
 
-	peerCertificatesTLS, clientValidatedCertificateTLS, siteCertificateTLS,
+	peerCertificatesTLS, clientValidatedCertificateTLS,
 	certificateChainTLS,
 
 	preMasterKeyTLS, masterSecretTLS,
@@ -134,7 +134,7 @@ fun _setCurve(tls, curveInfo)=
 fun _keyExchangeEcdhe(tls)= mkBlock8(tls.curveTLS.publicKeyC);;
 
 fun _keyExchangeRSA(tls)=
-	let tls.siteCertificateTLS -> certificate in
+	let head(tls.certificateChainTLS) -> certificate in
 	let pkcs1EncryptPubRsa(rsaFromKey(cerKey(certificate)), tls.preMasterKeyTLS) -> data in
 	mkBlock16(data);;
 
@@ -662,14 +662,11 @@ fun _clientParseCertificateVerify(tls, signAlgo, payload, sign)=
 //echoLn "\n\n\ncertifs"; 	for cer in tls.peerCertificatesTLS do (cerEcho (cer); echoLn "\n---------\n");
 	let time()->t0 in
 	let listReverse(tls.peerCertificatesTLS) -> lCertificates in
-	let set tls.siteCertificateTLS= cerByServerName(tls.serverNameTLS, lCertificates) -> siteCertificate in
-	if siteCertificate==nil then _setError(tls, ["SERVERNAME NOT FOUND IN CERTIFICATE ", tls.serverNameTLS])
-	else
-	let set tls.certificateChainTLS=cerCheckChain(t0, siteCertificate, lCertificates) -> certificateChain in
+	let set tls.certificateChainTLS=cerCheckChain(t0, tls.serverNameTLS, lCertificates) -> certificateChain in
 	if certificateChain==nil then
 		match lastError() with msgError error -> _setError(tls, error)
 	else
-	let signatureCheckFromCertificate(signAlgo, siteCertificate, payload, tls.signatureSKE) -> result in
+	let signatureCheckFromCertificate(signAlgo, head(tls.certificateChainTLS), payload, tls.signatureSKE) -> result in
 	if !result then
 		let if result==false then "WRONG SIGNATURE " else "UNKNOWN ALGO " -> txt in
 		_setError(tls, [txt, hexFromInt(signAlgo)])

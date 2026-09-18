@@ -52,6 +52,7 @@ fun uiUpdate ()= call _FUpdate(_Bmp);;
 
 fun uiOnKeyDown(cb) = set _SwitchDownCb = (lambda(key) = call cb(key); true);;
 fun uiOnKeyUp(cb) = set _SwitchUpCb = (lambda(key) = call cb(key); true);;
+var _SCALE=1;;
 #else
 use bios as bios;;
 
@@ -59,14 +60,16 @@ fun keyEmulateWithGpio(key, pin)= nil;;
 fun displaySetup (width, height, fUpdate) = nil;;
 
 #ifdef glSwapBuffers
-const _SCALE=8;;
-#else
-const _SCALE=1;;
-#endif
+var _SCALE=8;;
 fun uiStart( x, y, w, h, flags, title)=
 	bios.uiStart( x, y, w*_SCALE, h*_SCALE, flags, title);
 	uiBufferSetSize( w, h, false);; 
+fun displayScale(scale)= set _SCALE=scale;;
+#else
+fun displayScale(scale)= nil;;
 #endif
+#endif
+
 
 const _FONT_20_7f= strBuild({
 "\$00\$00\$00\$00\$00\$00\$00\$00\$5f\$00\$00\$00\$00\$07\$00\$07\$00\$00\$14\$7f\$14\$7f\$14\$00\$24\$2a\$6b\$2a\$12\$00\$23\$13\$08\$64\$62\$00\$36\$49\$55\$22\$50\$00\$00\$00\$05\$03\$00\$00",

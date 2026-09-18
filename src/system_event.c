@@ -13,41 +13,28 @@ void eventNotify(int c, int x, int y, int v)
 	int i = 0;
 //	PRINTF(LOG_DEV,"eventNotify %d %d %d %d\n",c,x,y,v);
 
-	out[i++] = 16;
-	out[i++] = 0;
-	out[i++] = (char)c;
-	out[i++] = 0;
-
-	out[i++] = (char)x; x >>= 8;
-	out[i++] = (char)x; x >>= 8;
-	out[i++] = (char)x; x >>= 8;
-	out[i++] = (char)x; x >>= 8;
-
-	out[i++] = (char)y; y >>= 8;
-	out[i++] = (char)y; y >>= 8;
-	out[i++] = (char)y; y >>= 8;
-	out[i++] = (char)y; y >>= 8;
-
-	out[i++] = (char)v; v >>= 8;
-	out[i++] = (char)v; v >>= 8;
-	out[i++] = (char)v; v >>= 8;
-	out[i++] = (char)v; v >>= 8;
-
+	*(short*)(&out[i]) = LSBW(12); i+=2;
+	*(short*)(&out[i]) = LSBW(c); i+=2;
+	*(int*)(&out[i]) = LSBL(x); i+=4;
+	*(int*)(&out[i]) = LSBL(y); i+=4;
+	*(int*)(&out[i]) = LSBL(v); i+=4;
+	lockEnter(&MM.lock);
 	internalSend(out, 16);
+	lockLeave(&MM.lock);
 }
 void eventBinary(int c, char* data, int dataLen)
 {
     char out[4];
     int i = 0;
-    int eventSize=dataLen+4;
+    int eventSize=dataLen;
 //    PRINTF(LOG_DEV,"eventNotify %d %d %d %d\n",c,x,y,v);
     c&=0xffff;
-    out[i++] = eventSize; eventSize>>=8;
-    out[i++] = eventSize;
-    out[i++] = c; c>>=8;
-    out[i++] = c;
-    internalSend(out, 4);
+	*(short*)(&out[i]) = LSBW(eventSize); i += 2;
+	*(short*)(&out[i]) = LSBW(c); i += 2;
+	lockEnter(&MM.lock);
+	internalSend(out, 4);
     internalSend(data, dataLen);
+	lockLeave(&MM.lock);
 }
 
 void internalPoke(void)

@@ -17,7 +17,7 @@
 #include<sys/ioctl.h>
 #include<unistd.h>
 #include<fcntl.h>
-#ifdef USE_ETH_UNIX
+#ifdef USE_ETH_LINUX
 #include<net/ethernet.h>
 #include<net/if.h>
 #include<ifaddrs.h>

@@ -13,9 +13,11 @@ var _InternalExt = hashmapCreate(4);;
 
 fun _registerInternalHook(event, cb)=set _InternalHook[event]=cb;;
 
+fun _registerInternal(event, f) = hashmapSet(_InternalExt, event, f); true;;
 fun registerInternalExt(event, f) = 
 	hashmapSet(_InternalExt, event, if f<>nil then
-		let _This -> th in lambda(data) = threadPost(th, lambda()= call f(data)));;
+		let _This -> th in lambda(data) = threadPost(th, lambda()= call f(data)));
+	true;;
 
 fun _internalExtAlive ()= 0<>hashmapCount(_InternalExt);;
 
@@ -28,9 +30,9 @@ fun _flushInternalGrouping(except)=
 	);;
 
 fun _internalUIevent(i, event)=
-	let signExtend32(strRead32Lsb(_InternalBuffer, i+4)) -> x in
-	let signExtend32(strRead32Lsb(_InternalBuffer, i+8)) -> y in
-	let signExtend32(strRead32Lsb(_InternalBuffer, i+12)) -> v in
+	let signExtend32(strRead32Lsb(_InternalBuffer, i)) -> x in
+	let signExtend32(strRead32Lsb(_InternalBuffer, i+4)) -> y in
+	let signExtend32(strRead32Lsb(_InternalBuffer, i+8)) -> v in
 	
 		if event==_EVENT_MOUSEMOVE || event==_EVENT_VWHEEL || event==_EVENT_HWHEEL || event==_EVENT_PAINT || event==_EVENT_SIZE then ( // grouping these events
 			_flushInternalGrouping(event);
@@ -56,11 +58,12 @@ fun _handleInternal(i)=
 	else
 	let strRead16Lsb(_InternalBuffer, i) -> eventSize in
 	let strRead16Lsb(_InternalBuffer, i+2) -> event in
+	let i+4 -> i in
 	if (i+eventSize)>len then _flushInternalGrouping(nil)
 	else (
 		if !bitTest(event, 0x8000) then (_internalUIevent(i, event); nil)
 		else let hashmapGet(_InternalExt, event) -> f in
-		if f<>nil then call f(strSlice(_InternalBuffer, i+4, eventSize-4));
+		if f<>nil then call f(strSlice(_InternalBuffer, i, eventSize));
 		_handleInternal(i+eventSize)
 	);;
 
@@ -79,6 +82,71 @@ fun _internalInit()=
 	];
 	_streamAddToList(_InternalPipe);
 	_socketSetSelectRead(_InternalPipe._socketS, true);;
+
+//-----------------------------------
+var _AudioEventId;;
+var _Samples;;
+var _Streamer;;
+var _RecEventId;;
+var _Recorder;;
+
+fun audioStop()=
+	set _Samples=nil;
+	set _Streamer=nil;
+	_registerInternal(_AudioEventId, nil);
+	_audioStop();;
+
+fun _soundStart()=
+	if !audioPlaying() then
+	let _audioStart() -> eventId in
+	if eventId<>nil then
+	_registerInternal(set _AudioEventId=eventId, lambda(input)=
+		set _Samples=listMap(_Samples, lambda([sample, fFeed, volume, offset])=
+			if offset<strLength(sample) then [sample, fFeed, volume, call fFeed(sample, offset, volume)]
+		);
+		if _Streamer<>nil then let _Streamer->[th, f] in (
+			void if th._stateT==_THREAD_DONE then set _Streamer=nil
+			else call f(strRead32Lsb(input, 0));
+		);
+		void if _Samples==nil && _Streamer==nil then audioStop()
+	);;
+
+fun soundPlayStereo16(sample, offset, volume)=
+	\atomic set _Samples=[sample, #audioFeedStereo16, volume, offset]::_Samples;
+	_soundStart();;
+
+fun soundPlayMono16(sample, offset, volume)=
+	\atomic set _Samples=[sample, #audioFeedMono16, volume, offset]::_Samples;
+	_soundStart();;
+
+fun onAudio(f) =
+	let _This -> th in set _Streamer= if f<>nil then [th, lambda(index) = threadPost(th, lambda()= call f(index))];
+	if f<>nil then _soundStart();;
+
+fun _recStop()=
+	set _Recorder=nil;
+	_registerInternal(_RecEventId, nil);
+	_audioRecStop();;
+
+fun _recStart(stereo)=
+	if !audioRecording() then
+	let _audioRecStart(stereo) -> eventId in
+	if eventId<>nil then
+	_registerInternal(set _RecEventId=eventId, lambda(input)=
+		if _Recorder<>nil then let _Recorder->[th, f] in (
+			void if th._stateT==_THREAD_DONE then set _Recorder=nil
+			else call f(input);
+		);
+		void if _Recorder==nil then _recStop()
+	);;
+
+fun onAudioRecord(stereo, f) =
+	void if f==nil then _recStop()
+	else
+	let _This -> th in (
+		set _Recorder= [th, lambda(input) = threadPost(th, lambda()= call f(input))];
+		_recStart(stereo)
+	);;
 
 //-----------------------------------
 var _Workers=arrayCreate(_WORKERS_COUNT, nil);;

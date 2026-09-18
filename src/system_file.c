@@ -237,9 +237,10 @@ int systemFileInit(Pkg *system)
 	};
 	NATIVE_DEF(nativeDefs);
 
-	fsInit();
 	pkgAddConstPnt(system, "_currentDir", memoryAllocStr(fsCurrentDir(), -1), MM.Str);
 	pkgAddConstPnt(system, "userDir", memoryAllocStr(fsUserDir(), -1), MM.Str);
+	pkgAddConstPnt(system, "_execPath", memoryAllocStr(fsExecPath(), -1), MM.Str);
+	pkgAddConstPnt(system, "_minimacyDir", memoryAllocStr(fsMinimacyDir(), -1), MM.Str);
 
 
 	return 0;

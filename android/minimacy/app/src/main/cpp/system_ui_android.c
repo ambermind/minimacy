@@ -570,8 +570,8 @@ static void engine_handle_cmd(struct android_app* app, int32_t cmd) {
 			break;
 	}
 }
-void systemMainDir(char* path, int len, const char* argv0)
-{
+void systemExecPath(char* path, int len, const char* argv0) {}
+void systemMinimacyDir(char* path, int len) {
 	if (UI.app) sprintf(path,"%s/",UI.app->activity->internalDataPath);
 	else strcpy(path, "");
 //	LOGI("minimacy dir=%s\n%d\n",path,strlen(path));
