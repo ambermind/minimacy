@@ -726,6 +726,7 @@ Def* pkgAddCons0(Pkg* pkg, char* name, Def* defType)
 
 void systemInit(Pkg *system)
 {
+	romdiskInit();
 	nativeDefsInit();
 
 	typesInit(system);

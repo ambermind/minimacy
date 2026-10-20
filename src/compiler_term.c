@@ -305,7 +305,7 @@ Type* compileTerm(Compiler* c)
 	else if (!strcmp(c->parser->token,"call"))
 		return compileCall(c);
 	else if (!strcmp(c->parser->token, "void"))
-	return compileVoid(c);
+		return compileVoid(c);
 	else if (!strcmp(c->parser->token, "strFormat"))
 		return compileFormat(c,MM.Str);
 	else if (!strcmp(c->parser->token, "bytesFormat"))

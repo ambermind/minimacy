@@ -49,7 +49,7 @@ const C1_CLK_INTLEN = 0x00000001;;
 
 // standard commands
 const CMD_GO_IDLE       = 0x00000000;;
-const CMD_ALL_SEND_CID  = 0x02010000;;
+const CMD_SEND_CID      = 0x02010000;;
 const CMD_SEND_REL_ADDR = 0x03020000;;
 const CMD_CARD_SELECT   = 0x07030000;;
 const CMD_SEND_IF_COND  = 0x08020000;;
@@ -177,8 +177,12 @@ fun _gpioPudClk(pin, mode)=
 	);;
 
 fun _read128Response ()=
+// with SDHCI, there is a 8bits shift: the CRC7 is removed
+// we can read 120 bits LSB from EMMC_RESP0, the 8 initial bits (1 reserved bit and 7 crc bits) are skipped
+// the first 8 bits of (read32 EMMC_RESP0) are bits 15:8
+// the last 8 bits of (read32 EMMC_RESP3) are bits 135:128
 	let bytesCreate(16, 0) -> r128 in (
-		for i=0;i<16 do bytesSet(r128, i, read8(EMMC_RESP0+15-i));
+		for i=0;i<15 do bytesSet(r128, i, read8(EMMC_RESP0+14-i));
 		strFromBytes(r128);
 	);;
 
@@ -204,7 +208,7 @@ export fun pi4SdInit ()=
 	if nil==sendCmd(CMD_GO_IDLE, 0) then return false;
 	if nil==sendCmd(CMD_SEND_IF_COND, IF_COND) then return false;
 	if !_waitForOpCond(30) then return false;
-	if nil==sendCmd(CMD_ALL_SEND_CID, 0) then return false;
+	if nil==sendCmd(CMD_SEND_CID, 0) then return false;
 	set CID = _read128Response();
 	if DEBUG then ( echoLn "CID"; hexDump CID);
 	set RelativeCardAddress=sendCmd(CMD_SEND_REL_ADDR, 0) & REL_ADDR_MASK;
@@ -213,17 +217,13 @@ export fun pi4SdInit ()=
 	if nil==sendCmd(CMD_SEND_CSD, RelativeCardAddress) then return false;
 	set CSD = _read128Response();
 	if DEBUG then ( echoLn "CSD"; hexDump CSD);
-// for unknown reason, there is a 8bits shift
-// we can read 120 bits LSB from EMMC_RESP0, the 8 initial bits (1 reserved bit and 7 crc bits) are skipped
-// the first 8 bits of (read32 EMMC_RESP0) are bits 15:8
-// the last 8 bits of (read32 EMMC_RESP3) are bits 135:128
 // see: http://problemkaputt.de/gbatek-dsi-sd-mmc-protocol-csd-register-128bit-card-specific-data.htm
 // and: https://goughlui.com/2014/01/03/project-read-collect-decode-sd-card-csd-register-data/
-	let (read32(EMMC_RESP3)>>22)&3 -> csd_version in	// 127:126
-	let (read32(EMMC_RESP2)>>8)&15 -> read_bl_len in	// 83:80
-	let ((read32(EMMC_RESP2)&0x3)<<24)|((read32(EMMC_RESP1)>>8)&0xffffff) -> c_size_sdhc in	// 69:48
-	let ((read32(EMMC_RESP2)&0x3)<<20)|((read32(EMMC_RESP1)>>22)&0x3ff) -> c_size_sdsc in	// 73:62
-	let (read32(EMMC_RESP2)>>5)&7 -> c_size_multi_sdsc in	// 49:47
+	let strRead8(CSD, 0)>>6 -> csd_version in	// 127:126
+	let strRead8(CSD, 5)&0x0f -> read_bl_len in	// 83:80
+	let strRead32Msb(CSD, 6)&0x3fffff -> c_size_sdhc in	// 69:48
+	let (strRead32Msb(CSD, 6)>>14)&0x3ff -> c_size_sdsc in	// 73:62
+	let (strRead16Msb(CSD, 9)>>7)&7 -> c_size_multi_sdsc in	// 49:47
 	let 1<<read_bl_len -> sectorSize in
 	let if csd_version<>0 then (c_size_sdhc+1)*1024
 	else (1<<(c_size_multi_sdsc+2))*(c_size_sdsc+1)
@@ -241,7 +241,9 @@ export fun pi4SdInit ()=
 		if DEBUG then echoLn strFormat("> EMMC: BlkCnt=*", UseBlkCnt);
 		set SectorSize = sectorSize;
 		set NbSectors = nbSectors;
-		echoLn strFormat("> EMMC: version *, * sectors (* bytes per sector)", csd_version, intWithDelimiter(".", nbSectors), sectorSize);
+		echoLn strFormat("> SD: EMMC version *, * sectors (* bytes per sector)", csd_version, intWithDelimiter(".", nbSectors), sectorSize);
+		echoLn strFormat("> SD: CID *", hexFromStr(CID));
+		echoLn strFormat("> SD: CSD *", hexFromStr(CSD));
 		true
 	);;
 

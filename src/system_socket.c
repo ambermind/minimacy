@@ -119,6 +119,8 @@ void lambdaPipe(SOCKET fds[2])
 {
 	int saved_flags;
 	if (pipe(fds)) return;
+	fdSetCloExec(fds[0]);
+	fdSetCloExec(fds[1]);
 	saved_flags = fcntl(fds[0], F_GETFL);
 	fcntl(fds[0], F_SETFL, saved_flags | O_NONBLOCK);
 }
@@ -475,6 +477,7 @@ int fun_udpCreate(Thread* th)
 
 	sock = socket(PF_INET, SOCK_DGRAM, 0);
 	if (sock == INVALID_SOCKET) FUN_RETURN_NIL;
+	fdSetCloExec(sock);
 	ioctlsocket(sock, FIONBIO, &argp);
 
 	if (port>0)
@@ -542,6 +545,7 @@ int fun_tcpOpen(Thread* th)
 
 	sock = socket(PF_INET, SOCK_STREAM, 0);
 	if (sock == INVALID_SOCKET) FUN_RETURN_NIL;
+	fdSetCloExec(sock);
 	ioctlsocket(sock, FIONBIO, &argp);
 	//	setsockopt(sock, SOL_SOCKET, SO_NOSIGPIPE, (void*)&set, sizeof(int));
 
@@ -574,6 +578,7 @@ int fun_tcpListen(Thread* th)
 
 	sock = socket(PF_INET, SOCK_STREAM, 0);
 	if (sock == INVALID_SOCKET) FUN_RETURN_NIL;
+	fdSetCloExec(sock);
 
 	lin.l_onoff = 0;
 	lin.l_linger = 0;
@@ -625,6 +630,7 @@ int fun_tcpAccept(Thread* th)
 	remoteSize = sizeof(remote);
 	sock = accept(srv->fd, (struct sockaddr*)&remote, &remoteSize);
 	if (sock == INVALID_SOCKET) FUN_RETURN_NIL;
+	fdSetCloExec(sock);
 	ioctlsocket(sock, FIONBIO, &argp);
 
 	s = _socketCreate(sock); if (!s) return EXEC_OM;
@@ -687,6 +693,7 @@ int fun_ethList(Thread* th)
 
 	ethSocket=socket(AF_PACKET, SOCK_RAW, IPPROTO_RAW);	//only for root on Linux
 	if(ethSocket==INVALID_SOCKET) FUN_RETURN_NIL;
+	fdSetCloExec(ethSocket);
 
 	address = addresses;
 	while(address)
@@ -749,6 +756,7 @@ int fun_ethCreate(Thread* th)
 		PRINTF(LOG_SYS, "> Error: Could not create AF_PACKET socket. User has insufficient permission\n");
 		FUN_RETURN_NIL;
 	}
+	fdSetCloExec(sock);
 	ioctlsocket(sock, FIONBIO, &argp);
 	addr.sll_family = AF_PACKET;
 	addr.sll_ifindex = ifindex;

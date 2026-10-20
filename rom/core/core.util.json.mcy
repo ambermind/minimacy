@@ -12,14 +12,17 @@
 
 use core.util.token;;
 
-sum Json= jsonNumber _, jsonString _, jsonNull, jsonTrue, jsonFalse, jsonArray _, jsonObject _;;
+sum Json= _jsonNumber _, jsonString _, jsonNull, jsonTrue, jsonFalse, jsonArray _, jsonObject _;;
 
-fun jsonInt(v)= jsonNumber floatFromInt(v);;
+fun jsonInt(v)= _jsonNumber strFromInt(v);;
+fun jsonBig(v)= _jsonNumber strFromBig(v);;
+fun jsonFloat(v)= _jsonNumber strFromFloat(v);;
 fun jsonBool(v)= if v then jsonTrue else jsonFalse;;
 fun jsonList(v)= jsonArray arrayFromList(v);;
 
-fun jsonNumberGet(p)=match p with jsonNumber v -> v;;
-fun jsonIntGet(p)= intFromFloat(match p with jsonNumber v -> v);;
+fun jsonIntGet(p)= match p with _jsonNumber v -> intFromStr(v);;
+fun jsonBigGet(p)= match p with _jsonNumber v -> bigFromStr(v);;
+fun jsonFloatGet(p)=match p with _jsonNumber v -> floatFromStr(v);;
 fun jsonBoolGet(p)=match p with jsonTrue -> true, jsonFalse -> false;;
 fun jsonStringGet(p)=match p with jsonString v -> v;;
 fun jsonObjectGet(p)=match p with jsonObject v -> v;;
@@ -75,7 +78,7 @@ fun _jsonParse(p, terminate)=
 	else if val=="{" then jsonObject _jsonParseObject(p, true)
 	else let strGet(val, 0) -> c in
 	if c==TOKEN_DOUBLEQUOTE then jsonString u8FromJson(val)
-	else if tokenIsNumber(val) then jsonNumber floatFromStr(val)
+	else if tokenIsNumber(val) then _jsonNumber val
 	else (setError(msgError strFormat("unknown '*'", val)); abort);;
 
 fun jsonParse(src, i0)=
@@ -92,7 +95,7 @@ fun jsonEncode(j)=
 		jsonNull -> "null",
 		jsonTrue -> "true",
 		jsonFalse -> "false",
-		jsonNumber f -> _nilCheck(strFromFloat(f)),
+		_jsonNumber f -> _nilCheck(f),
 		jsonString s -> _nilCheck(jsonFromU8(s)),
 		jsonArray a -> strBuild({"[", strJoin(",", arrayMap(a, #jsonEncode)), "]"}),
 		jsonObject a -> strBuild({
@@ -110,7 +113,7 @@ fun _jsonEncodePretty(j, pref)=
 		jsonNull -> "null",
 		jsonTrue -> "true",
 		jsonFalse -> "false",
-		jsonNumber f -> if f==nil then "null" else strFromFloat(f),
+		_jsonNumber f -> if f==nil then "null" else f,
 		jsonString s -> if s==nil then "null" else jsonFromU8(s),
 		jsonArray a -> if a==nil then "null" else let strConcat(pref, "  ") -> pref2 in strBuild({
 			"[\n",

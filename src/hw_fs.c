@@ -187,7 +187,6 @@ int fsMount(int standalone)
 
 void fsInit(const char* argv0)
 {
-	romdiskInit();
 	strcpy(ExecPath, "");
 	strcpy(MinimacyDir, "");
 	strcpy(CurrentDir, "");

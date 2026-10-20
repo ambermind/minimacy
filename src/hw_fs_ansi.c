@@ -179,15 +179,18 @@ void ansiFileClose(void* file)
 
 void* ansiFileOpen(char* path, char* mode)
 {
+	FILE* f;
 //		PRINTF(LOG_DEV,"ansiFileOpen '%s' %s\n", path, mode);
 #ifdef USE_FS_SYSTEMDIR_UNIX
 	{
 		struct stat statbuf;
-		stat(path, &statbuf);
+		if (stat(path, &statbuf)) return NULL;
 		if (S_ISDIR(statbuf.st_mode)) return NULL;
 }
 #endif
-	return (void*)fopen(path, mode);
+	f=fopen(path, mode);
+	if (f) fdSetCloExec(fileno(f));
+	return (void*)f;
 }
 LINT ansiFileSeek(void* file, LINT offset)
 {
@@ -327,6 +330,19 @@ int ansiDirDelete(char* path)
 {
 	if (rmdir(path)) return 0;	// 1 means ok
 	return 1;
+}
+#endif
+#ifdef USE_FS_ANSI_UNIX
+int fdSetCloExec(int fd) {
+	int flags;
+	if (fd<0) return -1;
+	flags = fcntl(fd, F_GETFD);
+	if (flags < 0) return -1;
+	return fcntl(fd, F_SETFD, flags | FD_CLOEXEC);
+}
+#else
+int fdSetCloExec(int fd) {
+	return 0;
 }
 #endif
 

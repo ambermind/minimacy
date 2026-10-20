@@ -605,7 +605,7 @@ int fun_spawn(Thread* th)
 //	for(i=0;i<argc;i++) printf("%d: %s\n", i, argv[i]);
 	if (!fork()) {
 		execvp(argv[0],argv);
-		exit(0);
+		_exit(127);
 	}
 	free(argv);
 	FUN_RETURN_BOOL(1);

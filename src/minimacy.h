@@ -4,7 +4,7 @@
 #ifndef _MINIMACY_
 #define _MINIMACY_
 
-#define VERSION_MINIMACY "2.1.4"
+#define VERSION_MINIMACY "2.1.5"
 //#undef ON_WINDOWS
 //#define ON_NOTHING
 

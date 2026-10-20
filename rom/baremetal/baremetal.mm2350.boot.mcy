@@ -123,6 +123,7 @@ fun _disksInit(biosMode) =
 	hide flashRead flashWrite flashMemRead flashMemWrite;	// prevent programs from addressing flash directly
 
 	set SdCard=sdInit(SPI_PORT, SPI_CLK_PIN, SPI_MOSI_PIN, SPI_MISO_PIN, SD_CS_PIN);
+	//set SdCard=sdInit(EXT_SPI_PORT, EXT_SPI_CLK_PIN, EXT_SPI_MOSI_PIN, EXT_SPI_MISO_PIN, EXT_SPI_CS_PIN);
 	if SdCard<>nil then
 	let volumeCreate(sdVolume, nil, true, #_sdRead, #_sdWrite, sdNbSectors(SdCard), sdSectorSize(SdCard))-> volume in
 //		let volumeFormatFat32 (volume, sdNbSectors (SdCard), 32, "SD32", true) -> _ in
@@ -130,6 +131,10 @@ fun _disksInit(biosMode) =
 		if !biosMode then
 			for m in mounts do romdiskFromMountSources(mountIndex(m), 2);
 	true;;
+
+fun _ethInit()=
+	set _EthLeft = encX24j600Init(ETH_LEFT,  SPI_PORT, SPI_CLK_PIN, SPI_MOSI_PIN, SPI_MISO_PIN, SPI_CS_LEFT_PIN,  SPI_INT_LEFT_PIN);
+	set _EthRight= encX24j600Init(ETH_RIGHT, SPI_PORT, SPI_CLK_PIN, SPI_MOSI_PIN, SPI_MISO_PIN, SPI_CS_RIGHT_PIN, SPI_INT_RIGHT_PIN);;
 
 fun splashDisplay(splash)=
 	ssd1306BlitRaw(_Oled, splash);;
@@ -169,8 +174,7 @@ fun main()=
 	keyEmulateWithGpio(Key_Right, SWITCH_RIGHT);
 	displaySetup(128, 64, (lambda(bmp)=ssd1306Blit(_Oled, bmp, 0); true));
 
-	set _EthLeft = encX24j600Init(ETH_LEFT,  SPI_PORT, SPI_CLK_PIN, SPI_MOSI_PIN, SPI_MISO_PIN, SPI_CS_LEFT_PIN,  SPI_INT_LEFT_PIN);
-	set _EthRight= encX24j600Init(ETH_RIGHT, SPI_PORT, SPI_CLK_PIN, SPI_MOSI_PIN, SPI_MISO_PIN, SPI_CS_RIGHT_PIN, SPI_INT_RIGHT_PIN);
+	_ethInit();
 
 	//if true then void gpioLoop()
 	//else

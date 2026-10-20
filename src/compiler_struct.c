@@ -188,7 +188,7 @@ Type* compileFields(Compiler* c, Def* def)
 		if (parserAssume(c,"=")) return NULL;
 		if (!(t=compileExpression(c))) return NULL;
 //		PRINTF(LOG_DEV,"unify field\n");
-		if (typeUnify(c,t,tfield->child[TYPEFIELD_FIELD])) return NULL;
+		if (typeUnify(c,tfield->child[TYPEFIELD_FIELD],t)) return NULL;
 		if (bc_byte_or_int(c,def->index, OPupdtb,OPupdt)) return NULL;
 		
 		if ((!parserNext(c)) || (strcmp(c->parser->token, ",") && strcmp(c->parser->token, "]")))

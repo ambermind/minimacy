@@ -24,6 +24,8 @@ void systemMinimacyDir(char* path, int len);
 void systemUserDir(char* userDir, int len);
 void systemCurrentDir(char* curDir, int len);
 
+int fdSetCloExec(int fd);
+
 void ansiFileClose(void* file);
 void* ansiFileOpen(char* name, char* mode);
 int ansiFileSize(void* file);

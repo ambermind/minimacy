@@ -768,24 +768,6 @@ int typePrimaryIsChild(Def* child, Def* parent)
 	return 0;
 }
 
-int typeRecUnify(Type* s, Type* t);
-
-int typeLink(Type* from, Type* to, Type* parentUnif, Type* childUnif )
-{
-	int i,k;
-	Type* save = from->actual;
-	from->actual = to;
-	if (from->code == TYPECODE_WEAK) typeGoWeak(to);
-	if (parentUnif)	for (i = 0; i < parentUnif->nb; i++)
-	{
-		if ((k = typeRecUnify(childUnif->child[i], parentUnif->child[i])))
-		{
-			from->actual = save;
-			return k;
-		}
-	}
-	return 0;
-}
 Type* _typeRecSimplify(Type* p)
 {
 	int i;
@@ -805,6 +787,26 @@ Type* typeSimplify(Type* p)
 }
 
 // unification
+int typeRecUnify(Type* s, Type* t);
+
+int typeLink(Type* from, Type* to, Type* parentUnif, Type* childUnif )
+{
+	int i,k;
+	Type* save = from->actual;
+	from->actual = to;
+
+	if (from->code == TYPECODE_WEAK) typeGoWeak(to);
+	if (parentUnif)	for (i = 0; i < parentUnif->nb; i++)
+	{
+		if ((k = typeRecUnify(childUnif->child[i], parentUnif->child[i])))
+		{
+			from->actual = save;
+			return k;
+		}
+	}
+//	if (from->code != TYPECODE_UNDEF && from->code != TYPECODE_WEAK) from->actual = save;
+	return 0;
+}
 int typeRecUnify(Type* s,Type* t)
 {
 	Type* z;
@@ -848,7 +850,7 @@ int typeRecUnify(Type* s,Type* t)
 	}
 	if (s->nb != t->nb) return COMPILER_ERR_TYPE;
 
-	return typeLink(t, s,t,s);
+	return typeLink(s, t, s, t);
 }
 
 int typeUnify(Compiler* c,Type* x,Type* y)

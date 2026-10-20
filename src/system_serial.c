@@ -76,6 +76,7 @@ int fun_serialOpen(Thread* th)
 		PRINTF(LOG_SYS, "> Error: Cannot open serial %s\n", STR_START(v));
 		goto cleanup;
 	}
+	fdSetCloExec(fd);
 	tcgetattr(fd, &options);
 	
 	tcflush(fd, TCIOFLUSH);

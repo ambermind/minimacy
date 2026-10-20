@@ -8,8 +8,8 @@ sum Asn1=
 	asn1ClassConstructed _ _ _,	asn1ClassPrimitive _ _ _,
 	asn1Bool _, asn1Integer _, asn1BitString _ _, asn1OctetString _, asn1Null, asn1ObjectIdentifier _,	// 0-7
 	asn1Utf8String _, // 8-15
-	asn1Seq _,asn1Set _, asn1PrintableString _, asn1IA5String _, asn1UtcTime _,	// 16-23
-	asn1Else _ _ _ _, asn1Raw _;;
+	asn1Seq _,asn1Set _, asn1NumericString _, asn1PrintableString _, asn1IA5String _, asn1UtcTime _,	// 16-23
+	asn1Else _ _ _ _, asn1Raw _, asn1BmpString _;;
 
 const ASN1_UNIVERSAL=0;;
 const ASN1_APPLICATION=1;;
@@ -26,9 +26,11 @@ const ASN1_EXTERNAL= 8;;
 const ASN1_UTF8STRING=12;;
 const ASN1_SEQUENCE=16;;
 const ASN1_SET= 17;;
+const ASN1_NUMERICSTRING= 18;;
 const ASN1_PRINTABLESTRING= 19;;
 const ASN1_IA5STRING= 22;;
 const ASN1_UTCTIME= 23;;
+const ASN1_BMPSTRING=30;;
 
 fun asn1Echo(prefix, a)=
 	echo prefix;
@@ -46,6 +48,7 @@ fun asn1Echo(prefix, a)=
 		asn1Null -> echoLn "asn1Null",
 		asn1Else class pc tag bin -> (echoLn ["?? ", tag];nil),
 		asn1Utf8String s -> echoLn strFormat("asn1Utf8String: *", s),
+		asn1BmpString s -> echoLn strFormat("asn1BmpString: *", u8FromU16Be(s)),
 		asn1Seq l -> (
 			echoLn strFormat("asn1Seq #*{", listLength(l));
 			let strConcat(prefix, " .") -> prefix in for p in l do asn1Echo(prefix, p);
@@ -57,6 +60,7 @@ fun asn1Echo(prefix, a)=
 			echo prefix; echoLn "}";
 		),
 		asn1ObjectIdentifier v -> let niceOID(v) -> nice in echoLn strFormat("asn1ObjectIdentifier: * *", v, if v<>nice then nice),
+		asn1NumericString v -> echoLn strFormat("asn1NumericString: *", v),
 		asn1PrintableString v -> echoLn strFormat("asn1PrintableString: *", v),
 		asn1IA5String v -> echoLn strFormat("asn1IA5String: *", v),
 		asn1UtcTime v -> echoLn strFormat("asn1UtcTime: *", v),
@@ -91,9 +95,11 @@ fun asn1Pack(a)=
 		asn1Null -> _asn1Block(ASN1_UNIVERSAL, 0, ASN1_NULL, ""),
 		asn1Else class pc tag bin -> _asn1Block(class, pc, tag, bin),
 		asn1Utf8String s -> _asn1Block(ASN1_UNIVERSAL, 0, ASN1_UTF8STRING, s),
+		asn1BmpString s -> _asn1Block(ASN1_UNIVERSAL, 0, ASN1_BMPSTRING, s),
 		asn1Seq l -> _asn1Block(ASN1_UNIVERSAL, 1, ASN1_SEQUENCE, strBuild(listMap(l, #asn1Pack))),
 		asn1Set l -> _asn1Block(ASN1_UNIVERSAL, 1, ASN1_SET, strBuild(listMap(l, #asn1Pack))),
 		asn1ObjectIdentifier v -> _asn1Block(ASN1_UNIVERSAL, 0, ASN1_OBJECTIDENTIFIER, strFromOid(v)),
+		asn1NumericString v -> _asn1Block(ASN1_UNIVERSAL, 0, ASN1_NUMERICSTRING, v),
 		asn1PrintableString v -> _asn1Block(ASN1_UNIVERSAL, 0, ASN1_PRINTABLESTRING, v),
 		asn1IA5String v -> _asn1Block(ASN1_UNIVERSAL, 0, ASN1_IA5STRING, v),
 		asn1UtcTime v -> _asn1Block(ASN1_UNIVERSAL, 0, ASN1_UTCTIME, v),
@@ -147,6 +153,8 @@ fun _asn1GetObject(bin, class, pc, tag, depth)=
 		ASN1_NULL -> asn1Null,
 		ASN1_OBJECTIDENTIFIER -> asn1ObjectIdentifier oidFromStr(bin),
 		ASN1_UTF8STRING -> asn1Utf8String bin,
+		ASN1_BMPSTRING -> asn1BmpString bin,
+		ASN1_NUMERICSTRING -> asn1NumericString bin,
 		ASN1_PRINTABLESTRING -> asn1PrintableString bin,
 		ASN1_IA5STRING -> asn1IA5String bin,
 		ASN1_UTCTIME -> asn1UtcTime bin,
@@ -178,7 +186,9 @@ fun strFromAsn1(a) = match a with
 	asn1BitString emptyBits b -> b,
 	asn1OctetString b -> b,
 	asn1Utf8String b -> b,
+	asn1BmpString b -> u8FromU16Be(b),
 	asn1ObjectIdentifier b -> b,
+	asn1NumericString b -> b,
 	asn1PrintableString b -> b,
 	asn1IA5String b -> b,
 	asn1UtcTime b -> b,

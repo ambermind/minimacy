@@ -22,7 +22,10 @@ int hwHasRandom()
 FILE* fCrypt = 0;	// this should be deallocated before closing the application
 void hwRandomInit(void)
 {
-	if (!fCrypt) fCrypt = fopen("/dev/urandom", "r");
+	if (!fCrypt) {
+		fCrypt = fopen("/dev/urandom", "r");
+		if (fCrypt) fdSetCloExec(fileno(fCrypt));
+	}
 	pseudoRandomInit();
 	//PRINTF(LOG_SYS,"------------DEV MODE------------\n");
 }
