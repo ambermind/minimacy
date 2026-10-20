@@ -184,9 +184,12 @@ void* ansiFileOpen(char* path, char* mode)
 #ifdef USE_FS_SYSTEMDIR_UNIX
 	{
 		struct stat statbuf;
-		if (stat(path, &statbuf)) return NULL;
-		if (S_ISDIR(statbuf.st_mode)) return NULL;
-}
+		if (stat(path, &statbuf)) {
+//			PRINTF(LOG_DEV,"errno '%d'\n", errno);
+			if (errno!=ENOENT) return NULL;
+		}
+		else if (S_ISDIR(statbuf.st_mode)) return NULL;
+	}
 #endif
 	f=fopen(path, mode);
 	if (f) fdSetCloExec(fileno(f));
