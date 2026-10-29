@@ -145,7 +145,7 @@ fun encX24j600Reset(enc)=
 		)
 	);;
 
-fun encX24j600LinkStatus(enc) = 
+export fun encX24j600LinkStatus(enc) = 
 	if enc<>nil then
 	lockSync(EncLock, lambda ()=
 		bitTest(PHSTAT1_LLSTAT, regReadPhy(enc, ENC_PHSTAT1))
