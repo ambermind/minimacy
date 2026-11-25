@@ -11,8 +11,6 @@ void eventNotify(int c, int x, int y, int v)
 {
 	char out[16];
 	int i = 0;
-//	PRINTF(LOG_DEV,"eventNotify %d %d %d %d\n",c,x,y,v);
-
 	*(short*)(&out[i]) = LSBW(12); i+=2;
 	*(short*)(&out[i]) = LSBW(c); i+=2;
 	*(int*)(&out[i]) = LSBL(x); i+=4;

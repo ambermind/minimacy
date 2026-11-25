@@ -15,7 +15,7 @@ fun _dirBestMatch(dir, candidate, i, result)=
 fun _systemDirFromFile(file)=
 	let strReplace(file, "\\", "/") -> boot in
 	let strLeft(boot, -strLength(SOURCE_EXTENSION)) -> boot in	// remove .mcy
-	let if _absoluteDir(boot) then boot else strConcat(_currentDir, boot) -> path in
+	let if _absoluteDir(boot) then boot else strConcat(_CurrentDir, boot) -> path in
 	let cleanPath(path) -> path in
 	let strCharPosRev(path, '/', nil) -> i in
 	let if i<>nil then i+1 else 0 -> i in

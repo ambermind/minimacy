@@ -1,0 +1,94 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2022, Sylvain Huet, Ambermind
+// Minimacy (r) System
+
+use core.storage.fat32;;
+use core.storage.romdisk;;
+
+extend VolumeType with uefiVolume;;
+
+fun mkStorageRead(i) = lambda(start, nb)= storageRead(i, start, nb);;
+fun mkStorageWrite(i) = lambda(sector, data) = storageWrite(i, sector, data);;
+
+const ScanCodes={
+	nil, Key_Up, Key_Down, Key_Right, Key_Left, Key_Home, Key_End, Key_Insert,
+	Key_Delete, Key_Page_Up, Key_Page_Down, Key_F1, Key_F2, Key_F3, Key_F4, Key_F5, 
+	Key_F6, Key_F7, Key_F8, Key_F9, Key_F10, Key_F11, Key_F12, 27
+};;
+
+fun handleKeyboard(input)=
+	let strRead16Lsb(input, 2) -> key in
+	let strRead16Lsb(input, 4) -> scan in
+	let match key with
+		0 -> ScanCodes[scan],
+		13 -> 10,
+		_ -> key
+	-> key in
+	if key>0 then (
+		uiPostKeyDown(key);
+		onTimeout(300, lambda()=uiPostKeyUp(key))
+	);;
+
+var LastButton=nil;;
+var LastX=nil;;
+var LastY=nil;;
+
+fun handleMouse(input)=
+	let signExtend16(strRead16Lsb(input, 2)) -> dx in
+	let signExtend16(strRead16Lsb(input, 4)) -> dy in
+	let signExtend16(strRead16Lsb(input, 6)) -> dz in
+	let signExtend16(strRead16Lsb(input, 8)) -> left in
+	let signExtend16(strRead16Lsb(input, 10)) -> right in
+	let uiComputeMouseX(dx) -> x in
+	let uiComputeMouseY(dy) -> y in
+	let dz -> dVwheel in
+	let nil -> dHwheel in
+	let if left<>0 then 1 else if right<>0 then 2 -> button in (
+		if x<>LastX || y<>LastY then uiPostMouseMove(x, y, button);
+		if dVwheel<>0 && dVwheel<>nil then uiPostVwheel(x, y, dVwheel);
+		if dHwheel<>0 && dHwheel<>nil then uiPostHwheel(x, y, (-dHwheel));
+		if button<>LastButton then (
+			if LastButton<>nil then uiPostUnclick(x, y, LastButton);
+			if button<>nil then uiPostClick(x, y, button);
+		);
+		set LastX=x;
+		set LastY=y;
+		set LastButton=button;
+		//	echoLn strFormat("mouse * * * *", LastX, LastY, dVwheel, LastButton);
+	);;
+
+fun handleAbsolute(input)=
+	let signExtend16(strRead16Lsb(input, 2)) -> x in
+	let signExtend16(strRead16Lsb(input, 4)) -> y in
+	let signExtend16(strRead16Lsb(input, 6)) -> w in
+	let signExtend16(strRead16Lsb(input, 8)) -> h in
+	let signExtend16(strRead16Lsb(input, 10)) -> buttons in
+	let uiComputeMouseXFromAbsolute(x*screenW()/w) -> x in
+	let uiComputeMouseYFromAbsolute(y*screenH()/h) -> y in
+	let if buttons<>0 then 1 else 0 -> button in (
+		if x<>LastX || y<>LastY then uiPostMouseMove(x, y, button);
+		if button<>LastButton then (
+			if LastButton<>nil then uiPostUnclick(x, y, LastButton);
+			if button<>nil then uiPostClick(x, y, button);
+		);
+		set LastX=x;
+		set LastY=y;
+		set LastButton=button;
+		//	echoLn strFormat("mouse * * * *", LastX, LastY, dVwheel, LastButton);
+	);;
+
+fun main()=
+//sleepMs(1000);	// freeze 2s to see boot on screen when computer has no serial console
+// consoleOnDisplay(false);	// stop the console on screen
+	for i=0;i<storageCount() do
+		let volumeCreate(uefiVolume, nil, storageWritable(i), mkStorageRead(i), mkStorageWrite(i), storageNbSectors(i), storageSectorSize(i)) -> volume in
+		let volumeMount(volume, "", "/") -> mounts in
+		for m in mounts do romdiskFromMountSources(mountIndex(m), 2);
+	registerInternalExt(uefiEventId(), lambda(input)= 
+		//hexDump input;
+		void match strRead16Lsb(input, 0) with
+			0 -> handleKeyboard(input),
+			1 -> handleMouse(input),
+			2 -> handleAbsolute(input)
+	);
+	start("boot");;

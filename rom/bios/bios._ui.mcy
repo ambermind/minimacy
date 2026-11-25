@@ -238,12 +238,14 @@ fun _uiStartDefault(x, y, w, h, flag, name)=
 	let workerGet() -> wId in
 	if _uiStart(x, y, w, h, flag|UI_GL, name, wId) then
 	(
+		if Device=="MacOsCmdLine" then sleepMs(1000);
 		_glMakeContext();
 		if !_UiFullGL then (
 			set _DstW=_uiW(); set _DstH=_uiH();
 			_initShaders();
 			uiBufferSetSize(w, h, true)
 		);
+//		onTimeout(500, lambda()= _glRefreshContext(); uiUpdate());
 		true
 	);;
 
@@ -295,10 +297,15 @@ var _OffX;;
 var _OffY;;
 fun _uiAlive()= _OffX<>nil;;
 fun _uiStopThread(th)= nil;;
+fun screenW()=graphicW();;
+fun screenH()=graphicH();;
 fun uiW()=bitmapW(_BackBuffer);;
 fun uiH()=bitmapH(_BackBuffer);;
 fun _xConvert(x, y)= x;;
 fun _yConvert(x, y)= y;;
+
+fun uiComputeMouseXFromAbsolute(x)= max(0, min(uiW(), x-_OffX));;
+fun uiComputeMouseYFromAbsolute(y)= max(0, min(uiH(), y-_OffY));;
 
 fun graphicList ()=
 	for [i, w, h, f] in graphicModes() do
@@ -394,8 +401,8 @@ fun _yConvert(x, y)= y;;
 
 fun _uiStartDefault(x, y, w, h, flag, name)=
 	echoLn "> This Minimacy VM doesn't support UI";
-	if device=="Unix" then echoLn "> You may launch minimacyX11GL instead of minimacy";
-	if device=="MacOsCmdLine" then echoLn "> You may launch minimacyMacX11 instead of minimacyMac";
+	if Device=="Unix" then echoLn "> You may launch minimacyX11GL instead of minimacy";
+	if Device=="MacOsCmdLine" then echoLn "> You may launch minimacyMacX11 instead of minimacyMac";
 	nil;;
 fun uiBufferSetSize(w, h, filter)= nil;;
 fun uiBuffer ()= nil;;

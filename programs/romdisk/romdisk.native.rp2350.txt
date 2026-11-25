@@ -78,4 +78,4 @@ core/core.util.regexp.mcy
 core/core.util.xml.mcy
 core/core.util.zip.mcy
 
-boot_release.mcy	boot.mcy
+boot.mcy	boot_release.mcy

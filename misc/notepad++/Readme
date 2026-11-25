@@ -1,0 +1,19 @@
+Minimacy extension for Notepad++
+--------------------------------
+
+Setup
+-----
+Either:
+- in Notepad++, menu Language > User Defined Language > Define your language...
+- click Import... and select the file minimacyForNotepad++.xml
+- restart Notepad++
+Or:
+- copy the file minimacyForNotepad++.xml into the directory %APPDATA%\Notepad++\userDefineLangs
+- restart Notepad++
+
+The .mcy files are then automatically highlighted.
+
+Update
+------
+Before importing a new version, remove the previous one:
+in the "Define your language" dialog, select "minimacy" in the "User language" list and click Remove.

@@ -109,7 +109,14 @@ int _glMakeGLcontextInitGL()
 		return -1;
 	}
 	UI.contextGl = glXCreateContext(UI.displayGl, vInfo, NULL, True);
-	glXMakeCurrent(UI.displayGl, UI.win, UI.contextGl);
+	if (!UI.contextGl) {
+		PRINTF(LOG_SYS,"> Error: glXCreateContext failed\n");
+		return -1;
+	}
+	if (!glXMakeCurrent(UI.displayGl, UI.win, UI.contextGl)) {
+		PRINTF(LOG_SYS,"> Error: glXMakeCurrent failed\n");
+		return -1;
+	}
 	GLinstance++;
 	return 0;
 }

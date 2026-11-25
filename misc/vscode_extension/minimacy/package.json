@@ -2,16 +2,38 @@
   "name": "minimacy",
   "displayName": "Minimacy",
   "description": "Syntax highlighting for Minimacy language",
-  "version": "0.0.1",
+  "version": "2.1.6",
   "engines": {
-    "vscode": "^1.60.0"
+    "vscode": "^1.79.0"
   },
-  "icon": "fileicons/images/logo1.ico",
+  "icon": "logo128.png",
   "categories": [
     "Programming Languages"
   ],
   "publisher": "amberMind",
+  "license": "GPL-3.0-only",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ambermind/minimacy.git",
+    "directory": "misc/vscode_extension/minimacy"
+  },
   "contributes": {
+    "configurationDefaults": {
+      "editor.tokenColorCustomizations": {
+        "textMateRules": [
+          { "scope": "keyword.control.mcy", "settings": { "foreground": "#E55934" } },
+          { "scope": "constant.language.mcy", "settings": { "foreground": "#A0A0FF" } },
+          { "scope": "constant.numeric.mcy", "settings": { "foreground": "#A0A0FF" } },
+          { "scope": "constant.character.mcy", "settings": { "foreground": "#A0A0FF" } },
+          { "scope": "entity.name.function.mcy", "settings": { "foreground": "#7878C0" } },
+          { "scope": "keyword.operator.mcy", "settings": { "foreground": "#A0A0FF", "fontStyle": "bold" } },
+          { "scope": "string.quoted.double.mcy", "settings": { "foreground": "#00E000" } },
+          { "scope": "constant.character.escape.mcy", "settings": { "foreground": "#E55934" } },
+          { "scope": "comment.line.mcy", "settings": { "foreground": "#00C000" } },
+          { "scope": "comment.block.mcy", "settings": { "foreground": "#00C000" } }
+        ]
+      }
+    },
     "languages": [
       {
         "id": "mcy",
@@ -22,48 +44,18 @@
         "extensions": [
           ".mcy"
         ],
-        "configuration": "./language-configuration.json"
-      },
-      {
-        "id": "dok",
-        "aliases": [
-          "Dok",
-          "dok"
-        ],
-        "extensions": [
-          ".dok"
-        ],
-        "configuration": "./language-configuration.json"
+        "configuration": "./language-configuration.json",
+        "icon": {
+          "light": "./icons/mcy.png",
+          "dark": "./icons/mcy.png"
+        }
       }
     ],
     "grammars": [
       {
         "language": "mcy",
         "scopeName": "source.mcy",
-        "path": "./syntaxes/tmLanguage.json"
-      },
-      {
-        "language": "dok",
-        "scopeName": "source.dok",
-        "path": "./syntaxes/dok.tmLanguage.json"
-      }
-    ],
-    "themes": [
-      {
-        "label": "Minimacy",
-        "extensions": [
-          ".mcy",
-          ".dok"
-        ],
-        "uiTheme": "vs-dark",
-        "path": "./themes/color-theme.json"
-      }
-    ],
-    "iconThemes": [
-      {
-        "id": "vs-minimal",
-        "label": "minimacy",
-        "path": "./fileicons/vs_minimal-icon-theme.json"
+        "path": "./syntaxes/minimacy.tmLanguage"
       }
     ]
   }

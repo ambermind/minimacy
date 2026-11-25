@@ -2,15 +2,19 @@
 # Copyright (c) 2022, Sylvain Huet, Ambermind
 # Minimacy (r) System
 
+UNAME := $(shell uname -s)
+IS_WSL := $(shell grep -qi microsoft /proc/version 2>/dev/null && echo yes)
 
-CC= aarch64-none-elf-gcc
-CCLD=aarch64-none-elf-gcc
-CCCP=aarch64-none-elf-objcopy
-
-#INC = -IC:\home\dev\arm\arm-gnu-toolchain-11.3.rel1-mingw-w64-i686-aarch64-none-elf\aarch64-none-elf\include
+CC := $(shell for c in aarch64-none-elf-gcc aarch64-elf-gcc aarch64-linux-gnu-gcc; do command -v $$c && break; done)
+ifeq ($(CC),)
+  $(error AArch64 bare-metal GCC not found — apt-get install gcc-aarch64-linux-gnu, brew install aarch64-elf-gcc, or toolchain Arm aarch64-none-elf)
+endif
+AARCH64 := $(CC:gcc=)
+LD      := $(CC)             
+CP      := $(AARCH64)objcopy
 
 ROOT:= ../..
-OBJDIR := $(ROOT)/obj
+OBJDIR := $(ROOT)/obj_pi
 vpath %.c $(ROOT)/src
 vpath %.h $(ROOT)/src
 
@@ -103,7 +107,15 @@ OBJ= $(CORE) $(EXTRA)
 
 CFLAGS = -O2 -Wall -ffreestanding -nostdinc -nostdlib -nostartfiles -Wno-strict-aliasing -fsigned-char
 
-TARGET= minimacyRpi4
+ifeq ($(UNAME),Darwin)
+  MINIMACY := $(ROOT)/bin/minimacyMac
+else
+  MINIMACY := $(ROOT)/bin/minimacy
+endif
+
+TARGET_NAME= minimacyRpi4
+TARGET_ELF= $(OBJDIR)/$(TARGET_NAME).elf
+TARGET_IMG= $(ROOT)/bin/$(TARGET_NAME).img
 
 help:
 	@echo ""
@@ -111,10 +123,18 @@ help:
 	@echo ""
 	@echo "available targets"
 	@echo "-----------------"
-	@echo "make rpi4         : build minimacyRpi4.img for rpi4" 
 	@echo "make clean        : clean build directory"
-	@echo "make copy-d4      : copy minimacyRpi4.img on D drive" 
-	@echo "make copy-e4      : copy minimacyRpi4.img on E drive" 
+	@echo "make romdisk      : build raspberry-pi-native-romdisk.h"
+	@echo "make rpi4         : build $(TARGET_NAME).img for rpi4" 
+	@echo "make uart         : start Bootdisk server & console" 
+	@echo "make copy4        : copy $(TARGET_NAME).img on removable FAT32 storage" 
+
+romdisk:
+	$(MINIMACY) -d $(ROOT)/programs/romdisk/romdisk.native.rpi.mcy
+	rm -f $(OBJDIR)/hw_fs_romdisk.o
+
+uart:
+	$(MINIMACY) $(ROOT)/programs/romdisk/romdisk.server.mcy
 
 rpi4: CFLAGS:= $(CFLAGS) -D ON_RPI4
 rpi4: rpi_common
@@ -123,10 +143,10 @@ $(OBJDIR)/raspberry-pi-start.o: raspberry-pi-start.S
 	$(CC) $(CFLAGS) -c raspberry-pi-start.S -o $(OBJDIR)/raspberry-pi-start.o
 
 rpi_common: $(OBJ) $(OBJDIR)/raspberry-pi-start.o 
-	$(CCLD) -nostdlib $(OBJDIR)/raspberry-pi-start.o $(OBJ) -T raspberry-pi-link.ld -o ../../bin/$(TARGET).elf
-	$(CCCP) -O binary ../../bin/$(TARGET).elf ../../bin/$(TARGET).img
+	$(LD) -nostdlib $(OBJDIR)/raspberry-pi-start.o $(OBJ) -T raspberry-pi-link.ld -o $(TARGET_ELF)
+	$(CP) -O binary $(TARGET_ELF) $(TARGET_IMG)
 
-$(OBJDIR)/%.o: %.c raspberry-pi-native-romdisk.h
+$(OBJDIR)/%.o: %.c
 	$(CC) $(CFLAGS) $(INC) -c $< -o $@
 
 $(OBJ): | $(OBJDIR)
@@ -137,7 +157,49 @@ $(OBJDIR):
 clean:
 	rm -rf $(OBJDIR) 2>/dev/null
 
-copy-d4:
-	cp ../../bin/minimacyRpi4.img d:/
-copy-e4:
-	cp ../../bin/minimacyRpi4.img e:/
+copy4: rpi4
+	@echo ""
+	@echo "Detect removable FAT32 volume (SD card or USB key) mounted on your system"
+ifeq ($(UNAME),Darwin)
+	@DST=$$(mount | sed -n 's/^.* on \(.*\) (msdos.*/\1/p' | head -n1); \
+	 test -n "$$DST" || { echo "No FAT32 volume mounted"; exit 1; }; \
+	 printf "Copy $(TARGET_NAME).img to %s? [Y/n] " "$$DST"; read a < /dev/tty; \
+	 case "$$a" in [nN]*) echo "Cancelled"; exit 1;; esac; \
+	 cp $(TARGET_IMG) "$$DST/"; diskutil eject "$$DST"; \
+	 echo "Done, card ejected"
+else ifeq ($(IS_WSL),yes)
+	@L=$$(powershell.exe -NoProfile -Command "Get-Volume | Where-Object FileSystem -eq FAT32 | Where-Object DriveType -eq Removable | Select -Expand DriveLetter" | tr -d '\r\n '); \
+	 test -n "$$L" || { echo "No FAT32 removable drive"; exit 1; }; \
+	 M=/mnt/$$(echo $$L | tr A-Z a-z); \
+	 printf "Copy $(TARGET_NAME).img to %s:/ ? [Y/n] " "$$L"; read a < /dev/tty; \
+	 case "$$a" in [nN]*) echo "Cancelled"; exit 1;; esac; \
+	 sudo mkdir -p $$M; \
+	 mountpoint -q $$M || sudo mount -t drvfs $$L: $$M; \
+	 mkdir -p $$M/EFI/BOOT; \
+	 cp $(TARGET_IMG) $$M/EFI/BOOT/; \
+	 sudo umount $$M; \
+	 powershell.exe -NoProfile -Command "(New-Object -comObject Shell.Application).Namespace(17).ParseName('$$L:').InvokeVerb('Eject')"; \
+	 echo "Done, drive ejected"
+else ifneq (,$(filter MINGW% MSYS% CYGWIN%,$(UNAME)))
+	@DRV=$$(powershell.exe -NoProfile -Command "Get-Volume | Where-Object FileSystem -eq FAT32 | Where-Object DriveType -eq Removable | Select -Expand DriveLetter" | tr -d '\r' | head -n1); \
+	 test -n "$$DRV" || { echo "No removable FAT32 drive found"; exit 1; }; \
+	 printf "Copy $(TARGET_NAME).img to %s:/ ? [Y/n] " "$$DRV"; read a < /dev/tty; \
+	 case "$$a" in [nN]*) echo "Cancelled"; exit 1;; esac; \
+	 cp $(TARGET_IMG) "$$DRV:/"; \
+	 powershell.exe -NoProfile -Command "(New-Object -comObject Shell.Application).Namespace(17).ParseName('$$DRV:').InvokeVerb('Eject')"; \
+	 echo "Done, drive ejected"
+else
+	@DST=$$(mount | sed -n 's/^.* on \(.*\) type vfat .*/\1/p' | head -n1); \
+	 test -n "$$DST" || { echo "No FAT32 volume mounted"; exit 1; }; \
+	 printf "Copy $(TARGET_NAME).img to %s? [Y/n] " "$$DST"; read a < /dev/tty; \
+	 case "$$a" in [nN]*) echo "Cancelled"; exit 1;; esac; \
+	 cp $(TARGET_IMG) "$$DST/"; sync; \
+	 DEV=$$(findmnt -no SOURCE "$$DST"); \
+	 if command -v udisksctl >/dev/null 2>&1; then \
+	   udisksctl unmount -b "$$DEV" >/dev/null 2>&1; \
+	   PARENT=/dev/$$(lsblk -no pkname "$$DEV"); \
+	   udisksctl power-off -b "$$PARENT" >/dev/null 2>&1 && echo "Ejected $$PARENT"; \
+	 else \
+	   sudo umount "$$DST" && echo "Unmounted (install udisks2 for safe power-off)"; \
+	 fi
+endif

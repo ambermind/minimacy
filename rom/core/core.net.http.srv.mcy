@@ -109,10 +109,10 @@ fun _serverReset(h) =
 	set h.cookiesH=nil;
 	set h.postDataH=nil;
 
-	set h._bufferH=nil;
 	set h._transferH=nil;
 	set h._contentH=nil;
-	set h._contentLengthH=0;;
+	set h._contentLengthH=0;
+	_headerHandleData(h, "");;
 
 //-------------- http content operations
 
@@ -121,13 +121,15 @@ fun _checkContentLength(h, data, len)=
 	if 0<strLength(data) then
 	(
 		set h._contentH=data::h._contentH;
-		set h._contentLengthH= h._contentLengthH+strLength(data)
+		set h._contentLengthH= h._contentLengthH+strLength(data);
+		if h._contentLengthH>=len then set h._bufferH=strRight(data, h._contentLengthH-len);
 	);
 	h._contentLengthH>=len;;	// Warning, we assume that there are no immediately chained data
 
 fun _checkContentChunked(h, data)=
 	if strLength(data)>0 then set h._bufferH=strConcat(h._bufferH, data);
-	if strLength(h._bufferH)>h.maxRequestSizeH then void (
+	set h._contentLengthH= h._contentLengthH+strLength(data);
+	if h._contentLengthH>h.maxRequestSizeH then void (
 		streamClose(h.ttH);
 		set h.ttH=nil
 	)
@@ -147,7 +149,7 @@ fun _checkContent(h, data)=
 	match h._transferH with
 		transferLength len -> _checkContentLength(h, data, len),
 		transferChunked -> _checkContentChunked(h, data),
-		transferNone -> true;;
+		transferNone -> (set h._bufferH=data; true);;
 
 fun _httpBuildHeaderList(headers, content)=
 	let fifoCreate() -> fifo in
@@ -172,7 +174,6 @@ fun _httpBuildReply(h, content)=
 
 fun _httpSendReply(h, reply, keepAlive)=
 	set h._contentH=nil;
-//	echoLn ["KeepAlive: ", keepAlive];
 	if !keepAlive then set h.closeAfterH=true;
 	let _httpBuildReply(h, reply) -> data in
 	_httpSend(h, data);
@@ -181,10 +182,11 @@ fun _httpSendReply(h, reply, keepAlive)=
 
 fun _httpGetReply(h)=
 	set h.postDataH=strBuild(listReverse(h._contentH));
-	let strLowercase(httpSrvGetRequestHeader(h, "Connection"))=="keep-alive" -> keepAlive in
+	let h.requestH -> [verb, uri, version] in
+	let version=="HTTP/1.1" || strLowercase(httpSrvGetRequestHeader(h, "Connection"))=="keep-alive" -> keepAlive in
+	let keepAlive && strLowercase(httpSrvGetRequestHeader(h, "Connection"))<>"close" -> keepAlive in
 	(
 		set h._contentH=nil;
-		let h.requestH -> [verb, uri, version] in
 		let call h.onRequestH(verb, uri) -> content in
 		_httpSendReply(h, content, keepAlive)
 	);;
@@ -192,10 +194,11 @@ fun _httpGetReply(h)=
 fun _httpHandleData(h, data)=
 	if data<>nil && _checkContent(h, data) then _httpGetReply(h);;
 
-fun _httpHandleHeader(h)=
+fun _httpHandleHeader(h, data)=
 	set h.handleDataH=#_httpHandleData;
 	set h.statusH=[HTTP_1_1, 200, "OK"];
-	_httpHandleData(h, "");;
+	set h._bufferH=nil;
+	_httpHandleData(h, data);;
 
 //-------------- websockets operations
 fun _wsHashSecret(key) = b64Encode(sha1(strConcat(key, WS_UUID)));;
@@ -300,6 +303,7 @@ fun _wsHandleHeader(h)=
 		_httpSend(h, _wsBuildReply(h));
 		// the client is not supposed to send data before receiving this reply header
 		// then we don't need to process the remaining data
+		set h._bufferH=nil;
 		nil
 	)
 	else
@@ -360,10 +364,9 @@ fun _checkHeader(h, data)=
 			if contentLength<>nil then transferLength contentLength
 			else if chunked then transferChunked
 			else transferNone;
-		match h._transferH with
-			transferChunked -> (set h._bufferH=ending; nil),
-			_ -> (set h._contentH=ending::nil; set h._contentLengthH=strLength(ending));
-
+		
+		set h._contentLengthH=0;
+		set h._bufferH=ending;
 		set h.requestH=[verb, uri, version];
 		set h.requestHeadersH=headers;
 		set h.cookiesH=_headerCookies(h);
@@ -374,7 +377,7 @@ fun _headerHandleData(h, data)=
 	if data<>nil && _checkHeader(h, data) then
 	let httpSrvGetRequestHeader(h, "Upgrade")=="websocket" -> ws in
 	if ws then _wsHandleHeader(h)
-	else _httpHandleHeader(h);;
+	else _httpHandleHeader(h, h._bufferH);;
 
 fun _httpFromServer(tls, stream, tt, onConnect)=
 //echoLn "_httpFromServer";

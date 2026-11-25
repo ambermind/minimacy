@@ -129,6 +129,10 @@ void bmmUpdateSize(int index,LINT size)
 {
 	MemoryStrips[index].size=size;
 }
+void bmmUpdateStart(int index,char* start)
+{
+	MemoryStrips[index].start=start;
+}
 void cMallocInit(void) {
 	LINT i;
 	BmmTotalFree = 0;

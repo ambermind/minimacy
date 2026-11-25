@@ -53,6 +53,7 @@ fun uiUpdate ()= call _FUpdate(_Bmp);;
 fun uiOnKeyDown(cb) = set _SwitchDownCb = (lambda(key) = call cb(key); true);;
 fun uiOnKeyUp(cb) = set _SwitchUpCb = (lambda(key) = call cb(key); true);;
 var _SCALE=1;;
+fun displayScale(scale)= nil;;
 #else
 use bios as bios;;
 

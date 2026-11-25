@@ -12,8 +12,8 @@
 
 #define COLORADD(x,y) (ColorClip[256+(x)+(y)])
 #define COLORSUB(x,y) (ColorClip[256+(x)-(y)])
-#define COLORMUL(x,y) (((x)*(y)>65535)?255:(((x)*(y))>>8))
-#define COLORALPHA(a,src,dst) (COLORADD(COLORMUL(a,src),COLORMUL(255-(a),dst)))
+#define COLORMUL(x,y) (((x)*(y)>65535)?255:((258*(x)*(y))>>16))	// ensures COLORMUL(255, 255)=255, considering that (255*255)>>8 = 254
+#define COLORALPHA(a,src,dst) (COLORADD(COLORMUL(a,src),COLORMUL(255-(a),dst)))	
 
 // IDCT : from https://membres-ljk.imag.fr/Valerie.Perrier/SiteWeb/node9.html
 // C * Ct = I
@@ -67,8 +67,6 @@ int _blendMul(int src, int dst) {
 int _blendAlpha(int src, int dst) {
 	int a = (src >> 24) & 255;
 	return
-		//(0xff000000)|
-		//(dst&0xff000000)|
 		(COLORALPHA(a, (src >> 24) & 255, (dst >> 24) & 255) << 24) |
 		(COLORALPHA(a, (src >> 16) & 255, (dst >> 16) & 255) << 16) |
 		(COLORALPHA(a, (src >> 8) & 255, (dst >> 8) & 255) << 8) |

@@ -32,8 +32,8 @@ fun main()=
 			usbStorageSectorSize(m))
 		-> volume in
 		//let volumeFormatFat32Mbr(volume, nil, 32, "BAREDISK", true) -> _ in
-		let volumeMount(volume, "usb/", "/") -> mounts in
-		if false then
+		let volumeMount(volume, "", "/") -> mounts in
+		//if false then
 		for m in mounts do romdiskFromMountSources(mountIndex(m), 2);
 	start("boot");
 	nil;;

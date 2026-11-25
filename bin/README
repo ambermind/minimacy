@@ -9,6 +9,7 @@ This directory is expected to contain the binary versions of the Minimacy Virtua
 - minimacyMacX11  : macos command line with X11
 - minimacyMacX11GL: macos command line with X11 and openGL (not working on Tahoe)
 - minimacyRpi4.img: baremetal raspberry Pi 4
+- BOOTX64.EFI     : baremetal UEFI
 
 Binary for MM-2350 is built in: ./baremetal/raspberry-2350/build/minimacy.uf2
 We are manually copying and renaming it here as: minimacyMM2350.uf2

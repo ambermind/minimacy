@@ -257,8 +257,9 @@ fun _fatClaim(p, cluster0, n)=
 	);;
 
 //---------------------------------------------------
-fun isDirectory(d)= bitTest(16, d.attrDF);;
-fun isVolumeName(d)= bitTest(8, d.attrDF);;
+fun isDirectory(d) = bitTest(16, d.attrDF);;
+fun isVolumeName(d)= bitTest( 8, d.attrDF);;
+fun isReadOnly(d)  = bitTest( 1, d.attrDF);;
 
 fun _parseDirectory(p, cluster, data, vFat, i)=
 //echoLn strFormat("_parseDirectory * * * *", cluster, data<>nil, vFat, i);
@@ -796,7 +797,7 @@ fun _mkPartition(volume, p, writable) =
 			if _writeRequired(mode) then _createFile(p, path, mode)
 		)
 		else
-		if !isDirectory(d) then _openFile(p, d, mode, false)
+		if !isDirectory(d) && !(_writeRequired(mode) && isReadOnly(d)) then _openFile(p, d, mode, false)
 	),
 	diskListP= lambda(output, path)= lockSync(p.lockP, (lambda ()=
 		let _partitionDir(p, path) -> lFiles in
@@ -807,7 +808,7 @@ fun _mkPartition(volume, p, writable) =
 	fileDeleteP=lambda(path)= lockSync(p.lockP, lambda ()=
 		if writable then 
 		let _partitionLocate(p, path) -> d in
-		if d<>nil then _deleteFile(p, d)
+		if d<>nil && !isDirectory(d) && !isReadOnly(d) then _deleteFile(p, d)
 	),
 	userSectorsP= p.dataSectorsP,
 	computeUsedSectorsP= lambda()= _partitionUsedSectors(p)

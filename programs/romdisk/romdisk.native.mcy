@@ -26,14 +26,15 @@ fun romdiskFromFiles(files, output)=
 	let fifoCreate() -> sizes in
 	(
 		for f in files do
-			let strSplit("\t", f)-> path::alias::_ in
-			if !strEmpty(path) then
+			let strSplit("\t", f)-> alias::path::_ in
+			if !strEmpty(alias) then
+			let if path==nil then alias else path -> path in
 			let load(path) -> data in
 			void if data==nil then (
 				if !strStartsWith(path, " ") then echoLn strFormat("===NOT FOUND: '*'", path);
 			)
 			else
-			let if alias==nil then path else alias -> alias in (
+			(
 				bufferAppend(sources, [
 					"//-------------------- ", alias, "\n",
 					"// ", strLength(data)," bytes\n",

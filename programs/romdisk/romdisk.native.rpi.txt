@@ -91,6 +91,7 @@ core/core.util.xml.mcy
 core/core.util.zip.mcy
 
 baremetal/baremetal.rpi4.boot.mcy
+driver/driver.generic.display.mcy
 driver/driver.rpi4.sd.mcy
 driver/driver.rpi4.eth.mcy
 driver/driver.rpi4.gpio.mcy
@@ -105,4 +106,4 @@ driver/driver.rpi4.usb.keyboard.mcy
 driver/driver.rpi4.usb.mouse.mcy
 driver/driver.rpi4.usb.storage.mcy
 
-boot_release.mcy	boot.mcy
+boot.mcy	boot_release.mcy

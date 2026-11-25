@@ -38,6 +38,7 @@ void bmmRebuildTree(void);
 void bmmDump(void);
 void bmmMayday(void);
 LINT bmmReservedMem(void);
+void bmmUpdateStart(int index,char* start);
 void bmmUpdateSize(int index,LINT size);
 void bmmUpdateCount(int count);
 

@@ -51,6 +51,7 @@ int fun_serialOpen(Thread* th)
 	if (Uart1FD) FUN_RETURN_NIL;	// already open
 
 	uart_init(uart1,bds);
+	uart_set_irq_enables(uart1, true, false);
 	if (!stop) stop=1;	// 0 -> 1 bit
 	if (parity) parity=3-parity;	// exchange 1 and 2 (ODD and EVEN)
 	uart_set_format(uart1, bits, stop, parity);
@@ -184,6 +185,7 @@ int fun_gpioSetDir(Thread* th) {
 	LINT dir=STACK_BOOL(th,1);
 	LINT gpio=STACK_INT(th,0);
 	gpio_set_dir(gpio,dir);
+	if (!dir) gpio_set_irq_enabled(gpio, GPIO_IRQ_EDGE_RISE | GPIO_IRQ_EDGE_FALL, true);
 	FUN_RETURN_INT(gpio);
 }
 int fun_gpioGet(Thread* th) {
@@ -413,7 +415,7 @@ int hostOnlyFunctionsInit(Pkg* system)
 	pkgAddType(system, "Spi");
 	pkgAddType(system, "I2c");
 	NATIVE_DEF(nativeDefs);
-	pkgAddConstPnt(system, "flashUniqueId", memoryAllocStr(FlashUniqueId,8), MM.Str);
+	pkgAddConstPnt(system, "FlashUniqueId", memoryAllocStr(FlashUniqueId,8), MM.Str);
 	Uart1FD=0;
 	I2cBaudrates[0]=I2cBaudrates[1]=0;
 	return 0;

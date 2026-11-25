@@ -794,16 +794,16 @@ int systemCoreInit(Pkg *system)
 	pkgAddType(system, "Definition");
 	pkgAddType(system, "Useless");
 	pkgAddType(system, "Oblivion");
-	Def* Device = pkgAddType(system, "Device");
+	Def* DeviceName = pkgAddType(system, "DeviceName");
 	MM.Type = pkgAddType(system, "Type")->type;
 
 	TimeDelta = 0;
 
 	snprintf(device, sizeof(device),"%sDevice", DEVICE_MODE);
 
-	pkgAddConstPnt(system, "version", memoryAllocStr(VERSION_MINIMACY,-1), MM.Str);
-	pkgAddConstPnt(system, "device", memoryAllocStr(DEVICE_MODE,-1), MM.Str);
-	pkgAddConstPnt(system, device, NULL, Device->type);
+	pkgAddConstPnt(system, "Version", memoryAllocStr(VERSION_MINIMACY,-1), MM.Str);
+	pkgAddConstPnt(system, "Device", memoryAllocStr(DEVICE_MODE,-1), MM.Str);
+	pkgAddConstPnt(system, device, NULL, DeviceName->type);
 
 	NATIVE_DEF(nativeDefs);
 

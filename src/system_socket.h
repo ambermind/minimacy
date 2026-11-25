@@ -90,5 +90,6 @@ int socketNextFd(void);
 int sysSocketInit(Pkg* system);
 void sysSocketClose(void);
 
+void selectPollingTemporisation(LINT nbActive, LINT now, LINT maxWait);
 int hwPsw(void);
 #endif

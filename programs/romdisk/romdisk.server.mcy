@@ -64,7 +64,7 @@ fun serialStart(port)=
 	let serialOpen(port, 115200, SERIAL_8BITS, SERIAL_NOPARITY, SERIAL_ONESTOPBIT) -> serial in
 	if serial==nil then (
 		echoLn "> Failed to open serial link";
-		if device=="Unix" then echoLn "> (sudo is required on Unix)";
+		if Device=="Linux" || Device=="Bsd" then echoLn "> (sudo is required on Unix-like)";
 		nil
 	)
 	else

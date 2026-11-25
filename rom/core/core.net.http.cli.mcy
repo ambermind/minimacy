@@ -380,3 +380,11 @@ export fun httpGet12(url)=
 		httpSend(httpForceTls12(httpCreate(nil, url, HTTP_1_0)), lambda(code, data)= joinSend(join, data))
 	);;
 
+export fun httpGetExt(h, url)=
+	let
+		if h==nil then httpCreate(nil, url, HTTP_1_1)
+		else httpReuse(h, nil, url, HTTP_1_1)
+	->h in
+	await(lambda(join)=
+		httpSend(h, lambda(code, data)= joinSend(join, [h, code, data]))
+	);;

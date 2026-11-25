@@ -7,14 +7,17 @@
 #include "hardware/gpio.h"
 #include "hardware/pio.h"
 
-#include "hardware/regs/addressmap.h"
 #include "hardware/structs/qmi.h"
 #include "hardware/structs/xip_ctrl.h"
+#include "hardware/structs/scb.h"
 #include "hardware/sync.h"
+#include "hardware/irq.h"
+#include "hardware/uart.h"
 #include "pico/binary_info.h"
 #include "pico/stdlib.h"
 #include "pico/rand.h"
 #include "pico/bootrom.h"
+
 
 #include <stdio.h>
 
@@ -33,11 +36,13 @@ void uartInit()
 	gpio_set_function(GPIO_UART_TX, UART_FUNCSEL_NUM(UART_CONSOLE, GPIO_UART_TX));
 	gpio_set_function(GPIO_UART_RX, UART_FUNCSEL_NUM(UART_CONSOLE, GPIO_UART_RX));
 	uart_init(UART_CONSOLE,115200);
+	uart_set_irq_enables(UART_CONSOLE, true, false);
 
 #ifdef GPIO_UART1_TX
 	gpio_set_function(GPIO_UART1_TX, UART_FUNCSEL_NUM(uart1, GPIO_UART1_TX));
 	gpio_set_function(GPIO_UART1_RX, UART_FUNCSEL_NUM(uart1, GPIO_UART1_RX));
 	uart_init(uart1,9600);
+	uart_set_irq_enables(uart1, true, false);
 #endif
 }
 
@@ -133,9 +138,31 @@ unsigned int storage_get_flash_capacity() {
 
     return 1 << rxbuf[3];
 }
+
+void idleInit(void)
+{
+    // Any interrupt becoming pending (even if disabled in the NVIC) wakes WFE
+    scb_hw->scr |= M33_SCR_SEVONPEND_BITS;
+}
+
+LINT lastActive=0;
+void selectPollingTemporisation(LINT nbActive, LINT now, LINT maxWait)
+{
+	if (nbActive) lastActive=now;
+	else if ((now-lastActive>10)&&(maxWait>=1)) {
+		best_effort_wfe_or_timeout(make_timeout_time_us(1000));
+		irq_clear(UART0_IRQ);
+		irq_clear(UART1_IRQ);
+		for (unsigned i = 0; i < (NUM_BANK0_GPIOS + 7) / 8; i++)
+        io_bank0_hw->intr[i] = io_bank0_hw->intr[i];   // write-1-to-clear edge bits
+		irq_clear(IO_IRQ_BANK0);
+	}
+}
+
 //#define ROM_FUNC_FLASH_DEVINFO16 ROM_TABLE_CODE('E', 'X')
 int main()
 {
+	idleInit();
 	uartInit();
 	termInit();
 //PRINTF(LOG_DEV,"\n\n----\n");

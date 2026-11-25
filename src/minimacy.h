@@ -4,7 +4,7 @@
 #ifndef _MINIMACY_
 #define _MINIMACY_
 
-#define VERSION_MINIMACY "2.1.5"
+#define VERSION_MINIMACY "2.1.6"
 //#undef ON_WINDOWS
 //#define ON_NOTHING
 
@@ -84,9 +84,14 @@
 #define DEVICE_MODE "Uefi"
 #define WITH_UART
 #define WITH_SECTOR_STORAGE
-#define USE_ETH_UEFI
+#define UEFI_STORAGE_MINIMUM_SIZE (1024*1204*16)
 #define GROUP_BAREMETAL
-#define MEMORY_C_SIZE (1024 * 1024 * 128)
+#define USE_INTERNAL_BUFFER
+#define USE_MEMORY_C
+#define MEMORY_PARTS MEMORY_PART_FIXED(0, 0)
+//#define MEMORY_STATICS MEMORY_STATIC(0,1024 * 1024 * 128);
+//#define MEMORY_PARTS MEMORY_PART_STATIC(0)
+#define MEMORY_SAFE_SIZE (128 * 1024)
 #define USE_STDARG_ANSI
 #define USE_RANDOM_UEFI
 #define USE_TIME_UEFI
@@ -97,14 +102,9 @@
 #define USE_FS_ROMDISK0 "../baremetal/uefi/uefi-native-romdisk.h"
 // #define USE_UEFI_MANUAL_BLIT
 #define USE_SERIAL_STUB
+#define USE_SOFT_CURSOR
 #define USE_HOST_ONLY_FUNCTIONS
-#define USE_BOOTLOADER
-
-#define USE_KEYBOARD // accept keyboard input as well as the uart input
-// uncomment the following line to display the console on the monitor as well as on the uart
-// this may be very slow on some devices
-// and the char code '8' will put some trouble on the
-// #define USE_CONSOLE_MONITOR
+//#define USE_BOOTLOADER
 
 #endif
 

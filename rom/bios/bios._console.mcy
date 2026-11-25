@@ -169,5 +169,5 @@ fun _consoleLoop(csl) =
 
 fun consoleStart(p0)=
 	let if p0==_SystemPkg || p0==nil then pkgCreate(nil, nil) else p0 -> p in
-	_consoleLoop([_pkgC=p, _promptC= strFormat("\n*] ", pkgName(p0))]);
+	_consoleLoop([_pkgC=p, _promptC= strFormat("*] ", pkgName(p0))]);
 	true;;

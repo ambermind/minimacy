@@ -1,30 +1,52 @@
-
 How to update keywords list
 ---------------------------------
 
-Update keywords in files:
-	syntaxes\tmLanguage.json
-	syntaxes\dok.tmLanguage.json
+Update keywords in file:
+	syntaxes\minimacy.tmLanguage
 
-Language keywords (if, then, let, ...) are in: repository/keywords/patterns/match
-Bios keywords are in: repository/api/patterns/match
-These are regular expressions: they are separated with pipes|
+This is a TextMate grammar in XML (plist) format.
+Language keywords (if, then, let, ...) are in: repository > keywords > patterns > match
+Bios keywords are in: repository > api > patterns > match
+
+These lists are regular expressions in extended mode (they start with "(?x)"):
+spaces and line breaks are ignored, so there is one keyword per line, each one
+preceded by a pipe |, for example:
+
+	<string>(?x)(?&lt;!\w)(
+	  arrayDump
+	| void
+	| \\int
+	)\b</string>
+
+Rules:
+- a keyword must not contain spaces nor '#' (in extended mode, '#' starts a comment)
+- a backslash is written \\ (example: \\int for the keyword \int)
+- XML escaping: < is written &lt;  > is written &gt;  & is written &amp;
+
 
 How to build the extension
 ----------------------------------
-In order to install vsce: npm install -g @vscode/vsce
+In order to install or update vsce: npm install -g @vscode/vsce
 
-Start the following command from directory minimacy\misc\vscode_extension\minimacy: vsce package
+The version number is in package.json ("version" field).
+Change it before each new release.
 
-\minimacy\misc\vscode_extension\minimacy> vsce package
- WARNING  A 'repository' field is missing from the 'package.json' manifest file.
-Do you want to continue? [y/N] y
- DONE  Packaged: \minimacy\misc\vscode_extension\minimacy\minimacy-0.0.1.vsix (12 files, 17.09KB)
- INFO 
-The latest version of vsce is 2.5.1 and you have 1.99.0.
-Update it now: npm install -g vsce
-\minimacy\misc\vscode_extension\minimacy> 
+Start the following command from directory minimacy\misc\vscode_extension\minimacy:
 
-Then the build package is: minimacy-0.0.1.vsix
+	vsce package          -> build with the current version
 
-Remove the previous extension before installing the new one.
+The build package is: minimacy-<version>.vsix (for example minimacy-2.1.6.vsix)
+
+
+How to install the extension
+----------------------------------
+There is no need to remove the previous version: installing a newer version replaces it.
+
+Either from VS Code: Extensions panel, "..." menu, "Install from VSIX..."
+Or from the command line:
+
+	code --install-extension minimacy-<version>.vsix
+
+To reinstall the same version, add --force to the command line.
+
+Then reload VS Code: Ctrl+Shift+P, "Developer: Reload Window".

@@ -261,9 +261,9 @@ fun memoryTry(size) = _memoryTry(size)||(gcCompact(); _memoryTry(size));;
 fun spawn(args) =
 	let listMap(args, lambda(w)= strFormat("\"*\"", strReplace(w,"\"", "\\\""))) -> args in
 	_spawnWin(strJoin(" ", args));;
-fun spawnSelf(args) = spawn(_execPath::strReplace(head(args), "[minimacy]", _minimacyDir)::tail(args));;
+fun spawnSelf(args) = spawn(_ExecPath::strReplace(head(args), "[minimacy]", _MinimacyDir)::tail(args));;
 #endif
 #ifdef _spawn
 fun spawn(args) = _spawn(arrayFromList(args));;
-fun spawnSelf(args) = spawn(_execPath::strReplace(head(args), "[minimacy]", _minimacyDir)::tail(args));;
+fun spawnSelf(args) = spawn(_ExecPath::strReplace(head(args), "[minimacy]", _MinimacyDir)::tail(args));;
 #endif

@@ -4,8 +4,14 @@ Minimacy extension for Vi/Vim
 Setup
 -----
 - copy the directory .vim in your home directory
+  (on Windows: copy its content into the directory vimfiles of your home directory)
 - when you do not have any .vimrc file, copy the .vimrc file from this extension
-- else open your .vimrc file and insert the content of the .vimrc file from this extension
+- else check that your .vimrc file contains the line: syntax on
+
+The colors are defined in .vim/syntax/mcy.vim and only apply to .mcy files.
+In a terminal, Vim uses approximate colors (red, cyan, green, ...).
+To get the exact colors in a terminal supporting 24-bit colors, add to your .vimrc:
+	set termguicolors
 
 Troubleshooting
 ---------------

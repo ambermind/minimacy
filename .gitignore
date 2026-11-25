@@ -8,6 +8,8 @@
 
 /baremetal/raspberry-2350/build
 /obj
+/obj_rpi
+/obj_uefi
 
 /bin/*
 !/bin/README

@@ -272,9 +272,13 @@ fun cerEcho(cer)=
 	_cerEchoHex(hexFromStr(cer.signatureX)); 
 	cer;;
 //-------------- check or chain
+fun unsignedLower(a, b)=
+	if a>=0 then b<0 || a<b
+	else b<0 && a<b;;
+
 fun cerCheckTime(certificate, t)=
 	if t==nil then true
-	else (certificate.fromX<=t) && (t<=certificate.toX);;
+	else unsignedLower(certificate.fromX, t) && unsignedLower(t, certificate.toX);;
 
 fun cerMatchServerName(certificate, serverName)=
 	let cerSubjectAltName(certificate) -> listNames in

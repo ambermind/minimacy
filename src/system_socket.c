@@ -477,7 +477,7 @@ int fun_udpCreate(Thread* th)
 
 	sock = socket(PF_INET, SOCK_DGRAM, 0);
 	if (sock == INVALID_SOCKET) FUN_RETURN_NIL;
-	fdSetCloExec(sock);
+	fdSetCloExec((int)sock);
 	ioctlsocket(sock, FIONBIO, &argp);
 
 	if (port>0)
@@ -545,7 +545,7 @@ int fun_tcpOpen(Thread* th)
 
 	sock = socket(PF_INET, SOCK_STREAM, 0);
 	if (sock == INVALID_SOCKET) FUN_RETURN_NIL;
-	fdSetCloExec(sock);
+	fdSetCloExec((int)sock);
 	ioctlsocket(sock, FIONBIO, &argp);
 	//	setsockopt(sock, SOL_SOCKET, SO_NOSIGPIPE, (void*)&set, sizeof(int));
 
@@ -578,7 +578,7 @@ int fun_tcpListen(Thread* th)
 
 	sock = socket(PF_INET, SOCK_STREAM, 0);
 	if (sock == INVALID_SOCKET) FUN_RETURN_NIL;
-	fdSetCloExec(sock);
+	fdSetCloExec((int)sock);
 
 	lin.l_onoff = 0;
 	lin.l_linger = 0;
@@ -630,7 +630,7 @@ int fun_tcpAccept(Thread* th)
 	remoteSize = sizeof(remote);
 	sock = accept(srv->fd, (struct sockaddr*)&remote, &remoteSize);
 	if (sock == INVALID_SOCKET) FUN_RETURN_NIL;
-	fdSetCloExec(sock);
+	fdSetCloExec((int)sock);
 	ioctlsocket(sock, FIONBIO, &argp);
 
 	s = _socketCreate(sock); if (!s) return EXEC_OM;
@@ -674,10 +674,58 @@ int fun_udpSend(Thread* th) FUN_RETURN_NIL
 int fun_udpRead(Thread* th) FUN_RETURN_NIL
 int fun_ipByName(Thread* th) FUN_RETURN_NIL
 int fun_nameByIp(Thread* th) FUN_RETURN_NIL
-int fun_hostName(Thread* th) FUN_RETURN_NIL
+int fun_hostName(Thread* th) { FUN_RETURN_STR("localhost", -1); }
+
+#ifdef USE_INTERNAL_BUFFER
+
+#define INTERNAL_BUFFER_LEN 1024
+unsigned char internalBuffer[INTERNAL_BUFFER_LEN];
+int internalWrite=0;
+int internalRead=0;
+
+int _internalCheckReadable(Socket* s) {
+	if (internalWrite==internalRead) return 0;
+	return 1;
+}
+
+int fun_internalOpen(Thread* th)
+{
+	Socket* s = _socketCreate(0); if (!s) return EXEC_OM;
+	s->checkReadable = _internalCheckReadable;
+	FUN_RETURN_PNT((LB*)s);
+}
+
+int fun_internalRead(Thread* th)
+{
+	int toRead, start;
+	Socket* s = (Socket*)STACK_PNT(th, 0);
+	if ((!s)||(s->fd == INVALID_SOCKET)) FUN_RETURN_NIL;
+	toRead=(internalWrite>=internalRead)?(internalWrite-internalRead):(INTERNAL_BUFFER_LEN-internalRead);
+	start=internalRead;
+	internalRead=(internalRead+toRead)&(INTERNAL_BUFFER_LEN-1);
+	s->readable=0;
+	FUN_RETURN_STR(internalBuffer+start, toRead);
+}
+void internalSend(char* src, int len)
+{
+	int i;
+	int internalWriteSave=internalWrite;
+	for(i=0;i<len;i++) {
+		int internalWriteNext=(internalWrite+1)&(INTERNAL_BUFFER_LEN-1);
+		if (internalWriteNext==internalRead) {	// buffer full
+			internalWrite=internalWriteSave;	// cancel the whole frame
+			return;
+		}
+		internalBuffer[internalWrite]=src[i];
+		internalWrite=internalWriteNext;
+	}
+}
+
+#else
 int fun_internalOpen(Thread* th) FUN_RETURN_NIL
 int fun_internalRead(Thread* th) FUN_RETURN_NIL
 void internalSend(char* src, int len) {}
+#endif
 #endif
 
 
@@ -894,6 +942,7 @@ int fun_select(Thread* th)
 	if (!timeoutIsNil) timeout=hwTimeMs()+timeout;
 	while(k==0)
 	{
+		LINT now;
 		LB* p = sockets;
 #ifdef WITH_POWER_SWITCH
 		if (hwPsw()) {
@@ -914,8 +963,14 @@ int fun_select(Thread* th)
 			}
 			p = ARRAY_PNT(p, LIST_NXT);
 		}
-		if ((!timeoutIsNil)&&(timeout-hwTimeMs()<=0)) break;
-		
+		now=hwTimeMs();
+		if (k) selectPollingTemporisation(k, now, 0);
+		else if (timeoutIsNil) selectPollingTemporisation(0, now, 1000);
+		else {
+			LINT delta=timeout-now;
+			if (delta<=0) break;
+			selectPollingTemporisation(0, now, delta);
+		}
 	}
 
 	FUN_RETURN_INT(k);

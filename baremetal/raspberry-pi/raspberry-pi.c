@@ -70,6 +70,31 @@ void ramSize(void)
 	}
 }
 
+void idleInit(void)
+{
+    unsigned long freq;
+    __asm__ volatile("mrs %0, cntfrq_el0" : "=r"(freq));          // 54 MHz on Pi 4
+
+    // Event period = 2^(evnti+1) ticks: pick the largest period not above 1 ms
+    unsigned evnti = 0;
+    while (evnti < 15 && (1UL << (evnti + 2)) <= freq / 1000) evnti++;
+
+    // Same layout in both registers: EVNTEN = bit 2, EVNTDIR = bit 3, EVNTI = bits 7:4
+    unsigned long v;
+	__asm__ volatile("mrs %0, cnthctl_el2" : "=r"(v));
+	v = (v & ~0xF8UL) | (1UL << 2) | ((unsigned long)evnti << 4);
+	__asm__ volatile("msr cnthctl_el2, %0; isb" : : "r"(v));
+}
+
+LINT lastActive=0;
+void selectPollingTemporisation(LINT nbActive, LINT now, LINT maxWait)
+{
+	if (nbActive) lastActive=now;
+	else if ((now-lastActive>10)&&(maxWait>=1)) {
+		__asm__ volatile("wfe");
+	}
+}
+
 #ifdef ON_RPI5
 const char* Argv[]={"minimacy",""};
 #else
@@ -87,6 +112,7 @@ void main()
 	mmu_init();
 	getBoardInfo();
 	setArmClocks();
+	idleInit();
 #ifdef ON_RPI5
 	hwDtbInit();
 #endif

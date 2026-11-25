@@ -176,6 +176,7 @@ fun netSetup(net, name, mac, mtu) =
 	set net.macI= macFromStr(mac);
 	set net.mtuI=mtu;
 	net;; 
+fun netLocalIps()= listMap(netList(), lambda(n)= strFromIp(n.ipI));;
 
 fun netUpdateAddr(net, ip, submask, gateway, dns)=
 	set net.ipI=ipFromStr(ip);
@@ -194,13 +195,13 @@ fun netActivate(net)=
 
 fun _nativeNetworksInit ()=	// declare native Ethernet Interfaces if any
 	let netSetup([loI=true], "lo", nil, nil) -> net in (
-		netOnActivate(net, (lambda ()= void set net._socketS= socketEmpty()));
+		netOnActivate(net, lambda ()= void set net._socketS= socketEmpty());
 		netUpdateAddr(net, "127.0.0.1", "255.0.0.0", nil, nil);
 		netAdd(net)
 	);
 	for [index, name, family, mac, mtu, ip, submask] in _ethList() do
 	if mac<>"\0\0\0\0\0\0" then
-	let netSetup([Network], name, mac, mtu) -> net in (
+	let netSetup([Network], name, strFromMac(mac), mtu) -> net in (
 		netOnActivate(net, lambda ()=
 			let _ethCreate(index) -> socket in
 			if socket<>nil then

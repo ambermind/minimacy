@@ -176,9 +176,9 @@ fun _netByIp(ip)=
 
 fun ipLocalOrBroadcast(net, ip)=
 	let strRead32Msb(ip, 0) -> ipInt in
-	(net.submaskIntI | ipInt)==0xffffffff || ((net.submaskIntI & ipInt)==(net.submaskIntI & net.ipIntI));;
+	((net.submaskIntI!=0xffffffff)&&((net.submaskIntI | ipInt)==0xffffffff)) || ((net.submaskIntI & ipInt)==(net.submaskIntI & net.ipIntI));;
 
-fun ipIsBroadcast(net, ip)= (net.submaskIntI | strRead32Msb(ip, 0))==0xffffffff;;
+fun ipIsBroadcast(net, ip)= (net.submaskIntI!=0xffffffff)&&((net.submaskIntI | strRead32Msb(ip, 0))==0xffffffff);;
 
 fun ipHandle(net, promiscuous, remoteMac, msg, i0)=
 	let strRead16Msb(msg, i0+2) -> ipLength in
@@ -839,7 +839,7 @@ lockSync(TcpLock, lambda ()=
 	let strRead16Msb(msg, 0) -> remotePort in
 	let strRead16Msb(msg, 2) -> localPort in
 	let strRead8(msg, 13) -> flag in
-	if flag==TCP_SYN then void _tcpHandleSyn(net, remoteAddr, localAddr, remotePort, localPort, flag, msg)
+	if (flag & (TCP_SYN | TCP_ACK | TCP_RST | TCP_FIN)) == TCP_SYN then void _tcpHandleSyn(net, remoteAddr, localAddr, remotePort, localPort, flag, msg)
 	else
 	let _tcpKey(remoteAddr, localAddr, remotePort, localPort) -> key in
 	let hashmapGet(TcpListener, key) -> t in

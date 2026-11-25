@@ -204,6 +204,7 @@ fun _workerAlive()=
 fun ipByName(hostname)= let bufferCreateWithSize(32) -> output in (
 	let workerGet() -> wId in
 	if 0<_ipByName(output, hostname, wId) then strSplit("\0", strFromBuffer(output))
+	else if hostname=="localhost" then netLocalIps()
 );;
 fun nameByIp(ip)= let bufferCreateWithSize(32) -> output in (
 	let workerGet() -> wId in

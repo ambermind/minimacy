@@ -232,7 +232,7 @@ fun _cleanPath(l, result)=
 	match head(l) with
 	"." -> _cleanPath(tail(l), result),
 	""  -> _cleanPath(tail(l), if tail(l)==nil then result else "/"::nil),
-	"~" -> _cleanPath(tail(l), userDir::nil),
+	"~" -> _cleanPath(tail(l), UserDir::nil),
 	".."-> _cleanPath(tail(l), if result==nil || head(result)=="../" then "../"::result else tail(tail(result))),
 	_   -> if !strStartsWith(head(l), "~") then _cleanPath(tail(l), (if tail(l)<>nil then "/")::head(l)::result);;
 
